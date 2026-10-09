@@ -20,6 +20,7 @@ import {
 } from "@/utils/constant";
 import { useSolarEstimate } from "@/hooks/useSolarEstimate";
 import { useSolarLayers, type SolarLayerType } from "@/hooks/useSolarLayers";
+import { useBuildingFootprint } from "@/hooks/useBuildingFootprint";
 import type { GeoTiffOverlay } from "@/utils/geotiff";
 import {
   extractRoofOutlinesFromMask,
@@ -656,6 +657,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     error: layersError,
     retry: layersRetry,
   } = useSolarLayers(selectedLocation, ACTIVE_LAYERS);
+  const footprint = useBuildingFootprint(selectedLocation);
 
   const maskRaster = maskOverlay?.raster ?? null;
 
@@ -696,36 +698,57 @@ export const DesignsSolarPanelStepContent = forwardRef<
     return tracedAreaM2 >= wholeRoofAreaM2 * MIN_MASK_COVERAGE_FRACTION;
   }, [data?.wholeRoofAreaM2, maskTracedOutlines]);
 
-  /** True when the starting shape is a real trace of the roof, not a rectangle guess. */
+  /**
+   * Microsoft's free building-footprint outline (see useBuildingFootprint) —
+   * current, Australia-covering satellite data, used ahead of Google's Solar
+   * mask trace: Google's Australian imagery is years out of date (see the
+   * client doc), so even where its mask trace "covers enough" of the roof it
+   * can be tracing a building that no longer looks like this. A footprint
+   * match is still just one outline per building (no roof-plane/pitch
+   * segmentation), so it's always flagged for the installer to verify below.
+   */
+  const footprintOutline: LatLngRing | null = footprint.data?.ring ?? null;
+
+  /** True when the starting shape is a real trace of the roof, not a footprint or rectangle guess. */
   const initialRoofIsTraced = Boolean(
-    roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof,
+    !footprintOutline && roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof,
   );
+
+  /** Best roof outline available right now, footprint first — null while still waiting on a source that could still beat the next fallback. */
+  const bestAvailableOutlines = useMemo((): LatLngRing[] | null => {
+    if (footprintOutline) return [footprintOutline];
+    if (roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof) {
+      return roofMaskOutlines;
+    }
+    return null;
+  }, [footprintOutline, maskOutlinesCoverEnoughOfRoof, roofMaskOutlines]);
 
   const initialRoofPolygons = useMemo((): google.maps.LatLngLiteral[][] | null => {
     if (!selectedLocation) return null;
-    if (initialRoofIsTraced) return roofMaskOutlines;
+    if (bestAvailableOutlines) return bestAvailableOutlines;
+    if (footprint.loading) return null;
     if (data?.boundingBox) return [boundingBoxToPolygon(data.boundingBox)];
     if (loading || layersLoading) return null;
     return [makeDefaultPolygon(selectedLocation)];
   }, [
+    bestAvailableOutlines,
     data?.boundingBox,
-    initialRoofIsTraced,
+    footprint.loading,
     layersLoading,
     loading,
-    roofMaskOutlines,
     selectedLocation,
   ]);
 
   /**
-   * True while the roof(s) on screen came from a rectangle guess (the
-   * building's bounding box, or — with no Solar API coverage at all — a
-   * plain default square centered on the pin) rather than a real trace of
-   * the roof from imagery. Both are reasonable starting points, but neither
-   * is "AI found your exact roof" the way a mask trace is — worth flagging
-   * so installers know to actually check the shape against the satellite
-   * image instead of trusting it outright, which matters most in dense or
-   * informally-mapped areas where Google's own building-footprint data can
-   * be stale or offset from where the building actually is.
+   * True while the roof(s) on screen came from a building-footprint match, a
+   * rectangle guess (the building's bounding box, or — with no coverage at
+   * all — a plain default square centered on the pin) rather than a real
+   * trace of the roof from imagery. All three are reasonable starting
+   * points, but none is "AI found your exact roof" the way a mask trace is —
+   * worth flagging so installers know to actually check the shape against
+   * the satellite image instead of trusting it outright, which matters most
+   * in dense or informally-mapped areas where building-footprint data can be
+   * stale or offset from where the building actually is.
    */
   const [roofNeedsVerification, setRoofNeedsVerification] = useState(false);
 
@@ -928,10 +951,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
       );
     } else {
       const isTraced = Boolean(
-        roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof,
+        !footprintOutline && roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof,
       );
-      const fallback: google.maps.LatLngLiteral[][] =
-        isTraced && roofMaskOutlines
+      const fallback: google.maps.LatLngLiteral[][] = footprintOutline
+        ? [footprintOutline]
+        : isTraced && roofMaskOutlines
           ? roofMaskOutlines
           : [
               data?.boundingBox
@@ -945,6 +969,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     }
   }, [
     data?.boundingBox,
+    footprintOutline,
     maskOutlinesCoverEnoughOfRoof,
     roofMaskOutlines,
     savedRoofs,
@@ -1162,7 +1187,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
   useImperativeOverlay(mapReady, rgbOverlay, 0.92, showSolarRgb);
   useImperativeOverlay(mapReady, maskOverlay, 0.45, showSolarRgb);
 
-  /* Solar panels + roof outline (mask-traced perimeter, else API bounding box) */
+  /* Solar panels + roof outline (building footprint, else mask-traced perimeter, else API bounding box) */
   useImperativePanels(
     mapReady,
     visiblePanels,
@@ -1171,7 +1196,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
   );
   useImperativeRoofOutline(
     mapReady,
-    maskOutlinesCoverEnoughOfRoof ? roofMaskOutlines : null,
+    bestAvailableOutlines,
     data?.boundingBox,
     showPanels && !isEditing && savedRoofs.length === 0,
   );
