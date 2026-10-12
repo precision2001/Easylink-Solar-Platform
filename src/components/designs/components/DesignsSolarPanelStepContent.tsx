@@ -21,6 +21,7 @@ import {
 import { useSolarEstimate } from "@/hooks/useSolarEstimate";
 import { useSolarLayers, type SolarLayerType } from "@/hooks/useSolarLayers";
 import { useBuildingFootprint } from "@/hooks/useBuildingFootprint";
+import { useCadastralParcel } from "@/hooks/useCadastralParcel";
 import type { GeoTiffOverlay } from "@/utils/geotiff";
 import {
   extractRoofOutlinesFromMask,
@@ -53,6 +54,25 @@ const MAX_MAP_SOLAR_PANEL_POLYGONS = 1500;
  * like a trustworthy result.
  */
 const MIN_MASK_COVERAGE_FRACTION = 0.5;
+
+/**
+ * Beyond this, Google's "nearest building" bounding box is almost certainly
+ * a different building, not this one — see `boundingBoxDistanceFromPinM`.
+ */
+const MAX_BOUNDING_BOX_DISTANCE_M = 80;
+
+/**
+ * Beyond this, a footprint match and Google's own (real, non-estimated)
+ * match for the same location almost certainly disagree about which
+ * building this is — e.g. the footprint dataset matching a shed or garage
+ * near the house instead of the house itself. Google's AU imagery is often
+ * too dated to trust over a footprint match (the whole reason footprint is
+ * preferred in the first place), but when Google DID return a genuine match
+ * this far from the footprint, that's independent corroboration something's
+ * wrong with the footprint pick, worth falling back to the mask trace for.
+ */
+const MAX_FOOTPRINT_GOOGLE_DISAGREEMENT_M = 40;
+
 function formatNumber(n: number): string {
   return n.toLocaleString("en-AU", { maximumFractionDigits: 0 });
 }
@@ -517,6 +537,224 @@ function boundingBoxToPolygon(
   ];
 }
 
+/** Planar-approximation distance between two lat/lng points, in meters — fine at building/block scale. */
+function distanceM(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const metersPerDegLat = 111_320;
+  const metersPerDegLng = 111_320 * Math.cos((a.lat * Math.PI) / 180);
+  const dLat = (b.lat - a.lat) * metersPerDegLat;
+  const dLng = (b.lng - a.lng) * metersPerDegLng;
+  return Math.sqrt(dLat * dLat + dLng * dLng);
+}
+
+/**
+ * Google's Solar API finds the *nearest* building to the queried point, not
+ * necessarily a building *at* it — on vacant/cleared/under-construction
+ * blocks (no roof for either data source to find) it can snap to a
+ * neighbour's house across the street instead. Distance from the pin to the
+ * box's own center.
+ */
+function boundingBoxDistanceFromPinM(
+  box: SolarEstimateResult["boundingBox"],
+  pin: { lat: number; lng: number },
+): number {
+  return distanceM(pin, {
+    lat: (box.ne.lat + box.sw.lat) / 2,
+    lng: (box.ne.lng + box.sw.lng) / 2,
+  });
+}
+
+function ringCentroid(ring: LatLngRing): { lat: number; lng: number } {
+  const sum = ring.reduce(
+    (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
+    { lat: 0, lng: 0 },
+  );
+  return { lat: sum.lat / ring.length, lng: sum.lng / ring.length };
+}
+
+type ParcelBounds = { sw: { lat: number; lng: number }; ne: { lat: number; lng: number } };
+
+/**
+ * Sutherland–Hodgman clip of a ring against an axis-aligned lat/lng box, one
+ * edge at a time. Used to trim a building-footprint polygon down to one
+ * address's parcel: attached/terrace buildings share one continuous
+ * roofline from above, so the footprint dataset returns a single polygon
+ * for the whole row — Google's per-premise geocode `bounds`, when present,
+ * is roughly the parcel, so clipping against it keeps just this address's
+ * slice instead of the whole row.
+ */
+function clipRingToBounds(
+  ring: LatLngRing,
+  bounds: ParcelBounds,
+): LatLngRing {
+  type Pt = { lat: number; lng: number };
+  const clipEdge = (
+    points: Pt[],
+    inside: (p: Pt) => boolean,
+    intersect: (a: Pt, b: Pt) => Pt,
+  ): Pt[] => {
+    if (points.length === 0) return [];
+    const out: Pt[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const curr = points[i];
+      const prev = points[(i - 1 + points.length) % points.length];
+      const currIn = inside(curr);
+      const prevIn = inside(prev);
+      if (currIn) {
+        if (!prevIn) out.push(intersect(prev, curr));
+        out.push(curr);
+      } else if (prevIn) {
+        out.push(intersect(prev, curr));
+      }
+    }
+    return out;
+  };
+
+  let pts: Pt[] = ring;
+  pts = clipEdge(
+    pts,
+    (p) => p.lng >= bounds.sw.lng,
+    (a, b) => {
+      const t = (bounds.sw.lng - a.lng) / (b.lng - a.lng);
+      return { lat: a.lat + t * (b.lat - a.lat), lng: bounds.sw.lng };
+    },
+  );
+  pts = clipEdge(
+    pts,
+    (p) => p.lng <= bounds.ne.lng,
+    (a, b) => {
+      const t = (bounds.ne.lng - a.lng) / (b.lng - a.lng);
+      return { lat: a.lat + t * (b.lat - a.lat), lng: bounds.ne.lng };
+    },
+  );
+  pts = clipEdge(
+    pts,
+    (p) => p.lat >= bounds.sw.lat,
+    (a, b) => {
+      const t = (bounds.sw.lat - a.lat) / (b.lat - a.lat);
+      return { lat: bounds.sw.lat, lng: a.lng + t * (b.lng - a.lng) };
+    },
+  );
+  pts = clipEdge(
+    pts,
+    (p) => p.lat <= bounds.ne.lat,
+    (a, b) => {
+      const t = (bounds.ne.lat - a.lat) / (b.lat - a.lat);
+      return { lat: bounds.ne.lat, lng: a.lng + t * (b.lng - a.lng) };
+    },
+  );
+  return pts;
+}
+
+function ringSignedArea(ring: LatLngRing): number {
+  let sum = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    sum += a.lng * b.lat - b.lng * a.lat;
+  }
+  return sum / 2;
+}
+
+/**
+ * Sutherland–Hodgman clip of a ring against an arbitrary convex polygon
+ * (not just an axis-aligned box) — e.g. a real NSW cadastral lot boundary,
+ * which is rarely a clean rectangle. Clips sequentially against each edge
+ * of `clip`, so a genuinely non-convex clip polygon (an L-shaped lot, say)
+ * can clip incorrectly — the caller's coverage sanity check is what catches
+ * that case, same as it catches a misaligned box clip.
+ */
+function clipRingToConvexPolygon(subject: LatLngRing, clip: LatLngRing): LatLngRing {
+  if (subject.length < 3 || clip.length < 3) return [];
+  const ccw = ringSignedArea(clip) > 0;
+
+  const inside = (
+    p: { lat: number; lng: number },
+    a: { lat: number; lng: number },
+    b: { lat: number; lng: number },
+  ): boolean => {
+    const cross = (b.lng - a.lng) * (p.lat - a.lat) - (b.lat - a.lat) * (p.lng - a.lng);
+    return ccw ? cross >= 0 : cross <= 0;
+  };
+
+  const intersection = (
+    p1: { lat: number; lng: number },
+    p2: { lat: number; lng: number },
+    a: { lat: number; lng: number },
+    b: { lat: number; lng: number },
+  ): { lat: number; lng: number } => {
+    const x1 = p1.lng,
+      y1 = p1.lat,
+      x2 = p2.lng,
+      y2 = p2.lat;
+    const x3 = a.lng,
+      y3 = a.lat,
+      x4 = b.lng,
+      y4 = b.lat;
+    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(denom) < 1e-15) return p2;
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+    return { lng: x1 + t * (x2 - x1), lat: y1 + t * (y2 - y1) };
+  };
+
+  let output: LatLngRing = subject;
+  for (let i = 0; i < clip.length; i++) {
+    if (output.length === 0) break;
+    const a = clip[i];
+    const b = clip[(i + 1) % clip.length];
+    const input = output;
+    output = [];
+    for (let j = 0; j < input.length; j++) {
+      const curr = input[j];
+      const prev = input[(j - 1 + input.length) % input.length];
+      const currIn = inside(curr, a, b);
+      const prevIn = inside(prev, a, b);
+      if (currIn) {
+        if (!prevIn) output.push(intersection(prev, curr, a, b));
+        output.push(curr);
+      } else if (prevIn) {
+        output.push(intersection(prev, curr, a, b));
+      }
+    }
+  }
+  return output;
+}
+
+/** Shoelace formula over a planar meters projection — fine at building scale. */
+function ringAreaM2(ring: LatLngRing): number {
+  if (ring.length < 3) return 0;
+  const avgLat = ring.reduce((sum, p) => sum + p.lat, 0) / ring.length;
+  const metersPerDegLat = 111_320;
+  const metersPerDegLng = 111_320 * Math.cos((avgLat * Math.PI) / 180);
+  let area = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const ax = a.lng * metersPerDegLng;
+    const ay = a.lat * metersPerDegLat;
+    const bx = b.lng * metersPerDegLng;
+    const by = b.lat * metersPerDegLat;
+    area += ax * by - bx * ay;
+  }
+  return Math.abs(area / 2);
+}
+
+function parcelBoundsAreaM2(bounds: ParcelBounds): number {
+  const widthM = distanceM(bounds.sw, { lat: bounds.sw.lat, lng: bounds.ne.lng });
+  const heightM = distanceM(bounds.sw, { lat: bounds.ne.lat, lng: bounds.sw.lng });
+  return widthM * heightM;
+}
+
+/**
+ * Below this, the clip is almost certainly a misalignment, not a legitimate
+ * trim — e.g. a large/irregular commercial footprint where Google's parcel
+ * box only grazes one corner, clipping away nearly the whole real roof
+ * rather than isolating one address's share of a shared building.
+ */
+const MIN_CLIP_COVERAGE_FRACTION = 0.35;
+
 /** Dedupe key must include roof segment so nearby/overlapping polygons do not steal each other's panels. */
 function getSolarPanelKey(panel: SolarPanel): string {
   return [
@@ -613,6 +851,17 @@ export const DesignsSolarPanelStepContent = forwardRef<
     return null;
   }, [proposalCustomer.mapLat, proposalCustomer.mapLng]);
 
+  /** Google's tight per-premise geocode box, when available — see `clipRingToBounds`. */
+  const parcelBounds = useMemo((): ParcelBounds | null => {
+    if (proposalCustomer.mapParcelBoundsSw && proposalCustomer.mapParcelBoundsNe) {
+      return {
+        sw: proposalCustomer.mapParcelBoundsSw,
+        ne: proposalCustomer.mapParcelBoundsNe,
+      };
+    }
+    return null;
+  }, [proposalCustomer.mapParcelBoundsSw, proposalCustomer.mapParcelBoundsNe]);
+
   useEffect(() => {
     if (!selectedLocation || !solarDesignFromStore) return;
     if (
@@ -658,6 +907,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     retry: layersRetry,
   } = useSolarLayers(selectedLocation, ACTIVE_LAYERS);
   const footprint = useBuildingFootprint(selectedLocation);
+  const cadastralParcel = useCadastralParcel(selectedLocation);
 
   const maskRaster = maskOverlay?.raster ?? null;
 
@@ -677,9 +927,6 @@ export const DesignsSolarPanelStepContent = forwardRef<
       ? maskTracedOutlines.map((o) => o.ring)
       : null;
   }, [maskTracedOutlines]);
-
-  /** The largest single traced outline — for call sites that only ever offer the customer one fallback shape to start a *new* roof from (e.g. "+ Add New Roof"). */
-  const roofMaskOutline = roofMaskOutlines?.[0] ?? null;
 
   /**
    * True once the mask trace covers enough of Google's own whole-roof figure
@@ -706,33 +953,127 @@ export const DesignsSolarPanelStepContent = forwardRef<
    * can be tracing a building that no longer looks like this. A footprint
    * match is still just one outline per building (no roof-plane/pitch
    * segmentation), so it's always flagged for the installer to verify below.
+   *
+   * Clipped to the parcel bounds when available (see `clipRingToBounds`) —
+   * attached/terrace buildings share one continuous roofline, so the raw
+   * footprint can span several neighbours' addresses, not just this one. A
+   * degenerate clip (bounds barely grazing the footprint, or none at all)
+   * falls back to the unclipped match rather than a near-empty sliver.
    */
-  const footprintOutline: LatLngRing | null = footprint.data?.ring ?? null;
+  /**
+   * Trims a merged footprint match (e.g. a terrace row, or several close
+   * industrial buildings) down to one address's own parcel — cadastral
+   * first (a real NSW land-parcel polygon, available for most NSW
+   * addresses), falling back to Google's sparser `bounds` rectangle when
+   * no cadastral match exists. Both apply the same coverage sanity check:
+   * a legitimate trim uses up most of the clip shape's own area; a clip
+   * that only grazes a corner of a much bigger footprint signals
+   * misalignment, not a real boundary — safer to show the whole
+   * (still-flagged-unverified) match than a nonsensical sliver.
+   */
+  const footprintOutline: LatLngRing | null = useMemo(() => {
+    const raw = footprint.data?.ring ?? null;
+    if (!raw) return raw;
+
+    const cadastralRing = cadastralParcel.data?.ring ?? null;
+    if (cadastralRing) {
+      const clipped = clipRingToConvexPolygon(raw, cadastralRing);
+      if (clipped.length >= 3) {
+        const coverage = ringAreaM2(clipped) / cadastralParcel.data!.areaM2;
+        if (coverage >= MIN_CLIP_COVERAGE_FRACTION) return clipped;
+      }
+    }
+
+    if (parcelBounds) {
+      const clipped = clipRingToBounds(raw, parcelBounds);
+      if (clipped.length >= 3) {
+        const coverage = ringAreaM2(clipped) / parcelBoundsAreaM2(parcelBounds);
+        if (coverage >= MIN_CLIP_COVERAGE_FRACTION) return clipped;
+      }
+    }
+
+    return raw;
+  }, [cadastralParcel.data, footprint.data?.ring, parcelBounds]);
+
+  const maskIsGood = Boolean(roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof);
+
+  /**
+   * True when a footprint match and a *genuine* (non-estimated) Google match
+   * for the same point are far enough apart that they're probably different
+   * buildings — see `MAX_FOOTPRINT_GOOGLE_DISAGREEMENT_M`. Google's real
+   * match is the arbiter here precisely because it's real: when Google did
+   * find actual imagery for this address, its own result is independent
+   * corroboration the footprint dataset picked the wrong nearby structure
+   * (a shed, garage, outbuilding) rather than the house itself.
+   */
+  const footprintDisagreesWithGoogle = useMemo(() => {
+    if (!footprintOutline || !data || data.estimated) return false;
+    return (
+      distanceM(ringCentroid(footprintOutline), data.center) >
+      MAX_FOOTPRINT_GOOGLE_DISAGREEMENT_M
+    );
+  }, [data, footprintOutline]);
+
+  /**
+   * Google's own bounding box, but only when it's actually near the pin —
+   * see `boundingBoxDistanceFromPinM`. `undefined` (not just falsy) so call
+   * sites can tell "no bounding box" apart from "don't trust this one".
+   */
+  const boundingBoxNearPin = useMemo((): SolarEstimateResult["boundingBox"] | undefined => {
+    if (!data?.boundingBox || !selectedLocation) return undefined;
+    const distance = boundingBoxDistanceFromPinM(data.boundingBox, selectedLocation);
+    return distance <= MAX_BOUNDING_BOX_DISTANCE_M ? data.boundingBox : undefined;
+  }, [data?.boundingBox, selectedLocation]);
+
+  /** A disagreeing footprint is untrusted outright — not just "beaten if something better shows up" — so it never wins over a worse-but-plausible fallback either. */
+  const trustedFootprintOutline = footprintDisagreesWithGoogle
+    ? null
+    : footprintOutline;
 
   /** True when the starting shape is a real trace of the roof, not a footprint or rectangle guess. */
-  const initialRoofIsTraced = Boolean(
-    !footprintOutline && roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof,
-  );
+  const initialRoofIsTraced = Boolean(!trustedFootprintOutline && maskIsGood);
 
-  /** Best roof outline available right now, footprint first — null while still waiting on a source that could still beat the next fallback. */
+  /** Best roof outline available right now — null while still waiting on a source that could still beat the next fallback. */
   const bestAvailableOutlines = useMemo((): LatLngRing[] | null => {
-    if (footprintOutline) return [footprintOutline];
-    if (roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof) {
-      return roofMaskOutlines;
+    if (trustedFootprintOutline) return [trustedFootprintOutline];
+    if (maskIsGood) return roofMaskOutlines as LatLngRing[];
+    // Google's real match disagreed with the footprint and the mask trace
+    // didn't independently pan out — trust Google's own (real, near-pin)
+    // bounding box over the footprint rather than showing the wrong building.
+    if (footprintDisagreesWithGoogle && boundingBoxNearPin) {
+      return [boundingBoxToPolygon(boundingBoxNearPin)];
     }
+    // Nothing better corroborates or contradicts it — still the best guess available.
+    if (footprintOutline) return [footprintOutline];
     return null;
-  }, [footprintOutline, maskOutlinesCoverEnoughOfRoof, roofMaskOutlines]);
+  }, [
+    boundingBoxNearPin,
+    footprintDisagreesWithGoogle,
+    footprintOutline,
+    maskIsGood,
+    roofMaskOutlines,
+    trustedFootprintOutline,
+  ]);
 
   const initialRoofPolygons = useMemo((): google.maps.LatLngLiteral[][] | null => {
     if (!selectedLocation) return null;
+    // All three must resolve before trusting anything: `footprintOutline`
+    // (clipped by cadastral/Google bounds) and `footprintDisagreesWithGoogle`
+    // both depend on data that arrives asynchronously after the footprint
+    // match itself — so a footprint that resolves before the cadastral
+    // lookup and Google's own estimate do would otherwise get trusted
+    // unclipped/unchecked by default — and, since this effect only ever
+    // runs once per address, locked in wrong permanently even after the
+    // slower data arrives and would have corrected it.
+    if (footprint.loading || cadastralParcel.loading || loading) return null;
     if (bestAvailableOutlines) return bestAvailableOutlines;
-    if (footprint.loading) return null;
-    if (data?.boundingBox) return [boundingBoxToPolygon(data.boundingBox)];
-    if (loading || layersLoading) return null;
+    if (boundingBoxNearPin) return [boundingBoxToPolygon(boundingBoxNearPin)];
+    if (layersLoading) return null;
     return [makeDefaultPolygon(selectedLocation)];
   }, [
     bestAvailableOutlines,
-    data?.boundingBox,
+    boundingBoxNearPin,
+    cadastralParcel.loading,
     footprint.loading,
     layersLoading,
     loading,
@@ -950,28 +1291,20 @@ export const DesignsSolarPanelStepContent = forwardRef<
         savedRoofs.map((paths) => ({ id: ++roofCounter.current, paths })),
       );
     } else {
-      const isTraced = Boolean(
-        !footprintOutline && roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof,
-      );
-      const fallback: google.maps.LatLngLiteral[][] = footprintOutline
-        ? [footprintOutline]
-        : isTraced && roofMaskOutlines
-          ? roofMaskOutlines
-          : [
-              data?.boundingBox
-                ? boundingBoxToPolygon(data.boundingBox)
-                : makeDefaultPolygon(selectedLocation),
-            ];
-      setRoofNeedsVerification(!isTraced);
+      const fallback: google.maps.LatLngLiteral[][] = bestAvailableOutlines ?? [
+        boundingBoxNearPin
+          ? boundingBoxToPolygon(boundingBoxNearPin)
+          : makeDefaultPolygon(selectedLocation),
+      ];
+      setRoofNeedsVerification(!initialRoofIsTraced);
       setEditingRoofs(
         fallback.map((paths) => ({ id: ++roofCounter.current, paths })),
       );
     }
   }, [
-    data?.boundingBox,
-    footprintOutline,
-    maskOutlinesCoverEnoughOfRoof,
-    roofMaskOutlines,
+    bestAvailableOutlines,
+    boundingBoxNearPin,
+    initialRoofIsTraced,
     savedRoofs,
     selectedLocation,
   ]);
@@ -996,14 +1329,14 @@ export const DesignsSolarPanelStepContent = forwardRef<
       {
         id: newId,
         paths:
-          roofMaskOutline ??
-          (data?.boundingBox
-            ? boundingBoxToPolygon(data.boundingBox)
+          bestAvailableOutlines?.[0] ??
+          (boundingBoxNearPin
+            ? boundingBoxToPolygon(boundingBoxNearPin)
             : makeDefaultPolygon(selectedLocation, prev.length * 0.0002)),
       },
     ]);
     setSelectedRoofId(newId);
-  }, [data?.boundingBox, roofMaskOutline, selectedLocation]);
+  }, [bestAvailableOutlines, boundingBoxNearPin, selectedLocation]);
 
   /** Removes the roof currently selected on the map; keeps at least one polygon. */
   const handleDeleteRoof = useCallback(() => {
@@ -1197,7 +1530,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
   useImperativeRoofOutline(
     mapReady,
     bestAvailableOutlines,
-    data?.boundingBox,
+    boundingBoxNearPin,
     showPanels && !isEditing && savedRoofs.length === 0,
   );
 

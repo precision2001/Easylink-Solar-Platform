@@ -30,6 +30,16 @@ export type DesignProposalCustomer = {
   /** Pin from the location step map (decimal degrees). Used by the solar-panel step map. */
   mapLat?: number;
   mapLng?: number;
+  /**
+   * Google Geocoding's tight per-premise `bounds` box, when the ROOFTOP
+   * geocode returns one — narrower than the building, roughly the parcel.
+   * Used to clip an oversized footprint match on attached/terrace buildings,
+   * where the footprint dataset returns one polygon for the whole shared
+   * roofline rather than per-address. Absent for most addresses (Google
+   * only returns `bounds` for some premises) — nothing to clip against then.
+   */
+  mapParcelBoundsSw?: { lat: number; lng: number };
+  mapParcelBoundsNe?: { lat: number; lng: number };
 };
 
 /** Every category the items step can add products to, in card order. */

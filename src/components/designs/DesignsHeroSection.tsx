@@ -328,13 +328,19 @@ export function DesignsHeroSection({
         const pin: Partial<{
           mapLat: number;
           mapLng: number;
-        }> =
-          loc.location != null
+          mapParcelBoundsSw: { lat: number; lng: number };
+          mapParcelBoundsNe: { lat: number; lng: number };
+        }> = {
+          ...(loc.location != null
+            ? { mapLat: loc.location.lat, mapLng: loc.location.lng }
+            : {}),
+          ...(loc.parcelBounds != null
             ? {
-                mapLat: loc.location.lat,
-                mapLng: loc.location.lng,
+                mapParcelBoundsSw: loc.parcelBounds.sw,
+                mapParcelBoundsNe: loc.parcelBounds.ne,
               }
-            : {};
+            : {}),
+        };
         dispatch(
           mergeProposalData({
             customer: {

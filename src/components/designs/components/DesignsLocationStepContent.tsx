@@ -39,6 +39,7 @@ export type DesignsLocationStepHandle = {
   getValues: () => {
     address: string;
     location: DesignsMapLocation | null;
+    parcelBounds: { sw: DesignsMapLocation; ne: DesignsMapLocation } | null;
   };
 };
 
@@ -58,11 +59,23 @@ export const DesignsLocationStepContent = forwardRef<
         ? { lat: storedCustomer.mapLat, lng: storedCustomer.mapLng }
         : null,
     );
+  const [selectedParcelBounds, setSelectedParcelBounds] = useState<{
+    sw: DesignsMapLocation;
+    ne: DesignsMapLocation;
+  } | null>(() =>
+    storedCustomer.mapParcelBoundsSw && storedCustomer.mapParcelBoundsNe
+      ? {
+          sw: storedCustomer.mapParcelBoundsSw,
+          ne: storedCustomer.mapParcelBoundsNe,
+        }
+      : null,
+  );
 
   useImperativeHandle(ref, () => ({
     getValues: () => ({
       address: selectedAddress,
       location: selectedLocation,
+      parcelBounds: selectedParcelBounds,
     }),
   }));
 
@@ -114,6 +127,12 @@ export const DesignsLocationStepContent = forwardRef<
       shouldReverseGeocode = false,
     ) => {
       setSelectedLocation(loc);
+      // Reset here — only the ROOFTOP-geocode success path (selectSuggestion)
+      // knows a reliable per-premise box and re-sets it right after calling
+      // moveTo; every other caller (map drag, geolocation, restored pin) has
+      // no such box, and a stale one from the previous address would clip
+      // the next address's footprint against the wrong parcel.
+      setSelectedParcelBounds(null);
       setMapZoom(z);
       if (mapRef.current) {
         isProgrammaticMoveRef.current = true;
@@ -289,23 +308,67 @@ export const DesignsLocationStepContent = forwardRef<
       if (!isLoaded || !google?.maps?.places || !mapDivRef.current) return;
 
       const service = new google.maps.places.PlacesService(mapDivRef.current);
-      service.getDetails(
-        { placeId: suggestion.placeId, fields: ["geometry"] },
-        (place, status) => {
-          if (
-            status === google.maps.places.PlacesServiceStatus.OK &&
-            place?.geometry?.location
-          ) {
-            moveTo(
-              {
-                lat: place.geometry.location.lat(),
-                lng: place.geometry.location.lng(),
+      const fallbackToPlacesDetails = () => {
+        service.getDetails(
+          { placeId: suggestion.placeId, fields: ["geometry"] },
+          (place, status) => {
+            if (
+              status === google.maps.places.PlacesServiceStatus.OK &&
+              place?.geometry?.location
+            ) {
+              moveTo(
+                {
+                  lat: place.geometry.location.lat(),
+                  lng: place.geometry.location.lng(),
+                },
+                DESIGNS_LOCATION_STEP.defaultZoom,
+              );
+            }
+          },
+        );
+      };
+
+      // Places' point for a given placeId can be a business/suite marker
+      // rather than the building itself — the likely cause of roof-detection
+      // occasionally matching the wrong neighbouring building. Google's
+      // Geocoder tags its own results with how precise they are; a ROOFTOP
+      // result is a genuine building-level geocode, so prefer it over the
+      // Places point when one's available, falling back unchanged otherwise.
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ placeId: suggestion.placeId }, (results, status) => {
+        const rooftop = results?.find(
+          (r) => r.geometry?.location_type === "ROOFTOP",
+        );
+        if (status === google.maps.GeocoderStatus.OK && rooftop) {
+          moveTo(
+            {
+              lat: rooftop.geometry.location.lat(),
+              lng: rooftop.geometry.location.lng(),
+            },
+            DESIGNS_LOCATION_STEP.defaultZoom,
+          );
+          // A tight per-premise box, when Google returns one — narrower than
+          // the building, roughly the parcel. Attached/terrace buildings
+          // share one continuous roofline from above, so the building-
+          // footprint dataset returns a single polygon for the whole row;
+          // this lets the solar-panel step clip that polygon down to just
+          // this address's slice instead of selecting the neighbours too.
+          if (rooftop.geometry.bounds) {
+            setSelectedParcelBounds({
+              sw: {
+                lat: rooftop.geometry.bounds.getSouthWest().lat(),
+                lng: rooftop.geometry.bounds.getSouthWest().lng(),
               },
-              DESIGNS_LOCATION_STEP.defaultZoom,
-            );
+              ne: {
+                lat: rooftop.geometry.bounds.getNorthEast().lat(),
+                lng: rooftop.geometry.bounds.getNorthEast().lng(),
+              },
+            });
           }
-        },
-      );
+          return;
+        }
+        fallbackToPlacesDetails();
+      });
     },
     [isLoaded, moveTo, setSelectedAddress],
   );
