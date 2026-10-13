@@ -521,6 +521,7 @@ export const MASTER_DASHBOARD_NAV = [
   },
   { id: "invoices", label: "Invoices", href: "/master/invoices" },
   { id: "payments", label: "Payments", href: "/master/payments" },
+  { id: "calls", label: "Calls", href: "/master/calls" },
 ] as const;
 
 /** Master — Installers (Figma 3:13117) */
