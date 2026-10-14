@@ -1,13 +1,17 @@
 "use client";
 
-import { MasterDashboardContent } from "@/components/master-dashboard/MasterDashboardContent";
-import { MasterDashboardHeader } from "@/components/master-dashboard/MasterDashboardHeader";
+import { MasterDistSidebar } from "@/components/master-dashboard/MasterDistSidebar";
+import { MasterDistOverview } from "@/components/master-dashboard/MasterDistOverview";
 
 export default function MasterDashboardPage() {
   return (
-    <div className="min-h-screen master-page-bg">
-      <MasterDashboardHeader activeNavId="overview" />
-      <MasterDashboardContent />
+    <div className="flex min-h-screen flex-wrap bg-[#F4F6FA]">
+      <div className="w-full basis-[248px] md:flex-[1_1_248px]">
+        <MasterDistSidebar active="overview" />
+      </div>
+      <main className="min-w-0 flex-[999_1_560px]">
+        <MasterDistOverview />
+      </main>
     </div>
   );
 }

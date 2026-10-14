@@ -13,6 +13,7 @@ const SERVER_SNAPSHOT: ProgressState = { percent: 0, visible: false };
 
 let state: ProgressState = SERVER_SNAPSHOT;
 let activeCount = 0;
+let visibleActiveCount = 0;
 let tickIntervalId: ReturnType<typeof setInterval> | null = null;
 let hideTimeoutId: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<Listener>();
@@ -29,14 +30,22 @@ function tick() {
   setState({ percent: Math.min(90, state.percent + step) });
 }
 
-/** Call when an async operation (typically a fetch) starts. Safe to call concurrently. */
-export function startProgress() {
+/**
+ * Call when an async operation (typically a fetch) starts. Safe to call concurrently.
+ * Pass `show: false` for requests that shouldn't surface the bar at all (e.g. the
+ * LiveKit SDK's own background `/settings/regions` lookup) — always pair the same
+ * `show` value with the matching `doneProgress` call.
+ */
+export function startProgress(show: boolean = true) {
+  activeCount += 1;
+  if (!show) return;
+
   if (hideTimeoutId) {
     clearTimeout(hideTimeoutId);
     hideTimeoutId = null;
   }
-  activeCount += 1;
-  if (activeCount === 1) {
+  visibleActiveCount += 1;
+  if (visibleActiveCount === 1) {
     setState({ visible: true, percent: Math.max(state.percent, 8) });
     if (!tickIntervalId) {
       tickIntervalId = setInterval(tick, 200);
@@ -45,9 +54,12 @@ export function startProgress() {
 }
 
 /** Call when that operation finishes (success or failure — always pair with startProgress). */
-export function doneProgress() {
+export function doneProgress(show: boolean = true) {
   activeCount = Math.max(0, activeCount - 1);
-  if (activeCount > 0) return;
+  if (!show) return;
+
+  visibleActiveCount = Math.max(0, visibleActiveCount - 1);
+  if (visibleActiveCount > 0) return;
 
   if (tickIntervalId) {
     clearInterval(tickIntervalId);
