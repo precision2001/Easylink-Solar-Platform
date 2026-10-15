@@ -159,6 +159,7 @@ export function simulateYear(
   batteryKwh: number,
   mode: BatteryMode,
   systemAgeYears: number,
+  gridRatePerKwh: number = GRID_RATE_PER_KWH,
 ): YearSimResult {
   const consumptionWeights = normalize(CONSUMPTION_SEASONALITY);
   const generationWeights = normalize(GENERATION_SEASONALITY);
@@ -298,7 +299,7 @@ export function simulateYear(
     annualStoredKwh: year.annualStoredKwh,
     annualGeneratedKwh: year.annualGeneratedKwh,
     exportIncomeAud: year.annualExportIncomeAud,
-    avoidedCostAud: year.annualSelfConsumedKwh * GRID_RATE_PER_KWH,
+    avoidedCostAud: year.annualSelfConsumedKwh * gridRatePerKwh,
   };
 }
 

@@ -479,13 +479,27 @@ function EnergyBillInput({
   onBillPeriodChange,
   currentMonthlyAmount,
   onMonthlyAmountChange,
+  gridRatePerKwh,
+  onGridRateChange,
 }: {
   billPeriod: DesignBillPeriod;
   onBillPeriodChange: (period: DesignBillPeriod) => void;
   /** Slider basis: normalized monthly AUD (Redux `currentBill` / projections use this). */
   currentMonthlyAmount: number;
   onMonthlyAmountChange: (monthly: number) => void;
+  gridRatePerKwh: number;
+  onGridRateChange: (rate: number) => void;
 }) {
+  const [editingRate, setEditingRate] = useState(false);
+  const [rateDraft, setRateDraft] = useState("");
+
+  const commitRateDraft = () => {
+    const parsed = Number.parseFloat(rateDraft);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      onGridRateChange(Math.round(parsed * 100000) / 100000);
+    }
+    setEditingRate(false);
+  };
   const displayAmount = Math.round(
     currentMonthlyAmount * periodMultiplier(billPeriod),
   );
@@ -563,12 +577,42 @@ function EnergyBillInput({
           ariaLabel="Energy bill rate"
         />
 
-        <div className="inline-flex h-[30px] items-center gap-[8px] rounded-full border border-white px-[13px] py-px">
-          <span className="font-source-sans text-[14px] font-normal tracking-[-0.1504px] text-white">
-            {GRID_RATE_PER_KWH}$ per kWh
-          </span>
-          <span className="text-[12px] text-white">✎</span>
-        </div>
+        {editingRate ? (
+          <div className="inline-flex h-[30px] items-center gap-[6px] rounded-full border border-white px-[13px] py-px">
+            <input
+              type="number"
+              step="0.00001"
+              min="0.00001"
+              autoFocus
+              value={rateDraft}
+              onChange={(e) => setRateDraft(e.target.value)}
+              onBlur={commitRateDraft}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRateDraft();
+                if (e.key === "Escape") setEditingRate(false);
+              }}
+              aria-label="Grid electricity rate in dollars per kWh"
+              className="w-[70px] bg-transparent text-right font-source-sans text-[14px] font-normal text-white outline-none"
+            />
+            <span className="font-source-sans text-[14px] font-normal text-white">
+              $ per kWh
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setRateDraft(String(gridRatePerKwh));
+              setEditingRate(true);
+            }}
+            className="inline-flex h-[30px] items-center gap-[8px] rounded-full border border-white px-[13px] py-px"
+          >
+            <span className="font-source-sans text-[14px] font-normal tracking-[-0.1504px] text-white">
+              {gridRatePerKwh}$ per kWh
+            </span>
+            <span className="text-[12px] text-white">✎</span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -616,6 +660,8 @@ export const DesignsEnergyStepContent = forwardRef<
 
   const [valuePeriod, setValuePeriod] = useState<ValuePeriod>("fortnight");
 
+  const gridRatePerKwh = proposal.pricing.gridRatePerKwh ?? GRID_RATE_PER_KWH;
+
   const systemKw = useMemo(
     () => resolveSystemKw(proposal.summary.systemSize, proposal.summary.totalPanels),
     [proposal.summary.systemSize, proposal.summary.totalPanels],
@@ -627,8 +673,8 @@ export const DesignsEnergyStepContent = forwardRef<
       0,
       currentMonthly * 12 - DAILY_SUPPLY_CHARGE * 365,
     );
-    return annualUsageCharge / GRID_RATE_PER_KWH;
-  }, [currentMonthly]);
+    return annualUsageCharge / gridRatePerKwh;
+  }, [currentMonthly, gridRatePerKwh]);
 
   const annualGenerationKwh = systemKw * SOLAR_YIELD_KWH_PER_KW_YEAR;
 
@@ -668,13 +714,29 @@ export const DesignsEnergyStepContent = forwardRef<
         effectiveBatteryKwh,
         batteryMode,
         systemAgeYears,
+        gridRatePerKwh,
       ),
-    [annualConsumptionKwh, annualGenerationKwh, effectiveBatteryKwh, batteryMode, systemAgeYears],
+    [
+      annualConsumptionKwh,
+      annualGenerationKwh,
+      effectiveBatteryKwh,
+      batteryMode,
+      systemAgeYears,
+      gridRatePerKwh,
+    ],
   );
 
   const bestCase = useMemo(
-    () => simulateYear(annualConsumptionKwh, annualGenerationKwh, 500, batteryMode, systemAgeYears),
-    [annualConsumptionKwh, annualGenerationKwh, batteryMode, systemAgeYears],
+    () =>
+      simulateYear(
+        annualConsumptionKwh,
+        annualGenerationKwh,
+        500,
+        batteryMode,
+        systemAgeYears,
+        gridRatePerKwh,
+      ),
+    [annualConsumptionKwh, annualGenerationKwh, batteryMode, systemAgeYears, gridRatePerKwh],
   );
 
   const independencePct =
@@ -709,7 +771,7 @@ export const DesignsEnergyStepContent = forwardRef<
   const exportKwhPeriod = sim.annualExportKwh * periodFraction;
   const gridUsedKwhPeriod = sim.annualGridImportKwh * periodFraction;
   const exportIncomePeriod = exportKwhPeriod * FIT_RATE_PER_KWH;
-  const gridImportCostPeriod = gridUsedKwhPeriod * GRID_RATE_PER_KWH;
+  const gridImportCostPeriod = gridUsedKwhPeriod * gridRatePerKwh;
   const supplyChargePeriod = DAILY_SUPPLY_CHARGE * periodDays;
   const billCostPeriod = supplyChargePeriod + gridImportCostPeriod - exportIncomePeriod;
   const netPeriod = exportIncomePeriod - gridImportCostPeriod - supplyChargePeriod;
@@ -734,6 +796,10 @@ export const DesignsEnergyStepContent = forwardRef<
                 onBillPeriodChange={setBillPeriod}
                 currentMonthlyAmount={currentMonthly}
                 onMonthlyAmountChange={setCurrentMonthly}
+                gridRatePerKwh={gridRatePerKwh}
+                onGridRateChange={(rate) =>
+                  dispatch(mergeProposalData({ pricing: { gridRatePerKwh: rate } }))
+                }
               />
             </div>
 
@@ -899,7 +965,7 @@ export const DesignsEnergyStepContent = forwardRef<
                     iconClassName="bg-[linear-gradient(126deg,#2094F3_0%,#17CFCF_100%)]"
                     label="House consumption"
                     kwh={`${consumptionKwhPeriod.toLocaleString(undefined, { maximumFractionDigits: 1 })} kWh`}
-                    dollar={formatAud(consumptionKwhPeriod * GRID_RATE_PER_KWH)}
+                    dollar={formatAud(consumptionKwhPeriod * gridRatePerKwh)}
                   />
                   <ValuePanel
                     icon="arrowUpRight"

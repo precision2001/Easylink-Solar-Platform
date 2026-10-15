@@ -185,6 +185,12 @@ export type DesignProposalPricing = {
    * selectors can adjust the total without compounding on re-selection.
    */
   equipmentBasePrice?: string;
+  /**
+   * Grid import rate ($/kWh), editable on the energy step. Undefined until
+   * the user edits it — consumers fall back to `GRID_RATE_PER_KWH`
+   * (energySimulation.ts) so existing designs keep their current behaviour.
+   */
+  gridRatePerKwh?: number;
 };
 
 export type DesignProposalState = {
