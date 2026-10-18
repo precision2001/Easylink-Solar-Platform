@@ -321,9 +321,22 @@ export function MasterAgentDialer() {
               </div>
 
               <div className="flex flex-col gap-0.5">
-                <span className="font-source-sans text-[32px] font-bold tabular-nums">
-                  {statusLine()}
-                </span>
+                {state === "connected" ? (
+                  <>
+                    <span className="font-source-sans text-[32px] font-bold">
+                      {customer.status === "found"
+                        ? `On call with ${customer.lead.name}`
+                        : "On call"}
+                    </span>
+                    <span className="text-[14px] font-semibold tabular-nums text-[#9FB0C8]">
+                      {durationSec === null ? "Connected" : formatDuration(durationSec)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="font-source-sans text-[32px] font-bold tabular-nums">
+                    {statusLine()}
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">

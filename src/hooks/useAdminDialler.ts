@@ -59,6 +59,17 @@ export function useAdminDialler() {
     }
   }, []);
 
+  /**
+   * Flip to the connected state. Idempotent, because several signals can tell
+   * us the phone answered (the SIP participant joining, its audio arriving, or
+   * it already being in the room when we connect) and whichever lands first
+   * wins — the later ones must not restart the timer.
+   */
+  const markConnected = useCallback(() => {
+    setState((prev) => (prev === "dialling" ? "connected" : prev));
+    setDurationSec((prev) => (prev === null ? 0 : prev));
+  }, []);
+
   const hangUp = useCallback(() => {
     if (hangingUpRef.current) return;
     hangingUpRef.current = true;
@@ -108,13 +119,13 @@ export function useAdminDialler() {
         setActiveNumber(data.toNumber);
 
         // The phone joining as a SIP participant is what "answered" means here.
-        room.on(RoomEvent.ParticipantConnected, () => {
-          setDurationSec(0);
-          setState("connected");
-        });
+        room.on(RoomEvent.ParticipantConnected, markConnected);
 
         room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
           if (track.kind !== Track.Kind.Audio) return;
+          // Audio from the far end means it answered, even if we never saw
+          // the ParticipantConnected event for it.
+          markConnected();
           const el = track.attach();
           el.style.display = "none";
           document.body.appendChild(el);
@@ -135,6 +146,13 @@ export function useAdminDialler() {
         });
 
         await room.connect(url, data.token);
+
+        // ParticipantConnected only fires for participants that join *after*
+        // we do. When the phone answers quickly the SIP participant is already
+        // in the room by the time connect() resolves, so without this check the
+        // call would sit on "Dialling…" for its whole duration.
+        if (room.remoteParticipants.size > 0) markConnected();
+
         await room.localParticipant.setMicrophoneEnabled(true);
       } catch (err) {
         const message =
@@ -144,7 +162,7 @@ export function useAdminDialler() {
         setState("idle");
       }
     },
-    [state, teardown],
+    [state, teardown, markConnected],
   );
 
   const toggleMute = useCallback(() => {
