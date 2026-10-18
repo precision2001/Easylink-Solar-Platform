@@ -4695,3 +4695,196 @@ html:has(.svc-page) {
     animation: none;
   }
 }
+
+/* Admin sidebar "glitter" icons and brand text, ported from the Easylink
+   Designer DistNav artboard. Scoped under .el-nav because the nth-child
+   stagger rules below would otherwise match elements app-wide. */
+.el-nav .gi {
+  overflow: visible;
+}
+
+.el-nav .gi .gl {
+  fill: none !important;
+  stroke: #fff4c2;
+  stroke-dasharray: 10 90;
+  stroke-dashoffset: 100;
+  animation: el-gi-trace 3.4s linear infinite;
+  filter: drop-shadow(0 0 1.6px #ffe866);
+}
+
+.el-nav .gi-sun .gl {
+  stroke: #ffffff;
+  filter: drop-shadow(0 0 1.4px #ffffff);
+}
+
+.el-nav .gi .sp {
+  fill: #ffe866;
+  stroke: none;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: el-gi-twinkle 2.6s ease-in-out infinite;
+}
+
+.el-nav .gi-sun .sp {
+  fill: #ffffff;
+}
+
+.el-nav .gi .s2 {
+  animation-delay: -0.9s;
+}
+
+.el-nav .gi .s3 {
+  animation-delay: -1.7s;
+}
+
+/* Stagger the trace/twinkle so a column of icons never pulses in unison. */
+.el-nav :nth-child(3n + 2) > .gi .gl {
+  animation-delay: -1.1s;
+}
+
+.el-nav :nth-child(3n) > .gi .gl {
+  animation-delay: -2.3s;
+}
+
+.el-nav :nth-child(3n + 2) > .gi .s1 {
+  animation-delay: -1.4s;
+}
+
+.el-nav :nth-child(3n) > .gi .s1 {
+  animation-delay: -2s;
+}
+
+.el-nav a:hover > .gi .gl,
+.el-nav [aria-current] > .gi .gl {
+  animation-duration: 1.8s;
+}
+
+@keyframes el-gi-trace {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes el-gi-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.2) rotate(0deg);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
+  60% {
+    opacity: 0.85;
+    transform: scale(0.8) rotate(60deg);
+  }
+}
+
+.el-nav .gt {
+  display: inline-block;
+  position: relative;
+  background: linear-gradient(
+    110deg,
+    #f6b20a 0%,
+    #ffe866 18%,
+    #ffffff 26%,
+    #ffd24a 34%,
+    #f68a0a 50%,
+    #ffe866 64%,
+    #fffdf0 70%,
+    #f6b20a 82%,
+    #ffe866 100%
+  );
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: el-gt-shine 4.5s linear infinite;
+  filter: drop-shadow(0 0 5px rgb(255 214 90 / 0.35));
+}
+
+.el-nav .gt::before,
+.el-nav .gt::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: #fff4c2;
+  clip-path: polygon(
+    50% 0,
+    61% 39%,
+    100% 50%,
+    61% 61%,
+    50% 100%,
+    39% 61%,
+    0 50%,
+    39% 39%
+  );
+  opacity: 0;
+  animation: el-gt-tw 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.el-nav .gt::after {
+  right: -7px;
+  top: -3px;
+}
+
+.el-nav .gt::before {
+  left: -5px;
+  bottom: -1px;
+  width: 5px;
+  height: 5px;
+  animation-delay: -1.4s;
+}
+
+@keyframes el-gt-shine {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@keyframes el-gt-tw {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.2) rotate(0deg);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
+  60% {
+    opacity: 0.8;
+    transform: scale(0.8) rotate(60deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .el-nav .gi .gl {
+    display: none;
+  }
+
+  .el-nav .gi .sp {
+    animation: none;
+    opacity: 0.9;
+    transform: none;
+  }
+
+  .el-nav .gt {
+    animation: none;
+    background-position: 50% 0;
+  }
+
+  .el-nav .gt::before,
+  .el-nav .gt::after {
+    animation: none;
+    opacity: 0.9;
+    transform: none;
+  }
+}

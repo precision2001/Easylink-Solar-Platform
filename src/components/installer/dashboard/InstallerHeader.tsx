@@ -9,6 +9,11 @@ import Icon from "@/components/ui/Icons";
 import { usePortalLogout } from "@/hooks/usePortalLogout";
 
 const NAV = [
+  {
+    href: "/installers/dashboard/overview",
+    label: "Overview",
+    key: "overview",
+  },
   { href: "/installers/dashboard/home", label: "Home", key: "home" },
   {
     href: "/installers/dashboard/pipeline",
@@ -43,6 +48,7 @@ function resolveActiveNav(
 ): (typeof NAV)[number]["key"] {
   if (override) return override;
   if (!pathname) return "home";
+  if (pathname.startsWith("/installers/dashboard/overview")) return "overview";
   if (pathname.startsWith("/installers/dashboard/pipeline")) return "pipeline";
   if (pathname.startsWith("/installers/dashboard/equipment")) return "equipment";
   if (pathname.startsWith("/installers/dashboard/messages")) return "messages";
