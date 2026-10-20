@@ -163,7 +163,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { key: "admin", label: "Admin home", icon: "shield" },
       { key: "aInstallers", label: "Installers", icon: "tool" },
-      { key: "aCustomers", label: "Customers", icon: "users" },
+      { key: "aCustomers", label: "Customers", icon: "users", href: "/master/projects" },
       { key: "aPartners", label: "Partners & suppliers", icon: "truck" },
       { key: "aApprovals", label: "Approvals", icon: "check", badge: "3" },
       { key: "aPlans", label: "Memberships & plans", icon: "crown" },

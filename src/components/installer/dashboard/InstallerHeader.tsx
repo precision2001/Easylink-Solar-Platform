@@ -21,6 +21,11 @@ const NAV = [
     key: "pipeline",
   },
   {
+    href: "/installers/dashboard/projects",
+    label: "Customer files",
+    key: "projects",
+  },
+  {
     href: "/installers/dashboard/equipment",
     label: "Equipment",
     key: "equipment",

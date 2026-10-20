@@ -106,8 +106,8 @@ export class AiNotConnectedError extends Error {}
 
 type Envelope<T> = { success?: boolean; message?: string; data?: T; code?: string; errors?: unknown };
 
-export type AiPortal = "admin" | "installer";
-const base = (portal: AiPortal) => (portal === "admin" ? "/api/admin/ai" : "/api/installers/ai");
+export type AiPortal = "admin" | "installer" | "customer";
+const base = (portal: AiPortal) => (portal === "admin" ? "/api/admin/ai" : portal === "installer" ? "/api/installers/ai" : "/api/customers/ai");
 
 export async function aiRequest<T>(portal: AiPortal, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${base(portal)}${path}`, {
@@ -129,7 +129,61 @@ export async function aiRequest<T>(portal: AiPortal, path: string, init?: Reques
   return json.data as T;
 }
 
+export type ProjectRow = { ref: RecordRef; name: string; address: string; status: string; installers: { id: string; name: string }[] };
+export type ProjectDetail = ProjectRow & {
+  contact: { email: string | null; phone: string | null } | null;
+  installerHistory: { installer: { id: string; name: string }; from: string | null; to: string | null; reason: string; assignedBy?: string }[];
+  can: { assignInstaller: boolean; requestInstallerChange: boolean; seeContacts: boolean };
+};
+export type ProjectFile = {
+  id: string;
+  name: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  createdAt: string | null;
+  uploadedBy: { id: string; name: string | null } | null;
+  label: string | null;
+  confidence: number | null;
+  reviewState: string;
+  issues: string[];
+  deliveredTo: { role: string; channels: string[]; at: string; attached: boolean }[];
+};
+export type HistoryLine = {
+  id: string;
+  at: string;
+  kind: string;
+  title: string;
+  detail: string | null;
+  actor: { kind: string; name: string; mine: boolean };
+  files: { id: string; name?: string }[];
+  messageId: string | null;
+};
+export type MessageCopyView = {
+  id: string;
+  at: string;
+  from: { kind: string; id: string; name?: string };
+  to: { record: RecordRef; name: string; role: string; address?: string };
+  channels: string[];
+  subject: string;
+  body: string;
+  files: { id: string; name: string }[];
+  attached: boolean;
+  status: "sent" | "delivered" | "opened" | "bounced" | "failed";
+  statusAt: string;
+};
+
+const pj = (r: RecordRef) => `/projects/${r.type}/${encodeURIComponent(r.id)}`;
+
 export const ai = {
+  projects: (portal: AiPortal, search = "") => aiRequest<ProjectRow[]>(portal, `/projects${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+  project: (portal: AiPortal, r: RecordRef) => aiRequest<ProjectDetail>(portal, pj(r)),
+  projectFiles: (portal: AiPortal, r: RecordRef) => aiRequest<ProjectFile[]>(portal, `${pj(r)}/files`),
+  projectHistory: (portal: AiPortal, r: RecordRef) => aiRequest<HistoryLine[]>(portal, `${pj(r)}/history`),
+  message: (portal: AiPortal, id: string) => aiRequest<MessageCopyView>(portal, `/messages/${encodeURIComponent(id)}`),
+  fileLink: (portal: AiPortal, id: string) => aiRequest<{ url: string }>(portal, `/files/${encodeURIComponent(id)}/link`),
+  requestInstallerChange: (portal: AiPortal, r: RecordRef, reason: string) =>
+    aiRequest<{ status: string }>(portal, `${pj(r)}/installer-change`, { method: "POST", body: JSON.stringify({ reason }) }),
+  installers: (search = "") => aiRequest<{ id: string; name: string; area: string | null }[]>("admin", `/installers${search ? `?search=${encodeURIComponent(search)}` : ""}`),
   control: () => aiRequest<AiControlResponse>("admin", "/control"),
   setGlobal: (recommendOnly: boolean) => aiRequest<AiControlState>("admin", "/control/global", { method: "PUT", body: JSON.stringify({ recommendOnly }) }),
   pauseAgent: (id: string, paused: boolean) => aiRequest<AiControlState>("admin", `/control/agents/${encodeURIComponent(id)}/pause`, { method: "POST", body: JSON.stringify({ paused }) }),

@@ -4,7 +4,7 @@ import { aiFetch, forwardAiJson } from "@/lib/server/ai-platform";
  * Installer portal → AI platform. Installers get the record panel, generated
  * screens and the Action API, all as themselves (backend RBAC + AI policy).
  */
-const ALLOWED = new Set(["records", "screens", "actions"]);
+const ALLOWED = new Set(["records", "screens", "actions", "projects", "messages", "files"]);
 
 type Ctx = { params: Promise<{ path: string[] }> };
 

@@ -9,7 +9,7 @@ import { aiFetch, forwardAiJson } from "@/lib/server/ai-platform";
  *   /api/admin/ai/screens/...   → /v1/ai/screens/...
  *   /api/admin/ai/actions/:name → /v1/actions/:name
  */
-const ALLOWED = new Set(["control", "inbox", "activity", "records", "screens", "actions", "partners", "config"]);
+const ALLOWED = new Set(["control", "inbox", "activity", "records", "screens", "actions", "partners", "config", "projects", "messages", "files", "installers"]);
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
