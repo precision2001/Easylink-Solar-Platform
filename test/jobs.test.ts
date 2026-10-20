@@ -66,6 +66,18 @@ describe("the job journey", () => {
     expect((await w.call("GET", "/v1/ai/jobs/ld_1", "inst2")).status).toBe(403);
   });
 
+  it("an offered installer sees the suburb and system, not who or where, until they accept", async () => {
+    const w = world();
+    await newDanJob(w);
+    await w.step("admin", "match");
+    const before = await w.call("GET", "/v1/ai/jobs/ld_1", "inst");
+    expect(before.body.data.job.customerName).toBe("Customer in Castle Hill NSW 2154");
+    expect(before.body.data.job.customerPhone).toBeUndefined();
+    await w.step("inst", "accept_offer");
+    const after = await w.call("GET", "/v1/ai/jobs/ld_1", "inst");
+    expect(after.body.data.job.customerName).toBe("Dan");
+  });
+
   it("runs from confirmation to a paid deposit with the right people doing each step", async () => {
     const w = world();
     await newDanJob(w);
@@ -115,7 +127,8 @@ describe("the job journey", () => {
     j.connection.approval = { number: "A1", exportLimitKw: 5, at: "2026-10-01T00:00:00Z" };
     await w.c.store.putRecord("job", j);
     expect((await w.step("inst", "check_in", { day: 1, lat: -33.9, lng: 151.2 })).status).toBe(409);
-    expect((await w.step("inst", "check_in", { day: 1 })).status).toBe(200);
+    expect((await w.step("inst", "check_in", { day: 1 })).status).toBe(400);
+    expect((await w.step("inst", "check_in", { day: 1, lat: -33.7297, lng: 151.0054 })).status).toBe(200);
     expect((await w.step("inst", "complete_install")).body.message).toMatch(/Still to do/);
     expect((await w.step("inst", "scan_serial", { serial: "ZZ9" })).status).toBe(409);
     expect((await w.step("inst", "record_tests", { insulationMOhm: 200, earthOk: true, exportLimitKw: 6 })).status).toBe(409);

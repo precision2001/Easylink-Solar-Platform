@@ -139,6 +139,17 @@ export class JobService {
     const signatures = (await this.signatures(j.id)).map(({ html: _h, codeHash: _c, ...s }) => s);
     const offers = v.who === "staff" ? await this.offers(j.id) : v.who === "installer" ? (await this.offers(j.id)).filter((o) => o.installerId === p.id) : [];
     const base = { ...j };
+    // An installer looking at an offer sees the suburb and the system, not who or exactly where, until they accept.
+    if (v.who === "installer" && j.installerId !== p.id) {
+      const suburb = j.site.address.split(",").slice(-1)[0]?.trim() ?? "";
+      base.customerName = `Customer in ${suburb}`;
+      base.customerEmail = undefined;
+      base.customerPhone = undefined;
+      base.site = { ...j.site, address: suburb, nmi: undefined, lat: Math.round(j.site.lat * 100) / 100, lng: Math.round(j.site.lng * 100) / 100 };
+      base.bills = { items: [] };
+      base.confirmation = undefined;
+      base.photos = { items: j.photos.items.map((x) => ({ label: x.label, ok: x.ok })) };
+    }
     if (v.who === "customer") {
       // The installer's equipment cost and the on-site working list stay with the installer.
       base.order = { ...j.order, lines: [], ref: undefined };
@@ -605,6 +616,7 @@ export class JobService {
         need("installer");
         requires("delivered", "connection_approved");
         const day = (Number(input.day) === 2 ? 2 : 1) as 1 | 2;
+        if ((input.lat == null || input.lng == null) && v.who !== "staff") throw new JobError("Turn on location for this site so the check-in can be recorded.", 400);
         const lat = Number(input.lat ?? j.site.lat);
         const lng = Number(input.lng ?? j.site.lng);
         const km = haversine(lat, lng, j.site.lat, j.site.lng);

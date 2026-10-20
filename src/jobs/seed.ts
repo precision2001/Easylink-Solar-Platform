@@ -76,11 +76,11 @@ export async function seedJobs(c: Container) {
     await run(id, "pay_order", {}, DEMO.sam);
     await run(id, "book_delivery", { window: "Wed 14 Oct, 7 am – 11 am", carrier: "EasyLink truck" }, DEMO.sam);
     await run(id, "mark_delivered", { note: "8 pallets left in the carport, photo taken" }, DEMO.sam);
-    await run(id, "check_in", { day: 1 }, DEMO.sam);
+    await run(id, "check_in", { day: 1, lat: a.site.lat, lng: a.site.lng }, DEMO.sam);
     let j = (await s.get(id))!;
     for (const item of j.onsite.checklist) await run(id, "tick", { key: item.key }, DEMO.sam);
     for (const x of j.order.serials) await run(id, "scan_serial", { serial: x.serial }, DEMO.sam);
-    await run(id, "check_in", { day: 2 }, DEMO.sam);
+    await run(id, "check_in", { day: 2, lat: a.site.lat + 0.0002, lng: a.site.lng }, DEMO.sam);
     await run(id, "record_tests", { insulationMOhm: 180, vocPerString: [412, 409], iscPerString: [13.6, 13.5], earthOk: true, exportLimitKw: 5, csipTest: "passed" }, DEMO.sam);
     const done = (await run(id, "complete_install", {}, DEMO.sam)) as { signatureId: string };
     await sign(id, done.signatureId, DEMO.daniel, "Daniel Okafor");
