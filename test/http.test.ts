@@ -27,19 +27,38 @@ describe("HTTP API", () => {
     expect(ctl.familiesOff.messages).toBe(true);
   });
 
-  it("accepts visitor interaction events via the ingest key but not record events", async () => {
+  it("lets a signed-in browser send interaction events but not record events", async () => {
     const { c, bus } = setup();
     const app = createApp(c);
     const r = await app.request("/v1/events", {
       method: "POST",
-      headers: { "x-ingest-key": "ingest", "x-visitor-id": "v_123", "Content-Type": "application/json" },
+      headers: H("inst"),
       body: JSON.stringify([{ type: "page.viewed", data: { path: "/pricing" } }, { type: "lead.created", data: {} }]),
     });
     expect(r.status).toBe(202);
     const body = (await r.json()) as { data: { accepted: string[]; quarantined: string[] } };
     expect(body.data.accepted).toHaveLength(1);
     expect(body.data.quarantined).toEqual(["lead.created"]);
-    expect(bus.published.some((e) => e.type === "page.viewed" && e.principal.kind === "visitor")).toBe(true);
+    expect(bus.published.some((e) => e.type === "page.viewed" && e.principal.kind === "installer")).toBe(true);
+  });
+
+  it("accepts record events relayed by the portal server (ingest key) as the signed-in person", async () => {
+    const { c, bus } = setup();
+    const app = createApp(c);
+    const r = await app.request("/v1/events", {
+      method: "POST",
+      headers: { ...H("inst"), "x-ingest-key": "ingest" },
+      body: JSON.stringify([{ type: "file.uploaded", subject: { type: "document", id: "doc_1" } }]),
+    });
+    expect(r.status).toBe(202);
+    expect(bus.published.some((e) => e.type === "file.uploaded" && e.principal.id === "usr_inst_1")).toBe(true);
+    const anon = await app.request("/v1/events", {
+      method: "POST",
+      headers: { "x-ingest-key": "ingest", "x-visitor-id": "v_1", "Content-Type": "application/json" },
+      body: JSON.stringify([{ type: "page.viewed", data: { path: "/" } }]),
+    });
+    expect(anon.status).toBe(202);
+    expect(bus.published.some((e) => e.principal.kind === "visitor" && e.principal.id === "v_1")).toBe(true);
   });
 
   it("runs actions as the signed-in person", async () => {

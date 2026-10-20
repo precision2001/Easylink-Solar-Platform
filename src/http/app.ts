@@ -14,7 +14,7 @@ import type { Container } from "../container.js";
 import type { ActionName } from "../core/actions.js";
 import type { AutonomyLevel } from "../store/types.js";
 
-type Env = { Variables: { principal: Principal; token: string | null } };
+type Env = { Variables: { principal: Principal; token: string | null; relay: boolean } };
 
 /** Backend roles → principal kinds. Anything unknown is treated as a customer (least access). */
 export function principalFromUser(u: Record<string, unknown>): Principal {
@@ -58,12 +58,15 @@ export function createApp(c: Container) {
       }
       ctx.set("principal", p);
       ctx.set("token", token);
+      // The portal server adds the ingest key when it relays record events after a successful change.
+      ctx.set("relay", !!(ingest && c.ingestKey && safeEq(ingest, c.ingestKey)));
       return next();
     }
     if (ingest && c.ingestKey && safeEq(ingest, c.ingestKey) && ctx.req.path === "/v1/events") {
       const anon = ctx.req.header("x-visitor-id") ?? "anonymous";
       ctx.set("principal", { kind: "visitor", id: anon.slice(0, 64), roles: [], on_behalf_of: null });
       ctx.set("token", null);
+      ctx.set("relay", true);
       return next();
     }
     return ctx.json({ success: false, message: "Unauthorised" }, 401);
@@ -93,8 +96,9 @@ export function createApp(c: Container) {
     const quarantined: string[] = [];
     const events = [];
     for (const e of list.data) {
-      // Browsers may only send interaction events; record changes come from the Action API.
-      if (p.kind === "visitor" || p.kind === "customer" || p.kind === "installer") {
+      // Browsers may only send interaction events; record changes come from the Action API
+      // or from the portal server relaying a change the backend accepted.
+      if (!ctx.get("relay") && (p.kind === "visitor" || p.kind === "customer" || p.kind === "installer")) {
         const entity = e.type.split(".")[0] ?? "";
         if (!["page", "form", "field", "cta", "price", "help", "ui", "widget", "search", "design", "cart"].includes(entity)) {
           quarantined.push(e.type);

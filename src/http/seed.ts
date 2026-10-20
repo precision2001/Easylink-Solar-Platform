@@ -9,6 +9,9 @@ export async function seedDemo(c: Container) {
   b.users.set("admin-local", { id: "usr_admin_1", role: "ADMIN", firstName: "Ops", lastName: "Team" });
   b.users.set("installer-local", { id: "usr_inst_1", role: "INSTALLER", firstName: "Sam", lastName: "Rivers" });
   b.users.set("svc-local", { id: "usr_ai", role: "ADMIN", firstName: "AI", lastName: "Service" });
+  // Real portal JWTs can be mapped for local end-to-end runs of the website.
+  if (process.env.LOCAL_ADMIN_TOKEN) b.users.set(process.env.LOCAL_ADMIN_TOKEN, { id: "usr_admin_1", role: "ADMIN", firstName: "Ops", lastName: "Team" });
+  if (process.env.LOCAL_INSTALLER_TOKEN) b.users.set(process.env.LOCAL_INSTALLER_TOKEN, { id: "usr_inst_1", role: "INSTALLER", firstName: "Sam", lastName: "Rivers" });
   b.seed("user", [
     { id: "usr_inst_1", role: "INSTALLER", firstName: "Sam", lastName: "Rivers", email: "sam@riverselectrical.example", phone: "+61400000101", address: "Parramatta NSW 2150" },
   ]);
