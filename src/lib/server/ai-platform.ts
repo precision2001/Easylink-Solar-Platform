@@ -48,6 +48,22 @@ export async function aiFetch(portal: BackendPortal, path: string, init?: Reques
   }
 }
 
+/**
+ * The body of a portal request, ready to forward: JSON as text, uploads
+ * (multipart, up to 25 MB) as bytes with their own content type.
+ */
+export async function proxyBody(request: Request): Promise<{ body?: BodyInit; headers: Record<string, string> } | Response> {
+  if (request.method === "GET") return { headers: {} };
+  const type = request.headers.get("content-type") ?? "";
+  if (type.startsWith("multipart/form-data")) {
+    const len = Number(request.headers.get("content-length") ?? 0);
+    if (len > 26 * 1024 * 1024) return Response.json({ success: false, message: "That file is too big (25 MB at most)." }, { status: 413 });
+    return { body: await request.arrayBuffer(), headers: { "Content-Type": type } };
+  }
+  const text = await request.text();
+  return { body: text || undefined, headers: {} };
+}
+
 export async function forwardAiJson(res: Response | NextResponse): Promise<NextResponse> {
   if (res instanceof NextResponse) return res;
   return new NextResponse(await res.text(), {

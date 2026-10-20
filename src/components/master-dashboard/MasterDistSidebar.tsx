@@ -87,6 +87,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { key: "dispatch", label: "Dispatch", icon: "send", href: "/master/dispatch", badge: "2" },
       { key: "jobs", label: "Jobs & Installs", icon: "box", href: "/master/jobs" },
+      { key: "journeys", label: "Job journeys", icon: "route", href: "/master/job-journeys" },
       {
         key: "handover",
         label: "Handover review",

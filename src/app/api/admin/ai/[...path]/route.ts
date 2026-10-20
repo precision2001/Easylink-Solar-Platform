@@ -1,4 +1,4 @@
-import { aiFetch, forwardAiJson } from "@/lib/server/ai-platform";
+import { aiFetch, forwardAiJson, proxyBody } from "@/lib/server/ai-platform";
 
 /**
  * Master portal → AI platform. Only these prefixes are forwarded:
@@ -9,7 +9,7 @@ import { aiFetch, forwardAiJson } from "@/lib/server/ai-platform";
  *   /api/admin/ai/screens/...   → /v1/ai/screens/...
  *   /api/admin/ai/actions/:name → /v1/actions/:name
  */
-const ALLOWED = new Set(["control", "inbox", "activity", "records", "screens", "actions", "partners", "config", "projects", "messages", "files", "people", "installers"]);
+const ALLOWED = new Set(["control", "inbox", "activity", "records", "screens", "actions", "partners", "config", "projects", "messages", "files", "people", "installers", "jobs", "documents"]);
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
@@ -19,11 +19,12 @@ async function proxy(request: Request, ctx: Ctx) {
   if (!head || !ALLOWED.has(head)) return Response.json({ success: false, message: "Not found" }, { status: 404 });
   const target = head === "actions" ? `/v1/actions/${rest.map(encodeURIComponent).join("/")}` : `/v1/ai/${path.map(encodeURIComponent).join("/")}`;
   const search = new URL(request.url).search;
-  const body = request.method === "GET" ? undefined : await request.text();
-  const headers: Record<string, string> = {};
+  const b = await proxyBody(request);
+  if (b instanceof Response) return b;
+  const headers: Record<string, string> = { ...b.headers };
   const idem = request.headers.get("idempotency-key");
   if (idem) headers["Idempotency-Key"] = idem;
-  return forwardAiJson(await aiFetch("admin", `${target}${search}`, { method: request.method, body: body || undefined, headers }));
+  return forwardAiJson(await aiFetch("admin", `${target}${search}`, { method: request.method, body: b.body, headers }));
 }
 
 export const GET = proxy;

@@ -21,6 +21,11 @@ const NAV = [
     key: "pipeline",
   },
   {
+    href: "/installers/dashboard/jobs",
+    label: "Jobs",
+    key: "jobs",
+  },
+  {
     href: "/installers/dashboard/projects",
     label: "Customer files",
     key: "projects",
@@ -61,6 +66,7 @@ function resolveActiveNav(
   if (pathname.startsWith("/installers/dashboard/overview")) return "overview";
   if (pathname.startsWith("/installers/dashboard/pipeline")) return "pipeline";
   if (pathname.startsWith("/installers/dashboard/account")) return "account";
+  if (pathname.startsWith("/installers/dashboard/jobs")) return "jobs";
   if (pathname.startsWith("/installers/dashboard/projects")) return "projects";
   if (pathname.startsWith("/installers/dashboard/equipment")) return "equipment";
   if (pathname.startsWith("/installers/dashboard/messages")) return "messages";

@@ -2333,6 +2333,7 @@ export const LANDING_FOOTER_COLUMNS: LandingFooterColumn[] = [
   {
     title: "Support",
     items: [
+      { label: "How it works", href: "/how-it-works" },
       { label: "FAQs", href: "/faqs" },
       { label: "Warranty", href: "/warranty" },
       { label: "Contact Us", href: "/contact-us" },
