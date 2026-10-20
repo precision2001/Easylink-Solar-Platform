@@ -129,9 +129,10 @@ export function registerProjectRoutes(app: Hono<Env>, c: Container) {
           sizeBytes: f.sizeBytes ?? null,
           createdAt: f.createdAt ?? null,
           uploadedBy: by ? { id: by, name: await nameOf(by) } : null,
-          label: pr?.labels[0]?.label ?? (f.category as string | undefined) ?? null,
-          confidence: pr?.labels[0]?.confidence ?? null,
-          reviewState: pr?.reviewState ?? "pending",
+          // Labels live on the backend row once it has the columns; until then in the AI store.
+          label: pr?.labels[0]?.label ?? (f.aiLabels as { label: string }[] | undefined)?.[0]?.label ?? (f.category as string | undefined) ?? null,
+          confidence: pr?.labels[0]?.confidence ?? (f.aiLabels as { confidence: number }[] | undefined)?.[0]?.confidence ?? null,
+          reviewState: pr?.reviewState ?? (f.reviewState as string | undefined) ?? (f.aiLabels ? "auto" : "pending"),
           issues: pr?.issues ?? [],
           // Who it went to: names and roles, never addresses.
           deliveredTo: (pr?.deliveredTo ?? []).map((d) => ({ role: d.role, channels: d.channels, at: d.at, attached: d.attached })),

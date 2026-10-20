@@ -66,6 +66,9 @@ export async function seedDemo(c: Container) {
     channels: ["email", "sms"], subject: "Meter and switchboard photos", body: "Hi Daniel, here are the meter and switchboard photos from today's inspection. Install is booked for 28 Oct.",
     files: [{ id: "doc_1", name: "IMG_4412.jpg" }, { id: "doc_2", name: "IMG_4413.jpg" }], attached: false, status: "opened", statusAt: "2026-10-12T06:20:00Z", providerIds: {}, records: [{ type: "customer", id: "cus_2001" }, { type: "lead", id: "ld_0999" }], retention: "sales_12m",
   });
+  for (const [docId, label] of [["doc_1", "meter"], ["doc_2", "switchboard"]] as const) {
+    await c.store.putFileLabels({ documentId: docId, labels: [{ label, confidence: 0.93 }], extracted: {}, reviewState: "auto", description: "", updatedAt: "2026-10-12T04:00:00Z", links: [{ type: "customer", id: "cus_2001" }], routes: [], issues: [], deliveredTo: [{ recipient: { type: "customer", id: "cus_2001" }, role: "customer", channels: ["email", "sms"], at: "2026-10-12T04:00:00Z", by: "usr_inst_1", attached: false }] });
+  }
   await tl("2026-10-12T04:00:00Z", "message", "Sent to Daniel Okafor (customer) by email and SMS with 2 files", sam, { detail: "Meter and switchboard photos", messageId: "msg_seed_1", files: [{ id: "doc_1", name: "IMG_4412.jpg" }, { id: "doc_2", name: "IMG_4413.jpg" }] });
   await tl("2026-10-12T04:01:10Z", "message", "Message delivered (Daniel Okafor)", { kind: "integration", id: "delivery-receipts" }, { messageId: "msg_seed_1" });
   await tl("2026-10-12T06:20:00Z", "file", "Opened IMG_4412.jpg (Daniel Okafor)", { kind: "customer", id: "usr_cust_1", name: "Daniel Okafor" }, { files: [{ id: "doc_1" }] });
