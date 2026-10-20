@@ -64,6 +64,8 @@ function lineFor(evt: EventEnvelope): Line | null {
       return { kind: "assignment", title: `${d.installer_name ?? "Previous installer"} no longer assigned`, audience: "related" };
     case "installer.change_requested":
       return { kind: "assignment", title: "Asked EasyLink for a different installer", detail: d.reason ? String(d.reason) : undefined, audience: "related" };
+    case "job.progressed":
+      return { kind: String(d.kind ?? "record"), title: String(d.title ?? "Job updated"), detail: d.detail ? String(d.detail) : undefined, audience: d.audience === "staff" ? "staff" : "related" };
     case "lead.created":
       return { kind: "record", title: "Enquiry received", audience: "related" };
     case "lead.updated":

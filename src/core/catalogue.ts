@@ -21,7 +21,7 @@ export const EVENT_CATALOGUE: Record<string, readonly string[]> = {
   consent: ["changed"],
   quote: ["drafted", "sent", "viewed", "accepted", "expired"],
   cooling_off: ["started", "ended"],
-  job: ["created", "scheduled", "rescheduled", "started", "completed", "issue_raised"],
+  job: ["created", "scheduled", "rescheduled", "started", "completed", "issue_raised", "progressed"],
   stc: ["submitted"],
   installer: ["assigned", "unassigned", "change_requested", "accepted", "declined", "document_expiring"],
   file: ["uploaded", "classified", "text_extracted", "shared", "deleted", "downloaded"],

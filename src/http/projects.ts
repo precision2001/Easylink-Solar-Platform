@@ -8,6 +8,7 @@ import { loadItems, type Item, type Viewer } from "../access/items.js";
 import { backendHasProjects } from "../core/records.js";
 import { isStaff } from "../policy/policy.js";
 import type { MessageCopy, TimelineItem } from "../store/types.js";
+import type { Invoice, Job, Signature } from "../jobs/model.js";
 import type { Env } from "./app.js";
 
 /**
@@ -164,9 +165,11 @@ export function registerProjectRoutes(app: Hono<Env>, c: Container) {
         items.push(...((r.data ?? []) as Record<string, unknown>[]).map((x) => fromBackendItem(x, id)));
       }
       items.push(...(await sentMessages(scope)));
+      items.push(...(await jobDocs(scope, viewer)));
       return ok(ctx, summarise(items));
     }
-    return ok(ctx, await loadItems({ backend: c.backend, store: c.store, svc: svc(), scope, viewer }));
+    const local = await loadItems({ backend: c.backend, store: c.store, svc: svc(), scope, viewer });
+    return ok(ctx, summarise([...local.items, ...(await jobDocs(scope, viewer))]));
   });
 
   // ---------- everything for or about a person (payouts, invoices, files, bookings, tasks) ----------
@@ -192,6 +195,44 @@ export function registerProjectRoutes(app: Hono<Env>, c: Container) {
     const viewer: Viewer = staff(ctx) ? "staff" : p.kind === "installer" ? "installer" : "customer";
     return ok(ctx, await loadItems({ backend: c.backend, store: c.store, svc: svc(), scope: own, viewer }));
   });
+
+  /** Invoices and signed documents from the job journey (kept by the AI platform until the backend has them). */
+  const jobDocs = async (scope: { customers: string[]; leads: string[] }, viewer: Viewer): Promise<Item[]> => {
+    const jobs = ((await c.store.listRecords("job")) as unknown as Job[]).filter((j) => scope.leads.includes(j.leadId) || (!!j.customerId && scope.customers.includes(j.customerId)));
+    const ids = new Set(jobs.map((j) => j.id));
+    const records = (j: Job): RecordRef[] => [{ type: "lead", id: j.leadId }, ...(j.customerId ? [{ type: "customer", id: j.customerId }] : [])];
+    const byId = new Map(jobs.map((j) => [j.id, j]));
+    const invs = ((await c.store.listRecords("invoice")) as unknown as Invoice[]).filter((i) => ids.has(i.jobId) && (viewer !== "customer" || i.status !== "draft"));
+    const sigs = ((await c.store.listRecords("signature")) as unknown as Signature[]).filter((x) => ids.has(x.jobId));
+    return [
+      ...invs.map((i) => ({
+        key: `invoice:${i.id}`,
+        kind: "invoice",
+        id: i.id,
+        title: `${i.kind === "credit" ? "Adjustment note" : "Tax invoice"} ${i.number}`,
+        subtitle: `${i.kind} · due ${i.dueDate.slice(0, 10)}`,
+        at: i.sentAt ?? i.issueDate,
+        status: i.status,
+        amount: new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(i.totals.total),
+        open: { type: "invoice" as const, id: i.id },
+        records: records(byId.get(i.jobId)!),
+        by: i.createdBy,
+      })),
+      ...sigs.map((x) => ({
+        key: `signature:${x.id}`,
+        kind: "document",
+        id: x.id,
+        title: x.title,
+        subtitle: x.status === "signed" ? `signed by ${x.audit?.name ?? x.signer.name}` : `waiting for ${x.signer.name} to sign`,
+        at: x.signedAt ?? x.createdAt,
+        status: x.status === "signed" ? "signed" : "to sign",
+        amount: null,
+        open: { type: "signature" as const, id: x.id },
+        records: records(byId.get(x.jobId)!),
+        by: null,
+      })),
+    ];
+  };
 
   /** Emails and SMS sent through the AI platform about these records (copies live in the AI store). */
   const sentMessages = async (scope: { customers: string[]; leads: string[] }): Promise<Item[]> => {
@@ -326,6 +367,7 @@ const KIND_LABELS: Record<string, string> = {
   milestone: "Milestones",
   payment: "Payments and quotes",
   invoice: "Invoices",
+  signature: "Documents to sign",
   call: "Calls",
   message: "Messages",
   note: "Installer notes",

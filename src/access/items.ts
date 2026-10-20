@@ -22,7 +22,7 @@ export type Item = {
   status: string | null;
   amount: string | null;
   /** How the portal opens it. */
-  open: { type: "file" | "message" | "none"; id?: string };
+  open: { type: "file" | "message" | "invoice" | "signature" | "none"; id?: string };
   /** For or about which records (for access). */
   records: RecordRef[];
   by: string | null;
