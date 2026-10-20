@@ -6,6 +6,7 @@ import {
   AGENT_NAMES,
   AiNotConnectedError,
   LABEL_NAMES,
+  ROLE_NAMES,
   timeAgo,
   type AiPortal,
   type AiRecordPanel as Panel,
@@ -62,6 +63,7 @@ export function AiRecordPanel({ record, portal, compact = false }: { record: Rec
   };
 
   const have = new Set([...groups.keys()]);
+  const ready = panel.files.filter((f) => (f.routes?.length ?? 0) > 0 && !(f.deliveredTo?.length));
   const missing = ["meter", "switchboard", "roof"].filter((s) => !have.has(s));
 
   return (
@@ -119,6 +121,18 @@ export function AiRecordPanel({ record, portal, compact = false }: { record: Rec
             ))}
           </div>
         </div>
+      )}
+
+      {ready.length > 0 && !compact && (
+        <ReadyToSend
+          files={ready}
+          record={record}
+          portal={portal}
+          onDone={(msg) => {
+            setNote(msg);
+            load();
+          }}
+        />
       )}
 
       {(record.type === "customer" || record.type === "lead") && missing.length > 0 && !compact && (
@@ -206,5 +220,120 @@ export function AiLabelChip({ label }: { label?: { label: string; confidence: nu
       {LABEL_NAMES[label.label] ?? label.label}
       {unsure ? "?" : ""}
     </span>
+  );
+}
+
+/**
+ * Documents the AI has read and linked that normally go to someone (a Proof of
+ * Completion → customer + retailer). One tap sends them; the retailer's address
+ * is found by the AI if it isn't on file, and a newly found address waits for
+ * one EasyLink staff OK. Recipients can be removed, or anyone added by name.
+ */
+function ReadyToSend({ files, record, portal, onDone }: { files: Panel["files"]; record: RecordRef; portal: AiPortal; onDone: (msg: string) => void }) {
+  const [recipients, setRecipients] = useState<string[]>(() => Array.from(new Set(files.flatMap((f) => f.routes ?? []))));
+  const [extra, setExtra] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const issues = files.flatMap((f) => (f.issues ?? []).map((i) => `${f.name}: ${i}`));
+
+  const send = async () => {
+    setBusy(true);
+    try {
+      const to = [...recipients, ...extra.map((organisation) => ({ organisation, kind: "other" }))];
+      const r = await ai.action(portal, "start_workflow", {
+        template: "deliver_documents",
+        inputs: { about: record, documents: files.map((f) => ({ type: "document", id: f.id })), to },
+      });
+      const steps = ((r.result as { results?: { step: string; status: string; message?: string }[] } | undefined)?.results ?? []).filter((s) => s.step.startsWith("send-") || s.step.startsWith("missing-"));
+      const sent = steps.filter((s) => s.status === "executed" && s.step.startsWith("send-")).length;
+      const waiting = steps.filter((s) => s.status === "proposed").length;
+      const blocked = steps.filter((s) => s.status === "denied");
+      const asked = steps.filter((s) => s.step.startsWith("missing-")).length;
+      onDone(
+        r.status !== "executed" && r.status !== "proposed"
+          ? `Not sent: ${r.message ?? r.policy?.reasons?.join("; ") ?? r.status}`
+          : [
+              sent ? `Sent to ${sent} recipient${sent > 1 ? "s" : ""}.` : "",
+              waiting ? `${waiting} waiting for an EasyLink OK (new contact found by AI).` : "",
+              asked ? "EasyLink has been asked who should receive the rest." : "",
+              blocked.length ? `Blocked: ${blocked.map((b) => b.message).join("; ")}` : "",
+            ]
+              .filter(Boolean)
+              .join(" ") || "Done.",
+      );
+    } catch (e) {
+      onDone(e instanceof Error ? e.message : "Could not send");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-[12px] border border-[#9CCFF3] bg-[#F5FAFE] p-3" aria-label="Documents ready to send">
+      <span className="text-[13px] font-bold text-[#0B2540]">
+        {files.length} document{files.length > 1 ? "s" : ""} ready to send
+      </span>
+      <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-[12.5px] text-[#0F172A]">
+        {files.map((f) => (
+          <li key={f.id}>
+            {LABEL_NAMES[f.labels[0]?.label ?? ""] ?? f.name} <span className="text-[#5B6B80]">· {f.name}</span>
+          </li>
+        ))}
+      </ul>
+      {issues.length > 0 && (
+        <div role="alert" className="rounded-[8px] bg-[#FFFBEB] px-2.5 py-1.5 text-[12px] text-[#92400E]">
+          {issues.map((i) => (
+            <div key={i}>⚠ {i}</div>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+        <span className="font-semibold text-[#475569]">To:</span>
+        {[...recipients.map((r) => ({ k: r, label: ROLE_NAMES[r] ?? r, extra: false })), ...extra.map((e) => ({ k: e, label: e, extra: true }))].map((r) => (
+          <span key={r.k} className="inline-flex items-center gap-1 rounded-full border border-[#9CCFF3] bg-white px-2 py-0.5 font-semibold text-[#0B2540]">
+            {r.label}
+            <button
+              type="button"
+              aria-label={`Remove ${r.label}`}
+              onClick={() => (r.extra ? setExtra((x) => x.filter((y) => y !== r.k)) : setRecipients((x) => x.filter((y) => y !== r.k)))}
+              className="leading-none text-[#5B6B80] hover:text-[#991B1B]"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <form
+          className="inline-flex"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const v = draft.trim();
+            if (v.length >= 2) setExtra((x) => Array.from(new Set([...x, v])));
+            setDraft("");
+          }}
+        >
+          <label htmlFor={`add-${record.id}`} className="sr-only">
+            Add a recipient by name
+          </label>
+          <input
+            id={`add-${record.id}`}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="+ add anyone, e.g. Origin Energy"
+            className="h-7 w-[200px] rounded-full border border-[#CBD5E1] bg-white px-2.5 text-[12px]"
+          />
+        </form>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy || recipients.length + extra.length === 0}
+          onClick={() => void send()}
+          className="h-8 rounded-[8px] bg-[#0B4A7A] px-3.5 text-[12.5px] font-bold text-white disabled:opacity-50"
+        >
+          {busy ? "Sending…" : issues.length ? "Send anyway" : "Send"}
+        </button>
+        <span className="text-[11.5px] text-[#5B6B80]">Already saved and linked to this job, the customer file and the installer account.</span>
+      </div>
+    </div>
   );
 }

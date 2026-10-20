@@ -77,6 +77,11 @@ export type AiFile = {
   url: string | null;
   mimeType: string | null;
   createdAt: string | null;
+  /** Who this kind of document normally goes to, e.g. ["customer", "retailer"]. */
+  routes?: string[];
+  /** Problems found checking it against the job. */
+  issues?: string[];
+  deliveredTo?: { role: string; at: string; channels: string[] }[];
 };
 
 export type AiRecordPanel = {
@@ -179,6 +184,24 @@ export const LABEL_NAMES: Record<string, string> = {
   compliance_certificate: "Compliance certificate",
   site_photo: "Site photo",
   other: "Other",
+  proof_of_completion: "Proof of completion",
+  site_report: "Site report",
+  electrical_safety_certificate: "Electrical safety certificate",
+  commissioning_sheet: "Commissioning sheet",
+  stc_assignment_form: "STC assignment form",
+  signed_contract: "Signed contract",
+  warranty: "Warranty",
+  invoice: "Invoice",
+  quote: "Quote",
+  other_document: "Document",
+};
+
+export const ROLE_NAMES: Record<string, string> = {
+  customer: "Customer",
+  retailer: "Retailer",
+  dnsp: "Network (DNSP)",
+  installer: "Installer",
+  supplier: "Supplier",
 };
 
 export function timeAgo(iso: string): string {
