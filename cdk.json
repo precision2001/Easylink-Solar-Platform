@@ -1,0 +1,10 @@
+{
+  "app": "npx tsx infra/app.ts",
+  "context": {
+    "backendApiBaseUrl": "",
+    "filesBucket": "",
+    "modelFastId": "",
+    "modelSmartId": "",
+    "allowedOrigin": "https://easylinksolar.com.au"
+  }
+}
