@@ -1,0 +1,1388 @@
+diff --git a/docs/RBAC_ENDPOINT_MATRIX.md b/docs/RBAC_ENDPOINT_MATRIX.md
+index 2be0d5f..2fe8a24 100644
+--- a/docs/RBAC_ENDPOINT_MATRIX.md
++++ b/docs/RBAC_ENDPOINT_MATRIX.md
+@@ -40,3 +40,32 @@ Customers are represented by `User` records filtered to `role = CUSTOMER`.
+ | `POST /products` | Allowed | Denied | Denied | Admin-only write. |
+ | `PATCH /products/:id` | Allowed | Denied | Denied | Admin-only write. |
+ | `DELETE /products/:id` | Allowed | Denied | Denied | Admin-only write. |
++
++## Projects (`/projects`)
++
++A project is everything for or about one customer: their files, designs, leads, bookings, milestones, payments, invoices, calls, portal messages, installer notes and tasks, and installer assignment history. Visibility follows the relationship, not the screen.
++
++| Endpoint | ADMIN | INSTALLER | CUSTOMER | Ownership / scope rule |
++| --- | --- | --- | --- | --- |
++| `GET /projects` | Allowed (all, searchable) | Allowed (assigned now) | Allowed (self) | Installer: customers on leads assigned to them now (open `installer_assignments` row, or `leads.assignedToId`). |
++| `GET /projects/:customerId` | Allowed | Assigned now | Self only | Contact details for staff and the assigned installer only. |
++| `GET /projects/:customerId/items` | Allowed (everything) | Assigned now | Self only | Customers never see installer notes, tasks, the activity log or installer profiles; installers see only their own sale price / profit; call wrap-up notes, numbers and payment processor ids are staff-only. |
++| `GET /projects/:customerId/assignments` | Allowed | Assigned now | Self only | Current and past installers with dates and reasons. |
++| `POST /projects/:customerId/assignments` | Allowed | Denied | Denied | REPLACE closes the current installer's row and moves `leads.assignedToId`; ADD works alongside. Customers and installers ask through the AI platform, which sends it to staff. |
++| `GET /projects/people/:userId/items` | Allowed (anyone) | Self only | Self only | A person's own payments, payouts, invoices, files, bookings and tasks. |
++
++## Partners (`/partners`)
++
++| Endpoint | ADMIN | INSTALLER | CUSTOMER | Ownership / scope rule |
++| --- | --- | --- | --- | --- |
++| `GET /partners`, `GET /partners/:id` | Allowed | Allowed | Allowed | Retailers, DNSPs and suppliers documents are sent to. |
++| `POST /partners`, `PATCH /partners/:id` | Allowed | Denied | Denied | Contacts the AI finds are saved `verified = false`; the first send needs a staff OK. |
++
++## Installer customer documents (`/installer-customer-documents`) — additions
++
++| Endpoint | ADMIN | INSTALLER | CUSTOMER | Ownership / scope rule |
++| --- | --- | --- | --- | --- |
++| `GET /installer-customer-documents?customerId=` | Allowed (every installer's) | Own uploads for linked customers | Self (all installers') | Unchanged for installers and customers. |
++| `GET /installer-customer-documents/:id` | Allowed | Denied | Denied | Staff / AI platform. |
++| `PATCH /installer-customer-documents/:id/ai` | Allowed | Denied | Denied | AI labels, read values, issues, review state, lead, S3 key. |
++
+diff --git a/prisma/migrations/20261021000000_ai_platform_projects/migration.sql b/prisma/migrations/20261021000000_ai_platform_projects/migration.sql
+new file mode 100644
+index 0000000..2475bb0
+--- /dev/null
++++ b/prisma/migrations/20261021000000_ai_platform_projects/migration.sql
+@@ -0,0 +1,75 @@
++-- AI platform: files and history by relationship, installer assignment history, partners.
++
++-- CreateEnum
++CREATE TYPE "PartnerKind" AS ENUM ('RETAILER', 'DNSP', 'SUPPLIER', 'FINANCE', 'OTHER');
++
++-- AlterTable: what the AI read each file as
++ALTER TABLE "installer_customer_documents"
++  ADD COLUMN "leadId" TEXT,
++  ADD COLUMN "s3Key" TEXT,
++  ADD COLUMN "aiLabels" JSONB,
++  ADD COLUMN "aiExtracted" JSONB,
++  ADD COLUMN "reviewState" TEXT,
++  ADD COLUMN "aiIssues" JSONB,
++  ADD COLUMN "aiUpdatedAt" TIMESTAMP(3);
++
++-- CreateIndex
++CREATE INDEX "installer_customer_documents_customerId_createdAt_idx" ON "installer_customer_documents"("customerId", "createdAt");
++
++-- AlterTable: the retailer as a partner
++ALTER TABLE "leads" ADD COLUMN "retailerPartnerId" TEXT;
++
++-- CreateTable
++CREATE TABLE "installer_assignments" (
++    "id" TEXT NOT NULL,
++    "leadId" TEXT NOT NULL,
++    "customerId" TEXT,
++    "installerId" TEXT NOT NULL,
++    "mode" TEXT NOT NULL DEFAULT 'REPLACE',
++    "reason" TEXT NOT NULL,
++    "assignedById" TEXT NOT NULL,
++    "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "endedAt" TIMESTAMP(3),
++    "endedById" TEXT,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "installer_assignments_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateIndex
++CREATE INDEX "installer_assignments_leadId_endedAt_idx" ON "installer_assignments"("leadId", "endedAt");
++CREATE INDEX "installer_assignments_installerId_endedAt_idx" ON "installer_assignments"("installerId", "endedAt");
++CREATE INDEX "installer_assignments_customerId_endedAt_idx" ON "installer_assignments"("customerId", "endedAt");
++
++-- Backfill: every lead assigned today gets an open assignment row, so history starts complete.
++INSERT INTO "installer_assignments" ("id", "leadId", "customerId", "installerId", "mode", "reason", "assignedById", "startedAt", "updatedAt")
++SELECT gen_random_uuid()::text, l."id", d."userId", l."assignedToId", 'REPLACE', 'Assigned before history was kept', l."assignedToId", l."createdAt", CURRENT_TIMESTAMP
++FROM "leads" l
++LEFT JOIN "designs" d ON d."id" = l."designId"
++WHERE l."assignedToId" IS NOT NULL;
++
++-- CreateTable
++CREATE TABLE "partners" (
++    "id" TEXT NOT NULL,
++    "name" TEXT NOT NULL,
++    "kind" "PartnerKind" NOT NULL DEFAULT 'OTHER',
++    "aliases" TEXT[] DEFAULT ARRAY[]::TEXT[],
++    "domain" TEXT,
++    "email" TEXT,
++    "submissionEmail" TEXT,
++    "phone" TEXT,
++    "attach" BOOLEAN NOT NULL DEFAULT true,
++    "verified" BOOLEAN NOT NULL DEFAULT false,
++    "verifiedById" TEXT,
++    "verifiedAt" TIMESTAMP(3),
++    "source" JSONB,
++    "notes" TEXT,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "partners_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateIndex
++CREATE INDEX "partners_kind_name_idx" ON "partners"("kind", "name");
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 00b5d03..27730ad 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -366,6 +366,10 @@ model Lead {
+    * Energy retailer the contact mentioned — shown on the Agent Dialer's Customer panel.
+    */
+   retailer            String?
++  /**
++   * The retailer as a partner record, once matched; documents for the retailer go here.
++   */
++  retailerPartnerId   String?
+   /**
+    * Per-channel contact consent — distinct from `User.dncrFixed`/`dncrMobile`
+    * (the national DNC Register): this is the contact's own opt-in, captured
+@@ -746,12 +750,38 @@ model InstallerCustomerDocument {
+   mimeType    String
+   sizeBytes   Int
+   url         String
++  /**
++   * The lead (project) the file belongs to, when known — a customer can have more than one.
++   */
++  leadId      String?
++  /**
++   * Private object key once files move from public/uploads to S3.
++   */
++  s3Key       String?
++  /**
++   * What the AI read the file as, best first: [{ label, confidence }]. Written by the AI platform.
++   */
++  aiLabels    Json?
++  /**
++   * Values the AI read off the file (meter number, NMI, serials, site address, signatures).
++   */
++  aiExtracted Json?
++  /**
++   * auto | needs_review | confirmed — whether a person still needs to check the label.
++   */
++  reviewState String?
++  /**
++   * Problems found checking the file against the job (missing signature, wrong address).
++   */
++  aiIssues    Json?
++  aiUpdatedAt DateTime?
+   createdAt   DateTime @default(now())
+ 
+   installer User @relation("InstallerCustomerDocuments", fields: [installerId], references: [id], onDelete: Cascade)
+   customer  User @relation("CustomerInstallerDocuments", fields: [customerId], references: [id], onDelete: Cascade)
+ 
+   @@index([installerId, customerId])
++  @@index([customerId, createdAt])
+   @@map("installer_customer_documents")
+ }
+ 
+@@ -902,3 +932,83 @@ model Payout {
+ 
+   @@map("payouts")
+ }
++
++enum PartnerKind {
++  RETAILER
++  DNSP
++  SUPPLIER
++  FINANCE
++  OTHER
++}
++
++/**
++ * Who has been the installer on a project, and when. One open row (endedAt
++ * null) per installer currently on the lead; replacing an installer closes
++ * their row. `Lead.assignedToId` stays the current main installer so existing
++ * screens keep working; this table is the history and the access rule:
++ * an installer sees a customer's project while they have an open row.
++ */
++model InstallerAssignment {
++  id           String    @id @default(uuid())
++  leadId       String
++  /**
++   * The customer (design owner) at the time of assignment, for fast lookups.
++   */
++  customerId   String?
++  installerId  String
++  /**
++   * REPLACE (took over) or ADD (works alongside the main installer).
++   */
++  mode         String    @default("REPLACE")
++  reason       String
++  assignedById String
++  startedAt    DateTime  @default(now())
++  endedAt      DateTime?
++  endedById    String?
++  createdAt    DateTime  @default(now())
++  updatedAt    DateTime  @updatedAt
++
++  @@index([leadId, endedAt])
++  @@index([installerId, endedAt])
++  @@index([customerId, endedAt])
++  @@map("installer_assignments")
++}
++
++/**
++ * Organisations documents are sent to: electricity retailers, DNSPs,
++ * suppliers, finance providers. Contacts the AI finds on an organisation's
++ * own website are saved unverified; the first send to one needs a staff OK.
++ */
++model Partner {
++  id              String      @id @default(uuid())
++  name            String
++  kind            PartnerKind @default(OTHER)
++  /**
++   * Other names it goes by (e.g. "Origin" for "Origin Energy").
++   */
++  aliases         String[]    @default([])
++  domain          String?
++  email           String?
++  /**
++   * Where installation documents go, when different from the general email.
++   */
++  submissionEmail String?
++  phone           String?
++  /**
++   * Send files as attachments rather than links.
++   */
++  attach          Boolean     @default(true)
++  verified        Boolean     @default(false)
++  verifiedById    String?
++  verifiedAt      DateTime?
++  /**
++   * Where the AI found the contact: { url, query, why, foundAt }.
++   */
++  source          Json?
++  notes           String?
++  createdAt       DateTime    @default(now())
++  updatedAt       DateTime    @updatedAt
++
++  @@index([kind, name])
++  @@map("partners")
++}
+diff --git a/src/modules/installer-customer-documents/installer-customer-document.controller.ts b/src/modules/installer-customer-documents/installer-customer-document.controller.ts
+index caba5f9..f131ad8 100644
+--- a/src/modules/installer-customer-documents/installer-customer-document.controller.ts
++++ b/src/modules/installer-customer-documents/installer-customer-document.controller.ts
+@@ -6,6 +6,7 @@ import { installerCustomerDocumentService } from './installer-customer-document.
+ import type {
+   CreateInstallerCustomerDocumentInput,
+   ListInstallerCustomerDocumentsQuery,
++  UpdateInstallerCustomerDocumentAiInput,
+ } from './installer-customer-document.schema.js';
+ 
+ export const installerCustomerDocumentController = {
+@@ -29,6 +30,16 @@ export const installerCustomerDocumentController = {
+     if (!customerId) {
+       throw new AppError('customerId is required.', 400);
+     }
++    // Staff see every installer's documents for the customer.
++    if (req.user!.role === UserRole.ADMIN) {
++      const documents = await installerCustomerDocumentService.listAll(customerId);
++      sendResponse({
++        res,
++        message: 'Documents retrieved successfully',
++        data: documents,
++      });
++      return;
++    }
+     const documents = await installerCustomerDocumentService.list(
+       req.user!.userId,
+       customerId,
+@@ -41,6 +52,29 @@ export const installerCustomerDocumentController = {
+     });
+   },
+ 
++  getById: async (req: Request, res: Response): Promise<void> => {
++    const rawId = req.params.id;
++    const id = Array.isArray(rawId) ? rawId[0]! : rawId!;
++    sendResponse({
++      res,
++      message: 'Document retrieved successfully',
++      data: await installerCustomerDocumentService.getById(id),
++    });
++  },
++
++  updateAi: async (req: Request, res: Response): Promise<void> => {
++    const rawId = req.params.id;
++    const id = Array.isArray(rawId) ? rawId[0]! : rawId!;
++    sendResponse({
++      res,
++      message: 'Document updated successfully',
++      data: await installerCustomerDocumentService.updateAi(
++        id,
++        req.body as UpdateInstallerCustomerDocumentAiInput,
++      ),
++    });
++  },
++
+   create: async (req: Request, res: Response): Promise<void> => {
+     const doc = await installerCustomerDocumentService.create(
+       req.user!.userId,
+diff --git a/src/modules/installer-customer-documents/installer-customer-document.routes.ts b/src/modules/installer-customer-documents/installer-customer-document.routes.ts
+index f3662c9..436ecd0 100644
+--- a/src/modules/installer-customer-documents/installer-customer-document.routes.ts
++++ b/src/modules/installer-customer-documents/installer-customer-document.routes.ts
+@@ -9,6 +9,7 @@ import {
+   createInstallerCustomerDocumentSchema,
+   installerCustomerDocumentIdParamSchema,
+   listInstallerCustomerDocumentsQuerySchema,
++  updateInstallerCustomerDocumentAiSchema,
+ } from './installer-customer-document.schema.js';
+ 
+ const router = Router();
+@@ -16,7 +17,7 @@ const router = Router();
+ router.get(
+   '/',
+   authenticate,
+-  authorize(UserRole.INSTALLER, UserRole.CUSTOMER),
++  authorize(UserRole.ADMIN, UserRole.INSTALLER, UserRole.CUSTOMER),
+   validate({ query: listInstallerCustomerDocumentsQuerySchema }),
+   asyncHandler(installerCustomerDocumentController.list),
+ );
+@@ -29,6 +30,22 @@ router.post(
+   asyncHandler(installerCustomerDocumentController.create),
+ );
+ 
++router.get(
++  '/:id',
++  authenticate,
++  authorize(UserRole.ADMIN),
++  validate({ params: installerCustomerDocumentIdParamSchema }),
++  asyncHandler(installerCustomerDocumentController.getById),
++);
++
++router.patch(
++  '/:id/ai',
++  authenticate,
++  authorize(UserRole.ADMIN),
++  validate({ params: installerCustomerDocumentIdParamSchema, body: updateInstallerCustomerDocumentAiSchema }),
++  asyncHandler(installerCustomerDocumentController.updateAi),
++);
++
+ router.delete(
+   '/:id',
+   authenticate,
+diff --git a/src/modules/installer-customer-documents/installer-customer-document.schema.ts b/src/modules/installer-customer-documents/installer-customer-document.schema.ts
+index 2846626..b3893b6 100644
+--- a/src/modules/installer-customer-documents/installer-customer-document.schema.ts
++++ b/src/modules/installer-customer-documents/installer-customer-document.schema.ts
+@@ -14,6 +14,16 @@ export const createInstallerCustomerDocumentSchema = z.object({
+   url: z.string().trim().min(1).max(512),
+ });
+ 
++/** Written by the AI platform after it reads a file. */
++export const updateInstallerCustomerDocumentAiSchema = z.object({
++  aiLabels: z.array(z.object({ label: z.string().max(60), confidence: z.number().min(0).max(1) })).max(10).optional(),
++  aiExtracted: z.record(z.string(), z.string().max(500)).optional(),
++  aiIssues: z.array(z.string().max(300)).max(20).optional(),
++  reviewState: z.enum(['auto', 'needs_review', 'confirmed']).optional(),
++  leadId: z.string().uuid('Invalid lead ID').nullable().optional(),
++  s3Key: z.string().max(1024).nullable().optional(),
++});
++
+ export const installerCustomerDocumentIdParamSchema = z.object({
+   id: z.string().uuid('Invalid document ID'),
+ });
+@@ -24,3 +34,6 @@ export type ListInstallerCustomerDocumentsQuery = z.infer<
+ export type CreateInstallerCustomerDocumentInput = z.infer<
+   typeof createInstallerCustomerDocumentSchema
+ >;
++export type UpdateInstallerCustomerDocumentAiInput = z.infer<
++  typeof updateInstallerCustomerDocumentAiSchema
++>;
+diff --git a/src/modules/installer-customer-documents/installer-customer-document.service.ts b/src/modules/installer-customer-documents/installer-customer-document.service.ts
+index bc8a118..a202d31 100644
+--- a/src/modules/installer-customer-documents/installer-customer-document.service.ts
++++ b/src/modules/installer-customer-documents/installer-customer-document.service.ts
+@@ -2,7 +2,11 @@ import { prisma } from '../../config/database.js';
+ import { AppError } from '../../middlewares/errorHandler.js';
+ import { listInstallerLeadLinkedCustomers } from '../conversations/conversation.service.js';
+ import { emitCustomerDocumentUploadedNotification } from '../notifications/notification-triggers.js';
+-import type { CreateInstallerCustomerDocumentInput } from './installer-customer-document.schema.js';
++import type { Prisma } from '../../generated/prisma/client.js';
++import type {
++  CreateInstallerCustomerDocumentInput,
++  UpdateInstallerCustomerDocumentAiInput,
++} from './installer-customer-document.schema.js';
+ 
+ const documentSelect = {
+   id: true,
+@@ -12,6 +16,13 @@ const documentSelect = {
+   mimeType: true,
+   sizeBytes: true,
+   url: true,
++  leadId: true,
++  s3Key: true,
++  aiLabels: true,
++  aiExtracted: true,
++  reviewState: true,
++  aiIssues: true,
++  aiUpdatedAt: true,
+   createdAt: true,
+ } as const;
+ 
+@@ -23,10 +34,12 @@ function serializeDocument(doc: {
+   mimeType: string;
+   sizeBytes: number;
+   url: string;
++  aiUpdatedAt?: Date | null;
+   createdAt: Date;
+ }) {
+   return {
+     ...doc,
++    aiUpdatedAt: doc.aiUpdatedAt ? doc.aiUpdatedAt.toISOString() : null,
+     createdAt: doc.createdAt.toISOString(),
+   };
+ }
+@@ -78,6 +91,41 @@ export class InstallerCustomerDocumentService {
+     return rows.map(serializeDocument);
+   }
+ 
++  /** Staff (and the AI platform's admin service account): every document for a customer, or one by id. */
++  async listAll(customerId: string) {
++    const rows = await prisma.installerCustomerDocument.findMany({
++      where: { customerId },
++      select: documentSelect,
++      orderBy: { createdAt: 'desc' },
++    });
++    return rows.map(serializeDocument);
++  }
++
++  async getById(id: string) {
++    const doc = await prisma.installerCustomerDocument.findUnique({ where: { id }, select: documentSelect });
++    if (!doc) throw new AppError('Document not found.', 404);
++    return serializeDocument(doc);
++  }
++
++  /** What the AI read the file as. Staff / AI platform only; uploads and deletes stay with installers. */
++  async updateAi(id: string, input: UpdateInstallerCustomerDocumentAiInput) {
++    await this.getById(id);
++    const doc = await prisma.installerCustomerDocument.update({
++      where: { id },
++      data: {
++        ...(input.aiLabels !== undefined ? { aiLabels: input.aiLabels as Prisma.InputJsonValue } : {}),
++        ...(input.aiExtracted !== undefined ? { aiExtracted: input.aiExtracted as Prisma.InputJsonValue } : {}),
++        ...(input.aiIssues !== undefined ? { aiIssues: input.aiIssues as Prisma.InputJsonValue } : {}),
++        ...(input.reviewState !== undefined ? { reviewState: input.reviewState } : {}),
++        ...(input.leadId !== undefined ? { leadId: input.leadId } : {}),
++        ...(input.s3Key !== undefined ? { s3Key: input.s3Key } : {}),
++        aiUpdatedAt: new Date(),
++      },
++      select: documentSelect,
++    });
++    return serializeDocument(doc);
++  }
++
+   async create(installerId: string, input: CreateInstallerCustomerDocumentInput) {
+     await assertCustomerAccessible(installerId, input.customerId);
+ 
+diff --git a/src/modules/partners/partner.controller.ts b/src/modules/partners/partner.controller.ts
+new file mode 100644
+index 0000000..f93a54e
+--- /dev/null
++++ b/src/modules/partners/partner.controller.ts
+@@ -0,0 +1,20 @@
++import type { Request, Response } from 'express';
++import { sendResponse } from '../../utils/apiResponse.js';
++import { routeParam } from '../../utils/routeParams.js';
++import { partnerService } from './partner.service.js';
++import type { CreatePartnerInput, ListPartnersQuery, UpdatePartnerInput } from './partner.schema.js';
++
++export const partnerController = {
++  list: async (req: Request, res: Response): Promise<void> => {
++    sendResponse({ res, message: 'Partners retrieved successfully', data: await partnerService.list(req.validatedQuery as ListPartnersQuery) });
++  },
++  get: async (req: Request, res: Response): Promise<void> => {
++    sendResponse({ res, message: 'Partner retrieved successfully', data: await partnerService.get(routeParam(req.params.id)) });
++  },
++  create: async (req: Request, res: Response): Promise<void> => {
++    sendResponse({ res, statusCode: 201, message: 'Partner created successfully', data: await partnerService.create(req.body as CreatePartnerInput, req.user!.userId) });
++  },
++  update: async (req: Request, res: Response): Promise<void> => {
++    sendResponse({ res, message: 'Partner updated successfully', data: await partnerService.update(routeParam(req.params.id), req.body as UpdatePartnerInput, req.user!.userId) });
++  },
++};
+diff --git a/src/modules/partners/partner.routes.ts b/src/modules/partners/partner.routes.ts
+new file mode 100644
+index 0000000..7f1d074
+--- /dev/null
++++ b/src/modules/partners/partner.routes.ts
+@@ -0,0 +1,17 @@
++import { Router } from 'express';
++import { UserRole } from '../../generated/prisma/client.js';
++import { authenticate } from '../../middlewares/auth.js';
++import { authorize } from '../../middlewares/roleGuard.js';
++import { validate } from '../../middlewares/validate.js';
++import { asyncHandler } from '../../utils/asyncHandler.js';
++import { partnerController } from './partner.controller.js';
++import { createPartnerSchema, listPartnersQuerySchema, partnerIdParamSchema, updatePartnerSchema } from './partner.schema.js';
++
++const router = Router();
++
++router.get('/', authenticate, authorize(UserRole.ADMIN, UserRole.INSTALLER, UserRole.CUSTOMER), validate({ query: listPartnersQuerySchema }), asyncHandler(partnerController.list));
++router.get('/:id', authenticate, authorize(UserRole.ADMIN, UserRole.INSTALLER, UserRole.CUSTOMER), validate({ params: partnerIdParamSchema }), asyncHandler(partnerController.get));
++router.post('/', authenticate, authorize(UserRole.ADMIN), validate({ body: createPartnerSchema }), asyncHandler(partnerController.create));
++router.patch('/:id', authenticate, authorize(UserRole.ADMIN), validate({ params: partnerIdParamSchema, body: updatePartnerSchema }), asyncHandler(partnerController.update));
++
++export default router;
+diff --git a/src/modules/partners/partner.schema.ts b/src/modules/partners/partner.schema.ts
+new file mode 100644
+index 0000000..ac23158
+--- /dev/null
++++ b/src/modules/partners/partner.schema.ts
+@@ -0,0 +1,31 @@
++import { z } from 'zod';
++
++const kind = z.enum(['RETAILER', 'DNSP', 'SUPPLIER', 'FINANCE', 'OTHER']);
++
++export const listPartnersQuerySchema = z.object({
++  kind: kind.optional(),
++  search: z.string().trim().max(120).optional(),
++});
++
++export const partnerIdParamSchema = z.object({ id: z.string().uuid('Invalid partner ID') });
++
++export const createPartnerSchema = z.object({
++  name: z.string().trim().min(2).max(200),
++  kind: kind.default('OTHER'),
++  aliases: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
++  domain: z.string().trim().max(255).optional(),
++  email: z.string().trim().email().optional(),
++  submissionEmail: z.string().trim().email().optional(),
++  phone: z.string().trim().max(40).optional(),
++  attach: z.boolean().default(true),
++  verified: z.boolean().default(false),
++  /** Where the AI found it: { url, query, why, foundAt }. */
++  source: z.record(z.string(), z.unknown()).optional(),
++  notes: z.string().trim().max(2000).optional(),
++});
++
++export const updatePartnerSchema = createPartnerSchema.partial();
++
++export type ListPartnersQuery = z.infer<typeof listPartnersQuerySchema>;
++export type CreatePartnerInput = z.infer<typeof createPartnerSchema>;
++export type UpdatePartnerInput = z.infer<typeof updatePartnerSchema>;
+diff --git a/src/modules/partners/partner.service.ts b/src/modules/partners/partner.service.ts
+new file mode 100644
+index 0000000..07678ef
+--- /dev/null
++++ b/src/modules/partners/partner.service.ts
+@@ -0,0 +1,46 @@
++import { prisma } from '../../config/database.js';
++import type { Prisma } from '../../generated/prisma/client.js';
++import { AppError } from '../../middlewares/errorHandler.js';
++import type { CreatePartnerInput, ListPartnersQuery, UpdatePartnerInput } from './partner.schema.js';
++
++/** Retailers, DNSPs, suppliers: who documents are sent to. Staff manage; everyone signed in may look one up. */
++export class PartnerService {
++  list(query: ListPartnersQuery) {
++    const where: Prisma.PartnerWhereInput = {};
++    if (query.kind) where.kind = query.kind;
++    if (query.search) {
++      where.OR = [{ name: { contains: query.search, mode: 'insensitive' } }, { aliases: { has: query.search } }, { domain: { contains: query.search, mode: 'insensitive' } }];
++    }
++    return prisma.partner.findMany({ where, orderBy: { name: 'asc' }, take: 500 });
++  }
++
++  async get(id: string) {
++    const p = await prisma.partner.findUnique({ where: { id } });
++    if (!p) throw new AppError('Partner not found', 404);
++    return p;
++  }
++
++  create(input: CreatePartnerInput, actorUserId: string) {
++    return prisma.partner.create({
++      data: {
++        ...input,
++        source: input.source as Prisma.InputJsonValue | undefined,
++        ...(input.verified ? { verifiedById: actorUserId, verifiedAt: new Date() } : {}),
++      },
++    });
++  }
++
++  async update(id: string, input: UpdatePartnerInput, actorUserId: string) {
++    const cur = await this.get(id);
++    return prisma.partner.update({
++      where: { id },
++      data: {
++        ...input,
++        source: input.source as Prisma.InputJsonValue | undefined,
++        ...(input.verified && !cur.verified ? { verifiedById: actorUserId, verifiedAt: new Date() } : {}),
++      },
++    });
++  }
++}
++
++export const partnerService = new PartnerService();
+diff --git a/src/modules/projects/assignment.service.ts b/src/modules/projects/assignment.service.ts
+new file mode 100644
+index 0000000..10c2749
+--- /dev/null
++++ b/src/modules/projects/assignment.service.ts
+@@ -0,0 +1,85 @@
++import { prisma } from '../../config/database.js';
++import { UserRole } from '../../generated/prisma/client.js';
++import { AppError } from '../../middlewares/errorHandler.js';
++import { logActivityEvent } from '../activity/activity.logger.js';
++import { emitLeadAssignedNotification } from '../notifications/notification-triggers.js';
++import { projectLeadIds } from './project.access.js';
++import type { AssignInstallerInput } from './project.schema.js';
++
++const name = (u: { firstName?: string | null; lastName?: string | null; email?: string | null } | null | undefined) =>
++  u ? [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || '' : '';
++
++/**
++ * Installer assignment with history. Staff assign (the AI platform runs this
++ * with its admin service account once a person has approved). REPLACE closes
++ * the current installer's row and moves `Lead.assignedToId`; ADD opens a row
++ * for a second installer alongside the main one.
++ */
++export class AssignmentService {
++  async list(customerId: string) {
++    const leadIds = await projectLeadIds(customerId);
++    await Promise.all(leadIds.map((id) => this.reconcile(id)));
++    return prisma.installerAssignment.findMany({ where: { leadId: { in: leadIds } }, orderBy: { startedAt: 'desc' } });
++  }
++
++  /**
++   * Keeps history in step when `PATCH /leads/:id/assign` (or any other path)
++   * moved `Lead.assignedToId` without going through here.
++   */
++  async reconcile(leadId: string) {
++    const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { id: true, assignedToId: true, design: { select: { userId: true } } } });
++    if (!lead) return;
++    const open = await prisma.installerAssignment.findMany({ where: { leadId, endedAt: null, mode: 'REPLACE' } });
++    if (!lead.assignedToId) return;
++    if (open.some((a) => a.installerId === lead.assignedToId)) return;
++    const now = new Date();
++    await prisma.$transaction([
++      prisma.installerAssignment.updateMany({ where: { leadId, endedAt: null, mode: 'REPLACE' }, data: { endedAt: now } }),
++      prisma.installerAssignment.create({
++        data: { leadId, customerId: lead.design?.userId ?? null, installerId: lead.assignedToId, mode: 'REPLACE', reason: 'Changed on the lead', assignedById: lead.assignedToId, startedAt: now },
++      }),
++    ]);
++  }
++
++  async assign(customerId: string, input: AssignInstallerInput, actorUserId: string) {
++    const leadIds = await projectLeadIds(customerId);
++    const leadId = input.leadId ?? leadIds[0];
++    if (!leadId || !leadIds.includes(leadId)) throw new AppError('This customer has no project (lead) to assign.', 400);
++    const installer = await prisma.user.findUnique({ where: { id: input.installerId }, select: { id: true, role: true, firstName: true, lastName: true, email: true } });
++    if (!installer) throw new AppError('Installer not found', 404);
++    if (installer.role !== UserRole.INSTALLER) throw new AppError('That user is not an installer', 400);
++    await this.reconcile(leadId);
++
++    const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { assignedToId: true, customerName: true } });
++    const now = new Date();
++    const previous = input.mode === 'REPLACE' ? await prisma.installerAssignment.findMany({ where: { leadId, endedAt: null, installerId: { not: installer.id } } }) : [];
++
++    const created = await prisma.$transaction(async (tx) => {
++      if (input.mode === 'REPLACE') {
++        await tx.installerAssignment.updateMany({ where: { leadId, endedAt: null, installerId: { not: installer.id } }, data: { endedAt: now, endedById: actorUserId } });
++        await tx.lead.update({ where: { id: leadId }, data: { assignedToId: installer.id } });
++      }
++      const already = await tx.installerAssignment.findFirst({ where: { leadId, installerId: installer.id, endedAt: null } });
++      if (already) return already;
++      return tx.installerAssignment.create({
++        data: { leadId, customerId, installerId: installer.id, mode: input.mode, reason: input.reason, assignedById: actorUserId, startedAt: now },
++      });
++    });
++
++    if (input.mode === 'REPLACE' && lead?.assignedToId !== installer.id) {
++      const before = lead?.assignedToId ? await prisma.user.findUnique({ where: { id: lead.assignedToId }, select: { firstName: true, lastName: true, email: true } }) : null;
++      await logActivityEvent({
++        entityType: 'LEAD',
++        entityId: leadId,
++        eventType: 'LEAD_ASSIGNMENT_CHANGED',
++        actorUserId,
++        summary: before ? `Installer changed from ${name(before)} to ${name(installer)}: ${input.reason}` : `${name(installer)} assigned: ${input.reason}`,
++        metadata: { previousAssignedToId: lead?.assignedToId ?? null, newAssignedToId: installer.id, reason: input.reason, mode: input.mode },
++      });
++      await emitLeadAssignedNotification({ assigneeUserId: installer.id, leadId, customerName: lead?.customerName ?? '', isReassign: Boolean(lead?.assignedToId) });
++    }
++    return { assignment: created, ended: previous.map((p) => p.installerId) };
++  }
++}
++
++export const assignmentService = new AssignmentService();
+diff --git a/src/modules/projects/project.access.ts b/src/modules/projects/project.access.ts
+new file mode 100644
+index 0000000..f25486c
+--- /dev/null
++++ b/src/modules/projects/project.access.ts
+@@ -0,0 +1,72 @@
++import { prisma } from '../../config/database.js';
++import { UserRole } from '../../generated/prisma/client.js';
++import { AppError } from '../../middlewares/errorHandler.js';
++
++/**
++ * Who may see a customer's project (everything for or about that customer).
++ *
++ *   ADMIN     — every project.
++ *   INSTALLER — projects where they are the lead's installer now: an open
++ *               InstallerAssignment row, or `Lead.assignedToId` (for leads
++ *               assigned before history was kept). They see the whole project,
++ *               including what earlier installers did.
++ *   CUSTOMER  — their own project only.
++ *
++ * A project is the customer (a CUSTOMER user) and every lead on their designs.
++ */
++export type Viewer = { userId: string; role: string };
++export type ProjectAccess = 'staff' | 'installer' | 'customer';
++
++/** Leads that belong to a customer: leads on designs they own. */
++export async function projectLeadIds(customerId: string): Promise<string[]> {
++  const leads = await prisma.lead.findMany({
++    where: { design: { userId: customerId } },
++    select: { id: true },
++  });
++  return leads.map((l) => l.id);
++}
++
++/** Customers an installer is on now (open assignment or current assignee). */
++export async function installerCustomerIds(installerId: string): Promise<string[]> {
++  const [open, assigned] = await Promise.all([
++    prisma.installerAssignment.findMany({
++      where: { installerId, endedAt: null },
++      select: { leadId: true, customerId: true },
++    }),
++    prisma.lead.findMany({
++      where: { assignedToId: installerId, designId: { not: null } },
++      select: { id: true, design: { select: { userId: true } } },
++    }),
++  ]);
++  // A lead the installer was moved off stays off, even if `assignedToId` lags behind.
++  const closed = new Set(
++    (
++      await prisma.installerAssignment.findMany({
++        where: { installerId, endedAt: { not: null }, leadId: { in: assigned.map((l) => l.id) } },
++        select: { leadId: true },
++      })
++    ).map((a) => a.leadId),
++  );
++  const openLeads = new Set(open.map((a) => a.leadId));
++  const ids = new Set<string>();
++  for (const a of open) if (a.customerId) ids.add(a.customerId);
++  for (const l of assigned) {
++    if (closed.has(l.id) && !openLeads.has(l.id)) continue;
++    if (l.design?.userId) ids.add(l.design.userId);
++  }
++  return [...ids];
++}
++
++export async function resolveProjectAccess(viewer: Viewer, customerId: string): Promise<ProjectAccess> {
++  if (viewer.role === UserRole.ADMIN) return 'staff';
++  if (viewer.role === UserRole.CUSTOMER) {
++    if (viewer.userId === customerId) return 'customer';
++    throw new AppError('You can only see your own project.', 403);
++  }
++  if (viewer.role === UserRole.INSTALLER) {
++    const mine = await installerCustomerIds(viewer.userId);
++    if (mine.includes(customerId)) return 'installer';
++    throw new AppError('This customer is not assigned to you.', 403);
++  }
++  throw new AppError('Insufficient permissions.', 403);
++}
+diff --git a/src/modules/projects/project.controller.ts b/src/modules/projects/project.controller.ts
+new file mode 100644
+index 0000000..858e8f0
+--- /dev/null
++++ b/src/modules/projects/project.controller.ts
+@@ -0,0 +1,43 @@
++import type { Request, Response } from 'express';
++import { sendResponse } from '../../utils/apiResponse.js';
++import { routeParam } from '../../utils/routeParams.js';
++import { assignmentService } from './assignment.service.js';
++import { projectService } from './project.service.js';
++import { resolveProjectAccess } from './project.access.js';
++import type { AssignInstallerInput, ListProjectsQuery } from './project.schema.js';
++
++const viewer = (req: Request) => ({ userId: req.user!.userId, role: req.user!.role });
++
++export const projectController = {
++  list: async (req: Request, res: Response): Promise<void> => {
++    const data = await projectService.list(viewer(req), req.validatedQuery as ListProjectsQuery);
++    sendResponse({ res, message: 'Projects retrieved successfully', data });
++  },
++
++  get: async (req: Request, res: Response): Promise<void> => {
++    const data = await projectService.get(viewer(req), routeParam(req.params.customerId));
++    sendResponse({ res, message: 'Project retrieved successfully', data });
++  },
++
++  items: async (req: Request, res: Response): Promise<void> => {
++    const data = await projectService.items(viewer(req), routeParam(req.params.customerId));
++    sendResponse({ res, message: 'Project items retrieved successfully', data });
++  },
++
++  userItems: async (req: Request, res: Response): Promise<void> => {
++    const data = await projectService.myItems(viewer(req), routeParam(req.params.userId));
++    sendResponse({ res, message: 'Items retrieved successfully', data });
++  },
++
++  assignments: async (req: Request, res: Response): Promise<void> => {
++    const customerId = routeParam(req.params.customerId);
++    await resolveProjectAccess(viewer(req), customerId);
++    const data = await assignmentService.list(customerId);
++    sendResponse({ res, message: 'Assignments retrieved successfully', data });
++  },
++
++  assign: async (req: Request, res: Response): Promise<void> => {
++    const data = await assignmentService.assign(routeParam(req.params.customerId), req.body as AssignInstallerInput, req.user!.userId);
++    sendResponse({ res, statusCode: 201, message: 'Installer assigned successfully', data });
++  },
++};
+diff --git a/src/modules/projects/project.items.ts b/src/modules/projects/project.items.ts
+new file mode 100644
+index 0000000..f8d06dd
+--- /dev/null
++++ b/src/modules/projects/project.items.ts
+@@ -0,0 +1,96 @@
++import type { ProjectAccess } from './project.access.js';
++
++/**
++ * One list of everything for or about a project, with who may see each kind.
++ * The service loads rows; this file decides visibility and the shape, so the
++ * rules live in one place and are unit-tested without a database.
++ */
++export type ItemKind =
++  | 'document'
++  | 'design'
++  | 'lead'
++  | 'appointment'
++  | 'milestone'
++  | 'payment'
++  | 'invoice'
++  | 'call'
++  | 'message'
++  | 'note'
++  | 'task'
++  | 'profile'
++  | 'activity'
++  | 'assignment';
++
++export type ProjectItem = {
++  key: string;
++  kind: ItemKind;
++  id: string;
++  title: string;
++  subtitle: string;
++  at: string | null;
++  status: string | null;
++  amount: string | null;
++  /** The installer (or other user) the item came from, if any. */
++  byUserId: string | null;
++  /** Openable file or link, when the item has one. */
++  url: string | null;
++  data: Record<string, unknown>;
++};
++
++/**
++ * Who sees each kind on a project.
++ *   - Installer notes, tasks and the activity log are working records: staff
++ *     and the installer on the job, never the customer.
++ *   - An installer's sale price and profit for a customer are that installer's
++ *     own business: staff and that installer only (checked per row below).
++ *   - Call records show to the customer without the agent's wrap-up notes.
++ */
++export const VISIBLE: Record<ItemKind, ProjectAccess[]> = {
++  document: ['staff', 'installer', 'customer'],
++  design: ['staff', 'installer', 'customer'],
++  lead: ['staff', 'installer', 'customer'],
++  appointment: ['staff', 'installer', 'customer'],
++  milestone: ['staff', 'installer', 'customer'],
++  payment: ['staff', 'installer', 'customer'],
++  invoice: ['staff', 'installer', 'customer'],
++  call: ['staff', 'installer', 'customer'],
++  message: ['staff', 'installer', 'customer'],
++  assignment: ['staff', 'installer', 'customer'],
++  note: ['staff', 'installer'],
++  task: ['staff', 'installer'],
++  activity: ['staff', 'installer'],
++  profile: ['staff', 'installer'],
++};
++
++/** Fields that never leave the backend for a non-staff viewer. */
++const STAFF_ONLY_FIELDS: Partial<Record<ItemKind, string[]>> = {
++  call: ['notes', 'counterpartyNumber', 'fromNumber'],
++  payment: ['customerEmail', 'stripeSessionId', 'stripePaymentIntentId', 'afterpayToken', 'afterpayPaymentId'],
++  lead: ['customerEmail', 'customerPhone', 'notes', 'estimatedValue'],
++  assignment: ['assignedById', 'endedById'],
++};
++
++export function filterItems(items: ProjectItem[], access: ProjectAccess, viewerId: string): ProjectItem[] {
++  return items
++    .filter((i) => VISIBLE[i.kind].includes(access))
++    .filter((i) => i.kind !== 'profile' || access === 'staff' || i.byUserId === viewerId)
++    .map((i) => {
++      if (access === 'staff') return i;
++      const hide = STAFF_ONLY_FIELDS[i.kind] ?? [];
++      const data = Object.fromEntries(Object.entries(i.data).filter(([k]) => !hide.includes(k)));
++      // The assigned installer needs the customer's own contact details to do the job.
++      if (i.kind === 'lead' && access === 'installer') {
++        data.customerEmail = i.data.customerEmail;
++        data.customerPhone = i.data.customerPhone;
++      }
++      return { ...i, data };
++    })
++    .sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')));
++}
++
++export const money = (minorOrMajor: number | null | undefined, currency = 'AUD', minor = false) =>
++  minorOrMajor == null
++    ? null
++    : new Intl.NumberFormat('en-AU', { style: 'currency', currency: (currency || 'AUD').toUpperCase() }).format(minor ? minorOrMajor / 100 : minorOrMajor);
++
++export const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+diff --git a/src/modules/projects/project.routes.ts b/src/modules/projects/project.routes.ts
+new file mode 100644
+index 0000000..5180f8c
+--- /dev/null
++++ b/src/modules/projects/project.routes.ts
+@@ -0,0 +1,39 @@
++import { Router } from 'express';
++import { UserRole } from '../../generated/prisma/client.js';
++import { authenticate } from '../../middlewares/auth.js';
++import { authorize } from '../../middlewares/roleGuard.js';
++import { validate } from '../../middlewares/validate.js';
++import { asyncHandler } from '../../utils/asyncHandler.js';
++import { projectController } from './project.controller.js';
++import {
++  assignInstallerSchema,
++  listProjectsQuerySchema,
++  projectCustomerParamSchema,
++  userItemsParamSchema,
++} from './project.schema.js';
++
++/**
++ * Projects: everything for or about a customer, shown by relationship.
++ * Staff see every project; installers the customers assigned to them now;
++ * customers their own. See docs/RBAC_ENDPOINT_MATRIX.md → Projects.
++ */
++const router = Router();
++const anyone = [UserRole.ADMIN, UserRole.INSTALLER, UserRole.CUSTOMER];
++
++router.get('/', authenticate, authorize(...anyone), validate({ query: listProjectsQuerySchema }), asyncHandler(projectController.list));
++
++/** Everything for or about a person themselves (payments, payouts, invoices, files, bookings, tasks). */
++router.get('/people/:userId/items', authenticate, authorize(...anyone), validate({ params: userItemsParamSchema }), asyncHandler(projectController.userItems));
++
++router.get('/:customerId', authenticate, authorize(...anyone), validate({ params: projectCustomerParamSchema }), asyncHandler(projectController.get));
++router.get('/:customerId/items', authenticate, authorize(...anyone), validate({ params: projectCustomerParamSchema }), asyncHandler(projectController.items));
++router.get('/:customerId/assignments', authenticate, authorize(...anyone), validate({ params: projectCustomerParamSchema }), asyncHandler(projectController.assignments));
++router.post(
++  '/:customerId/assignments',
++  authenticate,
++  authorize(UserRole.ADMIN),
++  validate({ params: projectCustomerParamSchema, body: assignInstallerSchema }),
++  asyncHandler(projectController.assign),
++);
++
++export default router;
+diff --git a/src/modules/projects/project.schema.ts b/src/modules/projects/project.schema.ts
+new file mode 100644
+index 0000000..56d8828
+--- /dev/null
++++ b/src/modules/projects/project.schema.ts
+@@ -0,0 +1,25 @@
++import { z } from 'zod';
++
++export const listProjectsQuerySchema = z.object({
++  search: z.string().trim().max(120).optional(),
++  limit: z.coerce.number().int().positive().max(200).default(50),
++});
++
++export const projectCustomerParamSchema = z.object({
++  customerId: z.string().uuid('Invalid customer ID'),
++});
++
++export const userItemsParamSchema = z.object({
++  userId: z.string().uuid('Invalid user ID'),
++});
++
++export const assignInstallerSchema = z.object({
++  installerId: z.string().uuid('Invalid installer ID'),
++  /** Which of the customer's leads; defaults to their first. */
++  leadId: z.string().uuid('Invalid lead ID').optional(),
++  mode: z.enum(['REPLACE', 'ADD']).default('REPLACE'),
++  reason: z.string().trim().min(3, 'Give a reason').max(500),
++});
++
++export type ListProjectsQuery = z.infer<typeof listProjectsQuerySchema>;
++export type AssignInstallerInput = z.infer<typeof assignInstallerSchema>;
+diff --git a/src/modules/projects/project.service.ts b/src/modules/projects/project.service.ts
+new file mode 100644
+index 0000000..4344bdf
+--- /dev/null
++++ b/src/modules/projects/project.service.ts
+@@ -0,0 +1,212 @@
++import { prisma } from '../../config/database.js';
++import { UserRole } from '../../generated/prisma/client.js';
++import { AppError } from '../../middlewares/errorHandler.js';
++import { installerCustomerIds, projectLeadIds, resolveProjectAccess, type Viewer } from './project.access.js';
++import { filterItems, iso, money, type ProjectItem } from './project.items.js';
++import type { ListProjectsQuery } from './project.schema.js';
++
++const name = (u: { firstName?: string | null; lastName?: string | null; email?: string | null } | null | undefined) =>
++  u ? [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || '' : '';
++
++const userBrief = { id: true, firstName: true, lastName: true, email: true, role: true } as const;
++
++export class ProjectService {
++  /** Projects this person may open: staff all (searchable), installers theirs, customers their own. */
++  async list(viewer: Viewer, query: ListProjectsQuery) {
++    let ids: string[] | null = null;
++    if (viewer.role === UserRole.INSTALLER) ids = await installerCustomerIds(viewer.userId);
++    if (viewer.role === UserRole.CUSTOMER) ids = [viewer.userId];
++    const where: Record<string, unknown> = { role: UserRole.CUSTOMER };
++    if (ids) where.id = { in: ids };
++    if (query.search) {
++      where.OR = [
++        { firstName: { contains: query.search, mode: 'insensitive' } },
++        { lastName: { contains: query.search, mode: 'insensitive' } },
++        { email: { contains: query.search, mode: 'insensitive' } },
++        { address: { contains: query.search, mode: 'insensitive' } },
++        { phone: { contains: query.search, mode: 'insensitive' } },
++      ];
++    }
++    const customers = await prisma.user.findMany({
++      where,
++      select: { id: true, firstName: true, lastName: true, email: true, address: true },
++      orderBy: { updatedAt: 'desc' },
++      take: query.limit,
++    });
++    const leads = await prisma.lead.findMany({
++      where: { design: { userId: { in: customers.map((c) => c.id) } } },
++      select: { id: true, status: true, projectPhase: true, design: { select: { userId: true } }, assignedTo: { select: userBrief } },
++    });
++    return customers.map((c) => {
++      const mine = leads.filter((l) => l.design?.userId === c.id);
++      return {
++        customerId: c.id,
++        name: name(c),
++        address: c.address ?? '',
++        status: mine[0]?.status ?? null,
++        phase: mine[0]?.projectPhase ?? null,
++        installers: mine.filter((l) => l.assignedTo).map((l) => ({ id: l.assignedTo!.id, name: name(l.assignedTo) })),
++      };
++    });
++  }
++
++  /** The project header: who it is, its leads, current and past installers, and what this viewer can do. */
++  async get(viewer: Viewer, customerId: string) {
++    const access = await resolveProjectAccess(viewer, customerId);
++    const customer = await prisma.user.findUnique({
++      where: { id: customerId },
++      select: { id: true, firstName: true, lastName: true, email: true, phone: true, address: true, role: true },
++    });
++    if (!customer || customer.role !== UserRole.CUSTOMER) throw new AppError('Customer not found', 404);
++    const leadIds = await projectLeadIds(customerId);
++    const [leads, assignments] = await Promise.all([
++      prisma.lead.findMany({
++        where: { id: { in: leadIds } },
++        select: { id: true, status: true, projectPhase: true, currentMilestoneKey: true, retailer: true, retailerPartnerId: true, assignedTo: { select: userBrief } },
++      }),
++      prisma.installerAssignment.findMany({ where: { leadId: { in: leadIds } }, orderBy: { startedAt: 'desc' } }),
++    ]);
++    const installerIds = [...new Set(assignments.map((a) => a.installerId))];
++    const installers = await prisma.user.findMany({ where: { id: { in: installerIds } }, select: userBrief });
++    const byId = new Map(installers.map((u) => [u.id, u]));
++    return {
++      customerId,
++      name: name(customer),
++      address: customer.address ?? '',
++      // Contact details for staff and the installer on the job.
++      contact: access === 'customer' ? null : { email: customer.email, phone: customer.phone },
++      leads: leads.map((l) => ({ id: l.id, status: l.status, phase: l.projectPhase, milestone: l.currentMilestoneKey, retailer: l.retailer, retailerPartnerId: l.retailerPartnerId })),
++      installers: leads.filter((l) => l.assignedTo).map((l) => ({ id: l.assignedTo!.id, name: name(l.assignedTo), leadId: l.id })),
++      installerHistory: assignments.map((a) => ({
++        installer: { id: a.installerId, name: name(byId.get(a.installerId)) },
++        leadId: a.leadId,
++        mode: a.mode,
++        reason: a.reason,
++        startedAt: iso(a.startedAt),
++        endedAt: iso(a.endedAt),
++        ...(access === 'staff' ? { assignedById: a.assignedById, endedById: a.endedById } : {}),
++      })),
++      access,
++      can: { assignInstaller: access === 'staff', requestInstallerChange: access !== 'staff' },
++    };
++  }
++
++  /** Everything for or about the project that this viewer may see, newest first. */
++  async items(viewer: Viewer, customerId: string): Promise<ProjectItem[]> {
++    const access = await resolveProjectAccess(viewer, customerId);
++    const leadIds = await projectLeadIds(customerId);
++    const [docs, designs, leads, appts, milestones, payments, invoices, calls, convs, notes, tasks, profiles, activity, assignments] = await Promise.all([
++      prisma.installerCustomerDocument.findMany({ where: { customerId }, orderBy: { createdAt: 'desc' } }),
++      prisma.design.findMany({ where: { userId: customerId }, include: { products: { include: { product: { select: { name: true, category: true } } } } } }),
++      prisma.lead.findMany({ where: { id: { in: leadIds } } }),
++      prisma.appointment.findMany({ where: { OR: [{ customerId }, { leadId: { in: leadIds } }] }, include: { installer: { select: userBrief } } }),
++      prisma.projectMilestone.findMany({ where: { leadId: { in: leadIds } } }),
++      prisma.payment.findMany({ where: { customerId }, include: { payout: true } }),
++      prisma.invoice.findMany({ where: { OR: [{ toUserId: customerId }, { fromUserId: customerId }] } }),
++      prisma.call.findMany({ where: { leadId: { in: leadIds } } }),
++      prisma.conversation.findMany({ where: { customerId }, include: { messages: { orderBy: { createdAt: 'desc' }, take: 200 }, installer: { select: userBrief } } }),
++      prisma.installerNote.findMany({ where: { customerId } }),
++      prisma.installerTask.findMany({ where: { customerId } }),
++      prisma.installerCustomerProfile.findMany({ where: { customerId } }),
++      prisma.activityEvent.findMany({
++        where: { OR: [{ entityType: 'CUSTOMER', entityId: customerId }, { entityType: 'LEAD', entityId: { in: leadIds } }] },
++        orderBy: { createdAt: 'desc' },
++        take: 300,
++      }),
++      prisma.installerAssignment.findMany({ where: { leadId: { in: leadIds } } }),
++    ]);
++
++    const items: ProjectItem[] = [];
++    const push = (i: Omit<ProjectItem, 'key'>) => items.push({ ...i, key: `${i.kind}:${i.id}` });
++
++    for (const d of docs)
++      push({
++        kind: 'document', id: d.id, title: d.fileName, subtitle: d.mimeType, at: iso(d.createdAt),
++        status: d.reviewState ?? null, amount: null, byUserId: d.installerId, url: d.url,
++        data: { mimeType: d.mimeType, sizeBytes: d.sizeBytes, leadId: d.leadId, aiLabels: d.aiLabels, aiExtracted: d.aiExtracted, aiIssues: d.aiIssues, s3Key: d.s3Key },
++      });
++    for (const d of designs)
++      push({
++        kind: 'design', id: d.id, title: d.title, subtitle: [d.panelCount ? `${d.panelCount} panels` : null, d.products.map((p) => p.product.name).slice(0, 3).join(', ') || null].filter(Boolean).join(' · '),
++        at: iso(d.updatedAt), status: d.status, amount: money(d.products.reduce((s, p) => s + (p.totalPrice ?? 0), 0) || null), byUserId: null, url: null,
++        data: { address: d.address, panelCount: d.panelCount, roofArea: d.roofArea, estimatedSavings: d.estimatedSavings, selected: !!d.selectedByCustomerAt, customerNotes: d.customerNotes },
++      });
++    for (const l of leads)
++      push({
++        kind: 'lead', id: l.id, title: `Project · ${l.status.toLowerCase().replace(/_/g, ' ')}`, subtitle: l.projectPhase.toLowerCase().replace(/_/g, ' '), at: iso(l.updatedAt),
++        status: l.status, amount: null, byUserId: l.assignedToId, url: null,
++        data: { address: l.address, phase: l.projectPhase, milestone: l.currentMilestoneKey, retailer: l.retailer, customerEmail: l.customerEmail, customerPhone: l.customerPhone, notes: l.notes, estimatedValue: l.estimatedValue },
++      });
++    for (const a of appts)
++      push({
++        kind: 'appointment', id: a.id, title: a.title, subtitle: `${a.startAt.toISOString()} · ${name(a.installer)}`, at: iso(a.startAt),
++        status: a.status, amount: null, byUserId: a.installerId, url: null, data: { startAt: iso(a.startAt), endAt: iso(a.endAt), notes: a.notes, leadId: a.leadId },
++      });
++    for (const m of milestones)
++      push({ kind: 'milestone', id: m.id, title: `Reached: ${m.key.replace(/[_-]/g, ' ')}`, subtitle: m.note ?? '', at: iso(m.completedAt), status: null, amount: null, byUserId: m.completedById, url: null, data: { leadId: m.leadId, key: m.key } });
++    for (const p of payments)
++      push({
++        kind: 'payment', id: p.id, title: p.description, subtitle: [p.kind.toLowerCase().replace(/_/g, ' '), p.payoutStatus === 'PAID_OUT' ? 'paid out to installer' : null].filter(Boolean).join(' · '),
++        at: iso(p.paidAt ?? p.createdAt), status: p.status, amount: money(p.amountMinor, p.currency, true), byUserId: p.installerId, url: p.receiptUrl,
++        data: { kind: p.kind, provider: p.provider, refunded: money(p.amountRefundedMinor, p.currency, true), customerEmail: p.customerEmail, stripeSessionId: p.stripeSessionId, stripePaymentIntentId: p.stripePaymentIntentId, afterpayToken: p.afterpayToken, afterpayPaymentId: p.afterpayPaymentId },
++      });
++    for (const v of invoices)
++      push({ kind: 'invoice', id: v.id, title: `Invoice ${v.invoiceNumber}`, subtitle: `${v.fromName} → ${v.toName} · due ${v.dueDate.toISOString().slice(0, 10)}`, at: iso(v.issueDate), status: v.status, amount: money(v.total), byUserId: v.fromUserId, url: null, data: { kind: v.kind } });
++    for (const c of calls)
++      push({
++        kind: 'call', id: c.id, title: `${c.direction === 'INBOUND' ? 'Call from' : 'Call to'} the customer`, subtitle: [c.outcome?.toLowerCase().replace(/_/g, ' '), c.durationSec ? `${Math.round(c.durationSec / 60)} min` : null].filter(Boolean).join(' · '),
++        at: iso(c.startedAt), status: c.status, amount: null, byUserId: c.agentUserId, url: null, data: { outcome: c.outcome, durationSec: c.durationSec, notes: c.notes, counterpartyNumber: c.counterpartyNumber, fromNumber: c.fromNumber },
++      });
++    for (const cv of convs)
++      for (const m of cv.messages)
++        push({ kind: 'message', id: m.id, title: m.body.slice(0, 140), subtitle: `Portal chat with ${name(cv.installer)}`, at: iso(m.createdAt), status: null, amount: null, byUserId: m.senderId, url: null, data: { conversationId: cv.id, fromCustomer: m.senderId === customerId } });
++    for (const n of notes)
++      push({ kind: 'note', id: n.id, title: n.title, subtitle: n.content.slice(0, 160), at: iso(n.updatedAt), status: null, amount: null, byUserId: n.installerId, url: null, data: {} });
++    for (const t of tasks)
++      push({ kind: 'task', id: t.id, title: t.title, subtitle: t.content.slice(0, 160), at: iso(t.updatedAt), status: null, amount: null, byUserId: t.installerId, url: null, data: {} });
++    for (const p of profiles)
++      push({ kind: 'profile', id: p.id, title: 'Customer profile', subtitle: p.customerType, at: iso(p.updatedAt), status: null, amount: money(p.salePrice), byUserId: p.installerId, url: null, data: { salePrice: p.salePrice, profit: p.profit } });
++    for (const e of activity)
++      push({ kind: 'activity', id: e.id, title: e.summary, subtitle: e.eventType.toLowerCase().replace(/_/g, ' '), at: iso(e.createdAt), status: null, amount: null, byUserId: e.actorUserId, url: null, data: { eventType: e.eventType } });
++    for (const a of assignments)
++      push({ kind: 'assignment', id: a.id, title: a.endedAt ? 'Installer changed' : 'Installer assigned', subtitle: a.reason, at: iso(a.endedAt ?? a.startedAt), status: a.endedAt ? 'ended' : 'current', amount: null, byUserId: a.installerId, url: null, data: { leadId: a.leadId, mode: a.mode, assignedById: a.assignedById, endedById: a.endedById } });
++
++    return filterItems(items, access, viewer.userId);
++  }
++
++  /**
++   * Everything for or about a person themselves (installer or customer) —
++   * the same rule for every entity. Staff may open anyone's.
++   */
++  async myItems(viewer: Viewer, userId: string): Promise<ProjectItem[]> {
++    if (viewer.role !== UserRole.ADMIN && viewer.userId !== userId) throw new AppError('You can only see your own items.', 403);
++    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, role: true } });
++    if (!user) throw new AppError('User not found', 404);
++    const items: ProjectItem[] = [];
++    const push = (i: Omit<ProjectItem, 'key'>) => items.push({ ...i, key: `${i.kind}:${i.id}` });
++    const [payments, invoices, docs, appts, tasks] = await Promise.all([
++      prisma.payment.findMany({ where: user.role === UserRole.INSTALLER ? { installerId: userId } : { customerId: userId }, include: { payout: true } }),
++      prisma.invoice.findMany({ where: { OR: [{ toUserId: userId }, { fromUserId: userId }] } }),
++      prisma.installerCustomerDocument.findMany({ where: user.role === UserRole.INSTALLER ? { installerId: userId } : { customerId: userId }, orderBy: { createdAt: 'desc' }, take: 500 }),
++      prisma.appointment.findMany({ where: user.role === UserRole.INSTALLER ? { installerId: userId } : { customerId: userId }, take: 500 }),
++      user.role === UserRole.INSTALLER ? prisma.installerTask.findMany({ where: { installerId: userId } }) : Promise.resolve([]),
++    ]);
++    for (const p of payments)
++      push({
++        kind: 'payment', id: p.id, title: p.description, subtitle: [p.customerName, p.payout ? `paid out ${p.payout.paidAt.toISOString().slice(0, 10)}` : p.kind === 'SERVICE' ? 'not paid out yet' : null].filter(Boolean).join(' · '),
++        at: iso(p.paidAt ?? p.createdAt), status: p.status, amount: money(p.amountMinor, p.currency, true), byUserId: p.installerId, url: p.receiptUrl, data: { kind: p.kind, payoutStatus: p.payoutStatus },
++      });
++    for (const v of invoices)
++      push({ kind: 'invoice', id: v.id, title: `Invoice ${v.invoiceNumber}`, subtitle: `${v.fromName} → ${v.toName}`, at: iso(v.issueDate), status: v.status, amount: money(v.total), byUserId: v.fromUserId, url: null, data: { kind: v.kind } });
++    for (const d of docs)
++      push({ kind: 'document', id: d.id, title: d.fileName, subtitle: d.mimeType, at: iso(d.createdAt), status: d.reviewState ?? null, amount: null, byUserId: d.installerId, url: d.url, data: { customerId: d.customerId, aiLabels: d.aiLabels } });
++    for (const a of appts)
++      push({ kind: 'appointment', id: a.id, title: a.title, subtitle: a.startAt.toISOString(), at: iso(a.startAt), status: a.status, amount: null, byUserId: a.installerId, url: null, data: { customerId: a.customerId, leadId: a.leadId } });
++    for (const t of tasks)
++      push({ kind: 'task', id: t.id, title: t.title, subtitle: t.content.slice(0, 160), at: iso(t.updatedAt), status: null, amount: null, byUserId: t.installerId, url: null, data: { customerId: t.customerId } });
++    // A person's own items are all theirs; staff see them as staff.
++    return filterItems(items, viewer.role === UserRole.ADMIN ? 'staff' : user.role === UserRole.INSTALLER ? 'installer' : 'customer', viewer.userId);
++  }
++}
++
++export const projectService = new ProjectService();
+diff --git a/src/modules/users/user.service.ts b/src/modules/users/user.service.ts
+index 597ee7a..690ee64 100644
+--- a/src/modules/users/user.service.ts
++++ b/src/modules/users/user.service.ts
+@@ -29,6 +29,8 @@ export class UserService {
+         { lastName: { contains: search, mode: 'insensitive' } },
+         { email: { contains: search, mode: 'insensitive' } },
+         { address: { contains: search, mode: 'insensitive' } },
++        // Callers are matched by phone (contact centre, AI concierge).
++        { phone: { contains: search.replace(/\s+/g, '') } },
+       ];
+     }
+ 
+diff --git a/src/routes/index.ts b/src/routes/index.ts
+index 44894d7..7bb801a 100644
+--- a/src/routes/index.ts
++++ b/src/routes/index.ts
+@@ -28,6 +28,8 @@ import callRoutes from '../modules/calls/call.routes.js';
+ import paymentRoutes from '../modules/payments/payment.routes.js';
+ import projectJourneyRoutes from '../modules/project-journey/journey.routes.js';
+ import referralRoutes from '../modules/referrals/referral.routes.js';
++import projectRoutes from '../modules/projects/project.routes.js';
++import partnerRoutes from '../modules/partners/partner.routes.js';
+ 
+ const router = Router();
+ 
+@@ -60,5 +62,7 @@ router.use('/calls', callRoutes);
+ router.use('/payments', paymentRoutes);
+ router.use('/project-journey', projectJourneyRoutes);
+ router.use('/referrals', referralRoutes);
++router.use('/projects', projectRoutes);
++router.use('/partners', partnerRoutes);
+ 
+ export default router;
+diff --git a/tests/projects.items.test.ts b/tests/projects.items.test.ts
+new file mode 100644
+index 0000000..89777af
+--- /dev/null
++++ b/tests/projects.items.test.ts
+@@ -0,0 +1,45 @@
++import { describe, expect, it } from 'vitest';
++import { filterItems, type ProjectItem, type ItemKind } from '../src/modules/projects/project.items.js';
++
++const item = (kind: ItemKind, extra: Partial<ProjectItem> = {}): ProjectItem => ({
++  key: `${kind}:1`, kind, id: '1', title: kind, subtitle: '', at: '2026-10-01T00:00:00.000Z',
++  status: null, amount: null, byUserId: null, url: null, data: {}, ...extra,
++});
++const all: ProjectItem[] = [
++  item('document'), item('design'), item('invoice'), item('payment', { data: { stripeSessionId: 'cs_1', customerEmail: 'a@b.au', status: 'PAID' } }),
++  item('note'), item('task'), item('activity'),
++  item('profile', { key: 'profile:mine', byUserId: 'inst-1' }), item('profile', { key: 'profile:other', byUserId: 'inst-2' }),
++  item('call', { data: { notes: 'wrap-up', fromNumber: '+61400000000', durationSec: 60 } }),
++  item('lead', { data: { customerEmail: 'c@x.au', customerPhone: '0400', notes: 'internal', status: 'NEW' } }),
++];
++const kinds = (xs: ProjectItem[]) => xs.map((x) => x.kind);
++
++describe('project item visibility', () => {
++  it('customers never see installer notes, tasks, the activity log or installer profiles', () => {
++    const k = kinds(filterItems(all, 'customer', 'cust-1'));
++    expect(k).not.toContain('note');
++    expect(k).not.toContain('task');
++    expect(k).not.toContain('activity');
++    expect(k).not.toContain('profile');
++    expect(k).toEqual(expect.arrayContaining(['document', 'design', 'invoice', 'payment', 'call', 'lead']));
++  });
++
++  it('the assigned installer sees notes and tasks, and only their own profile row', () => {
++    const out = filterItems(all, 'installer', 'inst-1');
++    expect(kinds(out)).toEqual(expect.arrayContaining(['note', 'task', 'activity']));
++    expect(out.filter((i) => i.kind === 'profile').map((i) => i.key)).toEqual(['profile:mine']);
++  });
++
++  it('strips staff-only fields for non-staff, keeps lead contacts for the installer', () => {
++    const cust = filterItems(all, 'customer', 'cust-1');
++    expect(cust.find((i) => i.kind === 'call')!.data).toEqual({ durationSec: 60 });
++    expect(cust.find((i) => i.kind === 'payment')!.data).toEqual({ status: 'PAID' });
++    expect(cust.find((i) => i.kind === 'lead')!.data).toEqual({ status: 'NEW' });
++    const inst = filterItems(all, 'installer', 'inst-1').find((i) => i.kind === 'lead')!;
++    expect(inst.data).toEqual({ status: 'NEW', customerEmail: 'c@x.au', customerPhone: '0400' });
++  });
++
++  it('staff see everything unchanged', () => {
++    expect(filterItems(all, 'staff', 'admin').length).toBe(all.length);
++  });
++});
+diff --git a/tests/projects.routes.test.ts b/tests/projects.routes.test.ts
+new file mode 100644
+index 0000000..8d80434
+--- /dev/null
++++ b/tests/projects.routes.test.ts
+@@ -0,0 +1,72 @@
++import { describe, expect, it, vi, beforeEach } from 'vitest';
++import express from 'express';
++import request from 'supertest';
++
++const db = vi.hoisted(() => ({
++  installerAssignment: { findMany: vi.fn(async () => [] as unknown[]) },
++  lead: { findMany: vi.fn(async () => [] as unknown[]) },
++}));
++vi.mock('../src/config/database.js', () => ({ prisma: db }));
++
++const { default: projectRoutes } = await import('../src/modules/projects/project.routes.js');
++const { default: partnerRoutes } = await import('../src/modules/partners/partner.routes.js');
++const { default: docRoutes } = await import('../src/modules/installer-customer-documents/installer-customer-document.routes.js');
++const { generateAccessToken } = await import('../src/utils/token.js');
++
++const app = express();
++app.use(express.json());
++app.use('/projects', projectRoutes);
++app.use('/partners', partnerRoutes);
++app.use('/installer-customer-documents', docRoutes);
++app.use((err: { statusCode?: number; message: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
++  res.status(err.statusCode ?? 500).json({ success: false, message: err.message });
++});
++
++const CUST = '11111111-1111-4111-8111-111111111111';
++const OTHER = '22222222-2222-4222-8222-222222222222';
++const INST = '33333333-3333-4333-8333-333333333333';
++const tok = (role: string, userId: string) => `Bearer ${generateAccessToken({ userId, email: 'x@y.au', role })}`;
++
++beforeEach(() => {
++  db.installerAssignment.findMany.mockResolvedValue([]);
++  db.lead.findMany.mockResolvedValue([]);
++});
++
++describe('projects access', () => {
++  it('needs a token', async () => {
++    expect((await request(app).get(`/projects/${CUST}/items`)).status).toBe(401);
++  });
++
++  it('a customer cannot open another customer\'s project', async () => {
++    const r = await request(app).get(`/projects/${OTHER}/assignments`).set('Authorization', tok('CUSTOMER', CUST));
++    expect(r.status).toBe(403);
++  });
++
++  it('an installer cannot open a customer not assigned to them', async () => {
++    const r = await request(app).get(`/projects/${CUST}/assignments`).set('Authorization', tok('INSTALLER', INST));
++    expect(r.status).toBe(403);
++  });
++
++  it('only staff can change the installer', async () => {
++    const body = { installerId: INST, mode: 'REPLACE', reason: 'Customer asked' };
++    for (const role of ['CUSTOMER', 'INSTALLER']) {
++      const r = await request(app).post(`/projects/${CUST}/assignments`).set('Authorization', tok(role, CUST)).send(body);
++      expect(r.status).toBe(403);
++    }
++  });
++});
++
++describe('partners and document AI fields', () => {
++  it('only staff can add partners', async () => {
++    const r = await request(app).post('/partners').set('Authorization', tok('INSTALLER', INST)).send({ name: 'Sunrise Power', kind: 'RETAILER' });
++    expect(r.status).toBe(403);
++  });
++
++  it('only staff can write AI labels on a document', async () => {
++    const r = await request(app)
++      .patch(`/installer-customer-documents/${CUST}/ai`)
++      .set('Authorization', tok('INSTALLER', INST))
++      .send({ reviewState: 'confirmed' });
++    expect(r.status).toBe(403);
++  });
++});
