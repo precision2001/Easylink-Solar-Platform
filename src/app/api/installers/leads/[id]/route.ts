@@ -2,6 +2,7 @@ import {
   backendAuthedFetch,
   forwardBackendJson,
 } from "@/lib/server/backend-authed-fetch";
+import { forwardBackendJsonWithEvents } from "@/lib/server/ai-platform";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -20,7 +21,20 @@ export async function PATCH(request: Request, ctx: Ctx) {
     method: "PATCH",
     body,
   });
-  return forwardBackendJson(res);
+  return forwardBackendJsonWithEvents(res, "installer", () => {
+    let fields: string[] = [];
+    let status: unknown;
+    try {
+      const b = JSON.parse(body) as Record<string, unknown>;
+      fields = Object.keys(b);
+      status = b.status;
+    } catch {}
+    const subject = { type: "lead", id };
+    const out = [{ type: "lead.updated", subject, data: { fields } }];
+    if (status === "QUALIFIED") out.push({ type: "lead.qualified", subject, data: { fields } });
+    if (status === "LOST") out.push({ type: "lead.lost", subject, data: { fields } });
+    return out;
+  });
 }
 
 export async function DELETE(_request: Request, ctx: Ctx) {

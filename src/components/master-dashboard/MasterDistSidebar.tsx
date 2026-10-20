@@ -116,8 +116,9 @@ const GROUPS: NavGroup[] = [
     items: [
       { key: "aiControl", label: "AI control centre", icon: "spark", href: "/master/ai-control" },
       { key: "aiJourneys", label: "Live journeys", icon: "route", href: "/master/live-journeys", badge: "41" },
-      { key: "aiApprovals", label: "AI approvals", icon: "check", badge: "7" },
-      { key: "aiDecisions", label: "Decision records", icon: "file" },
+      { key: "aiApprovals", label: "AI approvals", icon: "check", href: "/master/ai-approvals" },
+      { key: "aiDecisions", label: "Decision records", icon: "file", href: "/master/ai-decisions" },
+      { key: "aiScreens", label: "Build a screen", icon: "layers", href: "/master/ai-screens" },
       { key: "aiPolicies", label: "Policies", icon: "shield" },
       { key: "aiQuality", label: "Testing & autonomy", icon: "flask" },
     ],

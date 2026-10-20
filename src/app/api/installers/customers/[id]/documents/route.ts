@@ -6,6 +6,7 @@ import {
 } from "@/lib/server/backend-authed-fetch";
 import { INSTALLER_ACCESS_COOKIE } from "@/lib/auth/installer-cookies";
 import { saveCustomerDocumentToPublic } from "@/lib/server/customer-document-upload";
+import { forwardBackendJsonWithEvents } from "@/lib/server/ai-platform";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -54,5 +55,14 @@ export async function POST(request: Request, ctx: Ctx) {
     }),
   });
 
-  return forwardBackendJson(res);
+  // The AI labels every upload (meter, switchboard, inverter…): no checkboxes.
+  const slot = formData.get("slot");
+  return forwardBackendJsonWithEvents(res, "installer", (d) => [
+    {
+      type: "file.uploaded",
+      subject: { type: "document", id: String(d.id ?? "") },
+      links: [{ type: "customer", id: customerId }],
+      data: { mimeType: saved.mimeType, sizeBytes: saved.sizeBytes, slot: typeof slot === "string" ? slot : null },
+    },
+  ]);
 }
