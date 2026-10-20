@@ -4,6 +4,8 @@ import { Relations, type Scope } from "../access/relations.js";
 import type { Container } from "../container.js";
 import { makeEvent, RecordRef, type Principal } from "../core/envelope.js";
 import { absoluteUrl } from "../files/classify.js";
+import { loadItems, type Item, type Viewer } from "../access/items.js";
+import { backendHasProjects } from "../core/records.js";
 import { isStaff } from "../policy/policy.js";
 import type { MessageCopy, TimelineItem } from "../store/types.js";
 import type { Env } from "./app.js";
@@ -20,7 +22,7 @@ const SITE = () => process.env.PUBLIC_SITE_URL ?? "";
 export function registerProjectRoutes(app: Hono<Env>, c: Container) {
   const svc = () => ({ token: c.serviceToken });
   const ok = <T>(ctx: Context<Env>, data: T, status = 200) => ctx.json({ success: true, message: "OK", data }, status as 200);
-  const scopeOf = (ctx: Context<Env>) => c.relations.scope(ctx.get("principal"), ctx.get("user") ?? {});
+  const scopeOf = (ctx: Context<Env>) => c.relations.scope(ctx.get("principal"), ctx.get("user") ?? {}, ctx.get("token") ?? undefined);
   const staff = (ctx: Context<Env>) => isStaff(ctx.get("principal"));
 
   /** The project (customer or lead) a request is about, if the caller may see it. */
@@ -143,6 +145,74 @@ export function registerProjectRoutes(app: Hono<Env>, c: Container) {
     return ok(ctx, out);
   });
 
+  // ---------- everything for or about the project: files, designs, quotes, invoices, bookings, messages… ----------
+  // Customers never get installer notes, tasks or the activity log (the backend
+  // filters them with its own rules when it has /projects; loadItems otherwise).
+  app.get("/v1/ai/projects/:type/:id/items", async (ctx) => {
+    const pj = await project(ctx);
+    if (pj instanceof Response) return pj;
+    const p = ctx.get("principal");
+    const viewer: Viewer = staff(ctx) ? "staff" : p.kind === "installer" ? "installer" : "customer";
+    const ids = await c.relations.linkedIds(pj.ref);
+    const scope = { customers: [...ids.customers], leads: [...ids.leads], users: [] as string[] };
+    if (backendHasProjects()) {
+      const items: Item[] = [];
+      for (const id of scope.customers) {
+        // The caller's own token: the backend applies its visibility rules for them.
+        const r = await c.backend.call<Record<string, unknown>[]>("GET", `/projects/${encodeURIComponent(id)}/items`, null, { token: ctx.get("token")! });
+        if (r.status === 403) return ctx.json({ success: false, message: "Not your project" }, 403);
+        items.push(...((r.data ?? []) as Record<string, unknown>[]).map((x) => fromBackendItem(x, id)));
+      }
+      items.push(...(await sentMessages(scope)));
+      return ok(ctx, summarise(items));
+    }
+    return ok(ctx, await loadItems({ backend: c.backend, store: c.store, svc: svc(), scope, viewer }));
+  });
+
+  // ---------- everything for or about a person (payouts, invoices, files, bookings, tasks) ----------
+  // `me` for yourself; staff may open anyone's (e.g. an installer's account).
+  app.get("/v1/ai/people/:userId/items", async (ctx) => {
+    const p = ctx.get("principal");
+    const raw = ctx.req.param("userId") ?? "me";
+    const userId = raw === "me" ? p.id : raw;
+    if (userId !== p.id && !staff(ctx)) return ctx.json({ success: false, message: "Only your own" }, 403);
+    if (backendHasProjects()) {
+      const r = await c.backend.call<Record<string, unknown>[]>("GET", `/projects/people/${encodeURIComponent(userId)}/items`, null, { token: ctx.get("token")! });
+      if (!r.ok) return ctx.json({ success: false, message: r.message ?? "Could not load your items" }, (r.status || 502) as 502);
+      return ok(ctx, summarise(((r.data ?? []) as Record<string, unknown>[]).map((x) => fromBackendItem(x, null))));
+    }
+    // A person's own things: for a customer their project; for anyone else what is assigned to or made by them.
+    const own =
+      p.kind === "customer" && userId === p.id
+        ? await (async () => {
+            const sc = await scopeOf(ctx);
+            return sc.all ? { customers: [], leads: [], users: [userId] } : { customers: [...sc.customers], leads: [...sc.leads], users: [userId] };
+          })()
+        : { customers: [] as string[], leads: [] as string[], users: [userId] };
+    const viewer: Viewer = staff(ctx) ? "staff" : p.kind === "installer" ? "installer" : "customer";
+    return ok(ctx, await loadItems({ backend: c.backend, store: c.store, svc: svc(), scope: own, viewer }));
+  });
+
+  /** Emails and SMS sent through the AI platform about these records (copies live in the AI store). */
+  const sentMessages = async (scope: { customers: string[]; leads: string[] }): Promise<Item[]> => {
+    const all = (await c.store.listRecords("message")) as unknown as MessageCopy[];
+    return all
+      .filter((m) => m.records.some((r) => (r.type === "customer" && scope.customers.includes(r.id)) || (r.type === "lead" && scope.leads.includes(r.id))))
+      .map((m) => ({
+        key: `message:${m.id}`,
+        kind: "message",
+        id: m.id,
+        title: m.subject || `Message to ${m.to.name ?? m.to.role}`,
+        subtitle: `${m.channels.join(" + ")} to ${m.to.name ?? m.to.role}`,
+        at: m.at,
+        status: m.status ?? "sent",
+        amount: null,
+        open: { type: "message" as const, id: m.id },
+        records: m.records,
+        by: m.from.id,
+      }));
+  };
+
   // ---------- everything that happened, oldest assignment to latest delivery ----------
   app.get("/v1/ai/projects/:type/:id/history", async (ctx) => {
     const pj = await project(ctx);
@@ -246,6 +316,48 @@ export function registerProjectRoutes(app: Hono<Env>, c: Container) {
     await c.bus.publish([evt]);
     return ctx.redirect(String(link.direct), 302);
   });
+}
+
+const KIND_LABELS: Record<string, string> = {
+  document: "Documents and photos",
+  design: "Designs and proposals",
+  lead: "Enquiries",
+  appointment: "Bookings",
+  milestone: "Milestones",
+  payment: "Payments and quotes",
+  invoice: "Invoices",
+  call: "Calls",
+  message: "Messages",
+  note: "Installer notes",
+  task: "Tasks",
+  profile: "Sale price and profit",
+  activity: "Activity",
+  assignment: "Installers",
+};
+
+function fromBackendItem(x: Record<string, unknown>, customerId: string | null): Item {
+  const kind = String(x.kind);
+  const id = String(x.id);
+  return {
+    key: String(x.key ?? `${kind}:${id}`),
+    kind,
+    id,
+    title: String(x.title ?? ""),
+    subtitle: String(x.subtitle ?? ""),
+    at: x.at ? String(x.at) : null,
+    status: x.status ? String(x.status) : null,
+    amount: x.amount ? String(x.amount) : null,
+    open: kind === "document" ? { type: "file", id } : { type: "none" },
+    records: customerId ? [{ type: "customer", id: customerId }] : [],
+    by: x.byUserId ? String(x.byUserId) : null,
+  };
+}
+
+function summarise(items: Item[]) {
+  const uniq = items.filter((x, i) => items.findIndex((y) => y.key === x.key) === i).sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? "")));
+  const counts = new Map<string, number>();
+  for (const i of uniq) counts.set(i.kind, (counts.get(i.kind) ?? 0) + 1);
+  return { items: uniq, kinds: [...counts].map(([kind, count]) => ({ kind, label: KIND_LABELS[kind] ?? kind, count })) };
 }
 
 function actorLabel(kind: string) {

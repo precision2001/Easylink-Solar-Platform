@@ -90,6 +90,27 @@ class EasyLinkAiStack extends Stack {
 
     // Delivery receipts (email delivered / bounced / opened, SMS delivered / failed) → history.
     const receipts = new sns.Topic(this, "DeliveryReceipts", { topicName: "easylink-delivery-receipts", masterKey: key });
+    // SES and End User Messaging SMS publish receipts here; both need the topic policy and the key.
+    for (const service of ["ses.amazonaws.com", "sms-voice.amazonaws.com"]) {
+      const principal = new iam.ServicePrincipal(service);
+      receipts.addToResourcePolicy(
+        new iam.PolicyStatement({
+          actions: ["sns:Publish"],
+          principals: [principal],
+          resources: [receipts.topicArn],
+          conditions: { StringEquals: { "aws:SourceAccount": this.account } },
+        }),
+      );
+      key.addToResourcePolicy(
+        new iam.PolicyStatement({
+          actions: ["kms:GenerateDataKey*", "kms:Decrypt"],
+          principals: [principal],
+          resources: ["*"],
+          conditions: { StringEquals: { "aws:SourceAccount": this.account } },
+        }),
+      );
+    }
+    new CfnOutput(this, "DeliveryReceiptsTopicArn", { value: receipts.topicArn });
     const sesConfig = new ses.ConfigurationSet(this, "EmailConfig", { configurationSetName: "easylink-ai" });
     sesConfig.addEventDestination("ToReceipts", {
       destination: ses.EventDestination.snsTopic(receipts),
@@ -114,6 +135,8 @@ class EasyLinkAiStack extends Stack {
       // Create the SMS configuration set with an SNS destination to this topic in End User Messaging SMS, then set its name here.
       SMS_CONFIGURATION_SET: ctx("smsConfigurationSet"),
       PUBLIC_API_URL: ctx("publicApiUrl"),
+      // "1" once backend-ai-platform.patch is deployed (projects, partners, assignments in the backend).
+      BACKEND_PROJECTS_API: ctx("backendProjectsApi", "0"),
       NODE_OPTIONS: "--enable-source-maps",
     };
 

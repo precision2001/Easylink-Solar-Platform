@@ -137,3 +137,54 @@ describe("who sees what", () => {
     delete process.env.PUBLIC_API_URL;
   });
 });
+
+describe("everything for or about the customer", () => {
+  it("customers see designs, quotes and messages but never installer notes or tasks", async () => {
+    const w = world();
+    w.backend.seed("note", [{ id: "nt_1", customerId: "cus_1", content: "Customer's dog is anxious", installerId: "usr_inst_1", createdAt: "2026-10-10T00:00:00Z" }]);
+    w.backend.seed("task", [{ id: "tk_1", customerId: "cus_1", title: "Order isolator", assignedToId: "usr_inst_1", createdAt: "2026-10-10T00:00:00Z" }]);
+    w.backend.seed("design", [{ id: "dsn_1", customerId: "cus_1", name: "6.6 kW north roof", status: "APPROVED", createdAt: "2026-10-01T00:00:00Z" }]);
+    const cust = await get<{ items: { kind: string }[] }>(w.app, "/v1/ai/projects/customer/cus_1/items", "cust");
+    const ck = cust.body.data.items.map((i) => i.kind);
+    expect(ck).toContain("design");
+    expect(ck).not.toContain("note");
+    expect(ck).not.toContain("task");
+    const inst = await get<{ items: { kind: string }[] }>(w.app, "/v1/ai/projects/customer/cus_1/items", "inst");
+    expect(inst.body.data.items.map((i) => i.kind)).toEqual(expect.arrayContaining(["note", "task", "design"]));
+  });
+});
+
+describe("with the backend's /projects endpoints (BACKEND_PROJECTS_API=1)", () => {
+  it("asks the backend with the caller's own token, and assigns through it", async () => {
+    process.env.BACKEND_PROJECTS_API = "1";
+    try {
+      const w = world();
+      const posted: unknown[] = [];
+      w.backend.routes.push((method, path, body, token) => {
+        if (method === "GET" && path.startsWith("/projects?")) return { ok: true, status: 200, data: token === "cust" ? [{ customerId: "cus_1" }] : [] };
+        if (method === "GET" && path === "/projects/cus_1/items")
+          return token === "cust"
+            ? { ok: true, status: 200, data: [{ key: "invoice:1", kind: "invoice", id: "1", title: "Invoice INV-1", subtitle: "", at: "2026-10-02T00:00:00Z", status: "PAID", amount: "$9,990.00", byUserId: null, url: null, data: {} }] }
+            : { ok: false, status: 403, data: null };
+        if (method === "GET" && path === "/projects/cus_1/assignments") return { ok: true, status: 200, data: [{ id: "a1", leadId: "ld_1", customerId: "cus_1", installerId: "usr_inst_1", startedAt: "2026-09-01T00:00:00Z", endedAt: null, reason: "First" }] };
+        if (method === "POST" && path === "/projects/cus_1/assignments") {
+          posted.push(body);
+          return { ok: true, status: 201, data: { assignment: { id: "a2", leadId: "ld_1", startedAt: "2026-10-21T00:00:00Z" }, ended: ["usr_inst_1"] } };
+        }
+        return undefined;
+      });
+      const items = await get<{ items: { kind: string; amount: string }[] }>(w.app, "/v1/ai/projects/customer/cus_1/items", "cust");
+      expect(items.status).toBe(200);
+      expect(items.body.data.items[0]).toMatchObject({ kind: "invoice", amount: "$9,990.00" });
+      expect(w.backend.calls.find((x) => x.path === "/projects/cus_1/items")?.token).toBe("cust");
+      // Someone else's account is staff-only.
+      expect((await get(w.app, "/v1/ai/people/usr_inst_1/items", "cust")).status).toBe(403);
+
+      const res = await w.c.relations.assign({ customerId: "cus_1", leadId: "ld_1", installerId: "usr_inst_2", by: "staff_1", reason: "Customer asked", replace: true, now: "2026-10-21T00:00:00Z" });
+      expect(posted[0]).toEqual({ installerId: "usr_inst_2", leadId: "ld_1", mode: "REPLACE", reason: "Customer asked" });
+      expect(res.closed.map((c) => c.installerId)).toEqual(["usr_inst_1"]);
+    } finally {
+      delete process.env.BACKEND_PROJECTS_API;
+    }
+  });
+});

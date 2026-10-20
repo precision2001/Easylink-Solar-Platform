@@ -238,7 +238,7 @@ export class FileClassifier {
       name: "update_record",
       input: {
         record: evt.subject,
-        fields: { aiLabels: c.labels, extracted: c.extracted, reviewState, ...(top && top.confidence >= AUTO_CONFIDENCE && !d.category ? { category: top.label } : {}) },
+        fields: { aiLabels: c.labels, extracted: c.extracted, issues, reviewState },
       },
       principal: this.principal,
       causationId: evt.event_id,

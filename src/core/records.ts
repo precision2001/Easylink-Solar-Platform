@@ -30,6 +30,13 @@ export type RecordTypeDef = {
   storedIn?: "backend" | "ai";
 };
 
+/**
+ * True once the backend has the projects / partners / assignments endpoints
+ * (backend-ai-platform.patch). Until then the AI platform keeps partners and
+ * assignment history itself and works out project items on its own.
+ */
+export const backendHasProjects = () => process.env.BACKEND_PROJECTS_API === "1";
+
 export const RECORD_TYPES: Record<string, RecordTypeDef> = {
   lead: {
     type: "lead",
@@ -56,10 +63,10 @@ export const RECORD_TYPES: Record<string, RecordTypeDef> = {
     type: "design",
     path: "/designs",
     portal: "installer",
-    search: ["leadId", "customerId", "status"],
+    search: ["leadId", "customerId", "status", "limit"],
     pii: [],
     aiWritable: ["notes"],
-    supports: { list: false, get: true, create: false, update: true, delete: false },
+    supports: { list: true, get: true, create: false, update: true, delete: false },
     events: { created: "design.saved", updated: "design.updated" },
   },
   product: {
@@ -104,6 +111,17 @@ export const RECORD_TYPES: Record<string, RecordTypeDef> = {
     supports: { list: true, get: true, create: true, update: true, delete: false },
     events: { created: "note.created", updated: "note.updated" },
   },
+  /** Payments (services, product orders, quotes) and installer payouts. Listed through the master endpoint. */
+  payment: {
+    type: "payment",
+    path: "/payments/master",
+    portal: "admin",
+    search: ["status", "kind", "installerId", "limit"],
+    pii: ["customerEmail", "customerName"],
+    aiWritable: [],
+    supports: { list: true, get: false, create: false, update: false, delete: false },
+    events: { created: "payment.succeeded", updated: "payment.succeeded" },
+  },
   /** Portal users (installers, staff, customers). Confirm `/users/:id` exists for admin tokens in the backend. */
   user: {
     type: "user",
@@ -117,7 +135,8 @@ export const RECORD_TYPES: Record<string, RecordTypeDef> = {
   },
   /**
    * Organisations documents are sent to: electricity retailers, DNSPs, suppliers,
-   * finance providers. Kept by the AI platform until the backend has /partners.
+   * finance providers. In the backend's `partners` table once BACKEND_PROJECTS_API=1,
+   * kept by the AI platform before that.
    * Fields: name, kind (retailer | dnsp | supplier | finance | other), email,
    * submissionEmail, phone, requires (document labels it wants), attach (send
    * files as attachments), subjectTemplate, notes.
@@ -131,7 +150,9 @@ export const RECORD_TYPES: Record<string, RecordTypeDef> = {
     aiWritable: [],
     supports: { list: true, get: true, create: true, update: true, delete: false },
     events: { created: "partner.created", updated: "partner.updated" },
-    storedIn: "ai",
+    get storedIn() {
+      return backendHasProjects() ? ("backend" as const) : ("ai" as const);
+    },
   },
   document: {
     type: "document",
@@ -139,7 +160,7 @@ export const RECORD_TYPES: Record<string, RecordTypeDef> = {
     portal: "installer",
     search: ["customerId", "leadId", "category"],
     pii: [],
-    aiWritable: ["category", "tags", "aiLabels", "extracted", "reviewState"],
+    aiWritable: ["aiLabels", "extracted", "issues", "reviewState", "leadId", "s3Key"],
     ownerCustomerPath: "customerId",
     supports: { list: true, get: true, create: false, update: true, delete: false },
     events: { created: "file.uploaded", updated: "file.classified" },

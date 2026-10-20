@@ -1,4 +1,5 @@
 import type { Backend } from "../backend/client.js";
+import { backendHasProjects } from "../core/records.js";
 import type { Principal, RecordRef } from "../core/envelope.js";
 import { isStaff } from "../policy/policy.js";
 import type { Store } from "../store/types.js";
@@ -13,8 +14,9 @@ import type { Store } from "../store/types.js";
  * Internal lines (AI reasoning, policy refusals) stay staff-only, and contact
  * details of other people are never shown to customers or installers.
  *
- * Assignments are kept here with their history until the backend has a table
- * for them; the lead's `assignedToId` in the backend is also kept in step.
+ * With BACKEND_PROJECTS_API=1 the backend's `installer_assignments` table and
+ * /projects endpoints are the source of truth. Before that, assignments are
+ * kept here with their history and the lead's `assignedToId` is kept in step.
  */
 export type Assignment = {
   id: string;
@@ -41,9 +43,29 @@ export class Relations {
     return (await this.deps.store.listRecords("assignment")) as unknown as Assignment[];
   }
 
+  /** The backend's assignment rows for a customer, in this file's shape. */
+  private async backendHistory(customerId: string): Promise<Assignment[]> {
+    const r = await this.deps.backend.call<Record<string, unknown>[]>("GET", `/projects/${encodeURIComponent(customerId)}/assignments`, null, this.svc);
+    return ((r.data ?? []) as Record<string, unknown>[]).map((a) => ({
+      id: String(a.id),
+      customerId: a.customerId ? String(a.customerId) : customerId,
+      leadId: a.leadId ? String(a.leadId) : null,
+      installerId: String(a.installerId),
+      from: a.startedAt ? String(a.startedAt) : "",
+      to: a.endedAt ? String(a.endedAt) : null,
+      assignedBy: String(a.assignedById ?? ""),
+      reason: String(a.reason ?? ""),
+    }));
+  }
+
   /** Assignments for one customer or lead, newest first. */
   async history(ref: RecordRef): Promise<Assignment[]> {
     const ids = await this.linkedIds(ref);
+    if (backendHasProjects()) {
+      const rows: Assignment[] = [];
+      for (const id of ids.customers) rows.push(...(await this.backendHistory(id)));
+      return rows.filter((a, i) => rows.findIndex((x) => x.id === a.id) === i).sort((a, b) => b.from.localeCompare(a.from));
+    }
     return (await this.assignments())
       .filter((a) => (a.customerId && ids.customers.has(a.customerId)) || (a.leadId && ids.leads.has(a.leadId)))
       .sort((a, b) => b.from.localeCompare(a.from));
@@ -94,10 +116,17 @@ export class Relations {
   }
 
   /** Everything this person may see. */
-  async scope(p: Principal, user: Record<string, unknown> = {}): Promise<Scope> {
+  async scope(p: Principal, user: Record<string, unknown> = {}, token?: string): Promise<Scope> {
     if (isStaff(p) || p.kind === "system" || p.kind === "agent") return { all: true };
     const customers = new Set<string>();
     const leads = new Set<string>();
+    // The backend decides, with the person's own token.
+    if (backendHasProjects() && token && (p.kind === "customer" || p.kind === "installer")) {
+      const r = await this.deps.backend.call<Record<string, unknown>[]>("GET", "/projects?limit=200", null, { token });
+      for (const row of (r.data ?? []) as Record<string, unknown>[]) customers.add(String(row.customerId));
+      for (const id of [...customers]) (await this.linkedIds({ type: "customer", id })).leads.forEach((x) => leads.add(x));
+      return { all: false, customers, leads, self: p.id };
+    }
     if (p.kind === "customer") {
       for (const id of await this.customerIdsForUser({ id: p.id, ...user })) {
         customers.add(id);
@@ -139,6 +168,22 @@ export class Relations {
 
   /** Record a new assignment (closing the current one) and keep the backend's lead in step. */
   async assign(args: { customerId: string | null; leadId: string | null; installerId: string; installerName?: string; by: string; reason: string; replace: boolean; now: string }) {
+    if (backendHasProjects()) {
+      const customerId = args.customerId ?? [...(await this.linkedIds({ type: "lead", id: args.leadId! })).customers][0];
+      if (!customerId) throw new Error("This lead has no customer yet, so the installer can't be recorded on a project.");
+      const before = await this.backendHistory(customerId);
+      const r = await this.deps.backend.call<{ assignment: Record<string, unknown>; ended: string[] }>(
+        "POST",
+        `/projects/${encodeURIComponent(customerId)}/assignments`,
+        { installerId: args.installerId, ...(args.leadId ? { leadId: args.leadId } : {}), mode: args.replace ? "REPLACE" : "ADD", reason: args.reason },
+        this.svc,
+      );
+      if (!r.ok || !r.data) throw new Error(r.message ?? `The backend refused the assignment (${r.status}).`);
+      const a = r.data.assignment;
+      const current: Assignment = { id: String(a.id), customerId, leadId: a.leadId ? String(a.leadId) : args.leadId, installerId: args.installerId, installerName: args.installerName, from: String(a.startedAt ?? args.now), to: null, assignedBy: args.by, reason: args.reason };
+      const closed = before.filter((b) => !b.to && (r.data!.ended ?? []).includes(b.installerId)).map((b) => ({ ...b, to: args.now }));
+      return { current, closed };
+    }
     const prior = await this.history(args.customerId ? { type: "customer", id: args.customerId } : { type: "lead", id: args.leadId! });
     const closed: Assignment[] = [];
     if (args.replace) {

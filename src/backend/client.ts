@@ -1,4 +1,29 @@
-import { getRecordType } from "../core/records.js";
+import { backendHasProjects, getRecordType } from "../core/records.js";
+
+/**
+ * Where the AI's names for fields differ from the backend's. Partner kinds are
+ * lower case here and an enum there; a document's AI fields are written through
+ * PATCH /installer-customer-documents/:id/ai.
+ */
+const ADAPTERS: Record<string, { updatePath?: (id: string) => string; toBackend?: (f: Record<string, unknown>) => Record<string, unknown>; fromBackend?: (r: Record<string, unknown>) => Record<string, unknown> }> = {
+  partner: {
+    toBackend: (f) => (f.kind ? { ...f, kind: String(f.kind).toUpperCase() } : f),
+    fromBackend: (r) => (r.kind ? { ...r, kind: String(r.kind).toLowerCase() } : r),
+  },
+  document: {
+    updatePath: (id) => `/installer-customer-documents/${encodeURIComponent(id)}/ai`,
+    toBackend: (f) => {
+      const out: Record<string, unknown> = {};
+      if (f.aiLabels !== undefined) out.aiLabels = f.aiLabels;
+      if (f.extracted !== undefined) out.aiExtracted = f.extracted;
+      if (f.issues !== undefined) out.aiIssues = f.issues;
+      for (const k of ["reviewState", "leadId", "s3Key"]) if (f[k] !== undefined) out[k] = f[k];
+      return out;
+    },
+    fromBackend: (r) => ({ ...r, extracted: r.extracted ?? r.aiExtracted, issues: r.issues ?? r.aiIssues }),
+  },
+};
+const adapter = (type: string) => (backendHasProjects() ? ADAPTERS[type] : undefined);
 
 /**
  * Talks to the existing Express backend (`BACKEND_API_BASE_URL`, e.g. https://…/api/v1).
@@ -59,21 +84,30 @@ export class HttpBackend implements Backend {
   list(type: string, filter: Record<string, unknown>, auth: BackendAuth) {
     const def = getRecordType(type);
     const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(filter)) if (v != null && def.search.includes(k)) qs.set(k, String(v));
+    const a = adapter(type);
+    const f = a?.toBackend && filter.kind ? a.toBackend(filter) : filter;
+    for (const [k, v] of Object.entries(f)) if (v != null && def.search.includes(k)) qs.set(k, String(v));
     const q = qs.toString();
     return this.call<unknown>("GET", `${def.path}${q ? `?${q}` : ""}`, null, auth).then((r) => ({
       ...r,
-      data: normaliseList(r.data),
+      data: normaliseList(r.data).map((row) => (a?.fromBackend && row && typeof row === "object" ? a.fromBackend(row as Record<string, unknown>) : row)),
     }));
   }
-  get(type: string, id: string, auth: BackendAuth) {
-    return this.call<Record<string, unknown>>("GET", `${getRecordType(type).path}/${encodeURIComponent(id)}`, null, auth);
+  private one(type: string, r: BackendResponse<Record<string, unknown>>) {
+    const a = adapter(type);
+    return a?.fromBackend && r.data ? { ...r, data: a.fromBackend(r.data) } : r;
   }
-  create(type: string, fields: Record<string, unknown>, auth: BackendAuth) {
-    return this.call<Record<string, unknown>>("POST", getRecordType(type).path, fields, auth);
+  async get(type: string, id: string, auth: BackendAuth) {
+    return this.one(type, await this.call<Record<string, unknown>>("GET", `${getRecordType(type).path}/${encodeURIComponent(id)}`, null, auth));
   }
-  update(type: string, id: string, fields: Record<string, unknown>, auth: BackendAuth) {
-    return this.call<Record<string, unknown>>("PATCH", `${getRecordType(type).path}/${encodeURIComponent(id)}`, fields, auth);
+  async create(type: string, fields: Record<string, unknown>, auth: BackendAuth) {
+    const a = adapter(type);
+    return this.one(type, await this.call<Record<string, unknown>>("POST", getRecordType(type).path, a?.toBackend ? a.toBackend(fields) : fields, auth));
+  }
+  async update(type: string, id: string, fields: Record<string, unknown>, auth: BackendAuth) {
+    const a = adapter(type);
+    const path = a?.updatePath ? a.updatePath(id) : `${getRecordType(type).path}/${encodeURIComponent(id)}`;
+    return this.one(type, await this.call<Record<string, unknown>>("PATCH", path, a?.toBackend ? a.toBackend(fields) : fields, auth));
   }
   whoAmI(auth: BackendAuth) {
     return this.call<Record<string, unknown>>("GET", "/users/me", null, auth);
@@ -132,8 +166,14 @@ export class FakeBackend implements Backend {
     this.table(type).set(id, row);
     return { ok: true, status: 200, data: row };
   }
+  /** Extra endpoints for tests (e.g. the /projects routes from the backend patch). */
+  routes: ((method: string, path: string, body: unknown, token: string) => BackendResponse | undefined)[] = [];
   async call<T>(method: string, path: string, body: unknown, auth: BackendAuth) {
     this.calls.push({ method, path, body, token: auth.token });
+    for (const r of this.routes) {
+      const hit = r(method, path, body, auth.token);
+      if (hit) return hit as BackendResponse<T>;
+    }
     // Mirrors the backend's POST /leads/:id/assign.
     const m = path.match(/^\/leads\/([^/]+)\/assign$/);
     if (m && method === "POST") {
