@@ -15,6 +15,7 @@ import {
   type AutonomyRule,
   type ControlState,
   type Fact,
+  type FileLabels,
   type InboxItem,
   type MemoryChunk,
   type ScreenRecord,
@@ -41,6 +42,7 @@ import {
  *   SUM#<type#id>          / SUM
  *   CHUNK#<type#id>        / <iso>#<id>          (keyword search; vector search runs in pgvector, spec 5.2)
  *   SCREEN#<owner>         / <id>
+ *   LABELS#<document_id>   / LABELS
  */
 export class DynamoStore implements Store {
   private doc: DynamoDBDocumentClient;
@@ -248,6 +250,13 @@ export class DynamoStore implements Store {
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
       .map((x) => x.c);
+  }
+  async putFileLabels(l: FileLabels) {
+    await this.put({ pk: `LABELS#${l.documentId}`, sk: "LABELS", data: l });
+  }
+  async getFileLabels(ids: string[]) {
+    const out = await Promise.all(ids.map((id) => this.get<FileLabels>(`LABELS#${id}`, "LABELS")));
+    return out.filter((x): x is FileLabels => !!x);
   }
   async putScreen(s: ScreenRecord) {
     await this.put({ pk: `SCREEN#${s.ownerId}`, sk: s.id, data: s });

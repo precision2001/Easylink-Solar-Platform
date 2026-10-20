@@ -1,4 +1,4 @@
-import type { ActionName } from "../core/actions.js";
+import type { ActionFamily, ActionName } from "../core/actions.js";
 import type { RecordRef } from "../core/envelope.js";
 
 /**
@@ -7,7 +7,7 @@ import type { RecordRef } from "../core/envelope.js";
  * never do more than its caller could do step by step.
  */
 export type WorkflowStep = { id: string; action: ActionName; input: Record<string, unknown>; optional?: boolean };
-export type WorkflowTemplate = { id: string; title: string; description: string; steps: (inputs: Record<string, unknown>) => WorkflowStep[] };
+export type WorkflowTemplate = { id: string; title: string; description: string; family?: ActionFamily; steps: (inputs: Record<string, unknown>) => WorkflowStep[] };
 
 const ref = (v: unknown): RecordRef => v as RecordRef;
 

@@ -85,6 +85,7 @@ class EasyLinkAiStack extends Stack {
       EVENT_BUS_NAME: bus.eventBusName,
       BACKEND_API_BASE_URL: ctx("backendApiBaseUrl"),
       FILES_BUCKET: filesBucketName,
+      PUBLIC_SITE_URL: ctx("publicSiteUrl", "https://easylinksolar.com.au"),
       MODEL_FAST_ID: ctx("modelFastId"),
       MODEL_SMART_ID: ctx("modelSmartId"),
       EMAIL_FROM: ctx("emailFrom", "EasyLink Solar <hello@easylinksolar.com.au>"),

@@ -9,8 +9,24 @@ import { RECORD_TYPES } from "./records.js";
 export type ActionKind = "read" | "write" | "send" | "meta";
 export type Sensitivity = "low" | "medium" | "high";
 
-/** Kill-switch families shown in the AI control centre ("Action kill switches"). */
-export type ActionFamily = "records" | "messages" | "offers" | "scheduling" | "workflows" | "memory";
+/**
+ * Kill-switch families. The first six are the switches already on the master
+ * portal's AI control centre; quotes, offers, refunds, lodging and dispatch are
+ * enforced on workflow templates that declare them.
+ */
+export const ACTION_FAMILIES = {
+  messages: { label: "Outbound messages and calls", detail: "Email, SMS, Voxa outbound calls" },
+  quotes: { label: "Quote changes and discounts", detail: "Sales agent" },
+  offers: { label: "Job offers to installers", detail: "Matching agent" },
+  refunds: { label: "Refunds and payouts", detail: "Support and Finance agents" },
+  lodging: { label: "DNSP and STC submissions", detail: "Delivery agent" },
+  dispatch: { label: "VPP battery dispatch", detail: "Optimiser stays in its own safe mode" },
+  records: { label: "Record changes", detail: "Leads, customers, tasks, notes, files" },
+  scheduling: { label: "Bookings", detail: "Consultations, installs, service visits" },
+  workflows: { label: "Workflows", detail: "Multi-step templates" },
+  memory: { label: "AI memory", detail: "Facts and summaries" },
+} as const;
+export type ActionFamily = keyof typeof ACTION_FAMILIES;
 
 export type ActionDef<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   name: string;

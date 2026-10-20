@@ -117,6 +117,16 @@ export type ScreenRecord = {
   createdAt: string;
 };
 
+/** AI labels for a stored file, kept here as well so they work before the backend has the columns. */
+export type FileLabels = {
+  documentId: string;
+  labels: { label: string; confidence: number }[];
+  extracted: Record<string, string>;
+  reviewState: "auto" | "needs_review" | "confirmed";
+  description: string;
+  updatedAt: string;
+};
+
 export interface Store {
   // event de-duplication and quarantine
   markEventSeen(eventId: string): Promise<boolean>;
@@ -153,6 +163,10 @@ export interface Store {
   putSummary(s: Summary): Promise<void>;
   putChunk(c: MemoryChunk): Promise<void>;
   searchChunks(query: string, allowedSubjects: RecordRef[] | "all", limit: number): Promise<MemoryChunk[]>;
+
+  // file labels
+  putFileLabels(l: FileLabels): Promise<void>;
+  getFileLabels(documentIds: string[]): Promise<FileLabels[]>;
 
   // screens
   putScreen(s: ScreenRecord): Promise<void>;

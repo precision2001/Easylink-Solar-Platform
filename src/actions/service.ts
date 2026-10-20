@@ -9,6 +9,9 @@ import { resolveAutonomy } from "../policy/autonomy.js";
 import type { AutonomyLevel, InboxItem, Store } from "../store/types.js";
 import type { FileLinks, Messaging } from "./ports.js";
 import { WORKFLOWS } from "./workflows.js";
+import { absoluteUrl } from "../files/classify.js";
+
+const SITE = () => process.env.PUBLIC_SITE_URL ?? "";
 
 export type ActionStatus = "executed" | "proposed" | "denied" | "invalid" | "dry_run" | "shadow" | "blocked" | "error";
 
@@ -400,6 +403,12 @@ export class ActionService {
         const r = await b.list("document", { [filterKey]: ref.id }, auth);
         if (!r.ok) throw new Error(r.message ?? `Backend returned ${r.status}`);
         let rows = (r.data ?? []) as Record<string, unknown>[];
+        // Labels live on the backend row once it has the columns; until then in the AI store.
+        const stored = new Map((await this.deps.store.getFileLabels(rows.map((f) => String(f.id)))).map((l) => [l.documentId, l]));
+        rows = rows.map((f) => {
+          const l = stored.get(String(f.id));
+          return l && !f.aiLabels ? { ...f, aiLabels: l.labels, extracted: l.extracted, reviewState: l.reviewState } : f;
+        });
         const want = (input.slot ?? input.label) as string | undefined;
         if (want) {
           rows = rows.filter((f) => {
@@ -414,7 +423,9 @@ export class ActionService {
           name: f.fileName ?? f.name ?? f.title,
           slot: f.slot ?? f.category ?? null,
           labels: f.aiLabels ?? [],
-          reviewState: f.reviewState ?? "auto",
+          reviewState: f.reviewState ?? (f.aiLabels ? "auto" : "pending"),
+          url: f.url ?? null,
+          mimeType: f.mimeType ?? null,
           createdAt: f.createdAt ?? null,
         }));
       }
@@ -425,7 +436,7 @@ export class ActionService {
         const f = r.data;
         const url = f.s3Key
           ? await this.deps.files.signedUrl(String(f.s3Key), (input.expires_in_hours as number) * 3600)
-          : String(f.url ?? f.fileUrl ?? "");
+          : absoluteUrl(String(f.url ?? f.fileUrl ?? ""), SITE());
         if (!url) throw new Error("File has no stored location");
         ctx.events.push(this.event(ctx, "file.shared", ref, { expires_in_hours: input.expires_in_hours }));
         return { url, expires_in_hours: input.expires_in_hours };
@@ -537,7 +548,7 @@ export class ActionService {
     for (const f of files) {
       const fr = await this.deps.backend.get(f.type, f.id, auth);
       if (fr.ok && fr.data) {
-        const url = fr.data.s3Key ? await this.deps.files.signedUrl(String(fr.data.s3Key), 7 * 86400) : String(fr.data.url ?? "");
+        const url = fr.data.s3Key ? await this.deps.files.signedUrl(String(fr.data.s3Key), 7 * 86400) : absoluteUrl(String(fr.data.url ?? ""), SITE());
         if (url) links.push(url);
       }
     }
@@ -587,6 +598,9 @@ export class ActionService {
   private async startWorkflow(ctx: Ctx) {
     const template = WORKFLOWS[ctx.input.template as string];
     if (!template) throw new Error(`Unknown workflow ${ctx.input.template}`);
+    if (template.family && (await this.deps.store.getControl()).familiesOff[template.family]) {
+      throw new Error(`The "${template.family}" kill switch is off.`);
+    }
     const results: { step: string; status: ActionStatus; message?: string }[] = [];
     for (const step of template.steps(ctx.input.inputs as Record<string, unknown>)) {
       const r = await this.run({

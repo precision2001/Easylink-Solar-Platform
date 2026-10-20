@@ -50,6 +50,37 @@ export class S3FileBytes implements FileBytes {
   }
 }
 
+/**
+ * Today the portal stores uploads under the website's /uploads path (doc.url).
+ * Until they move to S3, fetch them from the site. PUBLIC_SITE_URL is the site origin.
+ */
+export class UrlFileBytes implements FileBytes {
+  constructor(private origin = process.env.PUBLIC_SITE_URL ?? "", private fetchImpl: typeof fetch = fetch) {}
+  async load(doc: Record<string, unknown>) {
+    const url = absoluteUrl(String(doc.url ?? doc.fileUrl ?? ""), this.origin);
+    const format = imageFormat(String(doc.mimeType ?? doc.fileName ?? url));
+    if (!url || !format) return null;
+    const r = await this.fetchImpl(url);
+    if (!r.ok) return null;
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    return bytes.byteLength <= 3_750_000 ? { format, bytes } : null;
+  }
+}
+
+/** S3 when the document has an s3Key, otherwise the site URL. */
+export class AnyFileBytes implements FileBytes {
+  constructor(private s3 = new S3FileBytes(), private web = new UrlFileBytes()) {}
+  load(doc: Record<string, unknown>) {
+    return doc.s3Key ? this.s3.load(doc) : this.web.load(doc);
+  }
+}
+
+export function absoluteUrl(u: string, origin: string): string {
+  if (!u) return "";
+  if (/^https?:\/\//.test(u)) return u;
+  return origin ? `${origin.replace(/\/+$/, "")}/${u.replace(/^\/+/, "")}` : "";
+}
+
 export function imageFormat(nameOrMime: string): "jpeg" | "png" | "webp" | null {
   const s = nameOrMime.toLowerCase();
   if (/jpe?g/.test(s)) return "jpeg";
@@ -99,6 +130,15 @@ export class FileClassifier {
       principal: this.principal,
       causationId: evt.event_id,
       correlationId: evt.correlation_id,
+    });
+
+    await this.deps.store.putFileLabels({
+      documentId: evt.subject.id,
+      labels: c.labels,
+      extracted: c.extracted,
+      reviewState,
+      description: c.description,
+      updatedAt: new Date().toISOString(),
     });
 
     if (reviewState === "needs_review") {

@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { ACTIONS } from "../core/actions.js";
+import { ACTIONS, ACTION_FAMILIES } from "../core/actions.js";
 import { isRegisteredType } from "../core/catalogue.js";
 import { makeEvent, newId, RecordRef, type Principal } from "../core/envelope.js";
 import { RECORD_TYPES } from "../core/records.js";
@@ -160,7 +160,17 @@ export function createApp(c: Container) {
     const agents = Object.values(AGENTS).map((a) => {
       const mine = decisions.filter((d) => d.agentId === a.id);
       const writes = a.actions.filter((x) => ACTIONS[x].kind !== "read");
-      const levels = writes.map((x) => rules.find((r) => r.agentId === a.id && r.action === x && !Object.keys(r.condition).length)?.level ?? defaultLevel(x));
+      const actionLevels: Record<string, AutonomyLevel> = {};
+      for (const x of writes) {
+        const own = rules.filter((r) => r.agentId === a.id && r.action === x);
+        // Show the most permissive level any rule grants (conditions narrow where it applies).
+        const order: AutonomyLevel[] = ["L0", "L1", "L2", "L3"];
+        let lv = own.find((r) => !Object.keys(r.condition).length)?.level ?? defaultLevel(x);
+        for (const r of own) if (order.indexOf(r.level) > order.indexOf(lv)) lv = r.level;
+        if (control.globalRecommendOnly && (lv === "L2" || lv === "L3")) lv = "L1";
+        actionLevels[x] = lv;
+      }
+      const levels = Object.values(actionLevels);
       const top = (["L3", "L2", "L1", "L0"] as AutonomyLevel[]).find((l) => levels.includes(l)) ?? "L1";
       const m30 = decisions30.filter((d) => d.agentId === a.id && d.outcome === "proposed");
       return {
@@ -178,9 +188,10 @@ export function createApp(c: Container) {
         proposals30d: m30.length,
         triggers: a.triggers,
         actions: a.actions,
+        actionLevels,
       };
     });
-    const families = [...new Set(Object.values(ACTIONS).map((a) => a.family))].map((f) => ({ family: f, off: !!control.familiesOff[f] }));
+    const families = Object.entries(ACTION_FAMILIES).map(([f, m]) => ({ family: f, label: m.label, detail: m.detail, off: !!control.familiesOff[f] }));
     const kpis = {
       decisions24h: decisions.length,
       autoResolvedPct: decisions.length ? Math.round((decisions.filter((d) => d.outcome === "executed" || d.outcome === "no_action").length / decisions.length) * 100) : 0,
@@ -212,6 +223,7 @@ export function createApp(c: Container) {
   });
   app.put("/v1/ai/control/switches/:family", staffOnly, async (ctx) => {
     const family = (ctx.req.param("family") ?? "");
+    if (!(family in ACTION_FAMILIES)) return ctx.json({ success: false, message: "Unknown action family" }, 404);
     const { off } = z.object({ off: z.boolean() }).parse(await ctx.req.json());
     const cur = await c.store.getControl();
     const next = { ...cur, familiesOff: { ...cur.familiesOff, [family]: off }, updatedBy: ctx.get("principal").id, updatedAt: new Date().toISOString() };
@@ -289,10 +301,22 @@ export function createApp(c: Container) {
     }
   });
   app.post("/v1/ai/inbox/:id/resolve", staffOnly, async (ctx) => {
-    const { note } = z.object({ note: z.string().default("") }).parse(await ctx.req.json().catch(() => ({})));
+    const { note, label } = z.object({ note: z.string().default(""), label: z.string().optional() }).parse(await ctx.req.json().catch(() => ({})));
     const item = await c.store.getInbox((ctx.req.param("id") ?? ""));
     if (!item) return ctx.json({ success: false, message: "Not found" }, 404);
     const p = ctx.get("principal");
+    // A person confirming or correcting a photo label: store it as certain and write it to the document.
+    if (item.kind === "review" && label && item.subject?.type === "document") {
+      const [cur] = await c.store.getFileLabels([item.subject.id]);
+      const labels = [{ label, confidence: 1 }, ...(cur?.labels ?? []).filter((l) => l.label !== label)];
+      await c.store.putFileLabels({ documentId: item.subject.id, labels, extracted: cur?.extracted ?? {}, reviewState: "confirmed", description: cur?.description ?? "", updatedAt: new Date().toISOString() });
+      await c.actions.run({ name: "update_record", input: { record: item.subject, fields: { aiLabels: labels, reviewState: "confirmed" } }, principal: p, auth: { token: ctx.get("token")! } });
+    }
+    // A fact confirmed by a person becomes usable by agents.
+    if (item.kind === "review" && typeof item.input?.fact_id === "string" && item.subject) {
+      const fact = (await c.store.listFacts(item.subject)).find((f) => f.id === item.input!.fact_id);
+      if (fact) await c.store.putFact({ ...fact, confirmed: true });
+    }
     const next = { ...item, status: item.kind === "question" ? ("answered" as const) : ("resolved" as const), resolvedBy: p.id, resolvedAt: new Date().toISOString(), resolution: note || "resolved" };
     await c.store.putInbox(next);
     // Confirming a low-confidence fact or label is a correction signal for the AI.

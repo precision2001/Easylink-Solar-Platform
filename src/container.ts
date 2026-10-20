@@ -4,7 +4,7 @@ import { AiRuntime } from "./ai/runtime.js";
 import { BedrockModel, FakeModel, type ModelClient } from "./ai/model.js";
 import { FakeBackend, HttpBackend, type Backend } from "./backend/client.js";
 import { EventBridgeBus, MemoryBus, type EventBus } from "./bus/bus.js";
-import { FileClassifier, S3FileBytes, type FileBytes } from "./files/classify.js";
+import { FileClassifier, AnyFileBytes, type FileBytes } from "./files/classify.js";
 import { DynamoStore } from "./store/dynamo.js";
 import { MemoryStore } from "./store/memory.js";
 import type { Store } from "./store/types.js";
@@ -36,7 +36,7 @@ export function buildContainer(over: Partial<Pick<Container, "store" | "bus" | "
   const ingestKey = over.ingestKey ?? process.env.EVENT_INGEST_KEY ?? (local ? "ingest-local" : "");
   if (!serviceToken) throw new Error("AI_SERVICE_TOKEN is not set");
   const actions = new ActionService({ store, bus, backend, messaging, files, serviceToken, now: over.now });
-  const classifier = new FileClassifier({ model, backend, actions, store, bytes: over.bytes ?? new S3FileBytes(), serviceToken });
+  const classifier = new FileClassifier({ model, backend, actions, store, bytes: over.bytes ?? new AnyFileBytes(), serviceToken });
   const runtime = new AiRuntime({ store, actions, model, classifier, now: over.now });
   // In local mode the bus delivers straight to the AI runtime (EventBridge → Lambda in AWS).
   if (bus instanceof MemoryBus) bus.subscribe((e) => void runtime.handle(e));

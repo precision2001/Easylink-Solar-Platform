@@ -7,6 +7,7 @@ import {
   type AutonomyRule,
   type ControlState,
   type Fact,
+  type FileLabels,
   type InboxItem,
   type MemoryChunk,
   type ScreenRecord,
@@ -29,6 +30,7 @@ export class MemoryStore implements Store {
   summaries = new Map<string, Summary>();
   chunks: MemoryChunk[] = [];
   screens: ScreenRecord[] = [];
+  labels = new Map<string, FileLabels>();
 
   async markEventSeen(eventId: string) {
     if (this.seen.has(eventId)) return false;
@@ -134,6 +136,12 @@ export class MemoryStore implements Store {
       .sort((a, b) => b.score - a.score || b.c.occurredAt.localeCompare(a.c.occurredAt))
       .slice(0, limit)
       .map((x) => x.c);
+  }
+  async putFileLabels(l: FileLabels) {
+    this.labels.set(l.documentId, l);
+  }
+  async getFileLabels(ids: string[]) {
+    return ids.map((id) => this.labels.get(id)).filter((x): x is FileLabels => !!x);
   }
   async putScreen(s: ScreenRecord) {
     this.screens = this.screens.filter((x) => x.id !== s.id);
