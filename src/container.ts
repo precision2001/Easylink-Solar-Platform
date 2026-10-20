@@ -8,6 +8,8 @@ import { FileClassifier, AnyFileBytes, type FileBytes } from "./files/classify.j
 import { DynamoStore } from "./store/dynamo.js";
 import { MemoryStore } from "./store/memory.js";
 import type { Store } from "./store/types.js";
+import { OverlayBackend } from "./backend/overlay.js";
+import { BraveWebSearch, ContactFinder, FakeWebSearch, type WebSearch } from "./contacts/finder.js";
 
 export type Container = {
   store: Store;
@@ -19,26 +21,33 @@ export type Container = {
   actions: ActionService;
   runtime: AiRuntime;
   classifier: FileClassifier;
+  contacts: ContactFinder | null;
   serviceToken: string;
   /** Shared secret the Next.js server uses to forward visitor events. */
   ingestKey: string;
 };
 
-export function buildContainer(over: Partial<Pick<Container, "store" | "bus" | "backend" | "messaging" | "files" | "model">> & { bytes?: FileBytes; serviceToken?: string; ingestKey?: string; now?: () => Date } = {}): Container {
+export function buildContainer(
+  over: Partial<Pick<Container, "store" | "bus" | "backend" | "messaging" | "files" | "model">> & { bytes?: FileBytes; web?: WebSearch; serviceToken?: string; ingestKey?: string; now?: () => Date } = {},
+): Container {
   const local = process.env.AI_MODE === "local";
   const store = over.store ?? (local ? new MemoryStore() : new DynamoStore(process.env.AI_TABLE ?? "easylink-ai"));
   const bus = over.bus ?? (local ? new MemoryBus() : new EventBridgeBus());
-  const backend = over.backend ?? (local ? new FakeBackend() : new HttpBackend());
+  // Partners (and any type marked storedIn "ai") come from the AI store until the backend has them.
+  const backend = new OverlayBackend(over.backend ?? (local ? new FakeBackend() : new HttpBackend()), store);
   const messaging = over.messaging ?? (local ? new FakeMessaging() : new AwsMessaging());
   const files = over.files ?? (local ? new FakeFileLinks() : new S3FileLinks());
   const model = over.model ?? (local ? new FakeModel() : new BedrockModel());
   const serviceToken = over.serviceToken ?? process.env.AI_SERVICE_TOKEN ?? (local ? "svc-local" : "");
   const ingestKey = over.ingestKey ?? process.env.EVENT_INGEST_KEY ?? (local ? "ingest-local" : "");
   if (!serviceToken) throw new Error("AI_SERVICE_TOKEN is not set");
-  const actions = new ActionService({ store, bus, backend, messaging, files, serviceToken, now: over.now });
-  const classifier = new FileClassifier({ model, backend, actions, store, bytes: over.bytes ?? new AnyFileBytes(), serviceToken });
+  const bytes = over.bytes ?? new AnyFileBytes();
+  const web = over.web ?? (process.env.SEARCH_API_KEY ? new BraveWebSearch() : local ? new FakeWebSearch() : undefined);
+  const contacts = web ? new ContactFinder({ web, model, backend, store, serviceToken, now: over.now }) : null;
+  const actions = new ActionService({ store, bus, backend, messaging, files, serviceToken, bytes, contacts: contacts ?? undefined, now: over.now });
+  const classifier = new FileClassifier({ model, backend, actions, store, bytes, serviceToken });
   const runtime = new AiRuntime({ store, actions, model, classifier, now: over.now });
   // In local mode the bus delivers straight to the AI runtime (EventBridge → Lambda in AWS).
   if (bus instanceof MemoryBus) bus.subscribe((e) => void runtime.handle(e));
-  return { store, bus, backend, messaging, files, model, actions, runtime, classifier, serviceToken, ingestKey };
+  return { store, bus, backend, messaging, files, model, actions, runtime, classifier, contacts, serviceToken, ingestKey };
 }

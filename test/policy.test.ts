@@ -19,7 +19,11 @@ describe("AU compliance", () => {
 describe("policy", () => {
   it("denies messages to raw addresses and to people who opted out", () => {
     expect(evaluatePolicy({ principal: agent("sales"), action: "send_message", recipient: { ...recipient, resolvedFromRecord: false }, channels: ["sms"] }).decision).toBe("deny");
-    expect(evaluatePolicy({ principal: agent("sales"), action: "send_message", recipient: { ...recipient, optedOut: true }, channels: ["email"] }).policies).toContain("respect_opt_out");
+    expect(evaluatePolicy({ principal: agent("sales"), action: "send_message", recipient: { ...recipient, optedOut: true }, channels: ["sms"] }).policies).toContain("respect_opt_out");
+    // Opted out of marketing/SMS, but their own job documents by email still reach them.
+    expect(evaluatePolicy({ principal: agent("delivery"), action: "send_message", purpose: "transactional", recipient: { ...recipient, optedOut: true }, channels: ["email"] }).decision).toBe("allow");
+    const inst = { kind: "installer" as const, id: "usr_inst_1", roles: ["INSTALLER"], on_behalf_of: null };
+    expect(evaluatePolicy({ principal: inst, action: "send_message", purpose: "marketing", recipient: { ...recipient, consent: { marketing: true } }, channels: ["email"] }).policies).toContain("marketing_from_easylink_only");
   });
   it("needs marketing consent (Spam Act) and SMS quiet hours for agents", () => {
     const r = evaluatePolicy({ principal: agent("sales"), action: "send_message", purpose: "marketing", recipient, channels: ["email"], now: new Date("2026-10-21T03:00:00Z") });

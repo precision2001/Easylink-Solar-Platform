@@ -4,8 +4,11 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 /** Outbound email and SMS (spec 10.5, 10.6). */
+export type EmailAttachment = { fileName: string; contentType: string; bytes: Uint8Array };
+export type EmailMessage = { to: string; subject: string; body: string; links?: string[]; attachments?: EmailAttachment[]; replyTo?: string };
+
 export interface Messaging {
-  sendEmail(m: { to: string; subject: string; body: string; links?: string[] }): Promise<{ id: string }>;
+  sendEmail(m: EmailMessage): Promise<{ id: string }>;
   sendSms(m: { to: string; body: string }): Promise<{ id: string }>;
 }
 
@@ -16,13 +19,20 @@ export class AwsMessaging implements Messaging {
     private ses = new SESv2Client({ region: process.env.AWS_REGION ?? "ap-southeast-2" }),
     private sms = new PinpointSMSVoiceV2Client({ region: process.env.AWS_REGION ?? "ap-southeast-2" }),
   ) {}
-  async sendEmail(m: { to: string; subject: string; body: string; links?: string[] }) {
+  async sendEmail(m: EmailMessage) {
     const text = [m.body, ...(m.links?.length ? ["", ...m.links] : [])].join("\n");
     const r = await this.ses.send(
       new SendEmailCommand({
         FromEmailAddress: this.from,
         Destination: { ToAddresses: [m.to] },
-        Content: { Simple: { Subject: { Data: m.subject }, Body: { Text: { Data: text } } } },
+        ReplyToAddresses: m.replyTo ? [m.replyTo] : undefined,
+        Content: {
+          Simple: {
+            Subject: { Data: m.subject },
+            Body: { Text: { Data: text } },
+            Attachments: m.attachments?.map((a) => ({ FileName: a.fileName, ContentType: a.contentType, RawContent: a.bytes, ContentDisposition: "ATTACHMENT" as const })),
+          },
+        },
       }),
     );
     return { id: r.MessageId ?? "" };
@@ -36,8 +46,8 @@ export class AwsMessaging implements Messaging {
 }
 
 export class FakeMessaging implements Messaging {
-  sent: { channel: "email" | "sms"; to: string; subject?: string; body: string; links?: string[] }[] = [];
-  async sendEmail(m: { to: string; subject: string; body: string; links?: string[] }) {
+  sent: { channel: "email" | "sms"; to: string; subject?: string; body: string; links?: string[]; attachments?: EmailAttachment[] }[] = [];
+  async sendEmail(m: EmailMessage) {
     this.sent.push({ channel: "email", ...m });
     return { id: `email_${this.sent.length}` };
   }

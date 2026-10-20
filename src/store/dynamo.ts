@@ -43,6 +43,7 @@ import {
  *   CHUNK#<type#id>        / <iso>#<id>          (keyword search; vector search runs in pgvector, spec 5.2)
  *   SCREEN#<owner>         / <id>
  *   LABELS#<document_id>   / LABELS
+ *   REC#<type>             / <id>                (partners, routing config: records the backend does not hold yet)
  */
 export class DynamoStore implements Store {
   private doc: DynamoDBDocumentClient;
@@ -257,6 +258,15 @@ export class DynamoStore implements Store {
   async getFileLabels(ids: string[]) {
     const out = await Promise.all(ids.map((id) => this.get<FileLabels>(`LABELS#${id}`, "LABELS")));
     return out.filter((x): x is FileLabels => !!x);
+  }
+  async putRecord(type: string, row: Record<string, unknown> & { id: string }) {
+    await this.put({ pk: `REC#${type}`, sk: row.id, data: row });
+  }
+  async getRecord(type: string, id: string) {
+    return this.get<Record<string, unknown>>(`REC#${type}`, id);
+  }
+  async listRecords(type: string) {
+    return this.query<Record<string, unknown>>({ KeyConditionExpression: "pk = :p", ExpressionAttributeValues: { ":p": `REC#${type}` } });
   }
   async putScreen(s: ScreenRecord) {
     await this.put({ pk: `SCREEN#${s.ownerId}`, sk: s.id, data: s });

@@ -79,6 +79,12 @@ class EasyLinkAiStack extends Stack {
       encryptionKey: key,
     });
 
+    const searchKey = new secrets.Secret(this, "SearchApiKey", {
+      secretName: "easylink/ai/search-api-key",
+      description: "Web search API key used to find contacts that aren't on file (Brave Search). Set manually.",
+      encryptionKey: key,
+    });
+
     const filesBucketName = ctx("filesBucket");
     const env: Record<string, string> = {
       AI_TABLE: table.tableName,
@@ -92,6 +98,7 @@ class EasyLinkAiStack extends Stack {
       SMS_ORIGINATOR: ctx("smsOriginator", "EasyLink"),
       SECRETS_SERVICE_TOKEN_ARN: serviceToken.secretArn,
       SECRETS_INGEST_KEY_ARN: ingestKey.secretArn,
+      SECRETS_SEARCH_KEY_ARN: searchKey.secretArn,
       NODE_OPTIONS: "--enable-source-maps",
     };
 
@@ -119,6 +126,7 @@ class EasyLinkAiStack extends Stack {
       bus.grantPutEventsTo(f);
       serviceToken.grantRead(f);
       ingestKey.grantRead(f);
+      searchKey.grantRead(f);
     }
     for (const f of [api, consumer]) {
       f.addToRolePolicy(
@@ -135,6 +143,8 @@ class EasyLinkAiStack extends Stack {
       const files = s3.Bucket.fromBucketName(this, "FilesBucket", filesBucketName);
       files.grantRead(api);
       files.grantRead(consumer);
+      // Malware scan results (GuardDuty Malware Protection for S3 tags each object).
+      for (const f of [api, consumer]) f.addToRolePolicy(new iam.PolicyStatement({ actions: ["s3:GetObjectTagging"], resources: [files.arnForObjects("*")] }));
     }
 
     const http = new apigw.HttpApi(this, "AiApi", {

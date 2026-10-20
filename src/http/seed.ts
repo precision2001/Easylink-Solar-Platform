@@ -1,10 +1,11 @@
 import { FakeBackend } from "../backend/client.js";
+import { OverlayBackend } from "../backend/overlay.js";
 import { newId } from "../core/envelope.js";
 import type { Container } from "../container.js";
 
 /** Demo data for local development and screenshots. All names are invented. */
 export async function seedDemo(c: Container) {
-  const b = c.backend;
+  const b = c.backend instanceof OverlayBackend ? c.backend.inner : c.backend;
   if (!(b instanceof FakeBackend)) return;
   b.users.set("admin-local", { id: "usr_admin_1", role: "ADMIN", firstName: "Ops", lastName: "Team" });
   b.users.set("installer-local", { id: "usr_inst_1", role: "INSTALLER", firstName: "Sam", lastName: "Rivers" });
@@ -28,6 +29,14 @@ export async function seedDemo(c: Container) {
     { id: "doc_2", customerId: "cus_2001", fileName: "IMG_4413.jpg", s3Key: "customers/cus_2001/IMG_4413.jpg", aiLabels: [{ label: "switchboard", confidence: 0.91 }], reviewState: "auto", createdAt: "2026-10-12T02:01:00Z" },
     { id: "doc_3", customerId: "cus_2001", fileName: "IMG_4420.jpg", s3Key: "customers/cus_2001/IMG_4420.jpg", aiLabels: [{ label: "isolator", confidence: 0.58 }, { label: "inverter", confidence: 0.35 }], reviewState: "needs_review", createdAt: "2026-10-12T02:05:00Z" },
   ]);
+
+  // A retailer on file (invented) and a completion document waiting to be sent.
+  await c.store.putRecord("partner", { id: "par_sunrise", name: "Sunrise Power", kind: "retailer", submissionEmail: "solar.docs@sunrisepower.example", attach: true, verified: true, aliases: ["Sunrise"] });
+  b.seed("customer", [{ id: "cus_2001", firstName: "Daniel", lastName: "Okafor", email: "daniel@example.com", phone: "+61400000301", address: "7 Gum Tree Ct, Castle Hill NSW 2154", smsConsent: true, emailConsent: true, leadId: "ld_0999", retailer: "Sunrise Power" }]);
+  b.seed("document", [{ id: "doc_4", customerId: "cus_2001", installerId: "usr_inst_1", fileName: "Proof of Completion.pdf", mimeType: "application/pdf", url: "/uploads/doc_4.pdf", sizeBytes: 182000, createdAt: "2026-10-20T03:10:00Z" }, { id: "doc_5", customerId: "cus_2001", installerId: "usr_inst_1", fileName: "Site report.pdf", mimeType: "application/pdf", url: "/uploads/doc_5.pdf", sizeBytes: 94000, createdAt: "2026-10-20T03:12:00Z" }]);
+  const nowIso = new Date().toISOString();
+  await c.store.putFileLabels({ documentId: "doc_4", labels: [{ label: "proof_of_completion", confidence: 0.95 }], extracted: { site_address: "7 Gum Tree Ct, Castle Hill NSW 2154", signed_by_customer: "yes" }, reviewState: "auto", description: "Proof of completion, 6.6 kW", updatedAt: nowIso, links: [{ type: "customer", id: "cus_2001" }, { type: "user", id: "usr_inst_1" }], routes: ["customer", "retailer"], issues: [], deliveredTo: [] });
+  await c.store.putFileLabels({ documentId: "doc_5", labels: [{ label: "site_report", confidence: 0.91 }], extracted: {}, reviewState: "auto", description: "Site report", updatedAt: nowIso, links: [{ type: "customer", id: "cus_2001" }, { type: "user", id: "usr_inst_1" }], routes: ["customer"], issues: ["No customer signature on page 2."], deliveredTo: [] });
 
   const now = Date.now();
   const iso = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();

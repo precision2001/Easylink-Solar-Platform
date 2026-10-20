@@ -26,6 +26,8 @@ export type RecordTypeDef = {
   supports: { list: boolean; get: boolean; create: boolean; update: boolean; delete: boolean };
   /** Event emitted when this type is created / updated through the Action API. */
   events: { created: string; updated: string };
+  /** "ai" = kept by the AI platform until the backend has a table for it. Default "backend". */
+  storedIn?: "backend" | "ai";
 };
 
 export const RECORD_TYPES: Record<string, RecordTypeDef> = {
@@ -112,6 +114,24 @@ export const RECORD_TYPES: Record<string, RecordTypeDef> = {
     aiWritable: [],
     supports: { list: true, get: true, create: false, update: false, delete: false },
     events: { created: "record.purged", updated: "record.purged" },
+  },
+  /**
+   * Organisations documents are sent to: electricity retailers, DNSPs, suppliers,
+   * finance providers. Kept by the AI platform until the backend has /partners.
+   * Fields: name, kind (retailer | dnsp | supplier | finance | other), email,
+   * submissionEmail, phone, requires (document labels it wants), attach (send
+   * files as attachments), subjectTemplate, notes.
+   */
+  partner: {
+    type: "partner",
+    path: "/partners",
+    portal: "admin",
+    search: ["kind", "search"],
+    pii: [],
+    aiWritable: [],
+    supports: { list: true, get: true, create: true, update: true, delete: false },
+    events: { created: "partner.created", updated: "partner.updated" },
+    storedIn: "ai",
   },
   document: {
     type: "document",

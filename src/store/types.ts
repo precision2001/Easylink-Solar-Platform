@@ -25,6 +25,8 @@ export type InboxItem = {
   resolution: string | null;
   /** Set when a person approved after editing the proposal. */
   editedInput: Record<string, unknown> | null;
+  /** When a person's own request needs a staff approval (e.g. first send to a contact the AI found), who asked. */
+  requestedBy?: Principal | null;
 };
 
 export type AiDecision = {
@@ -117,7 +119,14 @@ export type ScreenRecord = {
   createdAt: string;
 };
 
-/** AI labels for a stored file, kept here as well so they work before the backend has the columns. */
+/** Who a document was sent to, and when. */
+export type Delivery = { recipient: RecordRef; role: string; channels: string[]; at: string; by: string; attached: boolean };
+
+/**
+ * The AI's profile of a stored file: labels, what it read, which records it
+ * belongs to, who it should go to, and who it has gone to. Kept here as well
+ * so it works before the backend has the columns.
+ */
 export type FileLabels = {
   documentId: string;
   labels: { label: string; confidence: number }[];
@@ -125,6 +134,13 @@ export type FileLabels = {
   reviewState: "auto" | "needs_review" | "confirmed";
   description: string;
   updatedAt: string;
+  /** Every record the file belongs to: customer, lead, the installer who uploaded it. */
+  links?: RecordRef[];
+  /** Suggested recipient roles for this kind of document, e.g. ["customer", "retailer"]. */
+  routes?: string[];
+  /** Problems found when checking the document against the job (missing signature, serial mismatch). */
+  issues?: string[];
+  deliveredTo?: Delivery[];
 };
 
 export interface Store {
@@ -167,6 +183,11 @@ export interface Store {
   // file labels
   putFileLabels(l: FileLabels): Promise<void>;
   getFileLabels(documentIds: string[]): Promise<FileLabels[]>;
+
+  // records the AI platform keeps until the backend has them (partners, routing config)
+  putRecord(type: string, row: Record<string, unknown> & { id: string }): Promise<void>;
+  getRecord(type: string, id: string): Promise<Record<string, unknown> | undefined>;
+  listRecords(type: string): Promise<Record<string, unknown>[]>;
 
   // screens
   putScreen(s: ScreenRecord): Promise<void>;

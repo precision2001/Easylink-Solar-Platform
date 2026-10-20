@@ -9,7 +9,9 @@ import { resolveAutonomy } from "../policy/autonomy.js";
 import type { AutonomyLevel, InboxItem, Store } from "../store/types.js";
 import type { FileLinks, Messaging } from "./ports.js";
 import { WORKFLOWS } from "./workflows.js";
-import { absoluteUrl } from "../files/classify.js";
+import { absoluteUrl, type FileBytes } from "../files/classify.js";
+import { checkFile, checkMessageBody, LIMITS, s3ScanStatus } from "../files/safety.js";
+import type { ContactFinder } from "../contacts/finder.js";
 
 const SITE = () => process.env.PUBLIC_SITE_URL ?? "";
 
@@ -51,8 +53,23 @@ export type ActionServiceDeps = {
   files: FileLinks;
   /** Service account token for agents and system jobs. */
   serviceToken: string;
+  /** Reads file contents for attachments and safety checks. */
+  bytes?: FileBytes;
+  /** Finds contacts that aren't on file (web search under the contact rules). */
+  contacts?: ContactFinder;
+  /** Malware scan result for a stored file (GuardDuty Malware Protection for S3). */
+  scan?: (doc: Record<string, unknown>) => Promise<"clean" | "infected" | null>;
   now?: () => Date;
 };
+
+/** Contact details for any record kind; the sender never sees them. */
+export function contactOf(type: string, d: Record<string, unknown>) {
+  return {
+    email: (type === "partner" ? d.submissionEmail ?? d.email : d.email ?? d.customerEmail) as string | undefined,
+    phone: (d.phone ?? d.mobile ?? d.customerPhone) as string | undefined,
+    name: String(d.name ?? ([d.firstName, d.lastName].filter(Boolean).join(" ") || d.customerName) ?? `${type} ${d.id}`),
+  };
+}
 
 type Ctx = {
   req: ActionRequest;
@@ -62,6 +79,9 @@ type Ctx = {
   events: EventEnvelope[];
   correlationId: string;
 };
+
+/** Refused because of what is being sent (type, size, malware, links, limits), not who is sending. */
+export class SafetyError extends Error {}
 
 export class ActionService {
   constructor(private deps: ActionServiceDeps) {}
@@ -144,6 +164,23 @@ export class ActionService {
       }
     }
 
+    // A person's request that policy says needs a staff OK (e.g. the first send to a contact the AI
+    // found on the web) waits in the inbox. Staff are trusted to act directly.
+    if (req.principal.kind !== "agent" && policy.requireHuman && !req.approvedBy && !isStaff(req.principal) && !req.dryRun) {
+      if (name === "send_message") {
+        // Check now that the sender can open every file, so the approval isn't wasted.
+        for (const f of (input.files as RecordRef[]) ?? []) {
+          const fr = await this.deps.backend.get(f.type, f.id, auth);
+          if (!fr.ok) return { ...base, status: "denied", policy: { decision: "deny", policies: ["sender_can_open_files"], reasons: [`You can't send ${f.type} ${f.id}.`] } };
+        }
+      }
+      const item = await this.propose(ctx, subject, policy.reasons.join(" ") || "Needs a staff approval.");
+      await this.log(actionId, req, name, "proposed", policy.policies, subject);
+      const evt = this.event(ctx, "ai.proposed", subject ?? { type: "inbox", id: item.id }, { inbox_id: item.id, action: name, requested_by: req.principal.id });
+      await this.emit(ctx, [evt]);
+      return { ...base, status: "proposed", approval_id: item.id, policy, events: [evt.event_id], message: "Sent to EasyLink staff to approve. You'll be told when it goes." };
+    }
+
     if (req.dryRun) return { ...base, autonomy_level: level, status: "dry_run", policy };
 
     try {
@@ -161,6 +198,10 @@ export class ActionService {
       if (req.idempotencyKey) await this.deps.store.putIdempotent(`${req.principal.id}:${req.idempotencyKey}`, out);
       return out;
     } catch (e) {
+      if (e instanceof SafetyError) {
+        await this.log(actionId, req, name, "denied", [...policy.policies, "content_safety"], subject);
+        return { ...base, autonomy_level: level, status: "denied", policy: { decision: "deny", policies: [...policy.policies, "content_safety"], reasons: [e.message] }, message: e.message };
+      }
       await this.log(actionId, req, name, "error", policy.policies, subject);
       return { ...base, autonomy_level: level, status: "error", policy, message: (e as Error).message };
     }
@@ -169,15 +210,26 @@ export class ActionService {
   /** A person approves (optionally after editing) an inbox proposal. */
   async approve(inboxId: string, approver: Principal, editedInput?: Record<string, unknown>): Promise<ActionResult> {
     const item = await this.deps.store.getInbox(inboxId);
-    if (!item || item.kind !== "proposal" || !item.action || !item.agentId) throw new Error("Not an open proposal");
+    if (!item || item.kind !== "proposal" || !item.action || !(item.agentId || item.requestedBy)) throw new Error("Not an open proposal");
     if (item.status !== "open") throw new Error(`Proposal is already ${item.status}`);
-    const res = await this.run({
-      name: item.action,
-      input: editedInput ?? item.input,
-      principal: { kind: "agent", id: item.agentId, roles: [item.agentId], on_behalf_of: approver.id },
-      agent: { agentId: item.agentId, decisionId: item.decisionId ?? undefined },
-      approvedBy: approver.id,
-    });
+    const input = editedInput ?? item.input;
+    const res = item.agentId
+      ? await this.run({
+          name: item.action,
+          input,
+          principal: { kind: "agent", id: item.agentId, roles: [item.agentId], on_behalf_of: approver.id },
+          agent: { agentId: item.agentId, decisionId: item.decisionId ?? undefined },
+          approvedBy: approver.id,
+        })
+      : // A person's request: runs as them; file access was checked when they asked.
+        await this.run({ name: item.action, input, principal: item.requestedBy!, auth: { token: this.deps.serviceToken }, approvedBy: approver.id });
+    // Approving the first send to a contact the AI found makes that contact trusted.
+    if (res.status === "executed" && item.action === "send_message") {
+      const to = (input as { to?: { record?: RecordRef } } | null)?.to?.record;
+      if (to?.type === "partner") {
+        await this.deps.backend.update("partner", to.id, { verified: true, verifiedBy: approver.id, verifiedAt: this.now().toISOString() }, { token: this.deps.serviceToken });
+      }
+    }
     const resolved: InboxItem = {
       ...item,
       status: res.status === "executed" ? "approved" : "open",
@@ -242,9 +294,12 @@ export class ActionService {
         break;
       case "send_message":
       case "place_call": {
+        // Anyone signed in may contact anyone on record: the recipient is looked up by the
+        // platform (service account), so it is not an ownership check on the sender. What the
+        // sender must be able to see is the files they attach (checked when sending).
         const to = (input.to as { record: RecordRef }).record;
-        const loaded = await loadRef(to);
-        pr.resource = loaded;
+        const r = RECORD_TYPES[to.type] ? await this.deps.backend.get(to.type, to.id, { token: this.deps.serviceToken }) : null;
+        const loaded = r?.ok && r.data ? { ref: to, data: r.data as Record<string, unknown> } : undefined;
         const d = loaded?.data ?? {};
         pr.recipient = {
           resolvedFromRecord: !!loaded?.data,
@@ -258,6 +313,8 @@ export class ActionService {
           optedOut: Boolean(d.optedOut),
           dncrRegistered: Boolean(d.dncrRegistered),
           address: (d.address as string | undefined) ?? null,
+          verified: to.type === "partner" ? d.verified !== false : true,
+          source: (d.source as { url?: string } | undefined)?.url ?? null,
         };
         pr.purpose = input.purpose as PolicyRequest["purpose"];
         pr.channels = (input.channel as string[] | undefined) ?? (name === "place_call" ? ["call"] : []);
@@ -291,7 +348,8 @@ export class ActionService {
       kind: "proposal",
       status: "open",
       title: describeAction(ctx.name, ctx.input),
-      agentId: ctx.req.agent!.agentId,
+      agentId: ctx.req.agent?.agentId ?? null,
+      requestedBy: ctx.req.agent ? null : ctx.req.principal,
       subject,
       action: ctx.name,
       input: ctx.input,
@@ -407,7 +465,14 @@ export class ActionService {
         const stored = new Map((await this.deps.store.getFileLabels(rows.map((f) => String(f.id)))).map((l) => [l.documentId, l]));
         rows = rows.map((f) => {
           const l = stored.get(String(f.id));
-          return l && !f.aiLabels ? { ...f, aiLabels: l.labels, extracted: l.extracted, reviewState: l.reviewState } : f;
+          if (!l) return f;
+          return {
+            ...f,
+            ...(f.aiLabels ? {} : { aiLabels: l.labels, extracted: l.extracted, reviewState: l.reviewState }),
+            routes: l.routes ?? [],
+            issues: l.issues ?? [],
+            deliveredTo: l.deliveredTo ?? [],
+          };
         });
         const want = (input.slot ?? input.label) as string | undefined;
         if (want) {
@@ -426,6 +491,9 @@ export class ActionService {
           reviewState: f.reviewState ?? (f.aiLabels ? "auto" : "pending"),
           url: f.url ?? null,
           mimeType: f.mimeType ?? null,
+          routes: f.routes ?? [],
+          issues: f.issues ?? [],
+          deliveredTo: ((f.deliveredTo as { role: string; at: string; channels: string[] }[] | undefined) ?? []).map((d) => ({ role: d.role, at: d.at, channels: d.channels })),
           createdAt: f.createdAt ?? null,
         }));
       }
@@ -471,6 +539,39 @@ export class ActionService {
       }
       case "start_workflow":
         return this.startWorkflow(ctx);
+      case "find_contact": {
+        if (!this.deps.contacts) throw new Error("Contact search is not configured (SEARCH_API_KEY).");
+        const r = await this.deps.contacts.find(String(input.organisation), String(input.kind), String(input.purpose ?? ""));
+        const about = input.about as RecordRef | undefined;
+        if (!r.found) {
+          // Nothing safe to use: ask staff, with what was found.
+          const item: InboxItem = {
+            id: newId("inb_"),
+            kind: "question",
+            status: "open",
+            title: `Who at ${input.organisation} should receive this? ${r.reason}`,
+            agentId: ctx.req.agent?.agentId ?? null,
+            subject: about ?? null,
+            action: null,
+            input: { organisation: input.organisation, kind: input.kind, candidates: r.candidates },
+            reasoning: r.candidates.length ? `Addresses seen: ${r.candidates.map((c) => c.email).join(", ")}` : r.reason,
+            createdAt: this.now().toISOString(),
+            dueAt: new Date(this.now().getTime() + 4 * 3_600_000).toISOString(),
+            decisionId: ctx.req.agent?.decisionId ?? null,
+            resolvedBy: null,
+            resolvedAt: null,
+            resolution: null,
+            editedInput: null,
+            requestedBy: ctx.req.agent ? null : ctx.req.principal,
+          };
+          await this.deps.store.putInbox(item);
+          ctx.events.push(this.event(ctx, "ai.escalated", about ?? { type: "inbox", id: item.id }, { inbox_id: item.id, reason: r.reason }));
+          return { partner: null, reason: r.reason, inbox_id: item.id };
+        }
+        const f = r.found;
+        if (!f.verified && f.source) ctx.events.push(this.event(ctx, "partner.created", f.partner, { found_by: "ai", source: f.source.url, domain: f.domain }));
+        return { partner: f.partner, name: f.name, email: f.email, verified: f.verified, source: f.source?.url ?? null, confidence: f.confidence };
+      }
       case "write_fact": {
         const about = input.about as RecordRef;
         const confidence = input.confidence as number;
@@ -535,40 +636,94 @@ export class ActionService {
   }
 
   private async sendMessage(ctx: Ctx) {
-    const { input, auth } = ctx;
+    const { input, auth, req } = ctx;
+    const p = req.principal;
     const to = (input.to as { record: RecordRef }).record;
-    const rec = await this.deps.backend.get(to.type, to.id, auth);
+    // The platform resolves the recipient; their details never go back to the sender.
+    const rec = await this.deps.backend.get(to.type, to.id, { token: this.deps.serviceToken });
     if (!rec.ok || !rec.data) throw new Error("Recipient not found");
-    const d = rec.data;
-    const email = (d.email ?? d.customerEmail) as string | undefined;
-    const phone = (d.phone ?? d.customerPhone) as string | undefined;
+    const contact = contactOf(to.type, rec.data);
     const channels = input.channel as string[];
     const files = input.files as RecordRef[];
-    const links: string[] = [];
+    const people = !["agent", "system", "integration"].includes(p.kind);
+
+    if (people) {
+      const body = checkMessageBody(String(input.body), { senderIsStaff: isStaff(p) });
+      if (!body.ok) throw new SafetyError(body.reason);
+      await this.rateLimit(p.id);
+    }
+    if (files.length > LIMITS.maxFilesPerMessage) throw new SafetyError(`At most ${LIMITS.maxFilesPerMessage} files per message.`);
+
+    // Files: the sender must be able to open each one (their own token), and each must pass the safety checks.
+    const wantAttach = Boolean(input.attach) || Boolean(rec.data.attach);
+    const prepared: { ref: RecordRef; name: string; url: string; raw: { bytes: Uint8Array; contentType: string; fileName: string } | null }[] = [];
     for (const f of files) {
       const fr = await this.deps.backend.get(f.type, f.id, auth);
-      if (fr.ok && fr.data) {
-        const url = fr.data.s3Key ? await this.deps.files.signedUrl(String(fr.data.s3Key), 7 * 86400) : absoluteUrl(String(fr.data.url ?? ""), SITE());
-        if (url) links.push(url);
+      if (!fr.ok || !fr.data) throw new SafetyError(`You can't send ${f.type} ${f.id}: it isn't on a record you can open.`);
+      const doc = fr.data;
+      const raw = this.deps.bytes ? await this.deps.bytes.raw(doc, LIMITS.maxFileBytes).catch(() => null) : null;
+      const scan = this.deps.scan ? await this.deps.scan(doc) : doc.s3Key && process.env.FILES_BUCKET ? await s3ScanStatus(process.env.FILES_BUCKET, String(doc.s3Key)) : null;
+      const verdict = checkFile({ name: String(doc.fileName ?? doc.name ?? f.id), sizeBytes: Number(doc.sizeBytes ?? raw?.bytes.byteLength ?? 0), mimeType: doc.mimeType as string | undefined, bytes: raw?.bytes, scan });
+      if (!verdict.ok) {
+        ctx.events.push(this.event(ctx, "document.issue_found", f, { code: verdict.code, reason: verdict.reason }));
+        await this.emit(ctx, ctx.events.splice(0));
+        throw new SafetyError(verdict.reason);
       }
+      const url = doc.s3Key ? await this.deps.files.signedUrl(String(doc.s3Key), 7 * 86400) : absoluteUrl(String(doc.url ?? ""), SITE());
+      prepared.push({ ref: f, name: String(doc.fileName ?? f.id), url, raw });
     }
+    const attachBytes = prepared.reduce((s, x) => s + (x.raw?.bytes.byteLength ?? Infinity), 0);
+    const attach = wantAttach && prepared.length > 0 && attachBytes <= LIMITS.maxAttachBytes;
+    const links = attach ? [] : prepared.map((x) => x.url).filter(Boolean);
+
     const sent: Record<string, string> = {};
     if (channels.includes("email")) {
-      if (!email) throw new Error("Recipient has no email on file");
-      sent.email = (await this.deps.messaging.sendEmail({ to: email, subject: (input.subject as string) ?? "EasyLink Solar", body: input.body as string, links })).id;
-      ctx.events.push(this.event(ctx, "email.sent", to, { message_id: sent.email, files: files.length }));
+      if (!contact.email) throw new Error(`${contact.name} has no email on file`);
+      sent.email = (
+        await this.deps.messaging.sendEmail({
+          to: contact.email,
+          subject: (input.subject as string) ?? "EasyLink Solar",
+          body: input.body as string,
+          links,
+          attachments: attach ? prepared.map((x) => ({ fileName: x.raw!.fileName || x.name, contentType: x.raw!.contentType, bytes: x.raw!.bytes })) : undefined,
+        })
+      ).id;
+      ctx.events.push(this.event(ctx, "email.sent", to, { message_id: sent.email, files: files.length, attached: attach }));
     }
     if (channels.includes("sms")) {
-      if (!phone) throw new Error("Recipient has no mobile on file");
-      const body = [String(input.body).slice(0, 320), ...links].join("\n");
-      sent.sms = (await this.deps.messaging.sendSms({ to: phone, body })).id;
+      if (!contact.phone) throw new Error(`${contact.name} has no mobile on file`);
+      const body = [String(input.body).slice(0, 320), ...prepared.map((x) => x.url).filter(Boolean)].join("\n");
+      sent.sms = (await this.deps.messaging.sendSms({ to: contact.phone, body })).id;
       ctx.events.push(this.event(ctx, "sms.sent", to, { message_id: sent.sms }));
     }
     if (channels.includes("portal")) {
-      ctx.events.push(this.event(ctx, "message.sent", to, { channel: "portal" }));
+      ctx.events.push(this.event(ctx, "message.sent", to, { channel: "portal", files: files.map((f) => f.id) }));
     }
-    for (const f of files) ctx.events.push(this.event(ctx, "file.shared", f, { to }));
-    return { sent, links: links.length };
+
+    // Remember who each document went to: shows on the record and stops double sends.
+    const at = this.now().toISOString();
+    const role = String(input.role ?? (to.type === "partner" ? String(rec.data.kind ?? "partner") : to.type));
+    for (const f of prepared) {
+      const [cur] = await this.deps.store.getFileLabels([f.ref.id]);
+      const base = cur ?? { documentId: f.ref.id, labels: [], extracted: {}, reviewState: "auto" as const, description: "", updatedAt: at };
+      const delivery = { recipient: to, role, channels, at, by: p.id, attached: attach };
+      await this.deps.store.putFileLabels({ ...base, updatedAt: at, deliveredTo: [...(base.deliveredTo ?? []), delivery] });
+      ctx.events.push(this.event(ctx, "document.delivered", f.ref, { to, role, channels, attached: attach }, [to]));
+      ctx.events.push(this.event(ctx, "file.shared", f.ref, { to }));
+    }
+    return { sent, to: { type: to.type, name: contact.name }, files: prepared.length, attached: attach, links: links.length };
+  }
+
+  /** Per-person sending limits (people only; agents have their own budget). */
+  private async rateLimit(senderId: string) {
+    const now = this.now();
+    const hourKey = `${senderId}:${now.toISOString().slice(0, 13)}`;
+    const dayKey = `${senderId}:${now.toISOString().slice(0, 10)}`;
+    const [h, d] = await Promise.all([this.deps.store.getRecord("send_count", hourKey), this.deps.store.getRecord("send_count", dayKey)]);
+    const hn = Number(h?.n ?? 0) + 1;
+    const dn = Number(d?.n ?? 0) + 1;
+    if (hn > LIMITS.perHour || dn > LIMITS.perDay) throw new SafetyError("Sending limit reached. Try again later or ask EasyLink staff.");
+    await Promise.all([this.deps.store.putRecord("send_count", { id: hourKey, n: hn }), this.deps.store.putRecord("send_count", { id: dayKey, n: dn })]);
   }
 
   private async schedule(ctx: Ctx) {
@@ -602,10 +757,39 @@ export class ActionService {
       throw new Error(`The "${template.family}" kill switch is off.`);
     }
     const results: { step: string; status: ActionStatus; message?: string }[] = [];
-    for (const step of template.steps(ctx.input.inputs as Record<string, unknown>)) {
+    const outputs = new Map<string, unknown>();
+    /** Replace {"$step": "<id>", "path": "a.b"} with that earlier step's result. */
+    const resolve = (v: unknown): unknown => {
+      if (Array.isArray(v)) return v.map(resolve);
+      if (v && typeof v === "object") {
+        const o = v as Record<string, unknown>;
+        if (typeof o.$step === "string") return readPath(outputs.get(o.$step), String(o.path ?? "")) ?? null;
+        return Object.fromEntries(Object.entries(o).map(([k, x]) => [k, resolve(x)]));
+      }
+      return v;
+    };
+    const hasNull = (v: unknown): boolean => v === null || (Array.isArray(v) ? v.some(hasNull) : !!v && typeof v === "object" && Object.values(v).some(hasNull));
+    const svc = { token: this.deps.serviceToken };
+    const wctx = {
+      get: async (r: RecordRef) => {
+        const x = RECORD_TYPES[r.type] ? await this.deps.backend.get(r.type, r.id, svc) : null;
+        return x?.ok ? (x.data as Record<string, unknown>) : null;
+      },
+      list: async (type: string, filter: Record<string, unknown>) => {
+        const x = await this.deps.backend.list(type, filter, svc);
+        return (x.ok ? x.data ?? [] : []) as Record<string, unknown>[];
+      },
+      fileProfiles: (ids: string[]) => this.deps.store.getFileLabels(ids),
+    };
+    for (const step of await template.steps(ctx.input.inputs as Record<string, unknown>, wctx)) {
+      const input = resolve(step.input);
+      if (JSON.stringify(step.input).includes('"$step"') && hasNull(input)) {
+        results.push({ step: step.id, status: "invalid", message: "Skipped: an earlier step found nothing to use." });
+        continue;
+      }
       const r = await this.run({
         name: step.action,
-        input: step.input,
+        input,
         principal: ctx.req.principal,
         auth: ctx.req.auth,
         correlationId: ctx.correlationId,
@@ -614,6 +798,7 @@ export class ActionService {
         approvedBy: ctx.req.approvedBy,
       });
       results.push({ step: step.id, status: r.status, message: r.message });
+      outputs.set(step.id, r.result);
       if (!["executed", "proposed"].includes(r.status) && !step.optional) break;
     }
     return { template: template.id, results };

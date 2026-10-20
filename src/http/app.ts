@@ -392,6 +392,48 @@ export function createApp(c: Container) {
     return r.ok ? ok(ctx, r.spec) : ctx.json({ success: false, message: "Invalid", errors: r.errors }, 422);
   });
 
+  // ---------- partners (retailers, DNSPs, suppliers) and the business rules for documents ----------
+  app.get("/v1/ai/partners", staffOnly, async (ctx) => ok(ctx, await c.store.listRecords("partner")));
+  app.put("/v1/ai/partners/:id", staffOnly, async (ctx) => {
+    const body = z
+      .object({
+        name: z.string().min(2).optional(),
+        kind: z.enum(["retailer", "dnsp", "supplier", "finance", "other"]).optional(),
+        submissionEmail: z.string().email().optional(),
+        email: z.string().email().optional(),
+        phone: z.string().optional(),
+        attach: z.boolean().optional(),
+        aliases: z.array(z.string()).optional(),
+        verified: z.boolean().optional(),
+        notes: z.string().max(1000).optional(),
+      })
+      .parse(await ctx.req.json());
+    const id = ctx.req.param("id") ?? "";
+    const cur = await c.store.getRecord("partner", id);
+    const p = ctx.get("principal");
+    const row = { ...(cur ?? { createdAt: new Date().toISOString() }), ...body, id, updatedAt: new Date().toISOString(), ...(body.verified ? { verifiedBy: p.id, verifiedAt: new Date().toISOString() } : {}) };
+    await c.store.putRecord("partner", row);
+    await audit(c, p, cur ? "partner.updated" : "partner.created", { fields: Object.keys(body) }, { type: "partner", id });
+    return ok(ctx, row);
+  });
+  app.get("/v1/ai/config/:key", staffOnly, async (ctx) => {
+    const key = ctx.req.param("key") ?? "";
+    if (!["document_routes", "contact_rules"].includes(key)) return ctx.json({ success: false, message: "Unknown setting" }, 404);
+    const { DEFAULT_ROUTES } = await import("../files/classify.js");
+    const { DEFAULT_CONTACT_RULES } = await import("../contacts/finder.js");
+    const cur = await c.store.getRecord("config", key);
+    return ok(ctx, cur ?? { id: key, [key === "document_routes" ? "routes" : "rules"]: key === "document_routes" ? DEFAULT_ROUTES : DEFAULT_CONTACT_RULES, default: true });
+  });
+  app.put("/v1/ai/config/:key", staffOnly, async (ctx) => {
+    const key = ctx.req.param("key") ?? "";
+    if (!["document_routes", "contact_rules"].includes(key)) return ctx.json({ success: false, message: "Unknown setting" }, 404);
+    const body = (await ctx.req.json()) as Record<string, unknown>;
+    const row = { ...body, id: key, updatedBy: ctx.get("principal").id, updatedAt: new Date().toISOString() };
+    await c.store.putRecord("config", row);
+    await audit(c, ctx.get("principal"), "ai.autonomy_changed", { setting: key });
+    return ok(ctx, row);
+  });
+
   // ---------- activity feed ----------
   app.get("/v1/ai/activity", staffOnly, async (ctx) => {
     const limit = Math.min(Number(ctx.req.query("limit") ?? 50), 200);

@@ -124,14 +124,18 @@ export const ACTIONS = {
     family: "messages",
     sensitivity: "high",
     description:
-      "Send an email, SMS or portal message to a person on file. `to` must be a record (customer, lead or installer user); raw addresses are not accepted from agents.",
+      "Send an email, SMS or portal message, optionally with files, to anyone on record: a customer, lead, portal user (installer or staff) or partner (retailer, DNSP, supplier). `to` is always a record; the platform looks up the contact details, so raw addresses are never accepted. Files are checked for type, size and malware before sending.",
     input: z.object({
       to: z.object({ record: RecordRef }),
       channel: z.array(MessageChannel).min(1),
       purpose: z.enum(["transactional", "marketing"]).default("transactional"),
       subject: z.string().max(140).optional(),
       body: z.string().min(1).max(4000),
-      files: z.array(RecordRef).default([]),
+      files: z.array(RecordRef).max(20).default([]),
+      /** Send files as email attachments instead of links (partners that require it get attachments anyway). */
+      attach: z.boolean().default(false),
+      /** Why this recipient gets it, e.g. "customer", "retailer" (shown in delivery history). */
+      role: z.string().max(40).optional(),
       reason: z.string().min(3),
     }),
   },
@@ -180,6 +184,20 @@ export const ACTIONS = {
     sensitivity: "medium",
     description: "Start a saved workflow template by name with inputs.",
     input: z.object({ template: z.string().min(2), inputs: z.record(z.unknown()).default({}) }),
+  },
+  find_contact: {
+    name: "find_contact",
+    kind: "write",
+    family: "records",
+    sensitivity: "medium",
+    description:
+      "Find the right email for an organisation that isn't on file (an electricity retailer, DNSP, supplier) by searching its own website, following EasyLink's contact rules. Saves it as an unverified partner and returns it; the first send to it waits for a staff OK.",
+    input: z.object({
+      organisation: z.string().min(2).max(120),
+      kind: z.enum(["retailer", "dnsp", "supplier", "other"]),
+      purpose: z.string().max(300).default(""),
+      about: RecordRef.optional(),
+    }),
   },
   write_fact: {
     name: "write_fact",

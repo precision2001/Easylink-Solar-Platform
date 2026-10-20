@@ -43,6 +43,9 @@ export const EVENT_CATALOGUE: Record<string, readonly string[]> = {
   fact: ["written", "deleted"],
   timer: ["fired"],
   record: ["purged"],
+  partner: ["created", "updated"],
+  document: ["delivered", "issue_found"],
+  assist: ["requested", "answered", "confirmed", "cancelled"],
   integration: ["error"],
 };
 

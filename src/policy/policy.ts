@@ -25,6 +25,10 @@ export type PolicyRequest = {
     optedOut?: boolean;
     dncrRegistered?: boolean;
     address?: string | null;
+    /** false = a contact the AI found that staff haven't confirmed yet. */
+    verified?: boolean;
+    /** Where the AI found it. */
+    source?: string | null;
   };
   purpose?: "transactional" | "marketing" | "operational";
   channels?: string[];
@@ -103,7 +107,21 @@ export function evaluatePolicy(req: PolicyRequest): PolicyDecision {
       return deny("send_to_contact_on_file", "Messages and calls may only go to contact details already on a record.");
     }
     policies.push("send_to_contact_on_file");
-    if (r?.optedOut) return deny("respect_opt_out", "The recipient has opted out.");
+    // An opt-out (STOP) stops marketing and SMS. Transactional email and portal messages about
+    // their own job (documents, bookings) still reach them.
+    if (r?.optedOut && (req.purpose === "marketing" || req.channels?.includes("sms") || req.action === "place_call")) {
+      return deny("respect_opt_out", "The recipient has opted out of marketing, SMS and calls.");
+    }
+    // Business rule: the first send to a contact the AI found (not yet confirmed by staff) needs a staff OK.
+    if (r?.verified === false && !isStaff(p)) {
+      requireHuman = true;
+      policies.push("new_contact_needs_approval");
+      reasons.push(`First send to a contact the AI found${r.source ? ` on ${r.source}` : ""}: EasyLink staff confirm it once, then it's trusted.`);
+    }
+    // Only EasyLink (staff and its agents) sends marketing. Portal users send to each other about work.
+    if (req.purpose === "marketing" && !isStaff(p) && p.kind !== "agent" && p.kind !== "system") {
+      return deny("marketing_from_easylink_only", "Only EasyLink can send marketing messages.");
+    }
 
     const state = stateFromAddress(r?.address);
     if (req.action === "send_message") {

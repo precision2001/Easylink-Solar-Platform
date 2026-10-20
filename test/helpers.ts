@@ -1,3 +1,4 @@
+process.env.PUBLIC_SITE_URL ??= "https://easylinksolar.com.au";
 import { buildContainer } from "../src/container.js";
 import { FakeBackend } from "../src/backend/client.js";
 import { FakeMessaging, FakeFileLinks } from "../src/actions/ports.js";
@@ -5,6 +6,7 @@ import { FakeModel } from "../src/ai/model.js";
 import { MemoryBus } from "../src/bus/bus.js";
 import { MemoryStore } from "../src/store/memory.js";
 import type { FileBytes } from "../src/files/classify.js";
+import { FakeWebSearch } from "../src/contacts/finder.js";
 
 export function setup(script: ConstructorParameters<typeof FakeModel>[0] = []) {
   const backend = new FakeBackend();
@@ -12,8 +14,18 @@ export function setup(script: ConstructorParameters<typeof FakeModel>[0] = []) {
   const model = new FakeModel(script);
   const store = new MemoryStore();
   const bus = new MemoryBus();
-  const bytes: FileBytes = { load: async () => ({ format: "jpeg", bytes: new Uint8Array([1, 2, 3]) }) };
-  const c = buildContainer({ backend, messaging, model, store, bus, files: new FakeFileLinks(), bytes, serviceToken: "svc", ingestKey: "ingest", now: () => WEEKDAY_AFTERNOON });
+  /** File contents by document id; anything else is a small JPEG. */
+  const contents = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]);
+  const bytes: FileBytes = {
+    load: async (doc) => (contents.has(String(doc.id)) ? null : { format: "jpeg", bytes: jpeg }),
+    raw: async (doc) => {
+      const c = contents.get(String(doc.id));
+      return { bytes: c?.bytes ?? jpeg, contentType: c?.contentType ?? "image/jpeg", fileName: String(doc.fileName ?? "file") };
+    },
+  };
+  const web = new FakeWebSearch();
+  const c = buildContainer({ backend, messaging, model, store, bus, files: new FakeFileLinks(), bytes, web, serviceToken: "svc", ingestKey: "ingest", now: () => WEEKDAY_AFTERNOON });
   backend.users.set("svc", { id: "usr_ai", role: "ADMIN" });
   backend.users.set("admin", { id: "usr_admin", role: "ADMIN" });
   backend.users.set("inst", { id: "usr_inst_1", role: "INSTALLER" });
@@ -31,7 +43,7 @@ export function setup(script: ConstructorParameters<typeof FakeModel>[0] = []) {
     { id: "doc_2", customerId: "cus_1", fileName: "b.jpg", s3Key: "c/b.jpg", aiLabels: [{ label: "switchboard", confidence: 0.9 }], createdAt: "2026-10-10T00:01:00Z" },
     { id: "doc_3", customerId: "cus_1", fileName: "c.jpg", s3Key: "c/c.jpg", aiLabels: [{ label: "meter", confidence: 0.4 }], createdAt: "2026-10-11T00:00:00Z" },
   ]);
-  return { c, backend, messaging, model, store, bus };
+  return { c, backend, messaging, model, store, bus, contents, web };
 }
 
 export const agent = (id: string) => ({ kind: "agent" as const, id, roles: [id], on_behalf_of: null });

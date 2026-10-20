@@ -5,6 +5,7 @@ export async function loadSecrets() {
   const map: Record<string, string | undefined> = {
     AI_SERVICE_TOKEN: process.env.SECRETS_SERVICE_TOKEN_ARN,
     EVENT_INGEST_KEY: process.env.SECRETS_INGEST_KEY_ARN,
+    SEARCH_API_KEY: process.env.SECRETS_SEARCH_KEY_ARN,
   };
   const sm = new SecretsManagerClient({ region: process.env.AWS_REGION ?? "ap-southeast-2" });
   await Promise.all(

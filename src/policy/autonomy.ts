@@ -19,7 +19,7 @@ export const LEVEL_LABEL: Record<AutonomyLevel, "Shadow" | "Recommends" | "Decid
 export function defaultLevel(action: ActionName): AutonomyLevel {
   const def = ACTIONS[action];
   if (def.kind === "read") return "L3";
-  if (action === "write_fact" || action === "create_task" || action === "request_approval") return "L2";
+  if (action === "write_fact" || action === "create_task" || action === "request_approval" || action === "find_contact") return "L2";
   return "L1";
 }
 
