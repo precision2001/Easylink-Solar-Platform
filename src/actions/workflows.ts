@@ -93,6 +93,55 @@ export const WORKFLOWS: Record<string, WorkflowTemplate> = {
       ];
     },
   },
+  reassign_installer: {
+    id: "reassign_installer",
+    title: "Change the installer",
+    description: "Assign a new installer to a project and tell the new installer and the customer.",
+    family: "offers",
+    steps: async (i, ctx) => {
+      const project = ref(i.project);
+      const installer = ref(i.installer);
+      const inst = await ctx.get(installer);
+      const proj = await ctx.get(project);
+      const customer = project.type === "customer" ? proj : proj?.customerId ? await ctx.get({ type: "customer", id: String(proj.customerId) }) : null;
+      const site = String(customer?.address ?? proj?.address ?? "the site");
+      const instName = [inst?.firstName, inst?.lastName].filter(Boolean).join(" ") || String(inst?.name ?? "your new installer");
+      const steps: WorkflowStep[] = [{ id: "assign", action: "assign_installer", input: { project, installer, mode: i.mode ?? "replace", reason: String(i.reason ?? "Reassigned by EasyLink") } }];
+      steps.push({
+        id: "tell-installer",
+        action: "send_message",
+        optional: true,
+        input: {
+          to: { record: installer },
+          channel: ["portal", "email"],
+          purpose: "transactional",
+          subject: `New job assigned – ${site}`,
+          body: `Hi ${String(inst?.firstName ?? "there")},\n\nEasyLink has assigned you the job at ${site}. Its documents, messages and history are in your portal now.`,
+          reason: "Installer assignment",
+          role: "installer",
+          about: project,
+        },
+      });
+      if (customer?.id) {
+        steps.push({
+          id: "tell-customer",
+          action: "send_message",
+          optional: true,
+          input: {
+            to: { record: { type: "customer", id: String(customer.id) } },
+            channel: ["portal", "email"],
+            purpose: "transactional",
+            subject: "Your installer has changed",
+            body: `Hi ${String(customer.firstName ?? "there")},\n\n${instName} is now your installer for ${site}. Everything so far is kept in your portal.`,
+            reason: "Installer assignment",
+            role: "customer",
+            about: project,
+          },
+        });
+      }
+      return steps;
+    },
+  },
   deliver_documents: {
     id: "deliver_documents",
     title: "Store and send documents",

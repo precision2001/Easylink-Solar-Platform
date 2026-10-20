@@ -134,6 +134,13 @@ export class FakeBackend implements Backend {
   }
   async call<T>(method: string, path: string, body: unknown, auth: BackendAuth) {
     this.calls.push({ method, path, body, token: auth.token });
+    // Mirrors the backend's POST /leads/:id/assign.
+    const m = path.match(/^\/leads\/([^/]+)\/assign$/);
+    if (m && method === "POST") {
+      const b = body as { installerId?: string; assignedToId?: string };
+      await this.update("lead", decodeURIComponent(m[1]!), { assignedToId: b.assignedToId ?? b.installerId });
+      return { ok: true, status: 200, data: { assigned: true } as T };
+    }
     return { ok: true, status: 200, data: { queued: true } as T };
   }
   async whoAmI(auth: BackendAuth) {

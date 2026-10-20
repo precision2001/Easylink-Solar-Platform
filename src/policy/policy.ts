@@ -32,6 +32,8 @@ export type PolicyRequest = {
   };
   purpose?: "transactional" | "marketing" | "operational";
   channels?: string[];
+  /** For actions about a project: is the caller related to it (assigned installer, its customer, staff)? */
+  related?: boolean;
   /** Number of records affected (bulk actions). */
   count?: number;
   now?: Date;
@@ -141,6 +143,16 @@ export function evaluatePolicy(req: PolicyRequest): PolicyDecision {
         return deny("dncr", "Number is on the Do Not Call Register and no consent is recorded.");
       }
       policies.push("acma_calling_hours", "dncr");
+    }
+  }
+
+  // Assignments: staff decide. A customer or installer may ask about their own project only.
+  if (req.action === "assign_installer") {
+    if (req.related === false) return deny("own_projects_only", "You can only ask about projects you are part of.");
+    if (!isStaff(p) && p.kind !== "system") {
+      requireHuman = true;
+      policies.push("assignment_by_staff");
+      reasons.push("Changing the installer is decided by EasyLink staff.");
     }
   }
 

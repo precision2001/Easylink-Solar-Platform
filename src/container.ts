@@ -9,6 +9,8 @@ import { DynamoStore } from "./store/dynamo.js";
 import { MemoryStore } from "./store/memory.js";
 import type { Store } from "./store/types.js";
 import { OverlayBackend } from "./backend/overlay.js";
+import { Relations } from "./access/relations.js";
+import { TimelineWriter } from "./history/timeline.js";
 import { BraveWebSearch, ContactFinder, FakeWebSearch, type WebSearch } from "./contacts/finder.js";
 
 export type Container = {
@@ -22,6 +24,8 @@ export type Container = {
   runtime: AiRuntime;
   classifier: FileClassifier;
   contacts: ContactFinder | null;
+  relations: Relations;
+  timeline: TimelineWriter;
   serviceToken: string;
   /** Shared secret the Next.js server uses to forward visitor events. */
   ingestKey: string;
@@ -44,10 +48,15 @@ export function buildContainer(
   const bytes = over.bytes ?? new AnyFileBytes();
   const web = over.web ?? (process.env.SEARCH_API_KEY ? new BraveWebSearch() : local ? new FakeWebSearch() : undefined);
   const contacts = web ? new ContactFinder({ web, model, backend, store, serviceToken, now: over.now }) : null;
-  const actions = new ActionService({ store, bus, backend, messaging, files, serviceToken, bytes, contacts: contacts ?? undefined, now: over.now });
+  const relations = new Relations({ store, backend, serviceToken });
+  const actions = new ActionService({ store, bus, backend, messaging, files, serviceToken, bytes, contacts: contacts ?? undefined, relations, now: over.now });
   const classifier = new FileClassifier({ model, backend, actions, store, bytes, serviceToken });
   const runtime = new AiRuntime({ store, actions, model, classifier, now: over.now });
-  // In local mode the bus delivers straight to the AI runtime (EventBridge → Lambda in AWS).
-  if (bus instanceof MemoryBus) bus.subscribe((e) => void runtime.handle(e));
-  return { store, bus, backend, messaging, files, model, actions, runtime, classifier, contacts, serviceToken, ingestKey };
+  const timeline = new TimelineWriter({ store, backend, serviceToken });
+  // In local mode the bus delivers straight to history and the AI runtime (EventBridge → SQS → Lambda in AWS).
+  if (bus instanceof MemoryBus) {
+    bus.subscribe((e) => timeline.index(e).then(() => undefined, (err) => console.error("timeline", err)));
+    bus.subscribe((e) => void runtime.handle(e));
+  }
+  return { store, bus, backend, messaging, files, model, actions, runtime, classifier, contacts, relations, timeline, serviceToken, ingestKey };
 }

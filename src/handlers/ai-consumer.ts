@@ -16,6 +16,10 @@ export async function handler(e: SQSEvent): Promise<SQSBatchResponse> {
   for (const rec of e.Records) {
     try {
       const eb = JSON.parse(rec.body) as EventBridgeEvent<string, unknown>;
+      // History first (cheap, never skipped), then the AI.
+      const { EventEnvelope } = await import("../core/envelope.js");
+      const parsed = EventEnvelope.safeParse(eb.detail);
+      if (parsed.success) await c.timeline.index(parsed.data);
       await c.runtime.handle(eb.detail);
     } catch (err) {
       console.error("ai-consumer failed", rec.messageId, err);

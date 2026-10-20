@@ -136,6 +136,8 @@ export const ACTIONS = {
       attach: z.boolean().default(false),
       /** Why this recipient gets it, e.g. "customer", "retailer" (shown in delivery history). */
       role: z.string().max(40).optional(),
+      /** The project this message is about, so it shows in that project's history. */
+      about: RecordRef.optional(),
       reason: z.string().min(3),
     }),
   },
@@ -184,6 +186,21 @@ export const ACTIONS = {
     sensitivity: "medium",
     description: "Start a saved workflow template by name with inputs.",
     input: z.object({ template: z.string().min(2), inputs: z.record(z.unknown()).default({}) }),
+  },
+  assign_installer: {
+    name: "assign_installer",
+    kind: "write",
+    family: "offers",
+    sensitivity: "high",
+    description:
+      "Assign an installer to a customer's project (customer or lead), replacing the current one or adding a second. Staff do it directly; a customer or installer asking for it sends the request to EasyLink staff. The new installer sees the project's full history; the previous one stops seeing it.",
+    input: z.object({
+      project: RecordRef,
+      installer: RecordRef,
+      mode: z.enum(["replace", "add"]).default("replace"),
+      reason: z.string().min(3).max(500),
+      notify: z.boolean().default(true),
+    }),
   },
   find_contact: {
     name: "find_contact",

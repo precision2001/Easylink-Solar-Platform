@@ -19,6 +19,7 @@ import {
   type InboxItem,
   type MemoryChunk,
   type ScreenRecord,
+  type TimelineItem,
   type Store,
   type Summary,
 } from "./types.js";
@@ -43,6 +44,7 @@ import {
  *   CHUNK#<type#id>        / <iso>#<id>          (keyword search; vector search runs in pgvector, spec 5.2)
  *   SCREEN#<owner>         / <id>
  *   LABELS#<document_id>   / LABELS
+ *   TL#<type#id>           / <iso>#<id>          (history line, one copy per record it concerns; 7 years)
  *   REC#<type>             / <id>                (partners, routing config: records the backend does not hold yet)
  */
 export class DynamoStore implements Store {
@@ -258,6 +260,18 @@ export class DynamoStore implements Store {
   async getFileLabels(ids: string[]) {
     const out = await Promise.all(ids.map((id) => this.get<FileLabels>(`LABELS#${id}`, "LABELS")));
     return out.filter((x): x is FileLabels => !!x);
+  }
+  async putTimeline(item: TimelineItem) {
+    const seen = new Set<string>();
+    for (const r of item.records) {
+      const k = refKey(r);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      await this.put({ pk: `TL#${k}`, sk: `${item.at}#${item.id}`, ttl: this.ttl(2557), data: item });
+    }
+  }
+  async listTimeline(record: RecordRef, limit: number) {
+    return this.query<TimelineItem>({ KeyConditionExpression: "pk = :p", ExpressionAttributeValues: { ":p": `TL#${refKey(record)}` }, ScanIndexForward: false, Limit: limit });
   }
   async putRecord(type: string, row: Record<string, unknown> & { id: string }) {
     await this.put({ pk: `REC#${type}`, sk: row.id, data: row });

@@ -26,6 +26,8 @@ export class AwsMessaging implements Messaging {
         FromEmailAddress: this.from,
         Destination: { ToAddresses: [m.to] },
         ReplyToAddresses: m.replyTo ? [m.replyTo] : undefined,
+        // Delivery, bounce and open receipts come back through this configuration set.
+        ConfigurationSetName: process.env.SES_CONFIGURATION_SET || undefined,
         Content: {
           Simple: {
             Subject: { Data: m.subject },
@@ -39,7 +41,13 @@ export class AwsMessaging implements Messaging {
   }
   async sendSms(m: { to: string; body: string }) {
     const r = await this.sms.send(
-      new SendTextMessageCommand({ DestinationPhoneNumber: m.to, MessageBody: m.body, OriginationIdentity: this.smsOriginator, MessageType: "TRANSACTIONAL" }),
+      new SendTextMessageCommand({
+        DestinationPhoneNumber: m.to,
+        MessageBody: m.body,
+        OriginationIdentity: this.smsOriginator,
+        MessageType: "TRANSACTIONAL",
+        ConfigurationSetName: process.env.SMS_CONFIGURATION_SET || undefined,
+      }),
     );
     return { id: r.MessageId ?? "" };
   }

@@ -11,6 +11,7 @@ import {
   type InboxItem,
   type MemoryChunk,
   type ScreenRecord,
+  type TimelineItem,
   type Store,
   type Summary,
 } from "./types.js";
@@ -32,6 +33,7 @@ export class MemoryStore implements Store {
   screens: ScreenRecord[] = [];
   labels = new Map<string, FileLabels>();
   records = new Map<string, Map<string, Record<string, unknown>>>();
+  timeline: TimelineItem[] = [];
 
   async markEventSeen(eventId: string) {
     if (this.seen.has(eventId)) return false;
@@ -143,6 +145,17 @@ export class MemoryStore implements Store {
   }
   async getFileLabels(ids: string[]) {
     return ids.map((id) => this.labels.get(id)).filter((x): x is FileLabels => !!x);
+  }
+  async putTimeline(item: TimelineItem) {
+    this.timeline = this.timeline.filter((t) => t.id !== item.id);
+    this.timeline.push(item);
+  }
+  async listTimeline(record: RecordRef, limit: number) {
+    const k = refKey(record);
+    return this.timeline
+      .filter((t) => t.records.some((r) => refKey(r) === k))
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, limit);
   }
   async putRecord(type: string, row: Record<string, unknown> & { id: string }) {
     const m = this.records.get(type) ?? new Map<string, Record<string, unknown>>();

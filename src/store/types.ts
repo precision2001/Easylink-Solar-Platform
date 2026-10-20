@@ -143,6 +143,46 @@ export type FileLabels = {
   deliveredTo?: Delivery[];
 };
 
+/**
+ * One line in a record's history. Written once, indexed under every record it
+ * concerns (customer, lead, document, recipient), shown to whoever may see
+ * that record. `audience: "staff"` lines (AI reasoning, policy refusals) are
+ * never shown to customers or installers.
+ */
+export type TimelineItem = {
+  id: string;
+  at: string;
+  kind: string;
+  title: string;
+  detail?: string;
+  actor: { kind: string; id: string; name?: string };
+  records: RecordRef[];
+  files?: { id: string; name?: string }[];
+  /** A stored copy of the message this line is about. */
+  messageId?: string;
+  audience: "related" | "staff";
+  eventId?: string;
+};
+
+/** A read-only copy of everything sent: what, to whom, how, and what happened to it. */
+export type MessageCopy = {
+  id: string;
+  at: string;
+  from: { kind: string; id: string; name?: string };
+  to: { record: RecordRef; name: string; role: string; address?: string };
+  channels: string[];
+  subject: string;
+  body: string;
+  files: { id: string; name: string }[];
+  attached: boolean;
+  status: "sent" | "delivered" | "opened" | "bounced" | "failed";
+  statusAt: string;
+  providerIds: Record<string, string>;
+  /** Records this message concerns (for access). */
+  records: RecordRef[];
+  retention: "sales_12m" | "contract_7y";
+};
+
 export interface Store {
   // event de-duplication and quarantine
   markEventSeen(eventId: string): Promise<boolean>;
@@ -183,6 +223,10 @@ export interface Store {
   // file labels
   putFileLabels(l: FileLabels): Promise<void>;
   getFileLabels(documentIds: string[]): Promise<FileLabels[]>;
+
+  // history
+  putTimeline(item: TimelineItem): Promise<void>;
+  listTimeline(record: RecordRef, limit: number): Promise<TimelineItem[]>;
 
   // records the AI platform keeps until the backend has them (partners, routing config)
   putRecord(type: string, row: Record<string, unknown> & { id: string }): Promise<void>;

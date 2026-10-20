@@ -22,6 +22,9 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as secrets from "aws-cdk-lib/aws-secretsmanager";
 import * as sqs from "aws-cdk-lib/aws-sqs";
+import * as sns from "aws-cdk-lib/aws-sns";
+import { LambdaSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
+import * as ses from "aws-cdk-lib/aws-ses";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
@@ -85,6 +88,14 @@ class EasyLinkAiStack extends Stack {
       encryptionKey: key,
     });
 
+    // Delivery receipts (email delivered / bounced / opened, SMS delivered / failed) → history.
+    const receipts = new sns.Topic(this, "DeliveryReceipts", { topicName: "easylink-delivery-receipts", masterKey: key });
+    const sesConfig = new ses.ConfigurationSet(this, "EmailConfig", { configurationSetName: "easylink-ai" });
+    sesConfig.addEventDestination("ToReceipts", {
+      destination: ses.EventDestination.snsTopic(receipts),
+      events: [ses.EmailSendingEvent.DELIVERY, ses.EmailSendingEvent.BOUNCE, ses.EmailSendingEvent.COMPLAINT, ses.EmailSendingEvent.OPEN, ses.EmailSendingEvent.REJECT],
+    });
+
     const filesBucketName = ctx("filesBucket");
     const env: Record<string, string> = {
       AI_TABLE: table.tableName,
@@ -99,6 +110,10 @@ class EasyLinkAiStack extends Stack {
       SECRETS_SERVICE_TOKEN_ARN: serviceToken.secretArn,
       SECRETS_INGEST_KEY_ARN: ingestKey.secretArn,
       SECRETS_SEARCH_KEY_ARN: searchKey.secretArn,
+      SES_CONFIGURATION_SET: "easylink-ai",
+      // Create the SMS configuration set with an SNS destination to this topic in End User Messaging SMS, then set its name here.
+      SMS_CONFIGURATION_SET: ctx("smsConfigurationSet"),
+      PUBLIC_API_URL: ctx("publicApiUrl"),
       NODE_OPTIONS: "--enable-source-maps",
     };
 
@@ -120,8 +135,11 @@ class EasyLinkAiStack extends Stack {
     const consumer = fn("AiConsumerFn", "src/handlers/ai-consumer.ts", Duration.minutes(5), 1536);
     const contact = fn("ContactEventsFn", "src/handlers/contact-events.ts", Duration.seconds(30), 512);
     consumer.addEventSource(new SqsEventSource(queue, { batchSize: 5, reportBatchItemFailures: true, maxConcurrency: 20 }));
+    const delivery = fn("DeliveryReceiptsFn", "src/handlers/delivery-events.ts", Duration.seconds(30), 512);
+    receipts.addSubscription(new LambdaSubscription(delivery));
+    key.grantEncryptDecrypt(new iam.ServicePrincipal("ses.amazonaws.com"));
 
-    for (const f of [api, consumer, contact]) {
+    for (const f of [api, consumer, contact, delivery]) {
       table.grantReadWriteData(f);
       bus.grantPutEventsTo(f);
       serviceToken.grantRead(f);

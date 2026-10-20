@@ -11,10 +11,11 @@ import { isStaff } from "../policy/policy.js";
 import { generateScreenWithRepair, validateScreen } from "../screens/spec.js";
 import { WORKFLOWS } from "../actions/workflows.js";
 import type { Container } from "../container.js";
+import { registerProjectRoutes } from "./projects.js";
 import type { ActionName } from "../core/actions.js";
 import type { AutonomyLevel } from "../store/types.js";
 
-type Env = { Variables: { principal: Principal; token: string | null; relay: boolean } };
+export type Env = { Variables: { principal: Principal; token: string | null; relay: boolean; user: Record<string, unknown> } };
 
 /** Backend roles → principal kinds. Anything unknown is treated as a customer (least access). */
 export function principalFromUser(u: Record<string, unknown>): Principal {
@@ -35,7 +36,7 @@ const safeEq = (a: string, b: string) => {
 
 export function createApp(c: Container) {
   const app = new Hono<Env>();
-  const whoCache = new Map<string, { p: Principal; exp: number }>();
+  const whoCache = new Map<string, { p: Principal; user: Record<string, unknown>; exp: number }>();
 
   app.get("/health", (ctx) => ctx.json({ ok: true, service: "easylink-ai-platform" }));
 
@@ -49,14 +50,16 @@ export function createApp(c: Container) {
       const key = createHash("sha256").update(token).digest("hex");
       const hit = whoCache.get(key);
       let p = hit && hit.exp > Date.now() ? hit.p : null;
+      let user = hit?.user ?? {};
       if (!p) {
         const r = await c.backend.whoAmI({ token });
         if (!r.ok || !r.data) return ctx.json({ success: false, message: "Unauthorised" }, 401);
-        const user = (r.data.user as Record<string, unknown> | undefined) ?? r.data;
+        user = (r.data.user as Record<string, unknown> | undefined) ?? r.data;
         p = principalFromUser(user);
-        whoCache.set(key, { p, exp: Date.now() + 60_000 });
+        whoCache.set(key, { p, user, exp: Date.now() + 60_000 });
       }
       ctx.set("principal", p);
+      ctx.set("user", user);
       ctx.set("token", token);
       // The portal server adds the ingest key when it relays record events after a successful change.
       ctx.set("relay", !!(ingest && c.ingestKey && safeEq(ingest, c.ingestKey)));
@@ -142,6 +145,7 @@ export function createApp(c: Container) {
       input: body.input ?? {},
       principal: ctx.get("principal"),
       auth: ctx.get("token") ? { token: ctx.get("token")! } : undefined,
+      user: ctx.get("user"),
       idempotencyKey: ctx.req.header("idempotency-key") ?? undefined,
       dryRun: !!body.dry_run,
     });
@@ -440,6 +444,8 @@ export function createApp(c: Container) {
     const [decisions, events] = await Promise.all([c.store.listDecisions({ limit }), c.store.recentEvents(limit)]);
     return ok(ctx, { decisions, events: events.map((e) => ({ id: e.event_id, type: e.type, at: e.occurred_at, subject: e.subject, principal: { kind: e.principal.kind, id: e.principal.id } })) });
   });
+
+  registerProjectRoutes(app, c);
 
   app.onError((err, ctx) => {
     if (err instanceof z.ZodError) return ctx.json({ success: false, message: "Invalid request", errors: err.flatten() }, 400);

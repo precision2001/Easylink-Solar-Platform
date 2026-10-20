@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { ACTIONS, isActionName, type ActionName } from "../core/actions.js";
 import { makeEvent, newId, type EventEnvelope, type Principal, type RecordRef } from "../core/envelope.js";
 import { RECORD_TYPES, readPath } from "../core/records.js";
@@ -6,12 +6,13 @@ import type { Backend, BackendAuth } from "../backend/client.js";
 import type { EventBus } from "../bus/bus.js";
 import { evaluatePolicy, isStaff, type PolicyDecision, type PolicyRequest } from "../policy/policy.js";
 import { resolveAutonomy } from "../policy/autonomy.js";
-import type { AutonomyLevel, InboxItem, Store } from "../store/types.js";
+import type { AutonomyLevel, InboxItem, MessageCopy, Store } from "../store/types.js";
 import type { FileLinks, Messaging } from "./ports.js";
 import { WORKFLOWS } from "./workflows.js";
 import { absoluteUrl, type FileBytes } from "../files/classify.js";
 import { checkFile, checkMessageBody, LIMITS, s3ScanStatus } from "../files/safety.js";
 import type { ContactFinder } from "../contacts/finder.js";
+import { Relations } from "../access/relations.js";
 
 const SITE = () => process.env.PUBLIC_SITE_URL ?? "";
 
@@ -39,6 +40,8 @@ export type ActionRequest = {
   dryRun?: boolean;
   correlationId?: string;
   causationId?: string | null;
+  /** The caller's user record from the backend (/users/me), for relationship checks. */
+  user?: Record<string, unknown>;
   /** Set by the agent runtime. */
   agent?: { agentId: string; decisionId?: string; eventId?: string; reasoning?: string };
   /** Set when a person approves an inbox proposal: skips the autonomy gate, keeps policy. */
@@ -55,6 +58,8 @@ export type ActionServiceDeps = {
   serviceToken: string;
   /** Reads file contents for attachments and safety checks. */
   bytes?: FileBytes;
+  /** Who is related to what (assignments). */
+  relations?: Relations;
   /** Finds contacts that aren't on file (web search under the contact rules). */
   contacts?: ContactFinder;
   /** Malware scan result for a stored file (GuardDuty Malware Protection for S3). */
@@ -320,6 +325,15 @@ export class ActionService {
         pr.channels = (input.channel as string[] | undefined) ?? (name === "place_call" ? ["call"] : []);
         break;
       }
+      case "assign_installer": {
+        const project = input.project as RecordRef;
+        pr.resource = { ref: project, data: null };
+        if (this.deps.relations && !isStaff(req.principal) && ["customer", "installer"].includes(req.principal.kind)) {
+          const scope = await this.deps.relations.scope(req.principal, req.user ?? {});
+          pr.related = Relations.covers(scope, project);
+        }
+        break;
+      }
       case "start_workflow": {
         const ids = (input.inputs as Record<string, unknown>).records;
         pr.count = Array.isArray(ids) ? ids.length : 1;
@@ -539,6 +553,43 @@ export class ActionService {
       }
       case "start_workflow":
         return this.startWorkflow(ctx);
+      case "assign_installer": {
+        if (!this.deps.relations) throw new Error("Assignments are not configured.");
+        const project = input.project as RecordRef;
+        if (!["customer", "lead"].includes(project.type)) throw new Error("A project is a customer or a lead.");
+        const svc = { token: this.deps.serviceToken };
+        const inst = await this.deps.backend.get("user", (input.installer as RecordRef).id, svc);
+        if (!inst.ok || !inst.data) throw new Error("Installer not found");
+        if (String(inst.data.role ?? "").toUpperCase() !== "INSTALLER") throw new Error("That user isn't an installer.");
+        const installerName = [inst.data.firstName, inst.data.lastName].filter(Boolean).join(" ") || String(inst.data.name ?? inst.data.id);
+        const ids = await this.deps.relations.linkedIds(project);
+        const customerId = [...ids.customers][0] ?? null;
+        const leadId = [...ids.leads][0] ?? null;
+        const before = await this.deps.relations.currentInstallers(project);
+        const { current, closed } = await this.deps.relations.assign({
+          customerId,
+          leadId,
+          installerId: String(inst.data.id),
+          installerName,
+          by: ctx.req.approvedBy ?? ctx.req.principal.id,
+          reason: String(input.reason),
+          replace: input.mode === "replace",
+          now: this.now().toISOString(),
+        });
+        // Keep the backend's lead in step so existing screens agree.
+        if (leadId) {
+          const r = await this.deps.backend.call("POST", `/leads/${encodeURIComponent(leadId)}/assign`, { installerId: current.installerId, assignedToId: current.installerId }, svc);
+          if (!r.ok) await this.deps.backend.update("lead", leadId, { assignedToId: current.installerId }, svc);
+        }
+        const links: RecordRef[] = [{ type: "user", id: current.installerId }];
+        if (customerId) links.push({ type: "customer", id: customerId });
+        if (leadId) links.push({ type: "lead", id: leadId });
+        ctx.events.push(this.event(ctx, "installer.assigned", project, { installer_id: current.installerId, installer_name: installerName, reason: input.reason, mode: input.mode, previous: before }, links));
+        for (const c of closed) {
+          ctx.events.push(this.event(ctx, "installer.unassigned", project, { installer_id: c.installerId, installer_name: c.installerName ?? null }, [{ type: "user", id: c.installerId }, ...links.slice(1)]));
+        }
+        return { assignment: current, previous: closed.map((c) => c.installerId), installerName };
+      }
       case "find_contact": {
         if (!this.deps.contacts) throw new Error("Contact search is not configured (SEARCH_API_KEY).");
         const r = await this.deps.contacts.find(String(input.organisation), String(input.kind), String(input.purpose ?? ""));
@@ -655,8 +706,9 @@ export class ActionService {
     if (files.length > LIMITS.maxFilesPerMessage) throw new SafetyError(`At most ${LIMITS.maxFilesPerMessage} files per message.`);
 
     // Files: the sender must be able to open each one (their own token), and each must pass the safety checks.
+    const copyId = newId("msg_");
     const wantAttach = Boolean(input.attach) || Boolean(rec.data.attach);
-    const prepared: { ref: RecordRef; name: string; url: string; raw: { bytes: Uint8Array; contentType: string; fileName: string } | null }[] = [];
+    const prepared: { ref: RecordRef; name: string; url: string; raw: { bytes: Uint8Array; contentType: string; fileName: string } | null; customerId?: unknown; leadId?: unknown }[] = [];
     for (const f of files) {
       const fr = await this.deps.backend.get(f.type, f.id, auth);
       if (!fr.ok || !fr.data) throw new SafetyError(`You can't send ${f.type} ${f.id}: it isn't on a record you can open.`);
@@ -669,12 +721,30 @@ export class ActionService {
         await this.emit(ctx, ctx.events.splice(0));
         throw new SafetyError(verdict.reason);
       }
-      const url = doc.s3Key ? await this.deps.files.signedUrl(String(doc.s3Key), 7 * 86400) : absoluteUrl(String(doc.url ?? ""), SITE());
-      prepared.push({ ref: f, name: String(doc.fileName ?? f.id), url, raw });
+      const direct = doc.s3Key ? await this.deps.files.signedUrl(String(doc.s3Key), 7 * 86400) : absoluteUrl(String(doc.url ?? ""), SITE());
+      // Links go through the platform when it has a public address, so opening one shows in the history.
+      const url = direct ? await this.trackedLink(f, String(doc.fileName ?? f.id), to, copyId, direct) : "";
+      prepared.push({ ref: f, name: String(doc.fileName ?? f.id), url, raw, customerId: doc.customerId, leadId: doc.leadId });
     }
     const attachBytes = prepared.reduce((s, x) => s + (x.raw?.bytes.byteLength ?? Infinity), 0);
     const attach = wantAttach && prepared.length > 0 && attachBytes <= LIMITS.maxAttachBytes;
     const links = attach ? [] : prepared.map((x) => x.url).filter(Boolean);
+
+    // Which records this message concerns: the recipient, the sender, each file's project, and what it's about.
+    const records: RecordRef[] = [to];
+    if (p.kind !== "agent" && p.kind !== "system" && p.kind !== "integration") records.push({ type: p.kind === "customer" ? "user" : "user", id: p.id });
+    for (const f of prepared) {
+      records.push(f.ref);
+      if (f.customerId) records.push({ type: "customer", id: String(f.customerId) });
+      if (f.leadId) records.push({ type: "lead", id: String(f.leadId) });
+    }
+    if (input.about) records.push(input.about as RecordRef);
+    if (to.type === "customer" && rec.data.leadId) records.push({ type: "lead", id: String(rec.data.leadId) });
+    if (to.type === "lead" && rec.data.customerId) records.push({ type: "customer", id: String(rec.data.customerId) });
+    const uniq = records.filter((r, i) => records.findIndex((x) => x.type === r.type && x.id === r.id) === i);
+    const role = String(input.role ?? (to.type === "partner" ? String(rec.data.kind ?? "partner") : to.type));
+    const fileList = prepared.map((x) => ({ id: x.ref.id, name: x.name }));
+    const common = { message_copy_id: copyId, to_name: contact.name, role, subject: input.subject ?? null, files: fileList, records: uniq, attached: false };
 
     const sent: Record<string, string> = {};
     if (channels.includes("email")) {
@@ -688,30 +758,63 @@ export class ActionService {
           attachments: attach ? prepared.map((x) => ({ fileName: x.raw!.fileName || x.name, contentType: x.raw!.contentType, bytes: x.raw!.bytes })) : undefined,
         })
       ).id;
-      ctx.events.push(this.event(ctx, "email.sent", to, { message_id: sent.email, files: files.length, attached: attach }));
+      ctx.events.push(this.event(ctx, "email.sent", to, { ...common, message_id: sent.email, attached: attach }));
     }
     if (channels.includes("sms")) {
       if (!contact.phone) throw new Error(`${contact.name} has no mobile on file`);
       const body = [String(input.body).slice(0, 320), ...prepared.map((x) => x.url).filter(Boolean)].join("\n");
       sent.sms = (await this.deps.messaging.sendSms({ to: contact.phone, body })).id;
-      ctx.events.push(this.event(ctx, "sms.sent", to, { message_id: sent.sms }));
+      ctx.events.push(this.event(ctx, "sms.sent", to, { ...common, message_id: sent.sms }));
     }
     if (channels.includes("portal")) {
-      ctx.events.push(this.event(ctx, "message.sent", to, { channel: "portal", files: files.map((f) => f.id) }));
+      ctx.events.push(this.event(ctx, "message.sent", to, { ...common, channel: "portal" }));
     }
 
-    // Remember who each document went to: shows on the record and stops double sends.
+    // A read-only copy of exactly what was sent, kept with the records it concerns.
     const at = this.now().toISOString();
-    const role = String(input.role ?? (to.type === "partner" ? String(rec.data.kind ?? "partner") : to.type));
+    const contract = new Set(["proof_of_completion", "electrical_safety_certificate", "compliance_certificate", "signed_contract", "stc_assignment_form", "warranty", "commissioning_sheet"]);
+    const profiles = await this.deps.store.getFileLabels(prepared.map((x) => x.ref.id));
+    const copy: MessageCopy = {
+      id: copyId,
+      at,
+      from: { kind: p.kind, id: p.id },
+      to: { record: to, name: contact.name, role, address: [channels.includes("email") ? contact.email : null, channels.includes("sms") ? contact.phone : null].filter(Boolean).join(", ") },
+      channels,
+      subject: String(input.subject ?? ""),
+      body: String(input.body),
+      files: fileList,
+      attached: attach,
+      status: "sent",
+      statusAt: at,
+      providerIds: sent,
+      records: uniq,
+      retention: profiles.some((x) => contract.has(x.labels[0]?.label ?? "")) ? "contract_7y" : "sales_12m",
+    };
+    await this.deps.store.putRecord("message", copy as unknown as Record<string, unknown> & { id: string });
+    for (const [, pid] of Object.entries(sent)) if (pid) await this.deps.store.putRecord("message_by_provider", { id: pid, copyId });
+
+    // Remember who each document went to: shows on the record and stops double sends.
     for (const f of prepared) {
       const [cur] = await this.deps.store.getFileLabels([f.ref.id]);
       const base = cur ?? { documentId: f.ref.id, labels: [], extracted: {}, reviewState: "auto" as const, description: "", updatedAt: at };
       const delivery = { recipient: to, role, channels, at, by: p.id, attached: attach };
       await this.deps.store.putFileLabels({ ...base, updatedAt: at, deliveredTo: [...(base.deliveredTo ?? []), delivery] });
-      ctx.events.push(this.event(ctx, "document.delivered", f.ref, { to, role, channels, attached: attach }, [to]));
+      ctx.events.push(this.event(ctx, "document.delivered", f.ref, { to, role, channels, attached: attach, message_copy_id: copyId }, [to]));
       ctx.events.push(this.event(ctx, "file.shared", f.ref, { to }));
     }
-    return { sent, to: { type: to.type, name: contact.name }, files: prepared.length, attached: attach, links: links.length };
+    return { sent, message_id: copyId, to: { type: to.type, name: contact.name }, files: prepared.length, attached: attach, links: links.length };
+  }
+
+  /**
+   * A link that goes through the platform (PUBLIC_API_URL/f/<token>) so opening the
+   * file is recorded, then redirects to the stored file. Expires with the file link.
+   */
+  private async trackedLink(file: RecordRef, fileName: string, to: RecordRef, copyId: string, direct: string): Promise<string> {
+    const api = process.env.PUBLIC_API_URL;
+    if (!api) return direct;
+    const token = randomBytes(18).toString("base64url");
+    await this.deps.store.putRecord("share_link", { id: token, file, fileName, to, copyId, direct, expiresAt: new Date(this.now().getTime() + 7 * 86_400_000).toISOString() });
+    return `${api.replace(/\/+$/, "")}/f/${token}`;
   }
 
   /** Per-person sending limits (people only; agents have their own budget). */
