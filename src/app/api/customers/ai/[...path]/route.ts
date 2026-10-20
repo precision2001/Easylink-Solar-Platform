@@ -5,7 +5,7 @@ import { aiFetch, forwardAiJson } from "@/lib/server/ai-platform";
  * history and the messages sent to or about it, and can ask for a different
  * installer. They cannot run actions directly.
  */
-const ALLOWED = new Set(["projects", "messages", "files"]);
+const ALLOWED = new Set(["projects", "messages", "files", "people"]);
 
 type Ctx = { params: Promise<{ path: string[] }> };
 

@@ -172,12 +172,30 @@ export type MessageCopyView = {
   statusAt: string;
 };
 
+/** Anything for or about a project or person: a file, design, quote, invoice, booking, message… */
+export type ProjectItem = {
+  key: string;
+  kind: string;
+  id: string;
+  title: string;
+  subtitle: string;
+  at: string | null;
+  status: string | null;
+  amount: string | null;
+  open: { type: "file" | "message" | "none"; id?: string };
+  by: string | null;
+};
+export type ItemsView = { items: ProjectItem[]; kinds: { kind: string; label: string; count: number }[] };
+
 const pj = (r: RecordRef) => `/projects/${r.type}/${encodeURIComponent(r.id)}`;
 
 export const ai = {
   projects: (portal: AiPortal, search = "") => aiRequest<ProjectRow[]>(portal, `/projects${search ? `?search=${encodeURIComponent(search)}` : ""}`),
   project: (portal: AiPortal, r: RecordRef) => aiRequest<ProjectDetail>(portal, pj(r)),
   projectFiles: (portal: AiPortal, r: RecordRef) => aiRequest<ProjectFile[]>(portal, `${pj(r)}/files`),
+  projectItems: (portal: AiPortal, r: RecordRef) => aiRequest<ItemsView>(portal, `${pj(r)}/items`),
+  /** "me", or (staff) anyone's account. */
+  personItems: (portal: AiPortal, userId = "me") => aiRequest<ItemsView>(portal, `/people/${encodeURIComponent(userId)}/items`),
   projectHistory: (portal: AiPortal, r: RecordRef) => aiRequest<HistoryLine[]>(portal, `${pj(r)}/history`),
   message: (portal: AiPortal, id: string) => aiRequest<MessageCopyView>(portal, `/messages/${encodeURIComponent(id)}`),
   fileLink: (portal: AiPortal, id: string) => aiRequest<{ url: string }>(portal, `/files/${encodeURIComponent(id)}/link`),

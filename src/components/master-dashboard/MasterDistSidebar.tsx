@@ -162,7 +162,7 @@ const GROUPS: NavGroup[] = [
     tag: "admin",
     items: [
       { key: "admin", label: "Admin home", icon: "shield" },
-      { key: "aInstallers", label: "Installers", icon: "tool" },
+      { key: "aInstallers", label: "Installer accounts", icon: "tool", href: "/master/installer-accounts" },
       { key: "aCustomers", label: "Customers", icon: "users", href: "/master/projects" },
       { key: "aPartners", label: "Partners & suppliers", icon: "truck" },
       { key: "aApprovals", label: "Approvals", icon: "check", badge: "3" },

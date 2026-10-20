@@ -9,6 +9,8 @@ import {
   timeAgo,
   type AiPortal,
   type HistoryLine,
+  type ItemsView,
+  type ProjectItem,
   type MessageCopyView,
   type ProjectDetail,
   type ProjectFile,
@@ -22,7 +24,7 @@ import {
  *   installer — projects assigned to them, with the full history;
  *   customer — their own project, including everything from its installers.
  */
-type Tab = "files" | "history" | "installer";
+type Tab = "everything" | "files" | "history" | "installer";
 
 const KIND_DOT: Record<string, string> = {
   file: "#0B4A7A",
@@ -51,7 +53,8 @@ const fmtSize = (n: number | null) => (n == null ? "" : n < 1024 * 1024 ? `${Mat
 const labelName = (l: string | null) => (l ? LABEL_NAMES[l] ?? l.replace(/_/g, " ") : "Not read yet");
 
 export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPortal; project: RecordRef; onChanged?: () => void }) {
-  const [tab, setTab] = useState<Tab>("files");
+  const [tab, setTab] = useState<Tab>("everything");
+  const [items, setItems] = useState<ItemsView | null>(null);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [files, setFiles] = useState<ProjectFile[] | null>(null);
   const [history, setHistory] = useState<HistoryLine[] | null>(null);
@@ -60,9 +63,10 @@ export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPor
   const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    Promise.all([ai.project(portal, project), ai.projectFiles(portal, project), ai.projectHistory(portal, project)])
-      .then(([d, f, h]) => {
+    Promise.all([ai.project(portal, project), ai.projectFiles(portal, project), ai.projectHistory(portal, project), ai.projectItems(portal, project).catch(() => ({ items: [], kinds: [] }))])
+      .then(([d, f, h, it]) => {
         setDetail(d);
+        setItems(it);
         setFiles(f);
         setHistory(h);
         setState("ready");
@@ -107,7 +111,7 @@ export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPor
     return <div className="rounded-[14px] border border-[#E3E8EF] bg-white p-6 text-[14px] text-[#334155]">This project isn&apos;t assigned to you.</div>;
   if (state === "error" || !detail) return <div className="rounded-[14px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-[14px] text-[#991B1B]">Couldn&apos;t load this project.</div>;
 
-  const counts = { files: files?.length ?? 0, history: history?.length ?? 0, installer: detail.installerHistory.length };
+  const counts = { everything: items?.items.length ?? 0, files: files?.length ?? 0, history: history?.length ?? 0, installer: detail.installerHistory.length };
 
   return (
     <section aria-label={`Project: ${detail.name}`} className="flex min-w-0 flex-col gap-4">
@@ -150,6 +154,7 @@ export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPor
       <div role="tablist" aria-label="Project" className="flex gap-1 border-b border-[#E3E8EF]">
         {(
           [
+            ["everything", "Everything"],
             ["files", "Files"],
             ["history", "History"],
             ["installer", "Installer"],
@@ -168,6 +173,7 @@ export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPor
         ))}
       </div>
 
+      {tab === "everything" && <ItemsList view={items ?? { items: [], kinds: [] }} onOpenFile={openFile} onOpenMessage={openMessage} empty="Nothing for this project yet." />}
       {tab === "files" && <FilesTab files={files ?? []} onOpen={openFile} />}
       {tab === "history" && <HistoryTab lines={history ?? []} onOpenFile={openFile} onOpenMessage={openMessage} />}
       {tab === "installer" && (
@@ -583,5 +589,111 @@ export function ProjectBrowser({ portal, title }: { portal: AiPortal; title: str
         </div>
       )}
     </div>
+  );
+}
+
+const KIND_COLOUR: Record<string, string> = {
+  document: "#0B4A7A",
+  design: "#6D28D9",
+  payment: "#166534",
+  invoice: "#166534",
+  appointment: "#0E7490",
+  milestone: "#0B4A7A",
+  message: "#0E7490",
+  call: "#0E7490",
+  note: "#92400E",
+  task: "#B45309",
+  profile: "#475569",
+  activity: "#475569",
+  assignment: "#166534",
+  lead: "#475569",
+};
+
+/**
+ * Everything for or about a project or person, filterable by kind. The AI
+ * platform (and the backend behind it) decides what is in the list, so a
+ * customer never receives installer notes or tasks in the first place.
+ */
+export function ItemsList({ view, onOpenFile, onOpenMessage, empty }: { view: ItemsView; onOpenFile: (id: string) => void; onOpenMessage: (id: string) => void; empty: string }) {
+  const [kind, setKind] = useState<string>("all");
+  const shown = useMemo(() => (kind === "all" ? view.items : view.items.filter((i) => i.kind === kind)), [view.items, kind]);
+  if (!view.items.length) return <p className="m-0 text-[14px] text-[#475569]">{empty}</p>;
+  const open = (i: ProjectItem) => (i.open.type === "file" && i.open.id ? onOpenFile(i.open.id) : i.open.type === "message" && i.open.id ? onOpenMessage(i.open.id) : undefined);
+  return (
+    <div className="flex flex-col gap-3">
+      <div role="group" aria-label="Show" className="flex flex-wrap gap-1.5">
+        {[{ kind: "all", label: "All", count: view.items.length }, ...view.kinds].map((k) => (
+          <button
+            key={k.kind}
+            onClick={() => setKind(k.kind)}
+            aria-pressed={kind === k.kind}
+            className="whitespace-nowrap rounded-full border px-2.5 py-1 text-[12.5px] font-semibold"
+            style={kind === k.kind ? { background: "#0B2540", borderColor: "#0B2540", color: "#fff" } : { background: "#fff", borderColor: "#D5DCE5", color: "#334155" }}
+          >
+            {k.label} <span style={{ opacity: 0.7 }}>{k.count}</span>
+          </button>
+        ))}
+      </div>
+      <ul className="m-0 flex list-none flex-col p-0">
+        {shown.map((i) => {
+          const clickable = i.open.type !== "none";
+          return (
+            <li key={i.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#EEF1F5] py-2.5 last:border-0">
+              <span aria-hidden className="h-2 w-2 flex-none rounded-full" style={{ background: KIND_COLOUR[i.kind] ?? "#475569" }} />
+              <div className="flex min-w-0 flex-[1_1_220px] flex-col">
+                {clickable ? (
+                  <button onClick={() => open(i)} className="truncate text-left text-[14px] font-semibold text-[#0B4A7A] underline-offset-2 hover:underline">
+                    {i.title}
+                  </button>
+                ) : (
+                  <span className="truncate text-[14px] font-semibold text-[#0F172A]">{i.title}</span>
+                )}
+                {i.subtitle && <span className="truncate text-[12.5px] text-[#5B6B80]">{i.subtitle}</span>}
+              </div>
+              {i.amount && <span className="text-[13.5px] font-semibold tabular-nums text-[#0F172A]">{i.amount}</span>}
+              {i.status && (
+                <span className="rounded-full bg-[#F1F5F9] px-2 py-0.5 text-[11.5px] font-semibold capitalize text-[#334155]">{i.status.replace(/_/g, " ").toLowerCase()}</span>
+              )}
+              <span className="w-[120px] text-right text-[12px] text-[#5B6B80]">{i.at ? fmtDate(i.at) : ""}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** A person's own account: payouts, invoices, files, bookings, tasks. `userId` lets staff open an installer's. */
+export function PersonItems({ portal, userId = "me", title, intro }: { portal: AiPortal; userId?: string; title: string; intro?: string }) {
+  const [view, setView] = useState<ItemsView | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "offline" | "error">("loading");
+  const [message, setMessage] = useState<MessageCopyView | null>(null);
+  useEffect(() => {
+    let live = true; // remount (key) to switch person
+    ai.personItems(portal, userId)
+      .then((v) => live && (setView(v), setState("ready")))
+      .catch((e: unknown) => live && setState(e instanceof AiNotConnectedError ? "offline" : "error"));
+    return () => {
+      live = false;
+    };
+  }, [portal, userId]);
+  const openFile = async (id: string) => {
+    const { url } = await ai.fileLink(portal, id);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+  return (
+    <section aria-label={title} className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="m-0 font-source-sans text-[20px] font-bold text-[#0F172A]">{title}</h2>
+        {intro && <span className="text-[13px] text-[#475569]">{intro}</span>}
+      </div>
+      {state === "loading" && <p className="m-0 text-[14px] text-[#475569]">Loading…</p>}
+      {state === "offline" && <p className="m-0 text-[14px] text-[#475569]">This will fill in once the EasyLink AI platform is connected.</p>}
+      {state === "error" && <p className="m-0 text-[14px] text-[#991B1B]">Couldn&apos;t load this account.</p>}
+      {state === "ready" && view && (
+        <ItemsList view={view} onOpenFile={openFile} onOpenMessage={async (id) => setMessage(await ai.message(portal, id))} empty="Nothing here yet." />
+      )}
+      {message && <MessageDrawer m={message} onClose={() => setMessage(null)} onOpenFile={openFile} />}
+    </section>
   );
 }
