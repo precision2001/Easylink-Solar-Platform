@@ -120,4 +120,17 @@ describe("the job journey", () => {
     expect((await w.step("inst", "scan_serial", { serial: "ZZ9" })).status).toBe(409);
     expect((await w.step("inst", "record_tests", { insulationMOhm: 200, earthOk: true, exportLimitKw: 6 })).status).toBe(409);
   });
+
+  it("EasyLink AI can draft an invoice for the installer, who still sends it", async () => {
+    const w = world();
+    await newDanJob(w);
+    await w.step("admin", "match");
+    await w.step("inst", "accept_offer");
+    const r = await w.call("POST", "/v1/actions/draft_invoice", "inst", { input: { job: "ld_1", kind: "variation", lines: [{ description: "Switchboard upgrade to RCBOs", qty: 1, unitExGst: 800, gst: true }] } });
+    expect(r.status).toBeLessThan(300);
+    const inst = await w.call("GET", "/v1/ai/jobs/ld_1", "inst");
+    const inv = inst.body.data.invoices.find((i: any) => i.createdVia === "ai");
+    expect(inv).toMatchObject({ status: "draft", kind: "variation" });
+    expect(inv.totals.total).toBe(880);
+  });
 });

@@ -216,6 +216,21 @@ export const ACTIONS = {
       about: RecordRef.optional(),
     }),
   },
+  draft_invoice: {
+    name: "draft_invoice",
+    kind: "write",
+    family: "quotes",
+    sensitivity: "medium",
+    description:
+      "Draft a tax invoice on a job when an installer or staff member asks (e.g. 'invoice Daniel for the switchboard upgrade'). Lines are ex GST with a GST flag. It is only a draft: the installer checks it and presses Send.",
+    input: z.object({
+      job: z.string().min(1).describe("The job id (the lead id)"),
+      kind: z.enum(["deposit", "final", "variation", "other"]).default("variation"),
+      lines: z.array(z.object({ description: z.string().min(1).max(200), qty: z.number().positive(), unitExGst: z.number(), gst: z.boolean().default(true) })).min(1).max(30),
+      notes: z.string().max(1000).default(""),
+      dueDays: z.number().int().min(0).max(90).default(7),
+    }),
+  },
   write_fact: {
     name: "write_fact",
     kind: "write",

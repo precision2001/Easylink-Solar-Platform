@@ -1,6 +1,6 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { PinpointSMSVoiceV2Client, SendTextMessageCommand } from "@aws-sdk/client-pinpoint-sms-voice-v2";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 /** Outbound email and SMS (spec 10.5, 10.6). */
@@ -68,6 +68,8 @@ export class FakeMessaging implements Messaging {
 /** Signed links for files stored in S3 (spec 11). */
 export interface FileLinks {
   signedUrl(key: string, expiresInSeconds: number): Promise<string>;
+  /** Store a file people upload through the AI platform (job photos, bills). */
+  put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
 }
 
 export class S3FileLinks implements FileLinks {
@@ -76,10 +78,17 @@ export class S3FileLinks implements FileLinks {
     // SigV4 presigned URLs are limited to 7 days.
     return getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: Math.min(expiresInSeconds, 604800) });
   }
+  async put(key: string, bytes: Uint8Array, contentType: string) {
+    await this.s3.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: bytes, ContentType: contentType, ServerSideEncryption: "aws:kms" }));
+  }
 }
 
 export class FakeFileLinks implements FileLinks {
+  stored = new Map<string, { bytes: Uint8Array; contentType: string }>();
   async signedUrl(key: string, expiresInSeconds: number) {
     return `https://files.example.test/${key}?expires=${expiresInSeconds}`;
+  }
+  async put(key: string, bytes: Uint8Array, contentType: string) {
+    this.stored.set(key, { bytes, contentType });
   }
 }

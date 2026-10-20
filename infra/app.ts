@@ -184,6 +184,8 @@ class EasyLinkAiStack extends Stack {
       const files = s3.Bucket.fromBucketName(this, "FilesBucket", filesBucketName);
       files.grantRead(api);
       files.grantRead(consumer);
+      // Job photos and bills uploaded through the portals land under jobs/.
+      files.grantPut(api, "jobs/*");
       // Malware scan results (GuardDuty Malware Protection for S3 tags each object).
       for (const f of [api, consumer]) f.addToRolePolicy(new iam.PolicyStatement({ actions: ["s3:GetObjectTagging"], resources: [files.arnForObjects("*")] }));
     }

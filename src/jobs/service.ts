@@ -387,8 +387,10 @@ export class JobService {
         const sig = (await this.c.store.getRecord("signature", s("signatureId"))) as unknown as Signature | undefined;
         if (!sig || sig.jobId !== j.id) throw new JobError("Document not found", 404);
         if (sig.status === "signed") throw new JobError("Already signed", 409);
-        if (v.who !== "staff" && sig.signer.who !== v.who) throw new JobError("This document is for someone else to sign", 403);
-        // The customer signs the install sign-off on the installer's phone, so the installer may hold the device.
+        // The customer signs the install sign-off on the installer's phone on site, so the installer may hold the device;
+        // the code still goes to the customer's mobile.
+        const onSite = sig.kind === "install_complete" && v.who === "installer";
+        if (v.who !== "staff" && sig.signer.who !== v.who && !onSite) throw new JobError("This document is for someone else to sign", 403);
         if (action === "request_code") {
           const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
           sig.codeHash = sha(`${sig.id}:${code}`);

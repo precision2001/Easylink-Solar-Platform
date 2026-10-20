@@ -2,6 +2,8 @@ import type { Context, Hono } from "hono";
 import { z } from "zod";
 import type { Container } from "../container.js";
 import { JobError, JobService, viewerOf } from "../jobs/service.js";
+import { newId } from "../core/envelope.js";
+import { checkFile } from "../files/safety.js";
 import type { Env } from "./app.js";
 
 /**
@@ -75,6 +77,36 @@ export function registerJobRoutes(app: Hono<Env>, c: Container) {
     } catch (e) {
       return fail(ctx, e);
     }
+  });
+
+  // Photos and bills people upload on a job (checked like every other file, stored encrypted in S3).
+  app.post("/v1/ai/jobs/:id/uploads", async (ctx) => {
+    const p = ctx.get("principal");
+    const j = await jobs.get(ctx.req.param("id") ?? "");
+    if (!j) return ctx.json({ success: false, message: "Job not found" }, 404);
+    if (!(await jobs.canSee(j, p, meta(ctx)))) return ctx.json({ success: false, message: "Not your job" }, 403);
+    const form = await ctx.req.formData().catch(() => null);
+    const file = form?.get("file");
+    if (!file || typeof file === "string") return ctx.json({ success: false, message: "Choose a file" }, 400);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const verdict = checkFile({ name: file.name, sizeBytes: bytes.length, mimeType: file.type, bytes });
+    if (!verdict.ok) return ctx.json({ success: false, message: verdict.reason }, 400);
+    const id = newId("jf_");
+    const safe = file.name.replace(/[^\w.-]+/g, "_").slice(-80);
+    const key = `jobs/${j.id}/${id}-${safe}`;
+    await c.files.put(key, bytes, file.type || "application/octet-stream");
+    const row = { id, jobId: j.id, key, name: file.name.slice(0, 200), mimeType: file.type, sizeBytes: bytes.length, purpose: String(form?.get("purpose") ?? "photo").slice(0, 20), label: String(form?.get("label") ?? "").slice(0, 60), by: p.id, at: new Date().toISOString() };
+    await c.store.putRecord("job_file", row);
+    return ctx.json({ success: true, message: "OK", data: { fileId: id, name: row.name } });
+  });
+
+  app.get("/v1/ai/jobs/:id/files/:fileId/link", async (ctx) => {
+    const p = ctx.get("principal");
+    const j = await jobs.get(ctx.req.param("id") ?? "");
+    const f = await c.store.getRecord("job_file", ctx.req.param("fileId") ?? "");
+    if (!j || !f || f.jobId !== j.id) return ctx.json({ success: false, message: "Not found" }, 404);
+    if (!(await jobs.canSee(j, p, meta(ctx)))) return ctx.json({ success: false, message: "Not your job" }, 403);
+    return ctx.json({ success: true, message: "OK", data: { url: await c.files.signedUrl(String(f.key), 900) } });
   });
 
   const doc = async (ctx: Context<Env>, html: string, jobId: string) => {

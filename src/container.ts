@@ -10,6 +10,7 @@ import { MemoryStore } from "./store/memory.js";
 import type { Store } from "./store/types.js";
 import { OverlayBackend } from "./backend/overlay.js";
 import { Relations } from "./access/relations.js";
+import { JobService } from "./jobs/service.js";
 import { TimelineWriter } from "./history/timeline.js";
 import { BraveWebSearch, ContactFinder, FakeWebSearch, type WebSearch } from "./contacts/finder.js";
 
@@ -49,7 +50,8 @@ export function buildContainer(
   const web = over.web ?? (process.env.SEARCH_API_KEY ? new BraveWebSearch() : local ? new FakeWebSearch() : undefined);
   const contacts = web ? new ContactFinder({ web, model, backend, store, serviceToken, now: over.now }) : null;
   const relations = new Relations({ store, backend, serviceToken });
-  const actions = new ActionService({ store, bus, backend, messaging, files, serviceToken, bytes, contacts: contacts ?? undefined, relations, now: over.now });
+  let jobsSvc: JobService | null = null;
+  const actions = new ActionService({ store, bus, backend, messaging, files, serviceToken, bytes, contacts: contacts ?? undefined, relations, now: over.now, jobs: () => jobsSvc! });
   const classifier = new FileClassifier({ model, backend, actions, store, bytes, serviceToken });
   const runtime = new AiRuntime({ store, actions, model, classifier, now: over.now });
   const timeline = new TimelineWriter({ store, backend, serviceToken });
@@ -58,5 +60,7 @@ export function buildContainer(
     bus.subscribe((e) => timeline.index(e).then(() => undefined, (err) => console.error("timeline", err)));
     bus.subscribe((e) => void runtime.handle(e));
   }
-  return { store, bus, backend, messaging, files, model, actions, runtime, classifier, contacts, relations, timeline, serviceToken, ingestKey };
+  const c: Container = { store, bus, backend, messaging, files, model, actions, runtime, classifier, contacts, relations, timeline, serviceToken, ingestKey };
+  jobsSvc = new JobService(c);
+  return c;
 }

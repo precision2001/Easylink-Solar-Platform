@@ -65,6 +65,8 @@ export type ActionServiceDeps = {
   /** Malware scan result for a stored file (GuardDuty Malware Protection for S3). */
   scan?: (doc: Record<string, unknown>) => Promise<"clean" | "infected" | null>;
   now?: () => Date;
+  /** The job journey (set by the container); used by draft_invoice. */
+  jobs?: () => { act: (id: string, action: string, input: Record<string, unknown>, p: Principal) => Promise<unknown> };
 };
 
 /** Contact details for any record kind; the sender never sees them. */
@@ -589,6 +591,11 @@ export class ActionService {
           ctx.events.push(this.event(ctx, "installer.unassigned", project, { installer_id: c.installerId, installer_name: c.installerName ?? null }, [{ type: "user", id: c.installerId }, ...links.slice(1)]));
         }
         return { assignment: current, previous: closed.map((c) => c.installerId), installerName };
+      }
+      case "draft_invoice": {
+        if (!this.deps.jobs) throw new Error("Jobs are not configured.");
+        const r = (await this.deps.jobs().act(String(input.job), "create_invoice", { kind: input.kind, lines: input.lines, notes: input.notes, dueDays: input.dueDays, via: "ai" }, ctx.req.principal)) as { invoice: { id: string; number: string; totals: { total: number } } };
+        return { invoice_id: r.invoice.id, number: r.invoice.number, total: r.invoice.totals.total, status: "draft — the installer checks it and presses Send" };
       }
       case "find_contact": {
         if (!this.deps.contacts) throw new Error("Contact search is not configured (SEARCH_API_KEY).");
