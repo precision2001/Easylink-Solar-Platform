@@ -72,7 +72,7 @@ aws pinpoint-sms-voice-v2 create-event-destination \
   --configuration-set-name easylink-ai-sms \
   --event-destination-name to-receipts \
   --matching-event-types TEXT_DELIVERED TEXT_SUCCESSFUL TEXT_FAILED TEXT_BLOCKED \
-      TEXT_INVALID TEXT_CARRIER_UNREACHABLE TEXT_TTL_EXPIRED TEXT_UNREACHABLE \
+      TEXT_INVALID TEXT_CARRIER_UNREACHABLE TEXT_TTL_EXPIRED \
   --sns-destination TopicArn=$TOPIC_ARN \
   --region ap-southeast-2
 ```
