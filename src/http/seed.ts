@@ -35,6 +35,20 @@ export async function seedDemo(c: Container) {
     { id: "doc_3", customerId: "cus_2001", fileName: "IMG_4420.jpg", s3Key: "customers/cus_2001/IMG_4420.jpg", aiLabels: [{ label: "isolator", confidence: 0.58 }, { label: "inverter", confidence: 0.35 }], reviewState: "needs_review", createdAt: "2026-10-12T02:05:00Z" },
   ]);
 
+  // Everything else for or about Daniel's project, and Sam's own account.
+  b.seed("design", [{ id: "dsn_77", customerId: "cus_2001", name: "6.6 kW north + west roof", systemSize: 6.6, panelCount: 15, inverter: "Fronius Primo 5.0", status: "APPROVED", price: 7490, installerId: "usr_inst_1", createdAt: "2026-09-22T03:00:00Z" }]);
+  b.seed("appointment", [{ id: "apt_31", customerId: "cus_2001", title: "Installation day", startTime: "2026-10-12T22:00:00Z", location: "7 Gum Tree Ct, Castle Hill NSW 2154", status: "COMPLETED", installerId: "usr_inst_1" }]);
+  b.seed("payment", [
+    { id: "pay_501", customerId: "cus_2001", kind: "SERVICE", description: "Deposit — 6.6 kW system", amount: 1500, currency: "aud", status: "SUCCEEDED", paidAt: "2026-09-24T01:00:00Z" },
+    { id: "pay_502", customerId: "cus_2001", installerId: "usr_inst_1", kind: "SERVICE", description: "Balance on completion", amount: 5990, currency: "aud", status: "SUCCEEDED", payoutStatus: "PAID_OUT", paidAt: "2026-10-14T01:00:00Z" },
+    { id: "pay_610", installerId: "usr_inst_1", kind: "AD_QUOTE", description: "Lead pack — Hills District (10 leads)", amount: 450, currency: "aud", status: "SUCCEEDED", paidAt: "2026-10-03T01:00:00Z" },
+  ]);
+  b.seed("note", [{ id: "nt_9", customerId: "cus_2001", content: "Side gate code 4471. Dog is friendly.", installerId: "usr_inst_1", createdAt: "2026-10-11T06:00:00Z" }]);
+  b.seed("task", [
+    { id: "tk_12", customerId: "cus_2001", title: "Submit STC claim", status: "OPEN", dueDate: "2026-10-24", assignedToId: "usr_inst_1", createdAt: "2026-10-13T00:00:00Z" },
+    { id: "tk_13", title: "Renew CEC accreditation", status: "OPEN", dueDate: "2026-11-30", assignedToId: "usr_inst_1", createdAt: "2026-10-01T00:00:00Z" },
+  ]);
+
   // A retailer on file (invented) and a completion document waiting to be sent.
   await c.store.putRecord("partner", { id: "par_sunrise", name: "Sunrise Power", kind: "retailer", submissionEmail: "solar.docs@sunrisepower.example", attach: true, verified: true, aliases: ["Sunrise"] });
   b.seed("customer", [{ id: "cus_2001", firstName: "Daniel", lastName: "Okafor", email: "daniel@example.com", phone: "+61400000301", address: "7 Gum Tree Ct, Castle Hill NSW 2154", smsConsent: true, emailConsent: true, leadId: "ld_0999", retailer: "Sunrise Power" }]);

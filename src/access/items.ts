@@ -46,6 +46,8 @@ const when = (d: Record<string, unknown>, ...keys: string[]) => {
   for (const k of keys) if (d[k]) return s(d[k]);
   return null;
 };
+const auDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString("en-AU", { timeZone: "Australia/Sydney", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : null;
 const pretty = (v: unknown) => s(v).replace(/_/g, " ").toLowerCase();
 
 async function listBy(ctx: Ctx, type: string, extra: Record<string, unknown> = {}) {
@@ -125,7 +127,7 @@ export const SOURCES: Source[] = [
         kind: "appointment",
         id: s(a.id),
         title: s(a.title ?? a.type ?? "Appointment"),
-        subtitle: [when(a, "startTime", "startsAt", "date"), a.location ? s(a.location) : null].filter(Boolean).join(" · "),
+        subtitle: [auDate(when(a, "startTime", "startsAt", "date")), a.location ? s(a.location) : null].filter(Boolean).join(" · "),
         at: when(a, "startTime", "startsAt", "date", "createdAt"),
         status: a.status ? pretty(a.status) : null,
         amount: null,
