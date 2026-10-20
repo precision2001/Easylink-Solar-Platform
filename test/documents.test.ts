@@ -184,3 +184,36 @@ describe("content checks", () => {
     ).toBe("originenergy.com.au");
   });
 });
+
+/** A minimal stored (uncompressed) zip, enough for the central-directory check. */
+function zip(entries: { name: string; data?: string; encrypted?: boolean; size?: number }[]): Uint8Array {
+  const enc = new TextEncoder();
+  const local: number[] = [];
+  const central: number[] = [];
+  const u16 = (n: number) => [n & 0xff, (n >> 8) & 0xff];
+  const u32 = (n: number) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff];
+  for (const e of entries) {
+    const name = [...enc.encode(e.name)];
+    const data = [...enc.encode(e.data ?? "x")];
+    const offset = local.length;
+    const flags = e.encrypted ? 1 : 0;
+    local.push(...u32(0x04034b50), ...u16(20), ...u16(flags), ...u16(0), ...u32(0), ...u32(0), ...u32(data.length), ...u32(e.size ?? data.length), ...u16(name.length), ...u16(0), ...name, ...data);
+    central.push(...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(flags), ...u16(0), ...u32(0), ...u32(0), ...u32(data.length), ...u32(e.size ?? data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset), ...name);
+  }
+  const eocd = [...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(entries.length), ...u16(entries.length), ...u32(central.length), ...u32(local.length), ...u16(0)];
+  return new Uint8Array([...local, ...central, ...eocd]);
+}
+
+describe("zip files", () => {
+  it("allows zips of documents and photos, and looks inside", () => {
+    expect(checkFile({ name: "completion pack.zip", bytes: zip([{ name: "POC.pdf" }, { name: "photos/meter.jpg" }, { name: "__MACOSX/._POC.pdf" }]) }).ok).toBe(true);
+  });
+  it("refuses zips holding programs, scripts, other archives, or a password", () => {
+    expect(checkFile({ name: "pack.zip", bytes: zip([{ name: "POC.pdf" }, { name: "setup.exe" }]) })).toMatchObject({ ok: false, code: "blocked_type" });
+    expect(checkFile({ name: "pack.zip", bytes: zip([{ name: "inner.zip" }]) })).toMatchObject({ ok: false });
+    expect(checkFile({ name: "pack.zip", bytes: zip([{ name: "POC.pdf", encrypted: true }]) })).toMatchObject({ ok: false, code: "active_content" });
+    expect(checkFile({ name: "pack.zip", bytes: zip([{ name: "../../etc/passwd.txt" }]) })).toMatchObject({ ok: false });
+    expect(checkFile({ name: "bomb.zip", bytes: zip([{ name: "big.csv", size: 900 * 1024 * 1024 }]) })).toMatchObject({ ok: false, code: "too_large" });
+    expect(checkFile({ name: "pack.zip" })).toMatchObject({ ok: false, code: "unscanned" });
+  });
+});

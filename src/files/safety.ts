@@ -35,13 +35,14 @@ const ALLOWED: Record<string, string[]> = {
   txt: ["text/plain"],
   mp4: ["video/mp4"],
   mov: ["video/quicktime"],
+  zip: ["application/zip", "application/x-zip-compressed", "multipart/x-zip"],
 };
 
 /** Never sent, whatever the name or type claims. */
 const BLOCKED_EXT = new Set([
   "exe", "msi", "bat", "cmd", "com", "scr", "pif", "ps1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "jar",
   "apk", "app", "dmg", "pkg", "iso", "img", "lnk", "reg", "dll", "sys", "sh", "html", "htm", "svg", "xhtml",
-  "docm", "xlsm", "pptm", "dotm", "xltm", "one", "zip", "rar", "7z",
+  "docm", "xlsm", "pptm", "dotm", "xltm", "one", "rar", "7z",
 ]);
 
 export type SafetyVerdict = { ok: true; scan: ScanStatus } | { ok: false; reason: string; code: SafetyCode };
@@ -81,6 +82,7 @@ const SNIFF_OK: Record<string, string[]> = {
   mov: ["ftyp"],
   docx: ["zip"],
   xlsx: ["zip"],
+  zip: ["zip"],
   doc: ["ole"],
   xls: ["ole"],
 };
@@ -105,6 +107,7 @@ export function checkFile(f: { name: string; sizeBytes?: number; mimeType?: stri
   if ((f.sizeBytes ?? f.bytes?.byteLength ?? 0) > LIMITS.maxFileBytes) {
     return { ok: false, code: "too_large", reason: `${name}: larger than ${LIMITS.maxFileBytes / 1024 / 1024} MB.` };
   }
+  if (ext === "zip" && !f.bytes?.byteLength) return { ok: false, code: "unscanned", reason: `${name}: the zip couldn't be opened to check what's inside.` };
   if (f.scan === "infected") return { ok: false, code: "malware", reason: `${name}: the malware scan found a threat. It has been held for review.` };
   if (f.bytes?.byteLength) {
     const kind = sniff(f.bytes);
@@ -117,11 +120,69 @@ export function checkFile(f: { name: string; sizeBytes?: number; mimeType?: stri
         return { ok: false, code: "active_content", reason: `${name}: the PDF contains scripts or embedded files. Re-save it as a plain PDF ("Print to PDF").` };
       }
     }
+    if (ext === "zip") {
+      const z = inspectZip(f.bytes);
+      if (!z.ok) return { ok: false, code: z.code, reason: `${name}: ${z.reason}` };
+    }
     if ((ext === "docx" || ext === "xlsx") && /vbaProject\.bin/.test(new TextDecoder("latin1").decode(f.bytes))) {
       return { ok: false, code: "active_content", reason: `${name}: the document contains macros. Save it without macros.` };
     }
   }
   return { ok: true, scan: f.scan === "clean" ? "clean" : "basic_checks_only" };
+}
+
+/** Limits for what is inside a zip. */
+export const ZIP_LIMITS = { maxEntries: 500, maxUnpackedBytes: 500 * 1024 * 1024, maxRatio: 100 };
+
+/**
+ * Looks inside a zip without unpacking it (central directory): every file in it
+ * must be a kind that could be sent on its own. Refuses password-protected zips
+ * (their contents can't be checked), zips inside zips, and zip bombs.
+ */
+export function inspectZip(bytes: Uint8Array): { ok: true; names: string[] } | { ok: false; code: SafetyCode; reason: string } {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // End of central directory record: signature 0x06054b50 within the last 64 KB.
+  let eocd = -1;
+  for (let i = bytes.byteLength - 22; i >= Math.max(0, bytes.byteLength - 65_557); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return { ok: false, code: "type_mismatch", reason: "the zip can't be read (damaged or not a zip)." };
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  if (count > ZIP_LIMITS.maxEntries) return { ok: false, code: "too_large", reason: `has more than ${ZIP_LIMITS.maxEntries} files.` };
+  const names: string[] = [];
+  let packed = 0;
+  let unpacked = 0;
+  for (let n = 0; n < count; n++) {
+    if (p + 46 > bytes.byteLength || dv.getUint32(p, true) !== 0x02014b50) return { ok: false, code: "type_mismatch", reason: "the zip's file list is damaged." };
+    const flags = dv.getUint16(p + 8, true);
+    const csize = dv.getUint32(p + 20, true);
+    const usize = dv.getUint32(p + 24, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    const entry = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nameLen));
+    p += 46 + nameLen + extraLen + commentLen;
+    if (flags & 0x1) return { ok: false, code: "active_content", reason: "is password-protected, so its contents can't be checked. Send it without a password." };
+    if (entry.endsWith("/")) continue; // folder
+    if (entry.includes("..") || entry.startsWith("/")) return { ok: false, code: "active_content", reason: `contains an unsafe path (${entry}).` };
+    const base = entry.split("/").pop() ?? entry;
+    if (/^(__MACOSX|\._|\.DS_Store$|Thumbs\.db$)/.test(base) || entry.startsWith("__MACOSX/")) continue; // system leftovers
+    const e = extOf(base);
+    if (e === "zip" || e === "rar" || e === "7z") return { ok: false, code: "blocked_type", reason: `contains another archive (${base}). Put all files in one zip.` };
+    const inner = checkFile({ name: base, sizeBytes: usize });
+    if (!inner.ok) return { ok: false, code: inner.code, reason: `contains ${base}, which can't be sent (${inner.reason.replace(/^[^:]+: /, "")})` };
+    packed += csize;
+    unpacked += usize;
+    names.push(entry);
+  }
+  if (unpacked > ZIP_LIMITS.maxUnpackedBytes || (packed > 0 && unpacked / packed > ZIP_LIMITS.maxRatio && unpacked > 50 * 1024 * 1024)) {
+    return { ok: false, code: "too_large", reason: "unpacks to far more than its size (possible zip bomb)." };
+  }
+  return { ok: true, names };
 }
 
 /** Message text from people: no links to unknown sites (the most common scam), no oversize bodies. */
