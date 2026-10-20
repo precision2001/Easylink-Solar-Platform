@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
+import {
+  LocalAudioTrack,
+  Room,
+  RoomEvent,
+  Track,
+  type RemoteTrack,
+} from "livekit-client";
 import { resolveLiveKitServerUrl } from "@/lib/livekit/livekit-url";
 import { extractMessage, unwrapApiData } from "@/lib/customers/backend";
 
@@ -9,10 +15,14 @@ export type DiallerState = "idle" | "dialling" | "connected" | "ended";
 
 type DialResponse = {
   callId: string;
+  /** `Call` row id; null when the carrier call went through but logging didn't. */
+  callRecordId: string | null;
   roomName: string;
   toNumber: string;
   token: string;
   url?: string | null;
+  /** Notice to play before recording starts; null when nothing is recorded. */
+  recordingAnnouncementUrl?: string | null;
 };
 
 /**
@@ -25,6 +35,7 @@ export function useAdminDialler() {
   const [state, setState] = useState<DiallerState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [activeNumber, setActiveNumber] = useState<string | null>(null);
+  const [callRecordId, setCallRecordId] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   /** Seconds since the far end picked up — null until then. */
   const [durationSec, setDurationSec] = useState<number | null>(null);
@@ -32,6 +43,10 @@ export function useAdminDialler() {
   const roomRef = useRef<Room | null>(null);
   const roomNameRef = useRef<string | null>(null);
   const hangingUpRef = useRef(false);
+  /** Guards the one-time "answered" transition — several signals can report it. */
+  const answeredRef = useRef(false);
+  /** Recording announcement for the current call; null when recording is off. */
+  const announcementUrlRef = useRef<string | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
 
   const teardown = useCallback(() => {
@@ -44,6 +59,10 @@ export function useAdminDialler() {
     setDurationSec(null);
     setActiveNumber(null);
     hangingUpRef.current = false;
+    answeredRef.current = false;
+    // `callRecordId` deliberately survives teardown: the agent writes the call
+    // up *after* hanging up, and the wrap-up still needs the row to save to.
+    // It is replaced on the next dial.
   }, []);
 
   /** Tell the server to drop the carrier leg — a browser disconnect alone leaves it billing. */
@@ -60,15 +79,101 @@ export function useAdminDialler() {
   }, []);
 
   /**
+   * Plays the "this call may be recorded" announcement to the callee, tells the
+   * server it has played (which is what starts the recording), and only then
+   * opens the agent's microphone.
+   *
+   * The announcement is published as the agent's audio track while their mic is
+   * still muted, so the customer hears the notice before anyone speaks. If no
+   * announcement is configured the deployment records nothing, and the mic
+   * simply opens straight away.
+   */
+  const announceThenOpenMic = useCallback(async (roomName: string) => {
+    const room = roomRef.current;
+    if (!room) return;
+
+    const url = announcementUrlRef.current;
+    if (!url) {
+      await room.localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
+      return;
+    }
+
+    let ctx: AudioContext | null = null;
+    let published: LocalAudioTrack | null = null;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`announcement fetch failed: ${res.status}`);
+      const bytes = await res.arrayBuffer();
+
+      ctx = new AudioContext();
+      const buffer = await ctx.decodeAudioData(bytes);
+      const destination = ctx.createMediaStreamDestination();
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(destination);
+
+      const mediaTrack = destination.stream.getAudioTracks()[0];
+      if (!mediaTrack) throw new Error("announcement produced no audio track");
+
+      published = new LocalAudioTrack(mediaTrack);
+      await room.localParticipant.publishTrack(published);
+      source.start();
+
+      // Wait out the clip, plus a moment so the tail is not clipped by the
+      // unpublish.
+      await new Promise((resolve) =>
+        setTimeout(resolve, buffer.duration * 1000 + 250),
+      );
+
+      await fetch("/api/admin/calls/dial/consent-announced", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomName }),
+      });
+    } catch (err) {
+      // The announcement failing means no consent was given, so the server is
+      // never told and nothing is recorded. The call itself continues.
+      console.error("Recording announcement failed; call will not be recorded", err);
+    } finally {
+      if (published) {
+        await room.localParticipant.unpublishTrack(published).catch(() => undefined);
+        published.stop();
+      }
+      await ctx?.close().catch(() => undefined);
+      await room.localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
+    }
+  }, []);
+
+  /**
    * Flip to the connected state. Idempotent, because several signals can tell
    * us the phone answered (the SIP participant joining, its audio arriving, or
    * it already being in the room when we connect) and whichever lands first
    * wins — the later ones must not restart the timer.
    */
   const markConnected = useCallback(() => {
+    // Ref, not the state updater, so the "first answer" decision stays out of
+    // render and can't fire twice under StrictMode.
+    const firstAnswer = !answeredRef.current;
+    answeredRef.current = true;
+
     setState((prev) => (prev === "dialling" ? "connected" : prev));
     setDurationSec((prev) => (prev === null ? 0 : prev));
-  }, []);
+
+    // Stamp connectedAt server-side so talk time is measured from the real
+    // answer, not from whenever the agent gets round to saving the wrap-up.
+    const roomName = roomNameRef.current;
+    if (!firstAnswer || !roomName) return;
+
+    void fetch("/api/admin/calls/dial/connected", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomName }),
+    }).catch(() => {
+      // Best effort: a missed stamp costs us a duration, not the call.
+    });
+
+    void announceThenOpenMic(roomName);
+  }, [announceThenOpenMic]);
 
   const hangUp = useCallback(() => {
     if (hangingUpRef.current) return;
@@ -117,6 +222,8 @@ export function useAdminDialler() {
         roomRef.current = room;
         roomNameRef.current = data.roomName;
         setActiveNumber(data.toNumber);
+        setCallRecordId(data.callRecordId ?? null);
+        announcementUrlRef.current = data.recordingAnnouncementUrl ?? null;
 
         // The phone joining as a SIP participant is what "answered" means here.
         room.on(RoomEvent.ParticipantConnected, markConnected);
@@ -151,9 +258,10 @@ export function useAdminDialler() {
         // we do. When the phone answers quickly the SIP participant is already
         // in the room by the time connect() resolves, so without this check the
         // call would sit on "Dialling…" for its whole duration.
+        // The mic is opened by `announceThenOpenMic` once the recording notice
+        // has played — opening it here would let the agent talk over the
+        // announcement, or start a recorded conversation before consent.
         if (room.remoteParticipants.size > 0) markConnected();
-
-        await room.localParticipant.setMicrophoneEnabled(true);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Could not place the call.";
@@ -213,6 +321,8 @@ export function useAdminDialler() {
     state,
     error,
     activeNumber,
+    /** `Call` row this session is writing to — the wrap-up saves against it. */
+    callRecordId,
     muted,
     durationSec,
     dial,
