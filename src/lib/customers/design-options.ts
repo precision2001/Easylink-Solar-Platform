@@ -19,6 +19,20 @@ export type DesignOptionCard = {
   selected: boolean;
   editable: boolean;
   status: CustomerDesign["status"] | null;
+  /**
+   * Equipment and STC figures (job journey, stage 1). Optional until the
+   * backend's /designs/options returns them; the UI shows "at quote" when absent.
+   */
+  panelModel?: string | null;
+  inverterModel?: string | null;
+  batteryModel?: string | null;
+  /** Usable battery capacity in kWh; 0 or null = no battery. */
+  batteryKwh?: number | null;
+  /** Estimated STCs (solar + battery) and their value as a point-of-sale discount (AUD). */
+  stcCount?: number | null;
+  stcDiscount?: number | null;
+  /** Price after the STC discount (AUD, GST incl.). */
+  priceAfterStc?: number | null;
 };
 
 export type DesignOptions = {

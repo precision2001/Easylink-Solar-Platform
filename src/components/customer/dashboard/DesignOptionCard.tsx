@@ -84,6 +84,18 @@ export function DesignOptionCard({
               <span className="opacity-50">·</span>
               <span>Output: {option.outputKwh}</span>
             </div>
+
+            {option.equipment || option.afterStc ? (
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] leading-[15px] tracking-[0.12px] text-customer-card-spec-text">
+                {option.equipment ? <span>{option.equipment}</span> : null}
+                {option.equipment && option.afterStc ? <span className="opacity-50">·</span> : null}
+                {option.afterStc ? (
+                  <span>
+                    After STCs: <span className="font-bold text-warm-black">{option.afterStc}</span>
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </button>
 
