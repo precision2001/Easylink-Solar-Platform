@@ -27,6 +27,8 @@ const ICONS = {
   home: "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
   cart: "M7 21a1 1 0 1 0 2 0a1 1 0 1 0 -2 0M18 21a1 1 0 1 0 2 0a1 1 0 1 0 -2 0M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12",
   card: "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2zM2 10L22 10",
+  percent:
+    "M19 5L5 19M4 6.5a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0M15 17.5a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0",
   tag: "M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42zM7 7.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0",
   shield: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1zM9 12l2 2 4-4",
   key: "M15 7a4 4 0 1 1-3.9 5H9v2H7v2H4v-3l6.1-6.1A4 4 0 0 1 15 7zM16 8h.01",
@@ -116,10 +118,15 @@ const GROUPS: NavGroup[] = [
     items: [
       { key: "aiControl", label: "AI control centre", icon: "spark", href: "/master/ai-control" },
       { key: "aiJourneys", label: "Live journeys", icon: "route", href: "/master/live-journeys", badge: "41" },
-      { key: "aiApprovals", label: "AI approvals", icon: "check", badge: "7" },
-      { key: "aiDecisions", label: "Decision records", icon: "file" },
-      { key: "aiPolicies", label: "Policies", icon: "shield" },
-      { key: "aiQuality", label: "Testing & autonomy", icon: "flask" },
+      { key: "aiApprovals", label: "AI approvals", icon: "check", href: "/master/ai-approvals", badge: "7" },
+      { key: "aiDecisions", label: "Decision records", icon: "file", href: "/master/decision-records" },
+      { key: "aiPolicies", label: "Policies", icon: "shield", href: "/master/policies" },
+      {
+        key: "aiQuality",
+        label: "Testing & autonomy",
+        icon: "flask",
+        href: "/master/testing-autonomy",
+      },
     ],
   },
   {
@@ -129,6 +136,14 @@ const GROUPS: NavGroup[] = [
       { key: "fleet", label: "Live fleet & alerts", icon: "pulse", badge: "5" },
       { key: "drone", label: "Drone flights", icon: "drone" },
       { key: "vpp", label: "VPP trading", icon: "bolt" },
+    ],
+  },
+  {
+    title: "Pricing engine",
+    tag: "new",
+    items: [
+      { key: "pengine", label: "Quote tester", icon: "percent" },
+      { key: "pbook", label: "Price book & rules", icon: "tag" },
     ],
   },
   {

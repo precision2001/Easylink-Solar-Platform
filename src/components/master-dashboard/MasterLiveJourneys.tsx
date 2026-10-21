@@ -126,12 +126,12 @@ function AiSuggestionCard({ dec }: { dec: string }) {
           >
             Reject
           </button>
-          <span
-            title="Not built yet"
-            className="ml-auto cursor-default text-[13px] font-semibold text-[#5B6B80]"
+          <Link
+            href="/master/decision-records"
+            className="ml-auto text-[13px] font-semibold text-[#1565C0]"
           >
             Why? {dec}
-          </span>
+          </Link>
         </div>
       ) : (
         <div
@@ -147,9 +147,9 @@ function AiSuggestionCard({ dec }: { dec: string }) {
           >
             Undo
           </button>
-          <span title="Not built yet" className="cursor-default text-[12px] font-semibold">
+          <Link href="/master/decision-records" className="text-[12px] font-semibold underline">
             Decision {dec}
-          </span>
+          </Link>
         </div>
       )}
     </section>
@@ -346,12 +346,12 @@ export function MasterLiveJourneys() {
               >
                 {took ? "Hand back to AI" : "Take over this journey"}
               </button>
-              <span
-                title="Not built yet"
-                className="inline-flex h-11 cursor-default items-center rounded-[10px] border border-[#CBD5E1] px-4 text-[14px] font-semibold text-[#5B6B80]"
+              <Link
+                href="/master/decision-records"
+                className="inline-flex h-11 items-center rounded-[10px] border border-[#CBD5E1] px-4 text-[14px] font-semibold text-[#0F172A]"
               >
                 Full decision record
-              </span>
+              </Link>
               <Link
                 href="/master/quotes-leads"
                 className="inline-flex h-11 items-center rounded-[10px] border border-[#CBD5E1] px-4 text-[14px] font-semibold text-[#0F172A]"
