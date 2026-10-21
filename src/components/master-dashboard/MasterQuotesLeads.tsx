@@ -511,7 +511,7 @@ export function MasterQuotesLeads() {
   const [territory, setTerritory] = useState("NSW & ACT");
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex min-h-full flex-col text-[#0F172A]">
       <header className="flex flex-wrap items-center gap-3 border-b border-[#E3E8EF] bg-white px-8 py-3.5">
         <nav aria-label="Breadcrumb" className="flex-grow text-[13px] text-[#5B6B80]">
           <span className="font-semibold text-[#0F172A]">Quotes &amp; Leads</span>

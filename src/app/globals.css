@@ -633,11 +633,22 @@
   --font-dm-sans: var(--font-dm-sans);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/*
+ * No dark-mode override on purpose.
+ *
+ * `--foreground` is only ever read by `body`, and every surface in this app
+ * paints its own explicit background — the admin dashboards are white cards,
+ * and the dark pages (customer portal, blog detail) set their own dark
+ * backgrounds. So flipping `--foreground` to a light ink for dark-mode
+ * visitors never themed anything; it only turned inherited body text
+ * near-white on top of backgrounds that stayed white, which is invisible.
+ *
+ * `color-scheme: light` keeps browser-painted UI — native select popups,
+ * date pickers, scrollbars, autofill — light as well, so those match the
+ * light surfaces they open over instead of rendering dark-on-dark.
+ */
+:root {
+  color-scheme: light;
 }
 
 /* Used by RainbowButton's animated gradient-ring border. */
