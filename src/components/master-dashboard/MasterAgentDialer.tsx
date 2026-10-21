@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAdminDialler } from "@/hooks/useAdminDialler";
+import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
 
 /**
  * "Agent Dialer" from the Easylink Designer mock — the real call mechanics
@@ -79,6 +79,8 @@ interface CallTranscript {
   id: string;
   recorded: boolean;
   recordingStatus: "NOT_RECORDED" | "RECORDING" | "STORED" | "FAILED";
+  /** Why recording did not happen — set when the announcement broke. */
+  recordingError: string | null;
   transcriptStatus: "NOT_REQUESTED" | "QUEUED" | "PROCESSING" | "READY" | "FAILED";
   transcriptText: string | null;
   transcriptError: string | null;
@@ -217,7 +219,11 @@ function transcriptMessage(t: CallTranscript | null, hasCall: boolean): string {
       : "Not recorded — the recording announcement did not play, so no consent was given.";
   }
   if (t.recordingStatus === "RECORDING") return "Recording. The transcript is made after the call ends.";
-  if (t.recordingStatus === "FAILED") return "The recording failed, so there is no transcript.";
+  if (t.recordingStatus === "FAILED") {
+    return `The recording failed, so there is no transcript${
+      t.recordingError ? `: ${t.recordingError}` : "."
+    }`;
+  }
   if (t.transcriptStatus === "FAILED") {
     return `Transcription failed${t.transcriptError ? `: ${t.transcriptError}` : "."}`;
   }
@@ -226,6 +232,41 @@ function transcriptMessage(t: CallTranscript | null, hasCall: boolean): string {
   }
   if (t.transcriptStatus === "READY") return "No speech was detected in this call.";
   return "Transcription is not enabled for this account.";
+}
+
+/**
+ * Whether this call is being recorded, shown on the call itself.
+ *
+ * The announcement plays in this browser and can fail here — and when it
+ * does, nothing is recorded. An agent who assumes the usual would otherwise
+ * finish a call believing there is audio to go back to when there is none.
+ * Silence is the wrong default for that, so the failure is stated plainly.
+ */
+function RecordingBadge({ recording }: { recording: RecordingState }) {
+  if (recording === "on") {
+    return (
+      <span className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7EE2A0]">
+        <span aria-hidden="true" className="size-2 rounded-full bg-[#7EE2A0]" />
+        Recording
+      </span>
+    );
+  }
+
+  if (recording === "failed") {
+    return (
+      <span
+        role="status"
+        className="mt-1 rounded-[8px] bg-[#7F1D1D] px-2.5 py-1.5 text-[12px] font-bold text-[#FECACA]"
+      >
+        Not recording — the announcement failed, so this call has no consent
+        and is not being recorded.
+      </span>
+    );
+  }
+
+  // "pending" is the announcement still playing, "off" is recording switched
+  // off for this deployment. Neither is something to interrupt the agent for.
+  return null;
 }
 
 function TranscriptBadge({ transcript }: { transcript: CallTranscript | null }) {
@@ -267,6 +308,7 @@ export function MasterAgentDialer() {
     callRecordId,
     muted,
     durationSec,
+    recording,
     dial,
     hangUp,
     toggleMute,
@@ -450,9 +492,25 @@ export function MasterAgentDialer() {
         throw new Error(json?.message ?? "Could not create the lead.");
       }
 
+      const lead = json.data;
+
+      // Attach the call to the lead it produced. The call row resolved its
+      // lead at dial time by phone match, which by definition failed here —
+      // without this the new customer has no call history against them.
+      if (callRecordId && lead?.id) {
+        await fetch(`/api/admin/calls/${callRecordId}/lead`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leadId: lead.id }),
+        }).catch(() => {
+          // The lead itself saved, so a failed link must not be reported as
+          // a failed capture. This one call stays unlinked; later calls to
+          // the number resolve the lead at dial time on their own.
+        });
+      }
+
       // Flip the panel straight to the new record, so the call header starts
       // naming them and the agent doesn't have to re-look-up mid-call.
-      const lead = json.data;
       setCustomer({
         status: "found",
         lead: {
@@ -646,6 +704,7 @@ export function MasterAgentDialer() {
                     <span className="text-[14px] font-semibold tabular-nums text-[#9FB0C8]">
                       {durationSec === null ? "Connected" : formatDuration(durationSec)}
                     </span>
+                    <RecordingBadge recording={recording} />
                   </>
                 ) : (
                   <span className="font-source-sans text-[32px] font-bold tabular-nums">

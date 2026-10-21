@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 /**
@@ -289,6 +289,224 @@ function BoardCard({ card }: { card: Card }) {
   return <div className={className}>{body}</div>;
 }
 
+type Lead = {
+  id: string;
+  customerName: string;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  address: string | null;
+  retailer: string | null;
+  notes: string | null;
+  source: string | null;
+  status: string;
+  createdAt: string;
+};
+
+const STATUS_PALETTE: Record<string, [string, string]> = {
+  NEW: ["#DBEAFE", "#1E40AF"],
+  CONTACTED: ["#E2E8F0", "#334155"],
+  QUALIFIED: ["#FEF3C7", "#92400E"],
+  PROPOSAL_SENT: ["#FEF3C7", "#92400E"],
+  NEGOTIATION: ["#FEF3C7", "#92400E"],
+  WON: ["#DCFCE7", "#166534"],
+  LOST: ["#FEE2E2", "#991B1B"],
+};
+
+const PAGE_SIZE = 20;
+
+/** `—`, for a column this lead has no value in. */
+function Blank() {
+  return <span className="text-[#94A3B8]">—</span>;
+}
+
+/**
+ * The real leads list.
+ *
+ * Everything else on this page is the pipeline mock; this table is live data
+ * from `GET /leads`. It exists because a lead captured in the Agent Dialer
+ * was previously write-only — the admin portal had no screen that listed
+ * leads at all, so a just-saved customer looked lost.
+ */
+function LeadsTable() {
+  const [rows, setRows] = useState<Lead[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(PAGE_SIZE),
+    });
+    if (query) params.set("search", query);
+
+    fetch(`/api/admin/leads?${params}`)
+      .then(async (res) => {
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.message ?? "Could not load leads.");
+        }
+        return json;
+      })
+      .then((json) => {
+        if (!live) return;
+        setError(null);
+        setRows(json.data ?? []);
+        setTotal(json.meta?.pagination?.total ?? 0);
+      })
+      .catch((err: unknown) => {
+        if (!live) return;
+        setRows([]);
+        setError(err instanceof Error ? err.message : "Could not load leads.");
+      });
+
+    return () => {
+      live = false;
+    };
+  }, [page, query]);
+
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  return (
+    <section
+      aria-label="All leads"
+      className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]"
+    >
+      <div className="flex flex-wrap items-center gap-2.5">
+        <h2 className="m-0 flex-grow text-[18px] font-bold text-[#0F172A]">All leads</h2>
+        <span className="rounded-full bg-[#DCFCE7] px-2.5 py-[3px] text-[12px] font-bold text-[#166534]">
+          Live data
+        </span>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setPage(1);
+            setQuery(search.trim());
+          }}
+          className="flex gap-2"
+        >
+          <label htmlFor="lead-search" className="sr-only">
+            Search leads by name, email or address
+          </label>
+          <input
+            id="lead-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Name, email or address"
+            className="h-[38px] w-[230px] rounded-[10px] border border-[#CBD5E1] px-3 text-[13px] placeholder:text-[#94A3B8]"
+          />
+          <button
+            type="submit"
+            className="h-[38px] rounded-[10px] bg-[#0B1A2E] px-3.5 text-[13px] font-bold text-white"
+          >
+            Search
+          </button>
+        </form>
+      </div>
+
+      {error ? (
+        <p role="alert" className="m-0 text-[13px] font-semibold text-[#991B1B]">
+          {error}
+        </p>
+      ) : null}
+
+      {rows === null ? (
+        <p className="m-0 py-4 text-[13px] text-[#5B6B80]">Loading leads…</p>
+      ) : rows.length === 0 ? (
+        <p className="m-0 py-4 text-[13px] text-[#5B6B80]">
+          {query ? `No leads match “${query}”.` : "No leads yet."}
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[920px] border-collapse text-[13px]">
+            <thead>
+              <tr className="text-left text-[#475569]">
+                {["Customer", "Phone", "Address", "Retailer", "Source", "Status", "Created"].map(
+                  (h) => (
+                    <th key={h} className="border-b border-[#E3E8EF] p-2 font-semibold">
+                      {h}
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((l) => {
+                const [bg, fg] = STATUS_PALETTE[l.status] ?? STATUS_PALETTE.CONTACTED!;
+                return (
+                  <tr key={l.id}>
+                    <td className="border-b border-[#EEF2F6] px-2 py-[11px]">
+                      <strong className="text-[#0F172A]">{l.customerName}</strong>
+                      <div className="text-[12px] text-[#5B6B80]">
+                        {l.customerEmail ?? "No email"}
+                      </div>
+                    </td>
+                    <td className="border-b border-[#EEF2F6] px-2 py-[11px] tabular-nums">
+                      {l.customerPhone ?? <Blank />}
+                    </td>
+                    <td className="border-b border-[#EEF2F6] px-2 py-[11px]">
+                      {l.address ?? <Blank />}
+                    </td>
+                    <td className="border-b border-[#EEF2F6] px-2 py-[11px]">
+                      {l.retailer ?? <Blank />}
+                    </td>
+                    <td className="border-b border-[#EEF2F6] px-2 py-[11px] text-[#5B6B80]">
+                      {l.source ?? <Blank />}
+                    </td>
+                    <td className="border-b border-[#EEF2F6] px-2 py-[11px]">
+                      <span
+                        className="rounded-full px-[9px] py-0.5 text-[12px] font-bold"
+                        style={{ background: bg, color: fg }}
+                      >
+                        {l.status.replace(/_/g, " ").toLowerCase()}
+                      </span>
+                    </td>
+                    <td className="border-b border-[#EEF2F6] px-2 py-[11px] whitespace-nowrap text-[#5B6B80]">
+                      {new Date(l.createdAt).toLocaleDateString("en-AU", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {rows && rows.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2.5 text-[12px] text-[#5B6B80]">
+          <span className="flex-grow">
+            {total} lead{total === 1 ? "" : "s"} · page {page} of {pages}
+          </span>
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+            className="h-9 rounded-[9px] border border-[#CBD5E1] bg-white px-3 text-[13px] font-semibold disabled:text-[#94A3B8]"
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            disabled={page >= pages}
+            onClick={() => setPage((p) => p + 1)}
+            className="h-9 rounded-[9px] border border-[#CBD5E1] bg-white px-3 text-[13px] font-semibold disabled:text-[#94A3B8]"
+          >
+            Next
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function MasterQuotesLeads() {
   const [territory, setTerritory] = useState("NSW & ACT");
 
@@ -298,9 +516,6 @@ export function MasterQuotesLeads() {
         <nav aria-label="Breadcrumb" className="flex-grow text-[13px] text-[#5B6B80]">
           <span className="font-semibold text-[#0F172A]">Quotes &amp; Leads</span>
         </nav>
-        <span className="rounded-full bg-[#DBEAFE] px-2.5 py-[3px] text-[12px] font-bold text-[#1E40AF]">
-          Sample data
-        </span>
         <label htmlFor="territory" className="sr-only">
           Territory
         </label>
@@ -334,7 +549,16 @@ export function MasterQuotesLeads() {
           </span>
         </div>
 
+        <LeadsTable />
+
         <AiSuggestionCard />
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h2 className="m-0 flex-grow text-[18px] font-bold text-[#0F172A]">Pipeline board</h2>
+          <span className="rounded-full bg-[#DBEAFE] px-2.5 py-[3px] text-[12px] font-bold text-[#1E40AF]">
+            Sample data
+          </span>
+        </div>
 
         <section aria-label="Pipeline board" className="overflow-x-auto">
           <div className="grid min-w-[1440px] gap-2.5" style={{ gridTemplateColumns: "repeat(8, minmax(170px, 1fr))" }}>

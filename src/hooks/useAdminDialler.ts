@@ -13,6 +13,15 @@ import { extractMessage, unwrapApiData } from "@/lib/customers/backend";
 
 export type DiallerState = "idle" | "dialling" | "connected" | "ended";
 
+/**
+ * Recording state for the current call.
+ * - `pending`  — the announcement has not finished yet.
+ * - `on`       — announced and recording.
+ * - `off`      — recording is not configured for this deployment.
+ * - `failed`   — the announcement broke, so nothing is being recorded.
+ */
+export type RecordingState = "pending" | "on" | "off" | "failed";
+
 type DialResponse = {
   callId: string;
   /** `Call` row id; null when the carrier call went through but logging didn't. */
@@ -39,6 +48,12 @@ export function useAdminDialler() {
   const [muted, setMuted] = useState(false);
   /** Seconds since the far end picked up — null until then. */
   const [durationSec, setDurationSec] = useState<number | null>(null);
+  /**
+   * Whether this call is being recorded. "failed" is the one that matters:
+   * the announcement broke, so there is no consent and no recording, and the
+   * agent needs to know that rather than assume the usual.
+   */
+  const [recording, setRecording] = useState<RecordingState>("pending");
 
   const roomRef = useRef<Room | null>(null);
   const roomNameRef = useRef<string | null>(null);
@@ -57,6 +72,7 @@ export function useAdminDialler() {
     audioElRef.current = null;
     setMuted(false);
     setDurationSec(null);
+    setRecording("pending");
     setActiveNumber(null);
     hangingUpRef.current = false;
     answeredRef.current = false;
@@ -94,6 +110,9 @@ export function useAdminDialler() {
 
     const url = announcementUrlRef.current;
     if (!url) {
+      // Recording is switched off for this deployment, which is a choice, not
+      // a fault — so the call simply proceeds unrecorded.
+      setRecording("off");
       await room.localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
       return;
     }
@@ -117,6 +136,16 @@ export function useAdminDialler() {
 
       published = new LocalAudioTrack(mediaTrack);
       await room.localParticipant.publishTrack(published);
+
+      // A context created outside a user gesture can start suspended, and a
+      // suspended context plays silence while the timer below runs happily to
+      // completion — which would report consent for an announcement nobody
+      // heard. Resuming first is what makes the report truthful.
+      if (ctx.state === "suspended") await ctx.resume();
+      if (ctx.state !== "running") {
+        throw new Error(`audio context did not start (state: ${ctx.state})`);
+      }
+
       source.start();
 
       // Wait out the clip, plus a moment so the tail is not clipped by the
@@ -125,15 +154,33 @@ export function useAdminDialler() {
         setTimeout(resolve, buffer.duration * 1000 + 250),
       );
 
-      await fetch("/api/admin/calls/dial/consent-announced", {
+      const res2 = await fetch("/api/admin/calls/dial/consent-announced", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roomName }),
       });
+      // Recording only starts if this lands. An unchecked response here was
+      // how a played announcement could still leave a call unrecorded.
+      if (!res2.ok) {
+        throw new Error(`consent report failed: ${res2.status}`);
+      }
+
+      setRecording("on");
     } catch (err) {
-      // The announcement failing means no consent was given, so the server is
-      // never told and nothing is recorded. The call itself continues.
+      // No announcement means no consent, so nothing is recorded — but the
+      // call itself continues. Tell the server why, so this shows up in the
+      // call record instead of only in this browser's console, and tell the
+      // agent, who would otherwise assume they are being recorded.
       console.error("Recording announcement failed; call will not be recorded", err);
+      setRecording("failed");
+      void fetch("/api/admin/calls/dial/consent-failed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomName,
+          reason: err instanceof Error ? err.message : String(err),
+        }),
+      }).catch(() => undefined);
     } finally {
       if (published) {
         await room.localParticipant.unpublishTrack(published).catch(() => undefined);
@@ -325,6 +372,8 @@ export function useAdminDialler() {
     callRecordId,
     muted,
     durationSec,
+    /** Whether this call is being recorded — `failed` means it is not. */
+    recording,
     dial,
     hangUp,
     toggleMute,
