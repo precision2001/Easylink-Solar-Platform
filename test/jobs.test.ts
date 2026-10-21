@@ -146,4 +146,55 @@ describe("the job journey", () => {
     expect(inv).toMatchObject({ status: "draft", kind: "variation" });
     expect(inv.totals.total).toBe(880);
   });
+
+  it("accepts a bank transfer screenshot as payment, flagged for staff to confirm", async () => {
+    const w = world();
+    await newDanJob(w);
+    const j = (await w.c.store.getRecord("job", "ld_1")) as any;
+    for (const k of ["installer_assigned", "selection_confirmed", "site_photos_ok", "job_accepted", "agreement_signed"]) j.milestones[k] = { at: "2026-10-01T00:00:00Z", by: "x" };
+    j.installerId = "usr_inst_1";
+    await w.c.store.putRecord("job", j);
+    const inv = (await w.step("inst", "draft_invoice", { kind: "deposit" })).body.data.invoice;
+    await w.step("inst", "send_invoice", { invoiceId: inv.id });
+    expect((await w.step("cust", "submit_payment_proof", { invoiceId: inv.id })).status).toBe(400);
+    expect((await w.step("cust", "submit_payment_proof", { invoiceId: inv.id, fileId: "jf_1", ref: "CBA 1234" })).status).toBe(200);
+    const v = await w.call("GET", "/v1/ai/jobs/ld_1", "admin");
+    expect(v.body.data.milestones.find((m: any) => m.key === "deposit_paid").done).toBe(true);
+    expect(v.body.data.invoices[0].payments[0].verified).toBe(false);
+    await w.step("admin", "verify_payment", { invoiceId: inv.id });
+    expect((await w.call("GET", "/v1/ai/jobs/ld_1", "admin")).body.data.invoices[0].payments[0].verified).toBe(true);
+  });
+
+  it("a rejected photo goes back with the reason", async () => {
+    const w = world();
+    await newDanJob(w);
+    await w.step("admin", "match");
+    await w.step("inst", "accept_offer");
+    await w.step("cust", "upload_photo", { label: "Meter" });
+    expect((await w.step("inst", "reject_photo", { label: "Meter" })).status).toBe(400);
+    await w.step("inst", "reject_photo", { label: "Meter", reason: "The meter number is blurred. Stand closer and avoid the glare." });
+    expect(w.messaging.sent.some((m) => m.body.includes("meter number is blurred"))).toBe(true);
+    const v = await w.call("GET", "/v1/ai/jobs/ld_1", "cust");
+    expect(v.body.data.job.photos.items[0]).toMatchObject({ ok: false, note: expect.stringContaining("blurred") });
+  });
+
+  it("after three unanswered offers the job goes to EasyLink staff and the customer is told", async () => {
+    const w = world();
+    w.backend.seed("user", [
+      { id: "usr_inst_3", role: "INSTALLER", firstName: "Ava", lat: -33.75, lng: 151.0, rating: 4.5, reviewCount: 10, reliability: 0.9, saaExpiry: "2099-01-01", batteryEndorsed: true, serviceRadiusKm: 60 },
+      { id: "usr_inst_4", role: "INSTALLER", firstName: "Ben", lat: -33.76, lng: 151.0, rating: 4.4, reviewCount: 10, reliability: 0.9, saaExpiry: "2099-01-01", batteryEndorsed: true, serviceRadiusKm: 60 },
+      { id: "usr_inst_5", role: "INSTALLER", firstName: "Cy", lat: -33.77, lng: 151.0, rating: 4.3, reviewCount: 10, reliability: 0.9, saaExpiry: "2099-01-01", batteryEndorsed: true, serviceRadiusKm: 60 },
+    ]);
+    await newDanJob(w);
+    await w.step("admin", "match");
+    for (let i = 0; i < 3; i++) {
+      for (const o of (await w.c.store.listRecords("offer")) as any[]) if (o.status === "open") await w.c.store.putRecord("offer", { ...o, expiresAt: "2020-01-01T00:00:00Z" });
+      await w.call("GET", "/v1/ai/jobs/ld_1", "admin");
+    }
+    const offers = (await w.c.store.listRecords("offer")) as any[];
+    expect(offers.filter((o) => o.status === "expired")).toHaveLength(3);
+    expect(offers.some((o) => o.status === "open")).toBe(false);
+    expect((await w.c.store.listInbox({ status: "open" })).some((i) => /Place Dan's job/.test(i.title + JSON.stringify(i.input)))).toBe(true);
+    expect(w.messaging.sent.some((m) => m.body.includes("lining up the right installer"))).toBe(true);
+  });
 });

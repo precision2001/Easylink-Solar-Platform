@@ -154,7 +154,8 @@ export type Invoice = {
   dueDate: string;
   status: "draft" | "sent" | "paid" | "void";
   totals: { exGst: number; gst: number; total: number };
-  payments: { at: string; amount: number; method: string; ref: string }[];
+  /** `verified: false` = the customer sent a bank-transfer receipt; staff confirm it against the bank statement. */
+  payments: { at: string; amount: number; method: string; ref: string; verified?: boolean; receiptFileId?: string }[];
   creditFor?: string;
   createdBy: string;
   createdVia: "form" | "ai" | "auto";

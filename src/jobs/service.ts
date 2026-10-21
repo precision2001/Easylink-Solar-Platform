@@ -125,6 +125,7 @@ export class JobService {
   }
 
   async list(p: Principal, meta: Meta = {}): Promise<Job[]> {
+    for (const j of (await this.c.store.listRecords("job")) as unknown as Job[]) if (!j.installerId) await this.expireOffers(j);
     const all = (await this.c.store.listRecords("job")) as unknown as Job[];
     const out: Job[] = [];
     for (const j of all) if (await this.canSee(j, p, meta)) out.push(j);
@@ -132,7 +133,9 @@ export class JobService {
   }
 
   /** The job as this viewer may see it, with their next steps. */
-  async view(j: Job, p: Principal) {
+  async view(j0: Job, p: Principal) {
+    if (!j0.installerId) await this.expireOffers(j0);
+    const j = (await this.get(j0.id)) ?? j0;
     const v = viewerOf(p);
     const open = openMilestones(j);
     const invoices = (await this.invoices(j.id)).filter((i) => v.who !== "customer" || i.status !== "draft");
@@ -287,11 +290,35 @@ export class JobService {
     return out.sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.score - a.score);
   }
 
+  /** Offers past their answer-by time lapse and the job moves to the next installer. */
+  async expireOffers(j: Job) {
+    const now = nowIso();
+    const stale = (await this.offers(j.id)).filter((o) => o.status === "open" && o.expiresAt < now);
+    if (!stale.length) return;
+    const sys: Principal = { kind: "system", id: "jobs", roles: [], on_behalf_of: null };
+    for (const o of stale) {
+      o.status = "expired";
+      await this.c.store.putRecord("offer", o as unknown as Record<string, unknown> & { id: string });
+      await this.progress(j, sys, `${o.installerName} didn't answer in time`, { audience: "staff", kind: "assignment" });
+    }
+    await this.offerNext(j, sys);
+  }
+
+  /**
+   * Offer to the next eligible installer. After three offers without a yes, or when no one is
+   * eligible, the job goes to EasyLink staff to place (wider area, EasyLink's own crew, or the
+   * Ready Sites marketplace) and the customer is told it's being arranged.
+   */
   private async offerNext(j: Job, p: Principal) {
-    const best = (await this.rank(j)).find((c) => c.eligible);
+    const tried = (await this.offers(j.id)).filter((o) => o.status !== "open").length;
+    const best = tried >= 3 ? undefined : (await this.rank(j)).find((c) => c.eligible);
     if (!best) {
-      await this.c.actions.run({ name: "request_approval", input: { question: `No eligible installer accepted ${j.customerName}'s job. Please place it.`, about: { type: "lead", id: j.leadId } }, principal: { kind: "system", id: "jobs", roles: [], on_behalf_of: null } }).catch(() => undefined);
-      await this.progress(j, p, "No installer available yet — EasyLink is placing the job", { audience: "staff" });
+      const why = tried >= 3 ? "three installers didn't take it" : "no installer nearby is eligible";
+      await this.c.actions
+        .run({ name: "request_approval", input: { question: `Place ${j.customerName}'s job (${j.site.address.split(",").slice(-1)[0]?.trim()}): ${why}. Options: widen the area, offer to EasyLink's own crew, or list it on Ready Sites.`, about: { type: "lead", id: j.leadId } }, principal: { kind: "system", id: "jobs", roles: [], on_behalf_of: null } })
+        .catch(() => undefined);
+      await this.progress(j, p, "Waiting for EasyLink to place the job", { detail: why, audience: "staff", kind: "assignment" });
+      await this.notify(j, "customer", "we're lining up the right installer for your system and will update you within one business day.", p);
       return null;
     }
     const o: Offer = { id: newId("off_"), jobId: j.id, installerId: best.installerId, installerName: best.name, score: best.score, parts: { distanceKm: best.distanceKm, rating: best.rating, reliability: best.reliability }, status: "open", at: nowIso(), expiresAt: new Date(Date.now() + 4 * 3600e3).toISOString() };
@@ -381,6 +408,21 @@ export class JobService {
         item.note = s("note") || item.note;
         const done = j.photos.items.filter((i) => i.label === "Meter" || i.label === "Switchboard").every((i) => i.ok);
         await this.progress(j, p, `Photo received: ${label}`, { reach: done ? ["site_photos_ok"] : [], kind: "file" });
+        return { ok: true };
+      }
+      case "reject_photo": {
+        // A photo that can't be used goes back with the reason, so the customer knows exactly what to redo.
+        need("installer");
+        const label = s("label");
+        const reason = s("reason");
+        if (!reason) throw new JobError("Say what's wrong with the photo so the customer can fix it first time");
+        const item = j.photos.items.find((i) => i.label === label);
+        if (!item) throw new JobError("Unknown photo");
+        item.ok = false;
+        item.note = reason.slice(0, 300);
+        j.milestones.site_photos_ok = undefined;
+        await this.progress(j, p, `Photo needed again: ${label}`, { detail: reason, kind: "message" });
+        await this.notify(j, "customer", `please retake the ${label.toLowerCase()} photo: ${reason}`, p);
         return { ok: true };
       }
       case "accept_job": {
@@ -475,6 +517,35 @@ export class JobService {
         if (!inv || inv.jobId !== j.id || inv.status === "draft") throw new JobError("Only a sent invoice can be adjusted", 409);
         const note = await this.createInvoice(j, p, { kind: "credit", creditFor: inv.number, lines: inv.lines.map((l) => ({ ...l, unitExGst: -l.unitExGst })), notes: s("reason") || "Correction", via: "form" });
         return { invoice: note };
+      }
+      case "submit_payment_proof": {
+        // A screenshot of the bank transfer is accepted so the job keeps moving; staff confirm it against the statement.
+        need("customer");
+        const inv = (await this.c.store.getRecord("invoice", s("invoiceId"))) as unknown as Invoice | undefined;
+        if (!inv || inv.jobId !== j.id) throw new JobError("Invoice not found", 404);
+        if (inv.status !== "sent") throw new JobError(inv.status === "paid" ? "Already paid" : "This invoice hasn't been sent yet", 409);
+        if (!s("fileId")) throw new JobError("Attach the screenshot of the transfer");
+        const due = round2(inv.totals.total - inv.payments.reduce((t, x) => t + x.amount, 0));
+        inv.payments.push({ at: nowIso(), amount: Number(input.amount ?? due), method: "Bank transfer (receipt)", ref: s("ref") || inv.number, verified: false, receiptFileId: s("fileId") });
+        if (inv.payments.reduce((t, x) => t + x.amount, 0) >= inv.totals.total - 0.01) {
+          inv.status = "paid";
+          inv.paidAt = nowIso();
+        }
+        await this.c.store.putRecord("invoice", inv as unknown as Record<string, unknown> & { id: string });
+        const reach: MilestoneKey[] = inv.status === "paid" ? (inv.kind === "deposit" ? ["deposit_paid"] : inv.kind === "final" ? ["final_paid"] : []) : [];
+        await this.progress(j, p, `Bank transfer receipt received for ${inv.number}`, { reach, detail: "Accepted now; EasyLink confirms it against the bank statement", kind: "record" });
+        await this.notify(j, "installer", `sent a bank transfer receipt for ${inv.number}.`, p);
+        if (reach.includes("deposit_paid") && !j.windows.length) await this.offerWindows(j);
+        return { invoice: inv };
+      }
+      case "verify_payment": {
+        need("staff");
+        const inv = (await this.c.store.getRecord("invoice", s("invoiceId"))) as unknown as Invoice | undefined;
+        if (!inv || inv.jobId !== j.id) throw new JobError("Invoice not found", 404);
+        for (const x of inv.payments) if (x.verified === false) x.verified = true;
+        await this.c.store.putRecord("invoice", inv as unknown as Record<string, unknown> & { id: string });
+        await this.progress(j, p, `Bank transfer for ${inv.number} confirmed on the statement`, { audience: "staff" });
+        return { invoice: inv };
       }
       case "pay_invoice":
       case "record_payment": {
@@ -782,9 +853,10 @@ export class JobService {
   }
 
   private async offerWindows(j: Job) {
-    // Three two-day windows from 12 business days after the deposit (DNSP approval + delivery lead time).
+    // Three two-day windows after the warehouse delivery lead time. Standard DNSP approvals come back
+    // instantly in the portal, so they don't hold the dates; a larger system's approval is checked before day 1.
     const out: Job["windows"] = [];
-    let d = new Date(Date.now() + 12 * 864e5);
+    let d = new Date(Date.now() + 5 * 864e5);
     while (out.length < 3) {
       const a = new Date(d);
       const b = new Date(d.getTime() + 864e5);
