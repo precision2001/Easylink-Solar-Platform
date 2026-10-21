@@ -82,9 +82,39 @@ export function InvoicesPanel({ portal, ctl, view }: { portal: AiPortal; ctl: Jo
                     </Btn>
                   )}
                   {view.viewer === "customer" && inv.status === "sent" && (
-                    <Btn small disabled={ctl.busy != null} onClick={() => ctl.act("pay_invoice", { invoiceId: inv.id }, "Thanks — payment received.")}>
-                      Pay {aud(inv.totals.total - paid)}
-                    </Btn>
+                    <>
+                      <Btn small disabled={ctl.busy != null} onClick={() => ctl.act("pay_invoice", { invoiceId: inv.id }, "Thanks — payment received.")}>
+                        Pay {aud(inv.totals.total - paid)}
+                      </Btn>
+                      <label className="cursor-pointer whitespace-nowrap rounded-[10px] border border-[#CBD5E1] bg-white px-2.5 py-1 text-[12.5px] font-semibold text-[#0F172A] hover:border-[#94A3B8]">
+                        Paid by bank transfer? Upload receipt
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          className="sr-only"
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0];
+                            if (!f) return;
+                            try {
+                              const up = await jobs.upload(portal, view.job.id, f, "bill", `Payment receipt ${inv.number}`);
+                              await ctl.act("submit_payment_proof", { invoiceId: inv.id, fileId: up.fileId }, "Thanks — we've got your receipt. Your job carries on while we match it to the bank statement.");
+                            } catch (err) {
+                              ctl.setError(err instanceof Error ? err.message : "Upload failed");
+                            }
+                          }}
+                        />
+                      </label>
+                    </>
+                  )}
+                  {inv.payments.some((x) => x.verified === false) && (
+                    <>
+                      <Pill tone="warn">Receipt to confirm</Pill>
+                      {view.viewer === "staff" && (
+                        <Btn kind="secondary" small onClick={() => ctl.act("verify_payment", { invoiceId: inv.id }, "Confirmed against the bank statement.")}>
+                          Confirm on statement
+                        </Btn>
+                      )}
+                    </>
                   )}
                 </div>
               </li>

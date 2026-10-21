@@ -14,7 +14,7 @@ export type Invoice = {
   dueDate: string;
   status: "draft" | "sent" | "paid" | "void";
   totals: { exGst: number; gst: number; total: number };
-  payments: { at: string; amount: number; method: string; ref: string }[];
+  payments: { at: string; amount: number; method: string; ref: string; verified?: boolean; receiptFileId?: string }[];
   createdVia: "form" | "ai" | "auto";
   creditFor?: string;
   sentAt?: string;

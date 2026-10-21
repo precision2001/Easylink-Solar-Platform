@@ -112,6 +112,8 @@ export function ConfirmPanel({ portal, ctl, view }: { portal: AiPortal; ctl: Job
     ...s.accessories.map((a) => [a.name, aud(a.price)]),
   ];
   const [uploading, setUploading] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
   return (
     <Card title="Your selection and site photos" tone={done("job_accepted") ? "good" : undefined}>
       <div className="flex flex-wrap gap-4">
@@ -156,9 +158,40 @@ export function ConfirmPanel({ portal, ctl, view }: { portal: AiPortal; ctl: Job
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[14px]">
             {j.photos.items.map((p) => (
               <li key={p.label} className="flex flex-wrap items-center justify-between gap-2">
-                <span>{p.label}</span>
+                <span className="flex flex-col">
+                  {p.label}
+                  {!p.ok && p.note && <span className="text-[12.5px] text-[#92400E]">Please retake: {p.note}</span>}
+                </span>
                 {p.ok ? (
-                  <Pill tone="good">Received</Pill>
+                  view.viewer !== "customer" && !done("job_accepted") ? (
+                    rejecting === p.label ? (
+                      <form
+                        className="flex w-full flex-wrap items-center gap-2"
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          const r = await ctl.act("reject_photo", { label: p.label, reason }, `Asked again, with the reason.`);
+                          if (r) {
+                            setRejecting(null);
+                            setReason("");
+                          }
+                        }}
+                      >
+                        <input className={`${inputCls} min-w-[220px] flex-1`} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="What to fix, e.g. meter number is blurred — stand closer" required autoFocus aria-label={`Why the ${p.label} photo is needed again`} />
+                        <Btn type="submit" small>
+                          Ask again
+                        </Btn>
+                      </form>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <Pill tone="good">Received</Pill>
+                        <Btn kind="ghost" small onClick={() => setRejecting(p.label)}>
+                          Not usable
+                        </Btn>
+                      </span>
+                    )
+                  ) : (
+                    <Pill tone="good">Received</Pill>
+                  )
                 ) : view.viewer === "customer" ? (
                   <label className="cursor-pointer rounded-[8px] border border-[#CBD5E1] px-2.5 py-1 text-[12.5px] font-semibold text-[#0B4A7A] hover:border-[#0B4A7A]">
                     {uploading === p.label ? "Uploading…" : "Take or upload photo"}
@@ -281,7 +314,7 @@ export function ConnectionPanel({ ctl, view }: { ctl: JobCtl; view: JobView }) {
           {c.approval.conditions ? ` · ${c.approval.conditions}` : ""}
         </p>
       ) : view.viewer === "customer" ? (
-        <p className="m-0 text-[14px] text-[#475569]">{c.status === "submitted" ? `Your installer applied to ${c.dnsp} (reference ${c.reference}). Approval usually takes 5–10 business days.` : "Your installer applies to your network distributor before installation."}</p>
+        <p className="m-0 text-[14px] text-[#475569]">{c.status === "submitted" ? `Your installer applied to ${c.dnsp} (reference ${c.reference}). Standard home systems are usually approved straight away.` : "Your installer applies to your network distributor before installation."}</p>
       ) : (
         <>
           {c.status === "draft" && (
