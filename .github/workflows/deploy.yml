@@ -69,6 +69,8 @@ jobs:
           PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
           BACKEND_PROJECTS_API: ${{ vars.BACKEND_PROJECTS_API || '0' }}
           STAFF_EMAIL: ${{ vars.STAFF_EMAIL || 'sales@easylinksolar.com.au' }}
+          SMS_CONFIGURATION_SET: ${{ vars.SMS_CONFIGURATION_SET || 'easylink-ai' }}
+          SMS_ORIGINATOR: ${{ vars.SMS_ORIGINATOR || 'EasyLink' }}
         run: |
           clean() { printf '%s' "$1" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
           read -r -a stacks <<< "$(clean "$STACKS")"
@@ -80,4 +82,6 @@ jobs:
             -c modelSmartId="$(clean "$MODEL_SMART_ID")" \
             -c publicApiUrl="$(clean "$PUBLIC_API_URL")" \
             -c backendProjectsApi="$(clean "$BACKEND_PROJECTS_API")" \
-            -c staffEmail="$(clean "$STAFF_EMAIL")"
+            -c staffEmail="$(clean "$STAFF_EMAIL")" \
+            -c smsConfigurationSet="$(clean "$SMS_CONFIGURATION_SET")" \
+            -c smsOriginator="$(clean "$SMS_ORIGINATOR")"
