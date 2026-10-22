@@ -108,7 +108,8 @@ const GROUPS: NavGroup[] = [
     title: "EasyLink Marketplace",
     tag: "new",
     items: [
-      { key: "ready", label: "Ready Sites", icon: "pin", href: "/master/ready-sites", badge: "4" },
+      { key: "ready", label: "Ready Sites", icon: "pin", href: "/master/ready-sites" },
+      { key: "readyDeals", label: "Ready Deals", icon: "tag", href: "/master/ready-deals" },
     ],
   },
   {

@@ -8,6 +8,7 @@ import { BillsPanel, ConfirmPanel, ConnectionPanel, DatesPanel, MatchingPanel, O
 import { InvoicesPanel } from "./Invoices";
 import { CloseOutPanel, MonitoringPanel, OnSitePanel, OrderPanel, SignaturesPanel } from "./LateStages";
 import { Btn, Pill, useJob } from "./ui";
+import { DealOrderPanel } from "@/components/market/DealOrderPanel";
 
 /**
  * One job, from design to STCs, in every portal (EasyLink Job Journey doc).
@@ -307,5 +308,10 @@ export function MyJob({ portal = "customer" as AiPortal }) {
   }, [portal]);
   if (id === undefined) return null;
   if (id === null) return null;
-  return <JobWorkspace portal={portal} jobId={id} />;
+  return (
+    <div className="flex flex-col gap-4">
+      <DealOrderPanel portal={portal} jobId={id} />
+      <JobWorkspace portal={portal} jobId={id} />
+    </div>
+  );
 }

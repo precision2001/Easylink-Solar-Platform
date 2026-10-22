@@ -5,6 +5,7 @@ export const LANDING_NAV_ITEMS = [
   { label: "Customers", link: "/customers" },
   { label: "Installers", link: "/installers/landing" },
   { label: "Design Platform", link: "/designs" },
+  { label: "Ready Deals", link: "/ready-deals" },
   { label: "Services", link: "/services" },
   { label: "About Us", link: "/about-us" },
 ] as const;
@@ -2334,6 +2335,8 @@ export const LANDING_FOOTER_COLUMNS: LandingFooterColumn[] = [
     title: "Support",
     items: [
       { label: "How it works", href: "/how-it-works" },
+      { label: "Ready Deals", href: "/ready-deals" },
+      { label: "Ready Sites (installers)", href: "/ready-sites" },
       { label: "FAQs", href: "/faqs" },
       { label: "Warranty", href: "/warranty" },
       { label: "Contact Us", href: "/contact-us" },

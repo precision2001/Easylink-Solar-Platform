@@ -9,7 +9,7 @@ import { aiFetch, forwardAiJson, proxyBody } from "@/lib/server/ai-platform";
  *   /api/admin/ai/screens/...   → /v1/ai/screens/...
  *   /api/admin/ai/actions/:name → /v1/actions/:name
  */
-const ALLOWED = new Set(["control", "inbox", "activity", "records", "screens", "actions", "partners", "config", "projects", "messages", "files", "people", "installers", "jobs", "documents"]);
+const ALLOWED = new Set(["control", "inbox", "activity", "records", "screens", "actions", "partners", "config", "projects", "messages", "files", "people", "installers", "jobs", "documents", "market"]);
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
@@ -30,3 +30,4 @@ async function proxy(request: Request, ctx: Ctx) {
 export const GET = proxy;
 export const POST = proxy;
 export const PUT = proxy;
+export const PATCH = proxy;

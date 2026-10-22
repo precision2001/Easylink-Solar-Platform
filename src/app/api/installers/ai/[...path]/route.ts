@@ -4,7 +4,7 @@ import { aiFetch, forwardAiJson, proxyBody } from "@/lib/server/ai-platform";
  * Installer portal → AI platform. Installers get the record panel, generated
  * screens and the Action API, all as themselves (backend RBAC + AI policy).
  */
-const ALLOWED = new Set(["records", "screens", "actions", "projects", "messages", "files", "people", "jobs", "documents"]);
+const ALLOWED = new Set(["records", "screens", "actions", "projects", "messages", "files", "people", "jobs", "documents", "market"]);
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
@@ -20,3 +20,4 @@ async function proxy(request: Request, ctx: Ctx) {
 
 export const GET = proxy;
 export const POST = proxy;
+export const PATCH = proxy;
