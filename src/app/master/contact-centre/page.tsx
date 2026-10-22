@@ -5,7 +5,7 @@ import { MasterContactCentre } from "@/components/master-dashboard/MasterContact
 
 export default function MasterContactCentrePage() {
   return (
-    <div className="flex min-h-screen flex-wrap bg-[#F4F6FA]">
+    <div className="flex min-h-screen flex-wrap bg-[#F4F6FA] text-[#0F172A]">
       <div className="w-full basis-[248px] md:flex-[1_1_248px]">
         <MasterDistSidebar active="cc" />
       </div>

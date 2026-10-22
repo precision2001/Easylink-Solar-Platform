@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
+import {
+  callMeta,
+  callStamp,
+  callSummary,
+  callWho,
+  clock,
+  type RecentCall,
+} from "@/lib/calls/recent";
 
 /**
  * "Agent Dialer" from the Easylink Designer mock — the real call mechanics
@@ -95,8 +103,6 @@ const SPEAKER_STYLE: Record<TranscriptSegment["speaker"], { label: string; color
   UNKNOWN: { label: "Speaker", color: "#64748B" },
 };
 
-const clock = (sec: number) =>
-  `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 
 const TIMELINE = [
   { title: "AI qualification call · 2 min", meta: "Voxa Sales Qualifier · Tue 7 Oct · marked “hot”", color: "#F68A0A" },
@@ -376,13 +382,47 @@ export function MasterAgentDialer() {
     setWrapUp((w) => ({ ...w, script: { ...w.script, [key]: value } }));
 
   const [transcript, setTranscript] = useState<CallTranscript | null>(null);
+  const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
+  /**
+   * A past call the agent opened from the history list. Null means "show the
+   * call in progress", so the live call always wins once one starts.
+   */
+  const [pickedCallId, setPickedCallId] = useState<string | null>(null);
+  const viewingCallId = pickedCallId ?? callRecordId;
+
+  // A new call takes the panel back off whatever history row was open.
+  useEffect(() => {
+    if (callRecordId) setPickedCallId(null);
+  }, [callRecordId]);
+
+  // The agent's own recent calls. Reloaded when a call ends so the one just
+  // finished appears without a refresh — and present on first paint, which is
+  // what makes a transcript survive reloading the page.
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin/calls/recent");
+        const json = await res.json().catch(() => null);
+        if (cancelled || !res.ok || !json?.success) return;
+        setRecentCalls(json.data as RecentCall[]);
+      } catch {
+        // History is a convenience; a failure here must not break dialling.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [callRecordId, state]);
 
   // The transcript only exists after the call: the recording has to finish
   // uploading and Transcribe has to run. Poll while it is in flight and stop
   // as soon as it reaches a terminal state, so a finished call doesn't keep
   // hitting the API forever.
   useEffect(() => {
-    if (!callRecordId) {
+    if (!viewingCallId) {
       setTranscript(null);
       return;
     }
@@ -392,7 +432,7 @@ export function MasterAgentDialer() {
 
     const load = async () => {
       try {
-        const res = await fetch(`/api/admin/calls/${callRecordId}/transcript`);
+        const res = await fetch(`/api/admin/calls/${viewingCallId}/transcript`);
         const json = await res.json().catch(() => null);
         if (cancelled || !res.ok || !json?.success) return;
 
@@ -415,7 +455,7 @@ export function MasterAgentDialer() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [callRecordId, state]);
+  }, [viewingCallId, state]);
 
   const saveWrapUp = async (thenDialNext: boolean) => {
     if (!callRecordId) return;
@@ -837,6 +877,75 @@ export function MasterAgentDialer() {
                 <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Call transcript</h2>
                 <TranscriptBadge transcript={transcript} />
               </div>
+
+              {recentCalls.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-semibold text-[#475569]">Recent calls</span>
+                    {pickedCallId ? (
+                      <button
+                        type="button"
+                        onClick={() => setPickedCallId(null)}
+                        className="cursor-pointer border-0 bg-transparent p-0 text-[12px] font-semibold text-[#1565C0] underline"
+                      >
+                        Back to this call
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="flex max-h-[280px] flex-col overflow-y-auto">
+                    {recentCalls.map((c) => {
+                      const on = viewingCallId === c.id;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setPickedCallId(c.id)}
+                          aria-current={on ? "true" : undefined}
+                          // Audio playback isn't built; opening a row shows the
+                          // stored transcript, so the row says that plainly.
+                          title="Open this call's transcript"
+                          className="flex cursor-pointer gap-2.5 border-0 border-b border-[#EEF2F6] px-1 py-2.5 text-left last:border-b-0"
+                          style={{ background: on ? "#FFF7E6" : "transparent" }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="flex size-9 flex-[0_0_36px] items-center justify-center rounded-full bg-[#0B1A2E] text-white"
+                          >
+                            ▶
+                          </span>
+                          <span className="flex min-w-0 flex-grow flex-col gap-0.5">
+                            <span className="truncate text-[14px] font-semibold text-[#0F172A]">
+                              {callWho(c)}{" "}
+                              <span className="font-medium text-[#5B6B80]">
+                                · {callMeta(c)}
+                              </span>
+                            </span>
+                            <span
+                              className="line-clamp-2 text-[12px] text-[#334155]"
+                              title={c.notes ?? undefined}
+                            >
+                              {callSummary(c)}
+                            </span>
+                          </span>
+                          <span className="flex shrink-0 flex-col items-end gap-0.5">
+                            <span className="text-[12px] whitespace-nowrap text-[#5B6B80]">
+                              {callStamp(c.startedAt)}
+                            </span>
+                            {/* Says up front whether opening this row shows any text. */}
+                            <span
+                              className="text-[12px] font-semibold"
+                              style={{ color: c.hasTranscript ? "#166534" : "#94A3B8" }}
+                            >
+                              {c.hasTranscript ? "Transcript" : "—"}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="flex max-h-[260px] flex-col gap-2 overflow-y-auto">
                 {transcript?.transcriptSegments?.length ? (
                   transcript.transcriptSegments.map((s) => (
@@ -853,7 +962,7 @@ export function MasterAgentDialer() {
                   ))
                 ) : (
                   <p className="m-0 text-[13px] leading-[19px] text-[#5B6B80]">
-                    {transcriptMessage(transcript, Boolean(callRecordId))}
+                    {transcriptMessage(transcript, Boolean(viewingCallId))}
                   </p>
                 )}
               </div>
