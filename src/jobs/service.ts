@@ -33,7 +33,7 @@ export const PREREQS: Record<MilestoneKey, MilestoneKey[]> = {
   job_accepted: ["selection_confirmed", "site_photos_ok"],
   agreement_signed: ["job_accepted"],
   deposit_paid: ["agreement_signed"],
-  install_date_set: ["deposit_paid"],
+  install_date_set: ["deposit_paid", "agreement_signed"],
   connection_applied: ["job_accepted"],
   connection_approved: ["connection_applied"],
   bills_received: ["job_accepted"],
