@@ -55,7 +55,7 @@ the caller reads back a 6-digit code texted to the number on file. Limits: 3 cod
    - **GitHub:** add the repository variables `BACKEND_API_BASE_URL` and `FILES_BUCKET`. To deploy, push the `release/aws` branch.
 2. **Bedrock.** Submit Anthropic's use-case form once, in the Bedrock console in Sydney (Model catalog → any Anthropic model).
 3. **Deploy with 0 agent tasks.** Push `release/aws`, with the repo variable `VOICE_TASKS` unset or 0. This creates the empty secrets and the platform's voice key.
-4. **Fill in the secrets** in Secrets Manager, choosing Plaintext and pasting JSON:
+4. **Fill in the secrets** in Secrets Manager. `easylink/ai/service-token` holds `{"email":"…","password":"…"}` for the AI platform's ADMIN user in the backend; the platform signs in with `POST /auth/login` and signs in again before the short-lived token expires. Then the voice secrets, choosing Plaintext and pasting JSON:
    - `easylink/voice/livekit`: `{"LIVEKIT_URL":"wss://…livekit.cloud","LIVEKIT_API_KEY":"…","LIVEKIT_API_SECRET":"…"}`
    - `easylink/voice/deepgram`: `{"DEEPGRAM_API_KEY":"…"}`
    - `easylink/voice/egress`: `{"EGRESS_AWS_ACCESS_KEY_ID":"…","EGRESS_AWS_SECRET_ACCESS_KEY":"…"}`. This is the `easylink-call-recording` user's key. It's only needed if the dispatch rule doesn't already record calls.

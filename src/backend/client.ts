@@ -48,23 +48,73 @@ export interface Backend {
 
 type Envelope = { success?: boolean; message?: string; data?: unknown };
 
+/** Stands in for the AI service account's token; HttpBackend swaps in a live one. */
+export const SERVICE_ACCOUNT = "service-account";
+
+/** AI_SERVICE_TOKEN may hold {"email","password"} for the AI's backend user instead of a fixed token. */
+export function serviceLogin(raw = process.env.AI_SERVICE_TOKEN ?? ""): { email: string; password: string } | null {
+  const t = raw.trim();
+  if (!t.startsWith("{")) return null;
+  try {
+    const v = JSON.parse(t) as { email?: unknown; password?: unknown };
+    return typeof v.email === "string" && typeof v.password === "string" && v.email && v.password ? { email: v.email.trim(), password: v.password } : null;
+  } catch {
+    return null;
+  }
+}
+
 export class HttpBackend implements Backend {
+  /** The service account's current access token (backend tokens are short-lived, so it signs in again before expiry). */
+  private svc: { token: string; exp: number } | null = null;
+  private signingIn: Promise<string> | null = null;
+
   constructor(
     private baseUrl = process.env.BACKEND_API_BASE_URL ?? "",
     private fetchImpl: typeof fetch = fetch,
+    private login = serviceLogin(),
   ) {
     if (!this.baseUrl) throw new Error("BACKEND_API_BASE_URL is not set");
+  }
+
+  private async serviceToken(force = false): Promise<string> {
+    if (!force && this.svc && this.svc.exp > Date.now() + 60_000) return this.svc.token;
+    if (!this.login) throw new Error("AI service account login is not configured");
+    this.signingIn ??= (async () => {
+      const res = await this.fetchImpl(this.url("/auth/login"), {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(this.login),
+      });
+      const json = (await res.json().catch(() => ({}))) as Envelope & { accessToken?: string };
+      const data = (json.data ?? json) as { accessToken?: string };
+      if (!res.ok || typeof data.accessToken !== "string") throw new Error(`AI service account sign-in failed (${res.status}): ${json.message ?? "no token"}`);
+      // Use the token's own expiry when it has one; otherwise assume 10 minutes.
+      let exp = Date.now() + 10 * 60_000;
+      try {
+        const payload = JSON.parse(Buffer.from(data.accessToken.split(".")[1] ?? "", "base64url").toString()) as { exp?: number };
+        if (payload.exp) exp = payload.exp * 1000;
+      } catch {
+        /* not a JWT */
+      }
+      this.svc = { token: data.accessToken, exp };
+      return data.accessToken;
+    })().finally(() => {
+      this.signingIn = null;
+    });
+    return this.signingIn;
   }
 
   private url(path: string) {
     return `${this.baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
   }
 
-  async call<T>(method: string, path: string, body: unknown, auth: BackendAuth): Promise<BackendResponse<T>> {
+  async call<T>(method: string, path: string, body: unknown, auth: BackendAuth, retried = false): Promise<BackendResponse<T>> {
+    const asService = auth.token === SERVICE_ACCOUNT;
+    const token = asService ? await this.serviceToken() : auth.token;
     const res = await this.fetchImpl(this.url(path), {
       method,
       headers: {
-        Authorization: `Bearer ${auth.token}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/json",
         ...(body != null ? { "Content-Type": "application/json" } : {}),
       },
@@ -75,6 +125,11 @@ export class HttpBackend implements Backend {
       json = await res.json();
     } catch {
       json = null;
+    }
+    // The service account's token expired early or was revoked: sign in again once.
+    if (asService && res.status === 401 && !retried) {
+      await this.serviceToken(true);
+      return this.call<T>(method, path, body, auth, true);
     }
     const env = (json && typeof json === "object" ? json : {}) as Envelope;
     const data = ("data" in env ? env.data : json) as T;

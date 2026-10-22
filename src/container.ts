@@ -2,7 +2,7 @@ import { ActionService } from "./actions/service.js";
 import { AwsMessaging, FakeMessaging, FakeFileLinks, S3FileLinks, type Messaging, type FileLinks } from "./actions/ports.js";
 import { AiRuntime } from "./ai/runtime.js";
 import { BedrockModel, FakeModel, type ModelClient } from "./ai/model.js";
-import { FakeBackend, HttpBackend, type Backend } from "./backend/client.js";
+import { FakeBackend, HttpBackend, SERVICE_ACCOUNT, serviceLogin, type Backend } from "./backend/client.js";
 import { EventBridgeBus, MemoryBus, type EventBus } from "./bus/bus.js";
 import { FileClassifier, AnyFileBytes, type FileBytes } from "./files/classify.js";
 import { DynamoStore } from "./store/dynamo.js";
@@ -43,7 +43,7 @@ export function buildContainer(
   const messaging = over.messaging ?? (local ? new FakeMessaging() : new AwsMessaging());
   const files = over.files ?? (local ? new FakeFileLinks() : new S3FileLinks());
   const model = over.model ?? (local ? new FakeModel() : new BedrockModel());
-  const serviceToken = over.serviceToken ?? process.env.AI_SERVICE_TOKEN ?? (local ? "svc-local" : "");
+  const serviceToken = over.serviceToken ?? (serviceLogin() ? SERVICE_ACCOUNT : process.env.AI_SERVICE_TOKEN) ?? (local ? "svc-local" : "");
   const ingestKey = over.ingestKey ?? process.env.EVENT_INGEST_KEY ?? (local ? "ingest-local" : "");
   if (!serviceToken) throw new Error("AI_SERVICE_TOKEN is not set");
   const bytes = over.bytes ?? new AnyFileBytes();
