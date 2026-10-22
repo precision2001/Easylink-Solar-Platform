@@ -136,6 +136,13 @@ export type Job = {
   handover: { sentAt?: string; documents: string[] };
   monitoring: { provider: string; linkedAt?: string; days: { date: string; kwh: number; expectedKwh: number; online: boolean; faults: string[] }[]; issues: { at: string; text: string; status: "open" | "fixed" }[] };
   phase: "DESIGN_AND_PERMISSIONS" | "INSTALLATION" | "COMMISSIONING" | "MAINTENANCE_AND_MONITORING";
+  /** Where the job came from when it wasn't a design on the website (EasyLink Marketplace). */
+  source?: { kind: "ready_deal" | "ready_site"; ref: string };
+  /**
+   * standard: deposit on signing, balance after installation.
+   * half_before_install (Ready Deals): 50% when the customer accepts the deal, the other 50% before installation starts.
+   */
+  payPlan?: "standard" | "half_before_install";
   createdAt: string;
   updatedAt: string;
 };

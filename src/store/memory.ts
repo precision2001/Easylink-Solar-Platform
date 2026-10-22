@@ -165,6 +165,12 @@ export class MemoryStore implements Store {
   async getRecord(type: string, id: string) {
     return this.records.get(type)?.get(id);
   }
+  async putRecordIfRev(type: string, row: Record<string, unknown> & { id: string; rev: number }, expectRev: number) {
+    const cur = this.records.get(type)?.get(row.id);
+    if (Number(cur?.rev ?? 0) !== expectRev) return false;
+    await this.putRecord(type, row);
+    return true;
+  }
   async listRecords(type: string) {
     return [...(this.records.get(type)?.values() ?? [])];
   }

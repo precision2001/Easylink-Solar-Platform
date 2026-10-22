@@ -3,6 +3,7 @@ import { OverlayBackend } from "../backend/overlay.js";
 import { newId } from "../core/envelope.js";
 import type { Container } from "../container.js";
 import { seedJobs } from "../jobs/seed.js";
+import { seedMarket } from "../market/seed.js";
 
 /** Demo data for local development and screenshots. All names are invented. */
 export async function seedDemo(c: Container) {
@@ -18,8 +19,8 @@ export async function seedDemo(c: Container) {
   b.users.set("installer2-local", { id: "usr_inst_2", role: "INSTALLER", firstName: "Kim", lastName: "Lee" });
   if (process.env.LOCAL_INSTALLER_TOKEN) b.users.set(process.env.LOCAL_INSTALLER_TOKEN, { id: "usr_inst_1", role: "INSTALLER", firstName: "Sam", lastName: "Rivers" });
   b.seed("user", [
-    { id: "usr_inst_1", role: "INSTALLER", firstName: "Sam", lastName: "Rivers", email: "sam@riverselectrical.example", phone: "+61400000101", address: "Parramatta NSW 2150", lat: -33.815, lng: 151.0011, rating: 4.8, reviewCount: 42, reliability: 0.94, saaExpiry: "2027-06-30", batteryEndorsed: true, serviceRadiusKm: 60 },
-    { id: "usr_inst_2", role: "INSTALLER", firstName: "Kim", lastName: "Lee", email: "kim@leesolar.example", phone: "+61400000102", address: "Hornsby NSW 2077", lat: -33.7047, lng: 151.0993, rating: 4.6, reviewCount: 18, reliability: 0.88, saaExpiry: "2027-02-28", batteryEndorsed: true, serviceRadiusKm: 50 },
+    { id: "usr_inst_1", role: "INSTALLER", firstName: "Sam", lastName: "Rivers", email: "sam@riverselectrical.example", phone: "+61400000101", address: "Parramatta NSW 2150", lat: -33.815, lng: 151.0011, rating: 4.8, reviewCount: 42, reliability: 0.94, saaExpiry: "2027-06-30", batteryEndorsed: true, serviceRadiusKm: 60, companyName: "Rivers Electrical", membership: "elite", servicePostcodes: "2145-2160, 2112-2122", abn: "12 345 678 901" },
+    { id: "usr_inst_2", role: "INSTALLER", firstName: "Kim", lastName: "Lee", email: "kim@leesolar.example", phone: "+61400000102", address: "Hornsby NSW 2077", lat: -33.7047, lng: 151.0993, rating: 4.6, reviewCount: 18, reliability: 0.88, saaExpiry: "2027-02-28", batteryEndorsed: true, serviceRadiusKm: 50, companyName: "Lee Solar Co", membership: "professional", servicePostcodes: "2070-2080, 2119-2121" },
     { id: "usr_inst_3", role: "INSTALLER", firstName: "Priya", lastName: "Shah", email: "priya@shahenergy.example", phone: "+61400000103", address: "Liverpool NSW 2170", lat: -33.9200, lng: 150.9238, rating: 4.9, reviewCount: 7, reliability: 0.9, saaExpiry: "2026-09-30", batteryEndorsed: false, serviceRadiusKm: 70 },
   ]);
   b.seed("lead", [
@@ -187,4 +188,5 @@ export async function seedDemo(c: Container) {
   await c.store.putFact({ id: newId("fct_"), subject: { type: "customer", id: "cus_2001" }, statement: "Dog on site; call ahead before arriving.", confidence: 0.95, confirmed: true, writtenBy: "concierge", sourceEventId: null, createdAt: iso(3000) });
   await c.store.putAutonomyRule({ agentId: "concierge", action: "send_message", condition: { recipient_type: "user", purpose: "transactional" }, level: "L2", setBy: "usr_admin_1", setAt: iso(5000), reason: "Installers asking for their own job files" });
   await seedJobs(c);
+  await seedMarket(c);
 }

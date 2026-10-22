@@ -232,6 +232,8 @@ export interface Store {
   putRecord(type: string, row: Record<string, unknown> & { id: string }): Promise<void>;
   getRecord(type: string, id: string): Promise<Record<string, unknown> | undefined>;
   listRecords(type: string): Promise<Record<string, unknown>[]>;
+  /** Write only if the stored row's `rev` still equals `expectRev` (first-come purchases). False if someone got there first. */
+  putRecordIfRev(type: string, row: Record<string, unknown> & { id: string; rev: number }, expectRev: number): Promise<boolean>;
 
   // screens
   putScreen(s: ScreenRecord): Promise<void>;

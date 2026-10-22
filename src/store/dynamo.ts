@@ -279,6 +279,21 @@ export class DynamoStore implements Store {
   async getRecord(type: string, id: string) {
     return this.get<Record<string, unknown>>(`REC#${type}`, id);
   }
+  async putRecordIfRev(type: string, row: Record<string, unknown> & { id: string; rev: number }, expectRev: number) {
+    try {
+      await this.doc.send(new PutCommand({
+        TableName: this.table,
+        Item: { pk: `REC#${type}`, sk: row.id, data: row },
+        ConditionExpression: expectRev === 0 ? "attribute_not_exists(#d.#r) OR #d.#r = :r" : "#d.#r = :r",
+        ExpressionAttributeNames: { "#d": "data", "#r": "rev" },
+        ExpressionAttributeValues: { ":r": expectRev },
+      }));
+      return true;
+    } catch (e) {
+      if ((e as { name?: string }).name === "ConditionalCheckFailedException") return false;
+      throw e;
+    }
+  }
   async listRecords(type: string) {
     return this.query<Record<string, unknown>>({ KeyConditionExpression: "pk = :p", ExpressionAttributeValues: { ":p": `REC#${type}` } });
   }

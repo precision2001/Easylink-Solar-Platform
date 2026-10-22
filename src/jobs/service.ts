@@ -179,6 +179,32 @@ export class JobService {
     await this.progress(j, p, title, { detail: detail || undefined, kind: "call" });
   }
 
+  /** For the marketplace: record a step on a job it created, and draft its first invoice. */
+  async record(j: Job, p: Principal, title: string, opts: { reach?: MilestoneKey[]; detail?: string; kind?: string } = {}) {
+    await this.progress(j, p, title, opts);
+  }
+  async depositInvoice(j: Job, p: Principal) {
+    return this.createInvoice(j, p, { kind: "deposit", lines: this.depositLines(j), dueDays: 2, via: "auto" });
+  }
+  async tell(j: Job, to: "customer" | "installer", text: string, p: Principal) {
+    await this.notify(j, to, text, p);
+  }
+
+  /** Ready Deals: the second 50% is invoiced once dates are set, due two days before installation. */
+  private async balanceBeforeInstall(j: Job, p: Principal) {
+    if (j.payPlan !== "half_before_install" || !j.installDates) return;
+    const all = await this.invoices(j.id);
+    if (all.some((i) => i.kind === "final" && i.status !== "void")) return;
+    const paid = all.filter((i) => i.kind === "deposit").reduce((t, i) => t + i.payments.reduce((x, y) => x + y.amount, 0), 0);
+    const days = Math.max(0, Math.round((Date.parse(j.installDates.day1) - Date.now()) / 864e5) - 2);
+    const inv = await this.createInvoice(j, { kind: "system", id: "jobs", roles: [], on_behalf_of: null }, { kind: "final", lines: this.finalLines(j, paid), dueDays: days, notes: "Balance (50%) — due before installation starts.", via: "auto" });
+    inv.status = "sent";
+    inv.sentAt = nowIso();
+    await this.c.store.putRecord("invoice", inv as unknown as Record<string, unknown> & { id: string });
+    await this.progress(j, p, `Balance invoice ${inv.number} sent (${money(inv.totals.total)}), due before installation`, { kind: "record" });
+    await this.notify(j, "customer", `your balance of ${money(inv.totals.total)} is due before installation on ${fmtDay(j.installDates.day1)}. Pay it in My Project.`, p);
+  }
+
   // ---------- recording ----------
   private async progress(j: Job, p: Principal, title: string, opts: { reach?: MilestoneKey[]; detail?: string; audience?: "related" | "staff"; kind?: string } = {}) {
     for (const k of opts.reach ?? []) if (!j.milestones[k]) j.milestones[k] = { at: nowIso(), by: p.id };
@@ -238,8 +264,8 @@ export class JobService {
 
   private depositLines(j: Job): InvoiceLine[] {
     const youPay = j.selection.price - (j.stc.solar + j.stc.battery) * STC_PRICE;
-    const deposit = round2((j.selection.price * j.depositPercent) / 100);
-    void youPay;
+    // Ready Deals: half of the advertised (after-STC) price when the deal is accepted.
+    const deposit = round2(((j.payPlan === "half_before_install" ? youPay : j.selection.price) * j.depositPercent) / 100);
     return [{ description: `Deposit (${j.depositPercent}%) — ${j.selection.title}, ${j.site.address}`, qty: 1, unitExGst: round4(deposit / 1.1), gst: true }];
   }
 
@@ -542,7 +568,7 @@ export class JobService {
         const reach: MilestoneKey[] = inv.status === "paid" ? (inv.kind === "deposit" ? ["deposit_paid"] : inv.kind === "final" ? ["final_paid"] : []) : [];
         await this.progress(j, p, `Bank transfer receipt received for ${inv.number}`, { reach, detail: "Accepted now; EasyLink confirms it against the bank statement", kind: "record" });
         await this.notify(j, "installer", `sent a bank transfer receipt for ${inv.number}.`, p);
-        if (reach.includes("deposit_paid") && !j.windows.length) await this.offerWindows(j);
+        if (reach.includes("deposit_paid") && !j.windows.length && j.milestones.agreement_signed) await this.offerWindows(j);
         return { invoice: inv };
       }
       case "verify_payment": {
@@ -576,7 +602,7 @@ export class JobService {
         const reach: MilestoneKey[] = inv.status === "paid" ? (inv.kind === "deposit" ? ["deposit_paid"] : inv.kind === "final" ? ["final_paid"] : []) : [];
         await this.progress(j, p, `Payment received for ${inv.number} (${money(inv.payments.at(-1)!.amount)})`, { reach, kind: "record" });
         await this.notify(j, "installer", `paid ${inv.number}.`, p);
-        if (reach.includes("deposit_paid") && !j.windows.length) await this.offerWindows(j);
+        if (reach.includes("deposit_paid") && !j.windows.length && j.milestones.agreement_signed) await this.offerWindows(j);
         return { invoice: inv };
       }
       case "propose_windows": {
@@ -595,6 +621,7 @@ export class JobService {
         j.installDates = { day1: w.day1, day2: w.day2 };
         await this.progress(j, p, `Installation booked for ${fmtDay(w.day1)} and ${fmtDay(w.day2)}`, { reach: ["install_date_set"], kind: "booking" });
         await this.notify(j, "installer", `picked ${fmtDay(w.day1)}–${fmtDay(w.day2)} for installation.`, p);
+        await this.balanceBeforeInstall(j, p);
         return { ok: true };
       }
 
@@ -694,9 +721,12 @@ export class JobService {
         need("installer");
         requires("delivered", "connection_approved");
         const day = (Number(input.day) === 2 ? 2 : 1) as 1 | 2;
+        if (day === 1 && j.payPlan === "half_before_install" && !j.milestones.final_paid) throw new JobError("The customer's balance must be paid before installation starts.", 409);
         if ((input.lat == null || input.lng == null) && v.who !== "staff") throw new JobError("Turn on location for this site so the check-in can be recorded.", 400);
         const lat = Number(input.lat ?? j.site.lat);
         const lng = Number(input.lng ?? j.site.lng);
+        // Marketplace jobs start with only a postcode: the first check-in on site fixes the location.
+        if (!j.site.lat && !j.site.lng) j.site = { ...j.site, lat, lng };
         const km = haversine(lat, lng, j.site.lat, j.site.lng);
         if (km > 0.5) throw new JobError(`You're ${km.toFixed(1)} km from the site. Check in when you arrive.`, 409);
         j.onsite.checkins.push({ day, at: nowIso(), lat, lng });
@@ -899,6 +929,12 @@ export class JobService {
     switch (sig.kind) {
       case "agreement": {
         await this.progress(j, p, "Agreement signed", { reach: ["agreement_signed"], kind: "file" });
+        if ((await this.invoices(j.id)).some((i) => i.kind === "deposit")) {
+          // Ready Deals: the 50% was paid when the deal was accepted, so dates come next.
+          if (j.milestones.deposit_paid && !j.windows.length) await this.offerWindows(j);
+          await this.notify(j, "installer", "signed the agreement.", p);
+          break;
+        }
         // The deposit invoice is drafted for the installer to check and send.
         await this.createInvoice(j, { kind: "system", id: "jobs", roles: [], on_behalf_of: null }, { kind: "deposit", lines: this.depositLines(j), via: "auto" });
         await this.notify(j, "installer", "signed the agreement. The deposit invoice is ready to send.", p);
@@ -920,6 +956,7 @@ export class JobService {
         this.computeStc(j);
         await this.progress(j, p, "Installation complete — signed by the customer", { reach: ["installed"], kind: "file" });
         const paid = (await this.invoices(j.id)).filter((i) => i.kind === "deposit").reduce((t, i) => t + i.payments.reduce((x, y) => x + y.amount, 0), 0);
+        if (j.payPlan === "half_before_install") break;
         await this.createInvoice(j, { kind: "system", id: "jobs", roles: [], on_behalf_of: null }, { kind: "final", lines: this.finalLines(j, paid), via: "auto" });
         break;
       }

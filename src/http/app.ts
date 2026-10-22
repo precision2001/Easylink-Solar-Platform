@@ -14,6 +14,7 @@ import type { Container } from "../container.js";
 import { registerProjectRoutes } from "./projects.js";
 import { registerJobRoutes } from "./jobs.js";
 import { registerVoiceRoutes } from "./voice.js";
+import { registerMarketRoutes } from "./market.js";
 import type { ActionName } from "../core/actions.js";
 import type { AutonomyLevel } from "../store/types.js";
 
@@ -450,6 +451,7 @@ export function createApp(c: Container) {
   registerProjectRoutes(app, c);
   const jobs = registerJobRoutes(app, c);
   registerVoiceRoutes(app, c, jobs);
+  registerMarketRoutes(app, c, jobs);
 
   app.onError((err, ctx) => {
     if (err instanceof z.ZodError) return ctx.json({ success: false, message: "Invalid request", errors: err.flatten() }, 400);
