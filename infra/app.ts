@@ -29,8 +29,12 @@ import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import type { Construct } from "constructs";
+import { EasyLinkVoiceStack } from "./voice.js";
 
 class EasyLinkAiStack extends Stack {
+  voiceKey!: secrets.Secret;
+  keyArn!: string;
+  apiUrl!: string;
   constructor(scope: Construct, id: string, props: StackProps) {
     super(scope, id, props);
     const ctx = (k: string, d = "") => (this.node.tryGetContext(k) as string | undefined) ?? d;
@@ -82,6 +86,12 @@ class EasyLinkAiStack extends Stack {
       encryptionKey: key,
     });
 
+    // Shared key for the phone agent (voice-agent/), sent as x-voice-key on /voice/*.
+    this.voiceKey = new secrets.Secret(this, "VoiceKey", {
+      secretName: "easylink/ai/voice-key",
+      generateSecretString: { passwordLength: 48, excludePunctuation: true },
+      encryptionKey: key,
+    });
     const searchKey = new secrets.Secret(this, "SearchApiKey", {
       secretName: "easylink/ai/search-api-key",
       description: "Web search API key used to find contacts that aren't on file (Brave Search). Set manually.",
@@ -131,6 +141,9 @@ class EasyLinkAiStack extends Stack {
       SECRETS_SERVICE_TOKEN_ARN: serviceToken.secretArn,
       SECRETS_INGEST_KEY_ARN: ingestKey.secretArn,
       SECRETS_SEARCH_KEY_ARN: searchKey.secretArn,
+      SECRETS_VOICE_KEY_ARN: this.voiceKey.secretArn,
+      STAFF_EMAIL: ctx("staffEmail", "sales@easylinksolar.com.au"),
+      PORTAL_BASE_URL: ctx("publicSiteUrl", "https://www.easylinksolar.com.au"),
       SES_CONFIGURATION_SET: "easylink-ai",
       // Create the SMS configuration set with an SNS destination to this topic in End User Messaging SMS, then set its name here.
       SMS_CONFIGURATION_SET: ctx("smsConfigurationSet"),
@@ -169,6 +182,7 @@ class EasyLinkAiStack extends Stack {
       ingestKey.grantRead(f);
       searchKey.grantRead(f);
     }
+    this.voiceKey.grantRead(api);
     for (const f of [api, consumer]) {
       f.addToRolePolicy(
         new iam.PolicyStatement({
@@ -207,6 +221,8 @@ class EasyLinkAiStack extends Stack {
       alarmDescription: "AI events failed 3 times and are waiting in the DLQ",
     });
 
+    this.apiUrl = http.apiEndpoint;
+    this.keyArn = key.keyArn;
     new CfnOutput(this, "ApiUrl", { value: http.apiEndpoint });
     new CfnOutput(this, "EventBusName", { value: bus.eventBusName });
     new CfnOutput(this, "ContactEventsFunction", { value: contact.functionName });
@@ -214,5 +230,16 @@ class EasyLinkAiStack extends Stack {
 }
 
 const app = new App();
-new EasyLinkAiStack(app, "EasyLinkAi", { env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: "ap-southeast-2" }, description: "EasyLink Solar AI platform: events, actions, agents, inbox" });
+const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: "ap-southeast-2" };
+const ai = new EasyLinkAiStack(app, "EasyLinkAi", { env, description: "EasyLink Solar AI platform: events, actions, agents, inbox" });
+new EasyLinkVoiceStack(app, "EasyLinkVoice", {
+  env,
+  description: "EasyLink Solar phone agent: LiveKit + Deepgram + Claude on Bedrock (Sydney)",
+  platformUrl: ai.apiUrl,
+  voiceKeySecretName: "easylink/ai/voice-key",
+  aiKeyArn: ai.keyArn,
+  recordingsBucket: String(app.node.tryGetContext("recordingsBucket") ?? "easylink-call-recordings"),
+  llmModel: String(app.node.tryGetContext("voiceModelId") ?? "au.anthropic.claude-haiku-4-5-20251001-v1:0"),
+  tasks: Number(app.node.tryGetContext("voiceTasks") ?? 0),
+});
 app.synth();

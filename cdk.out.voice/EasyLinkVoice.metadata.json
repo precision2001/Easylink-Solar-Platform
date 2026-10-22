@@ -1,0 +1,435 @@
+{
+  "/EasyLinkVoice": [
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    },
+    {
+      "type": "aws:cdk:acknowledged-rules",
+      "data": {
+        "CloudFormation-Validate::W3010": "Literal AZs in template are the result of accessing stack.availabilityZones, this is expected and safe"
+      },
+      "trace": [
+        "    ...new Vpc2 in aws-cdk-lib...",
+        "    at new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:40:17)",
+        "    at <anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "    ...node internals..."
+      ]
+    },
+    {
+      "type": "aws:cdk:warning",
+      "data": "No cross-stack-reference strength configured, defaulting to \"strong\". We recommend you set feature flag \"@aws-cdk/core:defaultCrossStackReferences\" to \"both\", then deploy everywhere, then set it to \"weak\". Alternatively, set it to \"strong\" explicitly to lock in the current producer-protecting behavior. (See: https://github.com/aws/aws-cdk/blob/main/packages/aws-cdk-lib/README.md#reference-strength) [ack: @aws-cdk/core:crossStackReferencesDefaultStrong]",
+      "trace": [
+        "Annotations.addMessage (/home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/core/lib/annotations.js:1:3506)",
+        "Annotations.addWarningV2 (/home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2194)",
+        "resolveValue (/home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/core/lib/private/refs.js:1:7177)",
+        "resolveReferencesInElements (/home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/core/lib/private/refs.js:1:5045)",
+        "resolveReferences (/home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/core/lib/private/refs.js:1:4718)",
+        "prepareApp (/home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/core/lib/private/prepare-app.js:1:1240)",
+        "synthesize (/home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:2625)",
+        "App.synth (/home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/core/lib/stage.js:1:5061)",
+        "App.synth (/home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/core/lib/app.js:1:5126)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:245:5)",
+        "ModuleJob.run (node:internal/modules/esm/module_job:343:25)",
+        "async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)",
+        "async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)"
+      ]
+    }
+  ],
+  "/EasyLinkVoice/ServiceName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceName"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:107:5)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/SecretsToFill": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "SecretsToFill"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:108:5)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/EasyLinkVoice/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Vpc8378EB38"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:40:17)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/IGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIGWD7BA715C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:40:17)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/VPCGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcVPCGWBF912B6E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:40:17)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/AgentSg/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AgentSgFB5F95F0"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new SecurityGroup2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:41:16)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/LiveKit/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "LiveKit8E49CC69"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Secret2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:43:21)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Deepgram/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Deepgram7099C83A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Secret2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:44:22)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Egress/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Egress62AFDCB6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Secret2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:45:20)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Cluster/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ClusterEB0386A7"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Cluster2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:50:21)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Task/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Task79114B6B"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new FargateTaskDefinition2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:51:18)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Logs/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Logs6819BB44"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new LogGroup2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:58:74)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Service/Service": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceD69D759B"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new FargateService2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:93:21)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/publicSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1Subnet2BB74ED7"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:287 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/publicSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1RouteTable15C15F8E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:287 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/publicSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1RouteTableAssociation4E83B6E4"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:287 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/publicSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1DefaultRouteB88F9E93"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:225 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...new Vpc2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:40:17)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/publicSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2SubnetE34B022A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:287 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/publicSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2RouteTableC5A6DF77"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:287 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/publicSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2RouteTableAssociationCCE257FF"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:287 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Vpc/publicSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2DefaultRoute732F0BEB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/claude/easylink-ai-platform/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:225 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...new Vpc2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:40:17)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Task/TaskRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TaskTaskRoleE98524A1"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new FargateTaskDefinition2 in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:51:18)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Task/ExecutionRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TaskExecutionRoleEF964934"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Task/TaskRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TaskTaskRoleDefaultPolicyC02AED32"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...PropertyInjectable.<anonymous> in aws-cdk-lib...",
+        "new EasyLinkVoiceStack (/home/claude/easylink-ai-platform/infra/voice.ts:86:19)",
+        "<anonymous> (/home/claude/easylink-ai-platform/infra/app.ts:235:1)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/EasyLinkVoice/Task/ExecutionRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TaskExecutionRoleDefaultPolicy72339918"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ]
+}

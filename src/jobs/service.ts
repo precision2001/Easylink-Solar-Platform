@@ -172,6 +172,13 @@ export class JobService {
     };
   }
 
+  /** A phone call about this job, into its history (the voice agent calls this when a call ends). */
+  async noteCall(jobId: string, p: Principal, title: string, detail: string) {
+    const j = await this.get(jobId);
+    if (!j) return;
+    await this.progress(j, p, title, { detail: detail || undefined, kind: "call" });
+  }
+
   // ---------- recording ----------
   private async progress(j: Job, p: Principal, title: string, opts: { reach?: MilestoneKey[]; detail?: string; audience?: "related" | "staff"; kind?: string } = {}) {
     for (const k of opts.reach ?? []) if (!j.milestones[k]) j.milestones[k] = { at: nowIso(), by: p.id };
