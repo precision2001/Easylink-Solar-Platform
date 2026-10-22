@@ -164,7 +164,7 @@ export function InstallerReadyDeals() {
               </div>
               <span className="text-[12.5px] text-[#475569]">
                 {o.dealRef} · {aud(o.price)} · {o.customer.phone} · {o.customer.email}
-                {o.installDates ? ` · installing ${o.installDates.day1}` : ""}
+                {o.installDates ? ` · installing ${new Date(`${o.installDates.day1.slice(0, 10)}T00:00:00`).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}` : ""}
               </span>
               <ol className="m-0 flex list-none flex-wrap gap-1 p-0">
                 {ORDER_STEPS.map((s, i) => {

@@ -237,7 +237,7 @@ function BuySite({ s, onClose, onBought }: { s: PublicSite; onClose: () => void;
           {s.confirmed.payment && <p className="m-0">Deposit already paid: {aud(s.confirmed.depositPaid)} (moves to your job)</p>}
           {s.confirmed.installation && (
             <p className="m-0">
-              Installation confirmed{s.confirmed.windowFrom ? ` for ${s.confirmed.windowFrom}${s.confirmed.windowTo ? ` to ${s.confirmed.windowTo}` : ""}` : ""}
+              Installation confirmed{s.confirmed.windowFrom ? ` for ${day(s.confirmed.windowFrom)}${s.confirmed.windowTo ? ` to ${day(s.confirmed.windowTo)}` : ""}` : ""}
             </p>
           )}
           {s.documents.length > 0 && <p className="m-0">Documents: {s.documents.join(", ")}</p>}
@@ -273,6 +273,8 @@ function BuySite({ s, onClose, onBought }: { s: PublicSite; onClose: () => void;
     </Modal>
   );
 }
+
+const day = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short" });
 
 function Row({ k, v, strong, bad }: { k: string; v: string; strong?: boolean; bad?: boolean }) {
   return (
