@@ -30,13 +30,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - run: pip install ./voice-agent "pytest>=8" "pytest-asyncio>=0.24"
       - run: python -m pytest
@@ -47,22 +47,33 @@ jobs:
     runs-on: ubuntu-24.04-arm   # builds the arm64 agent image natively
     environment: production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - run: npm ci
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v5
         with:
           # Only this repo's production environment can assume it (OIDC trust), so the ARN isn't secret.
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN || 'arn:aws:iam::193801312483:role/easylink-github-deploy' }}
           aws-region: ap-southeast-2
       - name: Deploy
-        run: >
-          npx cdk deploy ${{ inputs.stacks || 'EasyLinkAi EasyLinkVoice' }}
-          --require-approval never
-          -c voiceTasks=${{ inputs.voice_tasks || vars.VOICE_TASKS || '0' }}
-          -c backendApiBaseUrl=${{ vars.BACKEND_API_BASE_URL }}
-          -c filesBucket=${{ vars.FILES_BUCKET }}
-          -c modelFastId=${{ vars.MODEL_FAST_ID || 'au.anthropic.claude-haiku-4-5-20251001-v1:0' }}
-          -c modelSmartId=${{ vars.MODEL_SMART_ID || 'au.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
-          -c publicApiUrl=${{ vars.PUBLIC_API_URL }}
+        # Settings come in as environment variables (never pasted into the command), with stray
+        # spaces and line breaks removed, so a value saved with a trailing newline can't split the command.
+        env:
+          STACKS: ${{ inputs.stacks || 'EasyLinkAi EasyLinkVoice' }}
+          VOICE_TASKS: ${{ inputs.voice_tasks || vars.VOICE_TASKS || '0' }}
+          BACKEND_API_BASE_URL: ${{ vars.BACKEND_API_BASE_URL }}
+          FILES_BUCKET: ${{ vars.FILES_BUCKET }}
+          MODEL_FAST_ID: ${{ vars.MODEL_FAST_ID || 'au.anthropic.claude-haiku-4-5-20251001-v1:0' }}
+          MODEL_SMART_ID: ${{ vars.MODEL_SMART_ID || 'au.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+        run: |
+          clean() { printf '%s' "$1" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+          read -r -a stacks <<< "$(clean "$STACKS")"
+          npx cdk deploy "${stacks[@]}" --require-approval never \
+            -c voiceTasks="$(clean "$VOICE_TASKS")" \
+            -c backendApiBaseUrl="$(clean "$BACKEND_API_BASE_URL")" \
+            -c filesBucket="$(clean "$FILES_BUCKET")" \
+            -c modelFastId="$(clean "$MODEL_FAST_ID")" \
+            -c modelSmartId="$(clean "$MODEL_SMART_ID")" \
+            -c publicApiUrl="$(clean "$PUBLIC_API_URL")"

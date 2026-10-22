@@ -37,7 +37,7 @@ class EasyLinkAiStack extends Stack {
   apiUrl!: string;
   constructor(scope: Construct, id: string, props: StackProps) {
     super(scope, id, props);
-    const ctx = (k: string, d = "") => (this.node.tryGetContext(k) as string | undefined) ?? d;
+    const ctx = (k: string, d = "") => String((this.node.tryGetContext(k) as string | undefined) ?? "").trim() || d;
 
     const key = new kms.Key(this, "AiKey", { enableKeyRotation: true, alias: "alias/easylink-ai" });
 
