@@ -50,18 +50,16 @@ the caller reads back a 6-digit code texted to the number on file. Limits: 3 cod
 
 ## Going live, in order
 
-1. **Deploy access.** In IAM:
-   - Create an OIDC identity provider for `token.actions.githubusercontent.com`.
-   - Create a role `easylink-github-deploy` that trusts `repo:precision2001/easylink-solar-platform:*`. Give it AdministratorAccess to start with; narrow it after the first deploy.
-   - Run `npx cdk bootstrap aws://193801312483/ap-southeast-2` once.
-   - In the GitHub repo, add the secret `AWS_DEPLOY_ROLE_ARN`, plus the repo variables `BACKEND_API_BASE_URL` and `FILES_BUCKET`.
+1. **Deploy access** (done 22 Oct 2026):
+   - **AWS:** a GitHub OIDC provider; the role `easylink-github-deploy`, which only this repo's `production` environment can use and which may only hand off to CDK's bootstrap roles; CDK bootstrap (`CDKToolkit`) in Sydney; a monthly budget alert of US$33 (about A$50).
+   - **GitHub:** add the repository variables `BACKEND_API_BASE_URL` and `FILES_BUCKET`. To deploy, push the `release/aws` branch.
 2. **Bedrock.** Submit Anthropic's use-case form once, in the Bedrock console in Sydney (Model catalog → any Anthropic model).
-3. **Deploy with 0 agent tasks.** In Actions, run Deploy with `voice_tasks` = 0. This creates the empty secrets and the platform's voice key.
+3. **Deploy with 0 agent tasks.** Push `release/aws`, with the repo variable `VOICE_TASKS` unset or 0. This creates the empty secrets and the platform's voice key.
 4. **Fill in the secrets** in Secrets Manager, choosing Plaintext and pasting JSON:
    - `easylink/voice/livekit`: `{"LIVEKIT_URL":"wss://…livekit.cloud","LIVEKIT_API_KEY":"…","LIVEKIT_API_SECRET":"…"}`
    - `easylink/voice/deepgram`: `{"DEEPGRAM_API_KEY":"…"}`
    - `easylink/voice/egress`: `{"EGRESS_AWS_ACCESS_KEY_ID":"…","EGRESS_AWS_SECRET_ACCESS_KEY":"…"}`. This is the `easylink-call-recording` user's key. It's only needed if the dispatch rule doesn't already record calls.
-5. **Run Deploy again** with `voice_tasks` = 1. The agent registers with LiveKit as `easylink-voice`.
+5. **Deploy again** with the repo variable `VOICE_TASKS` = 1. The agent registers with LiveKit as `easylink-voice`.
 6. **Route the calls.** Run `python voice-agent/scripts/livekit_setup.py` to look, then add `--apply`. The script keeps the rule's recording and number settings.
 7. **Test.** Call from the test customer's mobile and from the test installer's mobile, and check:
    - the code arrives
@@ -70,7 +68,7 @@ the caller reads back a 6-digit code texted to the number on file. Limits: 3 cod
    - the call note appears on the job
 8. **Keep recordings long enough.** The bucket's rule deletes `calls/` after 90 days. Change it to 12 months, and keep contract calls for 7 years. Do this before going live.
 
-**Undo:** run `livekit_setup.py --apply --agent ""` to take the agent off the rule, or run Deploy with `voice_tasks` = 0.
+**Undo:** run `livekit_setup.py --apply --agent ""` to take the agent off the rule, or set `VOICE_TASKS` to 0 and deploy.
 
 ## Cost (approximate)
 
