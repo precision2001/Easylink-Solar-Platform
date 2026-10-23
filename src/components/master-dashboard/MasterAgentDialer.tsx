@@ -2,14 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
+import { useRecordingPlayback } from "@/hooks/useRecordingPlayback";
 import {
   callMeta,
   callStamp,
   callSummary,
   callWho,
   clock,
+  playbackBlockedReason,
   type RecentCall,
 } from "@/lib/calls/recent";
+import {
+  SPEAKER_STYLE,
+  speakersSeparated,
+  transcriptMessage,
+  transcriptSettled,
+  type CallTranscript,
+} from "@/lib/calls/transcript";
 
 /**
  * "Agent Dialer" from the Easylink Designer mock — the real call mechanics
@@ -71,36 +80,6 @@ type WrapUp = {
   installer: string;
   notes: string;
   sendSms: boolean;
-};
-
-
-interface TranscriptSegment {
-  idx: number;
-  startSec: number;
-  endSec: number | null;
-  speaker: "AGENT" | "CUSTOMER" | "UNKNOWN";
-  text: string;
-  confidence: number | null;
-}
-
-interface CallTranscript {
-  id: string;
-  recorded: boolean;
-  recordingStatus: "NOT_RECORDED" | "RECORDING" | "STORED" | "FAILED";
-  /** Why recording did not happen — set when the announcement broke. */
-  recordingError: string | null;
-  transcriptStatus: "NOT_REQUESTED" | "QUEUED" | "PROCESSING" | "READY" | "FAILED";
-  transcriptText: string | null;
-  transcriptError: string | null;
-  consentAnnouncedAt: string | null;
-  transcriptSegments: TranscriptSegment[];
-}
-
-const SPEAKER_STYLE: Record<TranscriptSegment["speaker"], { label: string; color: string }> = {
-  AGENT: { label: "Agent", color: "#1565C0" },
-  CUSTOMER: { label: "Customer", color: "#B45309" },
-  // Diarisation could not be tied to a party; saying so beats guessing.
-  UNKNOWN: { label: "Speaker", color: "#64748B" },
 };
 
 
@@ -213,31 +192,6 @@ function formatDuration(totalSec: number) {
   const mins = Math.floor(totalSec / 60);
   const secs = totalSec % 60;
   return `${mins}:${String(secs).padStart(2, "0")}`;
-}
-
-/** One-line state for the transcript panel, so the agent knows why it is empty. */
-function transcriptMessage(t: CallTranscript | null, hasCall: boolean): string {
-  if (!hasCall) return "The transcript of a call appears here once it ends.";
-  if (!t) return "Loading…";
-  if (!t.recorded) {
-    return t.consentAnnouncedAt
-      ? "This call was not recorded."
-      : "Not recorded — the recording announcement did not play, so no consent was given.";
-  }
-  if (t.recordingStatus === "RECORDING") return "Recording. The transcript is made after the call ends.";
-  if (t.recordingStatus === "FAILED") {
-    return `The recording failed, so there is no transcript${
-      t.recordingError ? `: ${t.recordingError}` : "."
-    }`;
-  }
-  if (t.transcriptStatus === "FAILED") {
-    return `Transcription failed${t.transcriptError ? `: ${t.transcriptError}` : "."}`;
-  }
-  if (t.transcriptStatus === "QUEUED" || t.transcriptStatus === "PROCESSING") {
-    return "Transcribing… this usually takes about as long as the call did.";
-  }
-  if (t.transcriptStatus === "READY") return "No speech was detected in this call.";
-  return "Transcription is not enabled for this account.";
 }
 
 /**
@@ -378,8 +332,12 @@ export function MasterAgentDialer() {
     setWrapSave({ status: "idle" });
   }
 
-  const setScript = (key: ScriptKey, value: string) =>
+  const setScript = (key: ScriptKey, value: string) => {
     setWrapUp((w) => ({ ...w, script: { ...w.script, [key]: value } }));
+    // An edit makes a previous "Saved" stale, and clears a failed attempt so
+    // the agent is not left reading an error about text they have changed.
+    setScriptSave((prev) => (prev.status === "idle" ? prev : { status: "idle" }));
+  };
 
   const [transcript, setTranscript] = useState<CallTranscript | null>(null);
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
@@ -388,6 +346,8 @@ export function MasterAgentDialer() {
    * call in progress", so the live call always wins once one starts.
    */
   const [pickedCallId, setPickedCallId] = useState<string | null>(null);
+  const playback = useRecordingPlayback();
+  const [scriptSave, setScriptSave] = useState<WrapSaveState>({ status: "idle" });
   const viewingCallId = pickedCallId ?? callRecordId;
 
   // A new call takes the panel back off whatever history row was open.
@@ -439,12 +399,7 @@ export function MasterAgentDialer() {
         const data = json.data as CallTranscript;
         setTranscript(data);
 
-        const settled =
-          !data.recorded ||
-          data.transcriptStatus === "READY" ||
-          data.transcriptStatus === "FAILED" ||
-          data.recordingStatus === "FAILED";
-        if (!settled) timer = window.setTimeout(load, 5000);
+        if (!transcriptSettled(data)) timer = window.setTimeout(load, 5000);
       } catch {
         // Transient failure: the next call or reload picks it up.
       }
@@ -456,6 +411,79 @@ export function MasterAgentDialer() {
       if (timer) window.clearTimeout(timer);
     };
   }, [viewingCallId, state]);
+
+  /**
+   * Saves the qualification answers on their own.
+   *
+   * Separate from the wrap-up because the script is worked during the call,
+   * usually long before there is an outcome to record, and losing the answers
+   * because the call ended before the wrap-up was submitted is the thing this
+   * avoids. The answers are also still folded into the wrap-up notes, which is
+   * what carries them onto the customer record.
+   */
+  /**
+   * Brings back answers already saved for the call being viewed, so a reload
+   * mid-call does not present an empty script as if nothing had been asked.
+   * Only fills blanks: anything typed since is the agent's current work and
+   * must not be overwritten by what the server last stored.
+   */
+  useEffect(() => {
+    if (!viewingCallId) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/calls/${viewingCallId}/qualification`);
+        const json = await res.json().catch(() => null);
+        if (cancelled || !res.ok || !json?.success || !json.data) return;
+
+        const saved = json.data as Partial<Record<ScriptKey, string | null>>;
+        setWrapUp((w) => ({
+          ...w,
+          script: {
+            systemSize: w.script.systemSize || (saved.systemSize ?? ""),
+            quarterlyBill: w.script.quarterlyBill || (saved.quarterlyBill ?? ""),
+            homeDuringDay: w.script.homeDuringDay || (saved.homeDuringDay ?? ""),
+            decisionMakers: w.script.decisionMakers || (saved.decisionMakers ?? ""),
+          },
+        }));
+      } catch {
+        // Not worth surfacing: the agent can still type and save.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingCallId]);
+
+  const saveScript = async () => {
+    if (!callRecordId) return;
+
+    setScriptSave({ status: "saving" });
+    try {
+      const res = await fetch(`/api/admin/calls/${callRecordId}/qualification`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemSize: wrapUp.script.systemSize,
+          quarterlyBill: wrapUp.script.quarterlyBill,
+          homeDuringDay: wrapUp.script.homeDuringDay,
+          decisionMakers: wrapUp.script.decisionMakers,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.message ?? "Could not save the answers.");
+      }
+      setScriptSave({ status: "saved" });
+    } catch (error) {
+      setScriptSave({
+        status: "error",
+        message: error instanceof Error ? error.message : "Could not save the answers.",
+      });
+    }
+  };
 
   const saveWrapUp = async (thenDialNext: boolean) => {
     if (!callRecordId) return;
@@ -870,6 +898,34 @@ export function MasterAgentDialer() {
                   </label>
                 ))}
               </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={saveScript}
+                  disabled={!callRecordId || scriptSave.status === "saving"}
+                  title={
+                    callRecordId
+                      ? undefined
+                      : "Available once a call has started — the answers are saved against the call"
+                  }
+                  className="h-10 cursor-pointer rounded-[10px] border-0 bg-[#0B1A2E] px-4 text-[13px] font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94A3B8]"
+                >
+                  {scriptSave.status === "saving" ? "Saving…" : "Save answers"}
+                </button>
+                {scriptSave.status === "saved" ? (
+                  <span className="text-[12px] font-semibold text-[#166534]">Saved</span>
+                ) : null}
+                {scriptSave.status === "error" ? (
+                  <span className="text-[12px] font-semibold text-[#991B1B]">
+                    {scriptSave.message}
+                  </span>
+                ) : null}
+                {!callRecordId ? (
+                  <span className="text-[12px] text-[#5B6B80]">
+                    Saved against the call once one has started.
+                  </span>
+                ) : null}
+              </div>
             </section>
 
             <section className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
@@ -892,28 +948,59 @@ export function MasterAgentDialer() {
                       </button>
                     ) : null}
                   </div>
+                  {playback.error ? (
+                    <p className="m-0 rounded-[8px] bg-[#FEE2E2] px-2.5 py-1.5 text-[12px] text-[#991B1B]">
+                      {playback.error}
+                    </p>
+                  ) : null}
                   <div className="flex max-h-[280px] flex-col overflow-y-auto">
                     {recentCalls.map((c) => {
                       const on = viewingCallId === c.id;
+                      // Never play a stored conversation out loud while a call
+                      // is up: the agent's mic would carry another customer's
+                      // recording to the person on the line.
+                      const blocked = callActive
+                        ? "Not while a call is connected"
+                        : playbackBlockedReason(c);
+                      const playing = playback.playingId === c.id;
                       return (
-                        <button
+                        <div
                           key={c.id}
-                          type="button"
-                          onClick={() => setPickedCallId(c.id)}
                           aria-current={on ? "true" : undefined}
-                          // Audio playback isn't built; opening a row shows the
-                          // stored transcript, so the row says that plainly.
-                          title="Open this call's transcript"
-                          className="flex cursor-pointer gap-2.5 border-0 border-b border-[#EEF2F6] px-1 py-2.5 text-left last:border-b-0"
+                          className="flex gap-2.5 border-b border-[#EEF2F6] px-1 py-2.5 last:border-b-0"
                           style={{ background: on ? "#FFF7E6" : "transparent" }}
                         >
-                          <span
-                            aria-hidden="true"
-                            className="flex size-9 flex-[0_0_36px] items-center justify-center rounded-full bg-[#0B1A2E] text-white"
+                          {/* Its own control, not part of the row: playing the
+                              audio and opening the transcript are different
+                              actions, and a button cannot nest in a button. */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Playing a call also opens it: an agent
+                              // listening back wants to read along, and the
+                              // panel below would otherwise stay empty.
+                              setPickedCallId(c.id);
+                              void playback.toggle(c);
+                            }}
+                            disabled={Boolean(blocked) || playback.loadingId === c.id}
+                            aria-label={
+                              playing ? `Pause ${callWho(c)}` : `Play ${callWho(c)}`
+                            }
+                            title={blocked ?? (playing ? "Pause" : "Play recording")}
+                            className="flex size-9 flex-[0_0_36px] cursor-pointer items-center justify-center self-start rounded-full text-[13px] text-white disabled:cursor-not-allowed"
+                            style={{ background: blocked ? "#94A3B8" : "#0B1A2E" }}
                           >
-                            ▶
-                          </span>
-                          <span className="flex min-w-0 flex-grow flex-col gap-0.5">
+                            {playback.loadingId === c.id
+                              ? "…"
+                              : playing
+                                ? "❚❚"
+                                : "▶"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPickedCallId(c.id)}
+                            title="Open this call's transcript"
+                            className="flex min-w-0 flex-grow cursor-pointer flex-col gap-0.5 border-0 bg-transparent p-0 text-left">
                             <span className="truncate text-[14px] font-semibold text-[#0F172A]">
                               {callWho(c)}{" "}
                               <span className="font-medium text-[#5B6B80]">
@@ -926,7 +1013,7 @@ export function MasterAgentDialer() {
                             >
                               {callSummary(c)}
                             </span>
-                          </span>
+                          </button>
                           <span className="flex shrink-0 flex-col items-end gap-0.5">
                             <span className="text-[12px] whitespace-nowrap text-[#5B6B80]">
                               {callStamp(c.startedAt)}
@@ -939,7 +1026,7 @@ export function MasterAgentDialer() {
                               {c.hasTranscript ? "Transcript" : "—"}
                             </span>
                           </span>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -948,18 +1035,36 @@ export function MasterAgentDialer() {
 
               <div className="flex max-h-[260px] flex-col gap-2 overflow-y-auto">
                 {transcript?.transcriptSegments?.length ? (
-                  transcript.transcriptSegments.map((s) => (
-                    <div key={s.idx} className="flex gap-2 text-[13px]">
-                      <span
-                        className="w-[72px] shrink-0 font-semibold"
-                        style={{ color: SPEAKER_STYLE[s.speaker].color }}
-                        title={`at ${clock(s.startSec)}`}
-                      >
-                        {SPEAKER_STYLE[s.speaker].label}
-                      </span>
-                      <span className="text-[#334155]">{s.text}</span>
-                    </div>
-                  ))
+                  <>
+                    {!speakersSeparated(transcript.transcriptSegments) ? (
+                      <p className="m-0 text-[12px] text-[#92400E]">
+                        Caller and customer could not be told apart on this
+                        recording — it mixes both parties into one track — so the
+                        lines below are timestamped instead of attributed.
+                      </p>
+                    ) : null}
+                    {transcript.transcriptSegments.map((s) => {
+                      const named = speakersSeparated(transcript.transcriptSegments);
+                      return (
+                        <div key={s.idx} className="flex gap-2 text-[13px]">
+                          <span
+                            className="w-[72px] shrink-0 font-semibold"
+                            style={{
+                              color: named ? SPEAKER_STYLE[s.speaker].color : "#64748B",
+                            }}
+                            title={
+                              named
+                                ? SPEAKER_STYLE[s.speaker].title
+                                : `at ${clock(s.startSec)}`
+                            }
+                          >
+                            {named ? SPEAKER_STYLE[s.speaker].label : clock(s.startSec)}
+                          </span>
+                          <span className="text-[#334155]">{s.text}</span>
+                        </div>
+                      );
+                    })}
+                  </>
                 ) : (
                   <p className="m-0 text-[13px] leading-[19px] text-[#5B6B80]">
                     {transcriptMessage(transcript, Boolean(viewingCallId))}

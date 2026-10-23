@@ -1,15 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRecordingPlayback } from "@/hooks/useRecordingPlayback";
 import {
   callMeta,
   callStamp,
   callSummary,
   callWho,
+  clock,
   playbackBlockedReason,
   type RecentCall,
 } from "@/lib/calls/recent";
+import {
+  SPEAKER_STYLE,
+  speakersSeparated,
+  transcriptMessage,
+  type CallTranscript,
+} from "@/lib/calls/transcript";
 
 /**
  * The Easylink Designer "Contact Centre" mock (DistContact.dc.html).
@@ -117,10 +125,38 @@ const RULES = [
 function RecentCallsCard() {
   const [calls, setCalls] = useState<RecentCall[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [playError, setPlayError] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playback = useRecordingPlayback();
+
+  /** Which row is expanded, and the transcripts already fetched, kept by id. */
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [transcripts, setTranscripts] = useState<
+    Record<string, CallTranscript | null>
+  >({});
+
+  /**
+   * Transcripts are fetched per row on expand, not with the list: they carry
+   * every utterance of a conversation, so loading eight of them to show none
+   * would be the wasteful way round.
+   */
+  const openTranscript = async (id: string) => {
+    if (openId === id) {
+      setOpenId(null);
+      return;
+    }
+    setOpenId(id);
+    if (transcripts[id] !== undefined) return;
+
+    try {
+      const res = await fetch(`/api/admin/calls/${id}/transcript`);
+      const json = await res.json();
+      setTranscripts((prev) => ({
+        ...prev,
+        [id]: res.ok && json?.success ? (json.data as CallTranscript) : null,
+      }));
+    } catch {
+      setTranscripts((prev) => ({ ...prev, [id]: null }));
+    }
+  };
 
   useEffect(() => {
     let live = true;
@@ -143,42 +179,6 @@ function RecentCallsCard() {
     };
   }, []);
 
-  // Playback must not outlive the page — a navigation away should not leave
-  // a customer conversation audible.
-  useEffect(() => {
-    const el = audioRef.current;
-    return () => el?.pause();
-  }, []);
-
-  const play = async (c: RecentCall) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (playingId === c.id) {
-      audio.pause();
-      setPlayingId(null);
-      return;
-    }
-
-    setBusyId(c.id);
-    setPlayError(null);
-    try {
-      const res = await fetch(`/api/admin/calls/${c.id}/recording`);
-      const json = await res.json();
-      if (!res.ok || !json?.success) {
-        setPlayError(json?.message ?? "Could not load that recording.");
-        return;
-      }
-      audio.src = json.data.url as string;
-      await audio.play();
-      setPlayingId(c.id);
-    } catch {
-      setPlayError("Could not play that recording.");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   return (
     <section
       aria-label="Recent calls"
@@ -193,11 +193,9 @@ function RecentCallsCard() {
         </span>
       </div>
 
-      <audio ref={audioRef} onEnded={() => setPlayingId(null)} className="hidden" />
-
-      {playError ? (
+      {playback.error ? (
         <p className="m-0 rounded-[8px] bg-[#FEE2E2] px-2.5 py-1.5 text-[12px] text-[#991B1B]">
-          {playError}
+          {playback.error}
         </p>
       ) : null}
 
@@ -216,19 +214,22 @@ function RecentCallsCard() {
       ) : (
         calls.map((c) => {
           const blocked = playbackBlockedReason(c);
-          const on = playingId === c.id;
+          const on = playback.playingId === c.id;
+          const expanded = openId === c.id;
+          const t = transcripts[c.id];
           return (
-            <div key={c.id} className="flex gap-2.5 border-b border-[#EEF2F6] py-2.5">
+            <div key={c.id} className="flex flex-col border-b border-[#EEF2F6]">
+              <div className="flex gap-2.5 py-2.5">
               <button
                 type="button"
-                onClick={() => play(c)}
-                disabled={Boolean(blocked) || busyId === c.id}
+                onClick={() => playback.toggle(c)}
+                disabled={Boolean(blocked) || playback.loadingId === c.id}
                 aria-label={on ? `Pause ${callWho(c)}` : `Play ${callWho(c)}`}
                 title={blocked ?? (on ? "Pause" : "Play recording")}
                 className="flex size-9 flex-[0_0_36px] items-center justify-center rounded-full text-[13px] text-white disabled:cursor-not-allowed"
                 style={{ background: blocked ? "#94A3B8" : "#0B1A2E" }}
               >
-                {busyId === c.id ? "…" : on ? "❚❚" : "▶"}
+                {playback.loadingId === c.id ? "…" : on ? "❚❚" : "▶"}
               </button>
               <span className="flex min-w-0 flex-grow flex-col gap-0.5">
                 <span className="text-[14px] font-semibold text-[#0F172A]">
@@ -247,17 +248,80 @@ function RecentCallsCard() {
                   {callStamp(c.startedAt)}
                 </span>
                 {c.hasTranscript ? (
-                  <Link
-                    href="/master/dialer"
-                    className="text-[12px] font-semibold text-[#166534]"
-                    title="Open the transcript in the Agent Dialer"
+                  <button
+                    type="button"
+                    onClick={() => openTranscript(c.id)}
+                    aria-expanded={expanded}
+                    className="cursor-pointer border-0 bg-transparent p-0 text-[12px] font-semibold text-[#166534] underline"
                   >
-                    Transcript
-                  </Link>
+                    {expanded ? "Hide transcript" : "Transcript"}
+                  </button>
                 ) : (
-                  <span className="text-[12px] font-semibold text-[#94A3B8]">—</span>
+                  <span
+                    title="No transcript for this call"
+                    className="cursor-help text-[12px] font-semibold text-[#94A3B8]"
+                  >
+                    —
+                  </span>
                 )}
               </span>
+              </div>
+
+              {expanded ? (
+                <div className="mb-2.5 ml-[46px] flex max-h-[240px] flex-col gap-1.5 overflow-y-auto rounded-[10px] bg-[#F8FAFC] p-2.5">
+                  {t === undefined ? (
+                    <p className="m-0 text-[12px] text-[#5B6B80]">Loading transcript…</p>
+                  ) : t === null ? (
+                    // A failed fetch, not an empty transcript — saying
+                    // "loading" here would leave the agent waiting forever.
+                    <p className="m-0 text-[12px] text-[#991B1B]">
+                      Could not load this transcript.
+                    </p>
+                  ) : t.transcriptSegments?.length ? (
+                    <>
+                      {!speakersSeparated(t.transcriptSegments) ? (
+                        <p className="m-0 text-[11px] text-[#92400E]">
+                          Caller and customer could not be told apart on this
+                          recording — it mixes both parties into one track — so
+                          the lines are timestamped instead of attributed.
+                        </p>
+                      ) : null}
+                      {t.transcriptSegments.map((seg) => {
+                        const named = speakersSeparated(t.transcriptSegments);
+                        return (
+                          <div key={seg.idx} className="flex gap-2 text-[12px]">
+                            <span
+                              className="w-[64px] shrink-0 font-semibold"
+                              style={{
+                                color: named
+                                  ? SPEAKER_STYLE[seg.speaker].color
+                                  : "#64748B",
+                              }}
+                              title={
+                                named
+                                  ? SPEAKER_STYLE[seg.speaker].title
+                                  : `at ${clock(seg.startSec)}`
+                              }
+                            >
+                              {named ? SPEAKER_STYLE[seg.speaker].label : clock(seg.startSec)}
+                            </span>
+                            <span className="text-[#334155]">{seg.text}</span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : t.transcriptText ? (
+                    // Diarisation produced no segments, but there is still text.
+                    <p className="m-0 text-[12px] whitespace-pre-wrap text-[#334155]">
+                      {t.transcriptText}
+                    </p>
+                  ) : (
+                    <p className="m-0 text-[12px] text-[#5B6B80]">
+                      {transcriptMessage(t, true)}
+                    </p>
+                  )}
+                </div>
+              ) : null}
             </div>
           );
         })
