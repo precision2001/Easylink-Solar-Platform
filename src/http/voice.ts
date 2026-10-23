@@ -68,6 +68,11 @@ export function normalisePhone(raw: string): string {
 const variants = (e164: string) => (e164.startsWith("+61") ? [e164, `0${e164.slice(3)}`] : [e164]);
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const safeEq = (a: string, b: string) => a.length === b.length && sha(a) === sha(b);
+/** j•••@example.com: enough for the caller to recognise, not enough to read out someone's address. */
+export function maskEmail(e: string): string {
+  const [user, domain] = e.split("@");
+  return `${(user ?? "").slice(0, 1)}•••@${domain ?? ""}`;
+}
 
 export function registerVoiceRoutes(app: Hono<Env>, c: Container, jobs: JobService, opts: { key?: string } = {}) {
   const key = opts.key ?? process.env.VOICE_KEY ?? (process.env.AI_MODE === "local" ? "voice-local" : "");
@@ -127,6 +132,16 @@ export function registerVoiceRoutes(app: Hono<Env>, c: Container, jobs: JobServi
     return { known: false, kind: null, principal: null, user: {}, firstName: "" };
   }
 
+  /** The email on the caller's account: their user record, else a job for their customer record. */
+  async function emailFor(v: VoiceCall): Promise<string | null> {
+    const direct = String(v.user.email ?? "").trim();
+    if (direct.includes("@")) return direct;
+    const cid = String(v.user.customerId ?? "");
+    const j = ((await c.store.listRecords("job")) as unknown as Job[]).find((x) => (cid && x.customerId === cid) || normalisePhone(String(x.customerPhone ?? "")) === v.phone);
+    const e = String(j?.customerEmail ?? "").trim();
+    return e.includes("@") ? e : null;
+  }
+
   /** A job, short enough for the agent to read from. */
   async function brief(j: Job, v: VoiceCall) {
     const view = (await jobs.view(j, v.principal!)) as Record<string, any>;
@@ -177,8 +192,28 @@ export function registerVoiceRoutes(app: Hono<Env>, c: Container, jobs: JobServi
       v.codesSent += 1;
       v.attempts = 0;
       await save(v);
-      await c.messaging.sendSms({ to: v.phone, body: `EasyLink Solar: your phone code is ${code}. Read it to our assistant on the call. It expires in 10 minutes. Don't share it with anyone else.` });
-      return ctx.json({ success: true, message: "OK", data: { sentTo: `number ending ${v.phone.slice(-3)}` } });
+      const text = `EasyLink Solar: your phone code is ${code}. Read it to our assistant on the call. It expires in 10 minutes. Don't share it with anyone else.`;
+      // Text first. Until texts can reach every number (sender ID registration), fall back to the account's email.
+      let smsError: unknown = null;
+      if (process.env.VOICE_CODE_CHANNEL !== "email") {
+        try {
+          await c.messaging.sendSms({ to: v.phone, body: text });
+          return ctx.json({ success: true, message: "OK", data: { channel: "sms", sentTo: `number ending ${v.phone.slice(-3)}` } });
+        } catch (e) {
+          smsError = e;
+        }
+      }
+      const email = await emailFor(v);
+      if (!email) {
+        if (smsError) throw smsError;
+        throw new JobError("There's no email address on this account to send a code to", 409);
+      }
+      await c.messaging.sendEmail({
+        to: email,
+        subject: `Your EasyLink phone code: ${code}`,
+        body: `Hi${v.firstName ? ` ${v.firstName}` : ""},\n\nYour phone code is ${code}. Read it to our assistant on the call. It expires in 10 minutes.\n\nIf you're not on a call with EasyLink Solar right now, ignore this email and don't share the code with anyone.\n\nEasyLink Solar`,
+      });
+      return ctx.json({ success: true, message: "OK", data: { channel: "email", sentTo: `email ${maskEmail(email)}` } });
     } catch (e) {
       return fail(ctx, e);
     }

@@ -34,7 +34,7 @@ How you speak
 
 Who you're talking to
 - {caller}
-- Before you say or do anything about a job, verify the caller: call send_verification_code, ask them to read back the six-digit code from the text message, then call verify_code. If they can't receive texts, offer to have the team call back and use leave_message.
+- Before you say or do anything about a job, verify the caller: call send_verification_code, ask them to read back the six-digit code from the text or email (the tool tells you which), then call verify_code. If they can't get the code, offer to have the team call back and use leave_message.
 - If the number isn't on an EasyLink account, help with general questions about solar, batteries and rebates, and offer leave_message so the team can call them back. Don't guess at anyone's details.
 
 Doing things
@@ -86,13 +86,15 @@ class EasyLinkAgent(Agent):
     # ---------- tools ----------
     @function_tool
     async def send_verification_code(self, context: RunContext) -> str:
-        """Text a six-digit code to the caller's number so they can prove it's them. Use this before anything about a job."""
+        """Send a six-digit code so the caller can prove it's them: by text to their number, or by email to the address on their account if a text can't be sent. Use this before anything about a job."""
         if not self.known:
             raise ToolError("This number isn't on an EasyLink account, so there's nothing to verify.")
         try:
             r = await self.platform.send_code()
         except PlatformError as e:
             raise ToolError(e.message) from e
+        if r.get("channel") == "email":
+            return f"Code sent by email to the {r.get('sentTo', 'address on file')} (texts aren't available right now). Ask them to check that inbox and read the code out."
         return f"Code sent by text to the {r.get('sentTo', 'number on file')}. Ask them to read it out."
 
     @function_tool

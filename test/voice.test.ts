@@ -113,6 +113,22 @@ describe("voice calls", () => {
     expect(call.endedAt).toBeTruthy();
   });
 
+  it("email the code when a text can't be sent", async () => {
+    const w = await world();
+    w.messaging.sendSms = async () => {
+      throw new Error('ConflictException: Reason="DESTINATION_PHONE_NUMBER_NOT_VERIFIED"');
+    };
+    await w.voice("POST", "/voice/calls", { callId: "c9", from: "0400000301" });
+    const r = await w.voice("POST", "/voice/calls/c9/code");
+    expect(r.status).toBe(200);
+    expect(r.body.data).toEqual({ channel: "email", sentTo: "email d•••@example.test" });
+    const mail = w.messaging.sent.filter((m) => m.channel === "email").at(-1) as { to: string; subject: string; body: string };
+    expect(mail.to).toBe("dan@example.test");
+    const code = /code is (\d{6})/.exec(mail.body)?.[1] ?? "";
+    expect(code).toMatch(/^\d{6}$/);
+    expect((await w.voice("POST", "/voice/calls/c9/verify", { code })).status).toBe(200);
+  });
+
   it("stop after five wrong codes", async () => {
     const w = await world();
     await w.voice("POST", "/voice/calls", { callId: "c6", from: "+61400000301" });

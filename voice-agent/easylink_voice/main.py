@@ -111,7 +111,7 @@ async def entrypoint(ctx: JobContext) -> None:
     if recording_key and not recording_key.startswith("calls/"):
         recording_key = None
     if who.get("known"):
-        await session.generate_reply(instructions=f'Say: "Hi, you\'ve reached {settings.business_name}, this is EasyLink AI. {notice}I can see this number is on one of our accounts. To keep your details safe, I\'ll text you a six-digit code." Then call send_verification_code.')
+        await session.generate_reply(instructions=f'Say: "Hi, you\'ve reached {settings.business_name}, this is EasyLink AI. {notice}I can see this number is on one of our accounts. To keep your details safe, I\'ll send you a six-digit code." Then call send_verification_code and tell them whether it went by text or email.')
     else:
         await session.generate_reply(instructions=f'Say: "Hi, you\'ve reached {settings.business_name}, this is EasyLink AI. {notice}How can I help today?"')
 
