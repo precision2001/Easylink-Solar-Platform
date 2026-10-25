@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
 import { useRecordingPlayback } from "@/hooks/useRecordingPlayback";
 import {
@@ -261,6 +262,17 @@ function SampleTag() {
 
 export function MasterAgentDialer() {
   const [input, setInput] = useState("");
+
+  /**
+   * A number handed over from Contact lists ("Call on this device") arrives as
+   * `?number=`. Prefilled rather than dialled: the agent still presses Call, so
+   * a stray link cannot place a call on its own.
+   */
+  const searchParams = useSearchParams();
+  const handedNumber = searchParams.get("number");
+  useEffect(() => {
+    if (handedNumber) setInput(handedNumber);
+  }, [handedNumber]);
   const {
     state,
     error,

@@ -1,28 +1,38 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import {
   ACCEPTED_FORMATS,
-  COLUMN_MAP,
   CRM_BATTERY_KWH,
   FILTERS,
   type FilterKey,
-  IMPORT_RESULT,
   INTERESTS,
-  OUTCOMES,
-  SAVED_FORMATS,
   STAGE_PROBABILITY,
-  TILES,
-  TOTAL_CONTACTS,
-  applyFilter,
-  buildContacts,
   dealValue,
   fileStem,
-  isWarmOutcome,
-  nextInQueue,
   priceOptions,
 } from "@/lib/contact-lists/calling";
+import {
+  IMPORT_BATCH,
+  IMPORT_FIELD_OPTIONS,
+  describeMapping,
+  readContactFile,
+  type ImportFile,
+} from "@/lib/contact-lists/import-file";
+import {
+  OUTCOME_LABELS,
+  OUTCOME_ORDER,
+  formatAuNumber,
+  useContactsApi,
+  type ApiContact,
+  type ContactOutcome,
+  type ContactDiscovery,
+  type ContactSummary,
+  type ImportJob,
+  type SavedFormat,
+} from "@/hooks/useContactsApi";
 import { money } from "@/lib/designer/simulation";
 
 /**
@@ -35,7 +45,10 @@ import { money } from "@/lib/designer/simulation";
  * number on the Do Not Call Register is an offence, so that rule is not
  * something to leave sitting in a render function.
  *
- * Sample data: the contacts are the mock's, on reserved test numbers.
+ * The contacts, counts, imports and saved formats are real: they come from the
+ * `contacts` API, which owns the calling rules so the browser cannot disagree
+ * with the server about who may be called. The call script, the four quoted
+ * options and the automatic designer are still the mock's own sample content.
  */
 
 const SUN = "#F68A0A";
@@ -63,6 +76,41 @@ const FIELD_BOX =
 const FIELD_LABEL = "flex flex-col gap-1 text-[12px] font-semibold";
 const TH = "p-2 text-left font-semibold";
 const TD = "border-t border-[#E3E8EF] px-2 py-1";
+const EMPTY_CELL = "\u2014";
+
+/** The fields the add-contact form collects, with their labels. */
+const NEW_CONTACT_FIELDS: [keyof NewContact, string, string][] = [
+  ["fullName", "Name", "Mia Thompson"],
+  ["mobile", "Mobile", "0491 570 006"],
+  ["landline", "Landline", "02 5550 0101"],
+  ["email", "Email", "mia@example.com"],
+  ["suburb", "Suburb", "Parramatta"],
+  ["postcode", "Postcode", "2150"],
+  ["state", "State", "NSW"],
+];
+
+interface NewContact {
+  fullName: string;
+  mobile: string;
+  landline: string;
+  email: string;
+  suburb: string;
+  postcode: string;
+  state: string;
+}
+
+const EMPTY_NEW_CONTACT: NewContact = {
+  fullName: "",
+  mobile: "",
+  landline: "",
+  email: "",
+  suburb: "",
+  postcode: "",
+  state: "",
+};
+
+/** What a follow-up can be, matching the mock's options. */
+const FOLLOW_UP_KINDS = ["Site visit", "Call back", "Send a quote", "Nothing yet"] as const;
 const PILL = "rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap";
 
 const CRM_TABS: [string, string][] = [
@@ -90,24 +138,55 @@ const SPONSORED: [string, string, string, string][] = [
   ["EV charger", "myenergi zappi v2 · 7 kW", "EVC-ZAP7", "Electrify-Ready, Maximum"],
 ];
 
-const DISCOVERY: [string, string][] = [
-  ["Owns the property", "Yes"],
-  ["Property type", "House"],
-  ["Roof", "Tile"],
-  ["Storeys", "1"],
-  ["Power supply", "Single phase"],
-  ["Power bill ($ per quarter)", "1,150"],
-  ["Electricity retailer", "—"],
-  ["Existing solar (kW)", "None"],
-  ["Existing solar age (years)", "—"],
-  ["Has a battery", "No"],
-  ["Shading", "Some"],
-  ["Electric vehicle", "Planning one"],
-  ["Decision makers on the call", "Partner to confirm"],
-  ["Timeframe", "1–3 months"],
-  ["Paying by", "Not sure"],
-  ["Best time to call", "After 5 pm"],
+/**
+ * The discovery questions, mapped onto the columns that store them. The
+ * placeholders show the shape of a good answer without pretending we already
+ * know it.
+ */
+const DISCOVERY_FIELDS: [keyof ContactDiscovery, string, string][] = [
+  ["ownsProperty", "Owns the property", "Yes"],
+  ["propertyType", "Property type", "House"],
+  ["roof", "Roof", "Tile"],
+  ["storeys", "Storeys", "1"],
+  ["powerSupply", "Power supply", "Single phase"],
+  ["quarterlyBill", "Power bill ($ per quarter)", "1150"],
+  ["retailer", "Electricity retailer", "Origin"],
+  ["existingSolarKw", "Existing solar (kW)", "None"],
+  ["existingSolarAge", "Existing solar age (years)", "6"],
+  ["hasBattery", "Has a battery", "No"],
+  ["shading", "Shading", "Some"],
+  ["electricVehicle", "Electric vehicle", "Planning one"],
+  ["decisionMakers", "Decision makers on the call", "Partner to confirm"],
+  ["timeframe", "Timeframe", "1\u20133 months"],
+  ["payingBy", "Paying by", "Not sure"],
+  ["bestTimeToCall", "Best time to call", "After 5 pm"],
 ];
+
+const EMPTY_DISCOVERY: ContactDiscovery = {
+  ownsProperty: null,
+  propertyType: null,
+  roof: null,
+  storeys: null,
+  powerSupply: null,
+  quarterlyBill: null,
+  retailer: null,
+  existingSolarKw: null,
+  existingSolarAge: null,
+  hasBattery: null,
+  shading: null,
+  electricVehicle: null,
+  decisionMakers: null,
+  timeframe: null,
+  payingBy: null,
+  bestTimeToCall: null,
+};
+
+/** One discovery answer as text for its input. */
+function discoveryValue(d: ContactDiscovery | null, key: keyof ContactDiscovery): string {
+  const v = d?.[key];
+  if (v === null || v === undefined) return "";
+  return String(v);
+}
 
 const TIMELINE: [string, string][] = [
   ["14 Oct, 4:43 pm · Call · Interested", "Keen on a battery for evening use. Partner wants to see numbers."],
@@ -129,15 +208,90 @@ const ROOF_FACES: [string, number, number][] = [
 /** The distributor company placeholder the mock uses in scripts and emails. */
 const ORG = "[distributor company]";
 
+/** Replaces one contact in the loaded page, leaving the rest alone. */
+function mergeContact(prev: ApiContact[] | null, next: ApiContact): ApiContact[] | null {
+  if (!prev) return prev;
+  const i = prev.findIndex(c => c.id === next.id);
+  if (i === -1) return [next, ...prev];
+  const out = prev.slice();
+  out[i] = next;
+  return out;
+}
+
+/** How the booked callback time reads in the panel. */
+function callbackLabel(): string {
+  return new Date(callbackAt()).toLocaleString("en-AU", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** A callback booked for tomorrow evening, which is what the mock's row implies. */
+function callbackAt(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(17, 30, 0, 0);
+  return d.toISOString();
+}
+
+/** How the register state reads in the table's DNCR column. */
+function dncrLabel(c: ApiContact): string {
+  if (c.dncrMobile && c.dncrLandline) return "Mobile + landline";
+  if (c.dncrMobile) return "Mobile";
+  if (c.dncrLandline) return "Landline";
+  return "Clear";
+}
+
+/** Outcomes that mean the call went well, which the mock tints green. */
+const WARM_OUTCOMES: ContactOutcome[] = ["INTERESTED", "APPOINTMENT_BOOKED"];
+
 export function MasterContactLists() {
-  const all = useMemo(() => buildContacts(), []);
+  const api = useContactsApi();
   const options = useMemo(() => priceOptions(), []);
 
   const [tab, setTab] = useState<"db" | "import" | "formats">("db");
   const [step, setStep] = useState<"upload" | "map" | "done">("upload");
   const [filter, setFilter] = useState<FilterKey>("all");
-  const [current, setCurrent] = useState(-1);
-  const [outcome, setOutcome] = useState("");
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<ContactOutcome | "">("");
+
+  /** Server-held data: the table page, the tile counts and what is in flight. */
+  const [contacts, setContacts] = useState<ApiContact[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [pageCount, setPageCount] = useState(1);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [summary, setSummary] = useState<ContactSummary | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [callNotes, setCallNotes] = useState("");
+
+  /** The file being imported, and how far through it we are. */
+  const [file, setFile] = useState<ImportFile | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [matchedFormat, setMatchedFormat] = useState<string | null>(null);
+  const [listName, setListName] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState<ImportJob | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [formats, setFormats] = useState<SavedFormat[] | null>(null);
+
+  /** The "Add contact" form: closed until asked for. */
+  const [adding, setAdding] = useState(false);
+  const [newContact, setNewContact] = useState(EMPTY_NEW_CONTACT);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addingBusy, setAddingBusy] = useState(false);
+
+  /** The discovery answers for the contact on screen. */
+  const [discovery, setDiscovery] = useState<ContactDiscovery | null>(null);
+  const [discoveryDirty, setDiscoveryDirty] = useState(false);
+  const [discoverySaving, setDiscoverySaving] = useState(false);
+  const [discoveryMsg, setDiscoveryMsg] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [followUp, setFollowUp] = useState("Site visit");
   const [saved, setSaved] = useState("");
   const [queue, setQueue] = useState(false);
   const [crm, setCrm] = useState("lead");
@@ -149,32 +303,334 @@ export function MasterContactLists() {
   const [asked, setAsked] = useState(false);
   const [sent, setSent] = useState("");
 
-  const rows = applyFilter(all, filter);
-  const contact = current >= 0 ? all[current] : all[0];
-  const deal = dealValue(panels);
-  const firstName = contact.name.split(" ")[0];
+  // Typing searches the whole database, so wait for a pause rather than firing
+  // a query per keystroke against several hundred thousand rows.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQuery(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  const startQueue = () => {
-    const first = all.find((r) => r.callable);
-    if (!first) return;
-    setCurrent(first.index);
-    setOutcome("");
-    setSaved("");
-    setQueue(true);
+  const reloadSummary = useCallback(() => {
+    api
+      .fetchSummary()
+      .then(setSummary)
+      .catch((e: Error) => setLoadError(e.message));
+  }, [api]);
+
+  const reloadContacts = useCallback(() => {
+    let live = true;
+    api
+      .fetchContacts({ search: query, filter, page, pageSize: 25 })
+      .then(res => {
+        if (!live) return;
+        setContacts(res.contacts);
+        setTotal(res.total);
+        setPageCount(res.pageCount);
+        setLoadError(null);
+      })
+      .catch((e: Error) => {
+        if (live) setLoadError(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [api, query, filter, page]);
+
+  useEffect(() => reloadContacts(), [reloadContacts]);
+  useEffect(() => reloadSummary(), [reloadSummary]);
+
+  useEffect(() => {
+    if (tab !== "formats" || formats !== null) return;
+    api
+      .fetchFormats()
+      .then(setFormats)
+      .catch((e: Error) => setLoadError(e.message));
+  }, [tab, formats, api]);
+
+  const rows = contacts ?? [];
+  const selected = rows.find(r => r.id === currentId) ?? null;
+
+  /**
+   * The six fields the call panel reads, in the names its markup already uses,
+   * so the panel did not have to be rewritten around the API's shape.
+   */
+  const contact = {
+    name: selected?.fullName ?? "",
+    email: selected?.email ?? "",
+    suburb: selected?.suburb ?? "",
+    postcode: selected?.postcode ?? "",
+    list: selected?.listName ?? "",
+    mobileText: formatAuNumber(
+      selected?.dialNumber ?? selected?.mobile ?? null,
+      selected?.mobileRaw,
+    ),
   };
 
-  const saveCall = () => {
+  const deal = dealValue(panels);
+  const firstName = contact.name.split(" ")[0] ?? "";
+
+  const n = (v: number) => v.toLocaleString("en-AU");
+
+  const importResultTiles: [string, string][] = progress
+    ? [
+        ["Added", n(progress.addedRows)],
+        ["Duplicates skipped", n(progress.duplicateRows)],
+        ["Without a valid number", n(progress.noNumberRows)],
+        ["Rows we could not read", n(progress.invalidRows)],
+        ["Rows processed", n(progress.processedRows)],
+      ]
+    : [];
+  const tiles: [string, string, string][] = summary
+    ? [
+        ["Contacts", n(summary.total), `${n(summary.lists)} ${summary.lists === 1 ? "list" : "lists"}`],
+        [
+          "Callable now",
+          n(summary.callable),
+          "Open now · weekdays 9 am–8 pm (NSW time)",
+        ],
+        ["On Do Not Call Register", n(summary.onRegister), "Blocked without consent"],
+        ["Callbacks due", n(summary.callbacksDue), "Today or overdue"],
+      ]
+    : [
+        ["Contacts", "—", "Loading"],
+        ["Callable now", "—", "Open now · weekdays 9 am–8 pm (NSW time)"],
+        ["On Do Not Call Register", "—", "Blocked without consent"],
+        ["Callbacks due", "—", "Today or overdue"],
+      ];
+
+  /**
+   * Starts at the first callable contact. The server picks it, because only the
+   * server can see past the current page — the next person to call is often not
+   * among the 25 rows on screen.
+   */
+  const startQueue = async () => {
+    setSaved("");
+    try {
+      const first = await api.fetchNext();
+      if (!first) {
+        setSaved("No callable contacts in this list.");
+        return;
+      }
+      setCurrentId(first.id);
+      setContacts(prev => mergeContact(prev, first));
+      setOutcome("");
+      setQueue(true);
+    } catch (e) {
+      setSaved(e instanceof Error ? e.message : "Could not start the queue.");
+    }
+  };
+
+  const [savingCall, setSavingCall] = useState(false);
+
+  const saveCall = async () => {
+    if (!selected) return;
     if (!outcome) {
       setSaved("Pick an outcome first.");
       return;
     }
-    if (queue) {
-      const next = nextInQueue(all, current);
-      if (next >= 0) setCurrent(next);
-      setOutcome("");
-      setSaved(`Saved: ${outcome}. Next contact loaded.`);
-    } else {
-      setSaved(`Saved: ${outcome}.`);
+
+    setSavingCall(true);
+    try {
+      const updated = await api.saveOutcome(selected.id, {
+        outcome,
+        notes: callNotes.trim() || null,
+        followUpKind: followUp || null,
+        // Only a callback has a due date; the others would leave a stale one.
+        callbackDueAt: outcome === "CALL_BACK" ? callbackAt() : null,
+      });
+      setContacts(prev => mergeContact(prev, updated));
+      reloadSummary();
+
+      if (queue) {
+        const next = await api.fetchNext(selected.id);
+        if (next) {
+          setCurrentId(next.id);
+          setContacts(prev => mergeContact(prev, next));
+          setOutcome("");
+          setCallNotes("");
+          setSaved(`Saved: ${OUTCOME_LABELS[outcome]}. Next contact loaded.`);
+        } else {
+          setSaved(`Saved: ${OUTCOME_LABELS[outcome]}. No one else to call.`);
+        }
+      } else {
+        setSaved(`Saved: ${OUTCOME_LABELS[outcome]}.`);
+      }
+    } catch (e) {
+      setSaved(e instanceof Error ? e.message : "Could not save the outcome.");
+    } finally {
+      setSavingCall(false);
+    }
+  };
+
+  /**
+   * Reads the chosen spreadsheet in the browser and asks the server what its
+   * columns mean. Parsing here avoids sending a 50 MB file and reuses the
+   * parser already built and tested for customer imports; the mapping still
+   * comes from the server, which is what remembers saved formats.
+   */
+  const chooseFile = async (picked: File) => {
+    setImportError(null);
+    setProgress(null);
+    try {
+      const parsed = await readContactFile(picked);
+      setFile(parsed);
+      setListName(parsed.suggestedListName);
+
+      const { mapping: guess, matchedFormat: hit } = await api.matchHeadings(parsed.headings);
+      setMapping(guess);
+      setMatchedFormat(hit?.name ?? null);
+      setStep("map");
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "Could not read that file.");
+    }
+  };
+
+  /**
+   * Sends the rows in batches, so a very large file is many modest requests
+   * rather than one that cannot finish. Progress comes back from the server on
+   * every batch, which is what the bar below reports.
+   */
+  const runImport = async () => {
+    if (!file) return;
+    setImporting(true);
+    setImportError(null);
+
+    try {
+      const { importId } = await api.createImport({
+        fileName: file.fileName,
+        listName: listName.trim() || file.suggestedListName,
+        mapping,
+        totalRows: file.rows.length,
+        rememberAs: listName.trim() || file.suggestedListName,
+        headings: file.headings,
+      });
+
+      let job: ImportJob | null = null;
+      for (let i = 0; i < file.rows.length; i += IMPORT_BATCH) {
+        job = await api.sendImportRows(importId, file.rows.slice(i, i + IMPORT_BATCH));
+        setProgress(job);
+      }
+
+      setProgress(await api.finishImport(importId));
+      setStep("done");
+      reloadSummary();
+      reloadContacts();
+      void api.fetchFormats().then(setFormats).catch(() => undefined);
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "The import did not finish.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  /**
+   * Loads the discovery answers when a contact is opened. Fetched per contact
+   * rather than with the table: most contacts have none, and sixteen more
+   * columns on every page of the list would be paid for on every search.
+   */
+  useEffect(() => {
+    if (!currentId) {
+      setDiscovery(null);
+      setDiscoveryDirty(false);
+      setDiscoveryMsg("");
+      return;
+    }
+    let live = true;
+    api
+      .fetchDiscovery(currentId)
+      .then((d) => {
+        if (!live) return;
+        setDiscovery(d ?? EMPTY_DISCOVERY);
+        setDiscoveryDirty(false);
+        setDiscoveryMsg("");
+      })
+      .catch(() => {
+        if (live) setDiscovery(EMPTY_DISCOVERY);
+      });
+    return () => {
+      live = false;
+    };
+  }, [currentId, api]);
+
+  const saveDiscovery = async () => {
+    if (!currentId || !discovery) return;
+    setDiscoverySaving(true);
+    setDiscoveryMsg("");
+    try {
+      const saved = await api.saveDiscovery(currentId, discovery);
+      setDiscovery(saved);
+      setDiscoveryDirty(false);
+      setDiscoveryMsg("Saved.");
+    } catch (e) {
+      setDiscoveryMsg(e instanceof Error ? e.message : "Could not save.");
+    } finally {
+      setDiscoverySaving(false);
+    }
+  };
+
+  const copyNumber = async () => {
+    const number = selected?.dialNumber ?? selected?.mobile ?? selected?.landline;
+    if (!number) return;
+    try {
+      await navigator.clipboard.writeText(number);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused; the number is on screen to read.
+      setCopied(false);
+    }
+  };
+
+  const addContact = async () => {
+    setAddingBusy(true);
+    setAddError(null);
+    try {
+      const created = await api.createContact({
+        fullName: newContact.fullName,
+        mobile: newContact.mobile || null,
+        landline: newContact.landline || null,
+        email: newContact.email || null,
+        suburb: newContact.suburb || null,
+        postcode: newContact.postcode || null,
+        state: newContact.state || null,
+      });
+      setContacts((prev) => mergeContact(prev, created));
+      setNewContact(EMPTY_NEW_CONTACT);
+      setAdding(false);
+      reloadSummary();
+      reloadContacts();
+    } catch (e) {
+      setAddError(e instanceof Error ? e.message : "Could not add that contact.");
+    } finally {
+      setAddingBusy(false);
+    }
+  };
+
+  /** Turns the contact into a pipeline lead — the mock's "Create lead" action. */
+  const [converting, setConverting] = useState(false);
+  const [convertMsg, setConvertMsg] = useState("");
+
+  const convertToLead = async () => {
+    if (!selected) return;
+    setConverting(true);
+    setConvertMsg("");
+    try {
+      const { lead, created } = await api.convertToLead(selected.id);
+      setContacts(prev =>
+        mergeContact(prev, { ...selected, leadId: lead.id }),
+      );
+      setConvertMsg(
+        created
+          ? `${lead.customerName} is now a lead in Quotes & Leads.`
+          : `${lead.customerName} is already a lead.`,
+      );
+    } catch (e) {
+      setConvertMsg(e instanceof Error ? e.message : "Could not create the lead.");
+    } finally {
+      setConverting(false);
     }
   };
 
@@ -217,8 +673,11 @@ export function MasterContactLists() {
           Communication <span aria-hidden="true">/</span>{" "}
           <span className="font-semibold text-[#0F172A]">Contact lists</span>
         </nav>
-        <span className="rounded-full bg-[#DBEAFE] px-2.5 py-[3px] text-[12px] font-bold text-[#1E40AF]">
-          Sample data
+        <span
+          title="Contacts, imports and saved formats are real; the call script and quoted options are not"
+          className="cursor-help rounded-full bg-[#DCFCE7] px-2.5 py-[3px] text-[12px] font-bold text-[#166534]"
+        >
+          Live data
         </span>
       </header>
 
@@ -247,7 +706,7 @@ export function MasterContactLists() {
 
         {/* headline counts */}
         <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
-          {TILES.map(([l, v, s], i) => {
+          {tiles.map(([l, v, s], i) => {
             const hot = i === 1;
             return (
               <div
@@ -266,6 +725,16 @@ export function MasterContactLists() {
             );
           })}
         </div>
+
+        {loadError ? (
+          <p
+            role="status"
+            className="m-0 rounded-[10px] px-3 py-2 text-[13px] font-semibold"
+            style={{ background: "#FEE2E2", color: RED }}
+          >
+            {loadError}
+          </p>
+        ) : null}
 
         {/* section tabs */}
         <div
@@ -311,6 +780,8 @@ export function MasterContactLists() {
                   Search
                   <input
                     type="search"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
                     placeholder="Name, number, email, suburb or postcode"
                     className="min-h-10 rounded-[10px] border border-[#CBD5E1] px-2.5 text-[14px] font-normal text-[#0F172A]"
                   />
@@ -321,7 +792,10 @@ export function MasterContactLists() {
                       key={k}
                       type="button"
                       aria-pressed={filter === k}
-                      onClick={() => setFilter(k)}
+                      onClick={() => {
+                        setFilter(k);
+                        setPage(1);
+                      }}
                       className="min-h-10 cursor-pointer rounded-full px-3 text-[12px] font-semibold"
                       style={pillStyle(filter === k)}
                     >
@@ -333,10 +807,43 @@ export function MasterContactLists() {
 
               <div className="flex flex-wrap items-center gap-2">
                 <span className="flex-grow text-[12px]" style={{ color: MUTED }}>
-                  {rows.length} of {TOTAL_CONTACTS} contacts shown · examples
+                  {contacts === null
+                    ? "Loading contacts…"
+                    : total === 0
+                      ? "No contacts match"
+                      : `${rows.length} of ${total.toLocaleString("en-AU")} contacts shown`}
                 </span>
-                <button type="button" title="Not built yet" className={`${SMALL_BTN} cursor-help`}>
-                  Add contact
+                {pageCount > 1 ? (
+                  <span className="flex items-center gap-1.5 text-[12px]" style={{ color: MUTED }}>
+                    <button
+                      type="button"
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page <= 1}
+                      className={`${SMALL_BTN} disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      Previous
+                    </button>
+                    Page {page} of {pageCount}
+                    <button
+                      type="button"
+                      onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                      disabled={page >= pageCount}
+                      className={`${SMALL_BTN} disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      Next
+                    </button>
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdding((v) => !v);
+                    setAddError(null);
+                  }}
+                  aria-expanded={adding}
+                  className={`${SMALL_BTN} cursor-pointer`}
+                >
+                  {adding ? "Cancel" : "Add contact"}
                 </button>
                 <button type="button" title="Not built yet" className={`${SMALL_BTN} cursor-help`}>
                   Copy selected as CSV
@@ -350,6 +857,57 @@ export function MasterContactLists() {
                   Start calling queue
                 </button>
               </div>
+
+              {adding ? (
+                <form
+                  aria-label="Add a contact"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void addContact();
+                  }}
+                  className="flex flex-col gap-2.5 rounded-[12px] p-3"
+                  style={{ border: `1px solid ${SUN}`, background: CREAM }}
+                >
+                  <div
+                    className="grid gap-2.5"
+                    style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}
+                  >
+                    {NEW_CONTACT_FIELDS.map(([key, label, placeholder]) => (
+                      <label key={key} className={FIELD_LABEL} style={{ color: BODY }}>
+                        {label}
+                        <input
+                          value={newContact[key]}
+                          onChange={(e) =>
+                            setNewContact((prev) => ({ ...prev, [key]: e.target.value }))
+                          }
+                          placeholder={placeholder}
+                          required={key === "fullName"}
+                          className="min-h-10 rounded-[10px] border border-[#CBD5E1] bg-white px-2.5 text-[13px] font-normal"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="flex-grow text-[12px]" style={{ color: MUTED }}>
+                      A mobile or landline is required &mdash; a contact with no number cannot be
+                      called. New contacts go to a list called &ldquo;Added by hand&rdquo;.
+                    </span>
+                    <button
+                      type="submit"
+                      disabled={addingBusy || !newContact.fullName.trim()}
+                      className="min-h-10 cursor-pointer rounded-[10px] border-0 px-3.5 text-[13px] font-bold disabled:cursor-not-allowed disabled:opacity-60"
+                      style={{ background: SUN, color: SUN_INK }}
+                    >
+                      {addingBusy ? "Adding..." : "Save contact"}
+                    </button>
+                  </div>
+                  {addError ? (
+                    <span className="text-[12px] font-semibold" style={{ color: RED }}>
+                      {addError}
+                    </span>
+                  ) : null}
+                </form>
+              ) : null}
 
               <div className="overflow-x-auto rounded-[12px]" style={{ border: `1px solid ${BORDER}` }}>
                 <table className="w-full min-w-[900px] border-collapse text-[13px]">
@@ -370,21 +928,38 @@ export function MasterContactLists() {
                   </thead>
                   <tbody>
                     {rows.map((r) => {
-                      const clear = r.dncrLabel === "Clear";
-                      const warm = isWarmOutcome(r.outcome);
+                      const label = dncrLabel(r);
+                      const clear = label === "Clear";
+                      const warm = r.lastOutcome
+                        ? WARM_OUTCOMES.includes(r.lastOutcome)
+                        : false;
                       return (
-                        <tr key={r.name} style={{ background: current === r.index ? CREAM : "transparent" }}>
+                        <tr key={r.id} style={{ background: currentId === r.id ? CREAM : "transparent" }}>
                           <td className={TD}>
                             <input
-                              defaultValue={r.name}
+                              defaultValue={r.fullName}
                               aria-label="Name"
+                              // Saved when the cell loses focus rather than on every
+                              // keystroke: one write per edit, not one per character.
+                              onBlur={(e) => {
+                                const value = e.target.value.trim();
+                                if (!value || value === r.fullName) return;
+                                void api
+                                  .updateContact(r.id, { fullName: value })
+                                  .then((u) => setContacts((prev) => mergeContact(prev, u)))
+                                  .catch((err: Error) => setLoadError(err.message));
+                              }}
                               className="min-h-8 w-full min-w-[140px] rounded-md border border-transparent bg-transparent px-1.5 text-[13px]"
                             />
                           </td>
-                          <td className={`${TD} font-mono text-[12px]`}>{r.mobileText}</td>
-                          <td className={`${TD} font-mono text-[12px]`}>{r.landlineText}</td>
-                          <td className={TD}>{r.suburb}</td>
-                          <td className={TD}>{r.postcode}</td>
+                          <td className={`${TD} font-mono text-[12px]`}>
+                            {formatAuNumber(r.mobile, r.mobileRaw)}
+                          </td>
+                          <td className={`${TD} font-mono text-[12px]`}>
+                            {formatAuNumber(r.landline, r.landlineRaw)}
+                          </td>
+                          <td className={TD}>{r.suburb ?? EMPTY_CELL}</td>
+                          <td className={TD}>{r.postcode ?? EMPTY_CELL}</td>
                           <td className={TD}>
                             <span
                               className={PILL}
@@ -393,31 +968,33 @@ export function MasterContactLists() {
                                 color: clear ? MUTED : RED,
                               }}
                             >
-                              {r.dncrLabel}
+                              {label}
                             </span>
                           </td>
                           <td className={TD}>
                             <span
                               className={PILL}
                               style={{
-                                background: !r.outcome ? "transparent" : warm ? "#DCFCE7" : "#DBEAFE",
-                                color: !r.outcome ? MUTED : warm ? GREEN : BLUE_INK,
+                                background: !r.lastOutcome ? "transparent" : warm ? "#DCFCE7" : "#DBEAFE",
+                                color: !r.lastOutcome ? MUTED : warm ? GREEN : BLUE_INK,
                               }}
                             >
-                              {r.outcomeLabel}
+                              {r.lastOutcome ? OUTCOME_LABELS[r.lastOutcome] : "Not called"}
                             </span>
                           </td>
                           <td className={`${TD} text-[12px]`} style={{ color: MUTED }}>
-                            {r.list}
+                            {r.listName ?? EMPTY_CELL}
                           </td>
                           <td className={TD}>
                             {r.callable ? (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setCurrent(r.index);
+                                  setCurrentId(r.id);
                                   setOutcome("");
                                   setSaved("");
+                                  setConvertMsg("");
+                                  setCallNotes(r.notes ?? "");
                                   setQueue(false);
                                 }}
                                 className="min-h-[34px] cursor-pointer rounded-[9px] border-0 px-3 text-[12px] font-bold"
@@ -426,26 +1003,41 @@ export function MasterContactLists() {
                                 Call
                               </button>
                             ) : (
-                              <span className={PILL} style={{ background: "#FEE2E2", color: RED }}>
-                                On DNCR
+                              <span
+                                className={PILL}
+                                title={r.blockedReason ?? undefined}
+                                style={{ background: "#FEE2E2", color: RED }}
+                              >
+                                {r.blockedReason ?? "Blocked"}
                               </span>
                             )}
                           </td>
                         </tr>
                       );
                     })}
+                    {contacts !== null && rows.length === 0 ? (
+                      <tr>
+                        <td className={`${TD} text-[13px]`} colSpan={9} style={{ color: MUTED }}>
+                          {total === 0 && !query && filter === "all"
+                            ? "No contacts yet. Import a list to start calling."
+                            : "No contacts match this search or filter."}
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
               <span className="text-[12px]" style={{ color: MUTED }}>
-                Example contacts with reserved test numbers. Every cell can be edited in place.
+                Names are edited in place and saved when you leave the cell. Numbers and
+                register flags are not editable here: a number is the contact&rsquo;s identity
+                for deduplication, and a register flag is a fact about the register.
                 Calling hours follow each contact&rsquo;s state: weekdays 9 am&ndash;8 pm, Saturdays
                 9 am&ndash;5 pm, no Sundays or national public holidays.
               </span>
             </section>
 
             {/* ---------------- the call ---------------- */}
-            {current >= 0 && (
+            {selected && (
               <aside
                 aria-label="Call and CRM"
                 className="flex flex-[1_1_100%] flex-col gap-3.5 rounded-[14px] bg-white p-4"
@@ -510,7 +1102,7 @@ export function MasterContactLists() {
                   <button
                     type="button"
                     onClick={() => {
-                      setCurrent(-1);
+                      setCurrentId(null);
                       setQueue(false);
                     }}
                     className={SMALL_BTN}
@@ -966,16 +1558,27 @@ export function MasterContactLists() {
                       </p>
                       <span className="font-mono text-[26px] font-bold">{contact.mobileText}</span>
                       <div className="flex gap-2">
-                        <button
-                          type="button"
-                          title="Not built yet"
-                          className="min-h-11 flex-1 cursor-help rounded-[10px] border-0 font-bold"
+                        {/*
+                          Hands the number to the Agent Dialer, which owns the
+                          working call path (consent announcement, recording,
+                          transcript). Dialling from here would be a second way
+                          to place a call, and the one that skips all of that.
+                        */}
+                        <Link
+                          href={`/master/dialer?number=${encodeURIComponent(
+                            selected?.dialNumber ?? "",
+                          )}`}
+                          className="flex min-h-11 flex-1 items-center justify-center rounded-[10px] border-0 font-bold no-underline"
                           style={{ background: SUN, color: SUN_INK }}
                         >
                           Call on this device
-                        </button>
-                        <button type="button" title="Not built yet" className={`${SMALL_BTN} min-h-11 cursor-help`}>
-                          Copy number
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={copyNumber}
+                          className={`${SMALL_BTN} min-h-11 cursor-pointer`}
+                        >
+                          {copied ? "Copied" : "Copy number"}
                         </button>
                       </div>
                       <div
@@ -994,15 +1597,16 @@ export function MasterContactLists() {
                         className="grid gap-1.5"
                         style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
                       >
-                        {OUTCOMES.map((l) => {
-                          const on = outcome === l;
+                        {OUTCOME_ORDER.map((value) => {
+                          const l = OUTCOME_LABELS[value];
+                          const on = outcome === value;
                           return (
                             <button
-                              key={l}
+                              key={value}
                               type="button"
                               role="radio"
                               aria-checked={on}
-                              onClick={() => setOutcome(l)}
+                              onClick={() => setOutcome(value)}
                               className="min-h-10 cursor-pointer rounded-[9px] px-2.5 text-left text-[12px] font-semibold"
                               style={chipStyle(on)}
                             >
@@ -1015,27 +1619,46 @@ export function MasterContactLists() {
                         Call notes
                         <textarea
                           rows={2}
-                          placeholder="Saved to the timeline"
+                          value={callNotes}
+                          onChange={(e) => setCallNotes(e.target.value)}
+                          placeholder="Saved against the contact"
                           className="rounded-[10px] border border-[#CBD5E1] px-2.5 py-2 text-[13px] font-normal"
                         />
                       </label>
                       <div className="flex gap-2">
                         <label className={`${FIELD_LABEL} flex-1`} style={{ color: BODY }}>
                           Follow-up
-                          <span className={`${FIELD_BOX} font-normal`}>Site visit</span>
+                          <select
+                            value={followUp}
+                            onChange={(e) => setFollowUp(e.target.value)}
+                            className={`${FIELD_BOX} font-normal`}
+                          >
+                            {FOLLOW_UP_KINDS.map((k) => (
+                              <option key={k}>{k}</option>
+                            ))}
+                          </select>
                         </label>
                         <label className={`${FIELD_LABEL} flex-1`} style={{ color: BODY }}>
                           When
-                          <span className={`${FIELD_BOX} font-normal`}>Fri 16 Oct, 5:30 pm</span>
+                          <span className={`${FIELD_BOX} font-normal`}>
+                            {outcome === "CALL_BACK"
+                              ? callbackLabel()
+                              : "Only for a callback"}
+                          </span>
                         </label>
                       </div>
                       <button
                         type="button"
                         onClick={saveCall}
-                        className="min-h-11 cursor-pointer rounded-[10px] border-0 font-bold"
+                        disabled={savingCall}
+                        className="min-h-11 cursor-pointer rounded-[10px] border-0 font-bold disabled:cursor-not-allowed disabled:opacity-60"
                         style={{ background: SUN, color: SUN_INK }}
                       >
-                        {queue ? "Save and next" : "Save outcome"}
+                        {savingCall
+                          ? "Saving..."
+                          : queue
+                            ? "Save and next"
+                            : "Save outcome"}
                       </button>
                       {saved ? (
                         <span
@@ -1125,17 +1748,62 @@ export function MasterContactLists() {
                       )}
 
                       {crm === "disc" && (
-                        <div
-                          className="grid gap-2.5"
-                          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
-                        >
-                          {DISCOVERY.map(([l, v]) => (
-                            <label key={l} className={FIELD_LABEL} style={{ color: BODY }}>
-                              {l}
-                              <span className={`${FIELD_BOX} font-normal`}>{v}</span>
-                            </label>
-                          ))}
-                        </div>
+                        <>
+                          <div
+                            className="grid gap-2.5"
+                            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
+                          >
+                            {DISCOVERY_FIELDS.map(([key, label, placeholder]) => (
+                              <label key={key} className={FIELD_LABEL} style={{ color: BODY }}>
+                                {label}
+                                <input
+                                  value={discoveryValue(discovery, key)}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    setDiscovery((prev) => ({
+                                      ...(prev ?? EMPTY_DISCOVERY),
+                                      [key]:
+                                        key === "quarterlyBill"
+                                          ? raw.trim()
+                                            ? Number(raw.replace(/[^0-9.]/g, ""))
+                                            : null
+                                          : raw,
+                                    }));
+                                    setDiscoveryDirty(true);
+                                    setDiscoveryMsg("");
+                                  }}
+                                  placeholder={placeholder}
+                                  inputMode={key === "quarterlyBill" ? "decimal" : undefined}
+                                  className={`${FIELD_BOX} font-normal`}
+                                />
+                              </label>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <span className="flex-grow text-[12px]" style={{ color: MUTED }}>
+                              Answers are saved against the contact, so they are still here on the
+                              next call.
+                            </span>
+                            {discoveryMsg ? (
+                              <span
+                                role="status"
+                                className="text-[12px] font-semibold"
+                                style={{ color: discoveryMsg === "Saved." ? GREEN : RED }}
+                              >
+                                {discoveryMsg}
+                              </span>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={saveDiscovery}
+                              disabled={discoverySaving || !discoveryDirty}
+                              className="min-h-10 cursor-pointer rounded-[10px] border-0 px-3.5 text-[13px] font-bold disabled:cursor-not-allowed disabled:opacity-60"
+                              style={{ background: SUN, color: SUN_INK }}
+                            >
+                              {discoverySaving ? "Saving..." : "Save discovery"}
+                            </button>
+                          </div>
+                        </>
                       )}
 
                       {crm === "sys" && (
@@ -1281,13 +1949,27 @@ export function MasterContactLists() {
                             </button>
                             <button
                               type="button"
-                              title="Not built yet"
-                              className="min-h-10 cursor-help rounded-[10px] border-0 px-3.5 font-bold"
+                              onClick={convertToLead}
+                              disabled={converting || Boolean(selected?.leadId)}
+                              className="min-h-10 cursor-pointer rounded-[10px] border-0 px-3.5 font-bold disabled:cursor-not-allowed disabled:opacity-60"
                               style={{ background: SUN, color: SUN_INK }}
                             >
-                              Create lead in Quotes &amp; leads
+                              {selected?.leadId
+                                ? "Already a lead"
+                                : converting
+                                  ? "Creating..."
+                                  : "Create lead in Quotes & leads"}
                             </button>
                           </div>
+                          {convertMsg ? (
+                            <span
+                              role="status"
+                              className="text-[12px] font-semibold"
+                              style={{ color: GREEN }}
+                            >
+                              {convertMsg}
+                            </span>
+                          ) : null}
                           <span className="text-[12px]" style={{ color: MUTED }}>
                             Adds them to Quotes &amp; leads. The design, proposal and job follow the
                             lead to the installer you assign.
@@ -1345,17 +2027,31 @@ export function MasterContactLists() {
                     </span>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setStep("map")}
-                  className="min-h-11 cursor-pointer rounded-[10px] border-0 px-[18px] font-bold"
+                <label
+                  className="min-h-11 cursor-pointer rounded-[10px] px-[18px] py-3 font-bold"
                   style={{ background: SUN, color: SUN_INK }}
                 >
                   Choose a file
-                </button>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv,.txt,.ods"
+                    className="hidden"
+                    onChange={(e) => {
+                      const picked = e.target.files?.[0];
+                      e.target.value = "";
+                      if (picked) void chooseFile(picked);
+                    }}
+                  />
+                </label>
                 <span className="text-[12px]" style={{ color: MUTED }}>
-                  Large lists are fine: a 700,000-row Excel file imports in under a minute.
+                  Large lists are read in the browser and imported in batches, so the tab needs to
+                  stay open until it finishes.
                 </span>
+                {importError ? (
+                  <span className="text-[12px] font-semibold" style={{ color: RED }}>
+                    {importError}
+                  </span>
+                ) : null}
               </div>
             )}
 
@@ -1365,7 +2061,10 @@ export function MasterContactLists() {
                   <div className="flex-grow">
                     <h2 className="m-0 text-[16px] font-bold">Match columns</h2>
                     <span className="text-[12px]" style={{ color: MUTED }}>
-                      ARD-NSW.xlsx · 728,744 rows · 13 columns · heading row 1
+                      {file
+                        ? `${file.fileName} \u00b7 ${file.rows.length.toLocaleString("en-AU")} rows \u00b7 ${file.headings.length} columns \u00b7 heading row 1`
+                        : "No file chosen"}
+                      {matchedFormat ? ` \u00b7 matched the saved format "${matchedFormat}"` : ""}
                     </span>
                   </div>
                 </div>
@@ -1373,62 +2072,105 @@ export function MasterContactLists() {
                   className="grid gap-2.5"
                   style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
                 >
-                  {COLUMN_MAP.map(([h, t]) => (
-                    <div
-                      key={h}
-                      className="flex flex-col gap-1 rounded-[12px] p-2.5"
-                      style={{ border: `1px solid ${SUN}` }}
-                    >
-                      <strong className="text-[13px]">{h}</strong>
-                      <span
-                        className="rounded-lg px-2 py-1.5 text-[12px] font-semibold"
-                        style={{ border: "1px solid #CBD5E1" }}
+                  {(file?.headings ?? []).map((h) => {
+                    const field = mapping[h] ?? "ignore";
+                    const guessed = field !== "ignore";
+                    return (
+                      <div
+                        key={h}
+                        className="flex flex-col gap-1 rounded-[12px] p-2.5"
+                        style={{ border: `1px solid ${guessed ? SUN : "#CBD5E1"}` }}
                       >
-                        {t}
-                      </span>
-                      <span className="text-[11px]" style={{ color: MUTED }}>
-                        Matched by heading
-                      </span>
-                    </div>
-                  ))}
+                        <strong className="text-[13px]">{h}</strong>
+                        <select
+                          value={field}
+                          onChange={(e) =>
+                            setMapping((prev) => ({ ...prev, [h]: e.target.value }))
+                          }
+                          className="rounded-lg px-2 py-1.5 text-[12px] font-semibold"
+                          style={{ border: "1px solid #CBD5E1" }}
+                        >
+                          {IMPORT_FIELD_OPTIONS.map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-[11px]" style={{ color: MUTED }}>
+                          {guessed ? "Matched by heading" : "Not imported"}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="flex flex-wrap items-center gap-2.5">
-                  {[
-                    "List name: ARD NSW",
-                    "Duplicates: skip, keep the existing contact",
-                    "No valid number: leave out",
-                  ].map((s) => (
-                    <span
-                      key={s}
-                      className="rounded-[10px] px-2.5 py-2 text-[12px] font-semibold"
-                      style={{ border: "1px solid #CBD5E1" }}
-                    >
-                      {s}
-                    </span>
-                  ))}
+                  <label
+                    className="flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-[12px] font-semibold"
+                    style={{ border: "1px solid #CBD5E1" }}
+                  >
+                    List name
+                    <input
+                      value={listName}
+                      onChange={(e) => setListName(e.target.value)}
+                      className="min-w-[140px] border-0 text-[12px] font-semibold outline-none"
+                    />
+                  </label>
+                  {["Duplicates: skip, keep the existing contact", "No valid number: leave out"].map(
+                    (s) => (
+                      <span
+                        key={s}
+                        className="rounded-[10px] px-2.5 py-2 text-[12px] font-semibold"
+                        style={{ border: "1px solid #CBD5E1" }}
+                      >
+                        {s}
+                      </span>
+                    ),
+                  )}
                   <span className="flex-grow" />
                   <button
                     type="button"
-                    onClick={() => setStep("done")}
-                    className="min-h-11 cursor-pointer rounded-[10px] border-0 px-[18px] font-bold"
+                    onClick={runImport}
+                    disabled={importing || !file}
+                    className="min-h-11 cursor-pointer rounded-[10px] border-0 px-[18px] font-bold disabled:cursor-not-allowed disabled:opacity-60"
                     style={{ background: SUN, color: SUN_INK }}
                   >
-                    Import contacts
+                    {importing ? "Importing..." : "Import contacts"}
                   </button>
                 </div>
+                {progress ? (
+                  <div className="flex flex-col gap-1">
+                    <div className="h-2 overflow-hidden rounded-full" style={{ background: "#E2E8F0" }}>
+                      <div
+                        className="h-full rounded-full transition-[width]"
+                        style={{ width: `${progress.percent}%`, background: SUN }}
+                      />
+                    </div>
+                    <span className="text-[12px]" style={{ color: MUTED }}>
+                      {progress.processedRows.toLocaleString("en-AU")} of{" "}
+                      {progress.totalRows.toLocaleString("en-AU")} rows ·{" "}
+                      {progress.addedRows.toLocaleString("en-AU")} added ·{" "}
+                      {progress.duplicateRows.toLocaleString("en-AU")} duplicates skipped
+                    </span>
+                  </div>
+                ) : null}
+                {importError ? (
+                  <span className="text-[12px] font-semibold" style={{ color: RED }}>
+                    {importError}
+                  </span>
+                ) : null}
               </>
             )}
 
             {step === "done" && (
               <>
                 <h2 className="m-0 text-[16px] font-bold">
-                  &ldquo;ARD NSW&rdquo; is in your calling database
+                  &ldquo;{progress?.listName ?? listName}&rdquo; is in your calling database
                 </h2>
                 <div
                   className="grid gap-2.5"
                   style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}
                 >
-                  {IMPORT_RESULT.map(([l, v]) => (
+                  {importResultTiles.map(([l, v]) => (
                     <div
                       key={l}
                       className="flex flex-col rounded-[12px] p-3"
@@ -1469,28 +2211,43 @@ export function MasterContactLists() {
               A file whose headings match a saved format is matched automatically. You can still
               change it before importing.
             </p>
-            {SAVED_FORMATS.map(([n, d]) => (
-              <div
-                key={n}
-                className="flex flex-wrap items-center gap-2.5 py-2.5"
-                style={{ borderTop: `1px solid #EEF2F6` }}
-              >
-                <span className="flex flex-[1_1_300px] flex-col">
-                  <strong>{n}</strong>
-                  <span className="text-[12px]" style={{ color: MUTED }}>
-                    {d}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  title="Not built yet"
-                  className={`${SMALL_BTN} cursor-help`}
-                  style={{ color: RED }}
+            {formats === null ? (
+              <span className="text-[12px]" style={{ color: MUTED }}>
+                Loading saved formats...
+              </span>
+            ) : formats.length === 0 ? (
+              <span className="text-[13px]" style={{ color: MUTED }}>
+                No formats saved yet. Importing a list remembers how its columns were matched.
+              </span>
+            ) : (
+              formats.map((f) => (
+                <div
+                  key={f.id}
+                  className="flex flex-wrap items-center gap-2.5 py-2.5"
+                  style={{ borderTop: `1px solid #EEF2F6` }}
                 >
-                  Forget
-                </button>
-              </div>
-            ))}
+                  <span className="flex flex-[1_1_300px] flex-col">
+                    <strong>{f.name}</strong>
+                    <span className="text-[12px]" style={{ color: MUTED }}>
+                      {describeMapping(f.mapping)}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void api
+                        .forgetFormat(f.id)
+                        .then(() => setFormats((prev) => prev?.filter((x) => x.id !== f.id) ?? null))
+                        .catch((e: Error) => setLoadError(e.message));
+                    }}
+                    className={`${SMALL_BTN} cursor-pointer`}
+                    style={{ color: RED }}
+                  >
+                    Forget
+                  </button>
+                </div>
+              ))
+            )}
           </section>
         )}
       </div>
