@@ -6,7 +6,7 @@ import { toast } from "react-toastify";
 
 const contactItems = [
   { label: "Mobile", value: "04 818 575 08" },
-  { label: "Phone", value: "+61 2 9909 6740" },
+  { label: "Phone", value: "+61 2 9070 1201" },
   { label: "Email", value: "sales@easylinksolar.com.au" },
   { label: "Website", value: "www.easylinksolar.com.au" },
 ];
