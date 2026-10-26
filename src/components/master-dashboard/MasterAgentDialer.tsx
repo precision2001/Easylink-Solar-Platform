@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
 import { useRecordingPlayback } from "@/hooks/useRecordingPlayback";
@@ -20,6 +20,10 @@ import {
   transcriptSettled,
   type CallTranscript,
 } from "@/lib/calls/transcript";
+import { CallListPanel } from "@/components/call-lists/CallListPanel";
+import { AiCallAssist, ScreenPop } from "@/components/contact-centre/DiallerPanels";
+import { CustomerAiSummary, IncomingTransfers, LiveTranscriptPanel, PresenceToggle, useLiveTranscript } from "@/components/contact-centre/LiveCalls";
+import type { AcceptedTransfer } from "@/components/contact-centre/api";
 
 /**
  * "Agent Dialer" from the Easylink Designer mock — the real call mechanics
@@ -83,14 +87,6 @@ type WrapUp = {
   sendSms: boolean;
 };
 
-
-const TIMELINE = [
-  { title: "AI qualification call · 2 min", meta: "Voxa Sales Qualifier · Tue 7 Oct · marked “hot”", color: "#F68A0A" },
-  { title: "SMS: quote link sent", meta: "Mon 6 Oct · delivered", color: "#1976D2" },
-  { title: "Solar design created", meta: "Mon 6 Oct · 10 kW + 13 kWh option", color: "#15803D" },
-  { title: "Web chat", meta: "Sun 5 Oct · Voxa Chat · asked about rebates", color: "#1976D2" },
-  { title: "Lead created", meta: "Sun 5 Oct · website quote form", color: "#64748B" },
-] as const;
 
 const SCRIPT_QUOTE =
   "“Under the federal Cheaper Home Batteries Program you could get a discount on a battery added to your existing solar. Can I check a few details about your system?”";
@@ -281,6 +277,9 @@ export function MasterAgentDialer() {
     muted,
     durationSec,
     recording,
+    room,
+    transferId,
+    join,
     dial,
     hangUp,
     toggleMute,
@@ -291,6 +290,31 @@ export function MasterAgentDialer() {
   const [queue, setQueue] = useState<QueueEntry[] | null>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [customer, setCustomer] = useState<CustomerLookup>({ status: "idle" });
+  // Bumped when a call ends so call lists and the screen pop reload.
+  const [listRefresh, setListRefresh] = useState(0);
+  const nextRef = useRef<(() => void) | null>(null);
+  // "Save & dial next" on a call list: the list picks the next person, then this dials them.
+  const dialAfterPick = useRef(false);
+  const [prevState, setPrevState] = useState(state);
+  if (prevState !== state) {
+    setPrevState(state);
+    if (state === "ended") setListRefresh((n) => n + 1);
+  }
+  // A call EasyLink AI handed over: who, and what the AI already found out.
+  const [handover, setHandover] = useState<AcceptedTransfer | null>(null);
+  const live = useLiveTranscript(room, state === "connected");
+  const takeCall = (t: AcceptedTransfer) => {
+    setHandover(t);
+    void join(t);
+  };
+  const pick = (phone: string) => {
+    if (callActive) return;
+    setInput(phone);
+    if (dialAfterPick.current) {
+      dialAfterPick.current = false;
+      void dial(phone);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -519,7 +543,12 @@ export function MasterAgentDialer() {
       }
 
       setWrapSave({ status: "saved" });
-      if (thenDialNext) {
+      setListRefresh((n) => n + 1);
+      if (thenDialNext && nextRef.current) {
+        // A call list is open: it picks the next person, and `pick` dials them.
+        dialAfterPick.current = true;
+        nextRef.current();
+      } else if (thenDialNext) {
         const next = queue?.find((q) => q.phone);
         if (next?.phone) {
           setInput(next.phone);
@@ -658,49 +687,21 @@ export function MasterAgentDialer() {
           Communication <span aria-hidden="true">/</span>{" "}
           <span className="font-semibold text-[#0F172A]">Agent Dialer</span>
         </nav>
+        <PresenceToggle onCall={callActive} />
       </header>
 
       <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 items-start gap-4 px-8 py-6 pb-14 lg:grid-cols-[260px_1fr_320px]">
-        {/* Up next queue — real leads with an upcoming follow-up */}
+        {/* Up next: follow-ups due, state lists and uploaded call lists */}
+        <div className="flex flex-col gap-4">
+        <CallListPanel
+          followUps={queue}
+          followUpsError={queueError}
+          disabled={callActive}
+          refreshKey={listRefresh}
+          nextRef={nextRef}
+          onPick={(phone) => pick(phone)}
+        />
         <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
-          <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Up next</h2>
-          <p className="m-0 text-[12px] leading-[17px] text-[#5B6B80]">
-            {queueError
-              ? queueError
-              : queue === null
-                ? "Loading…"
-                : `${queue.length} lead${queue.length === 1 ? "" : "s"} with an upcoming follow-up`}
-          </p>
-          <div className="flex flex-col divide-y divide-[#EEF2F6] border-t border-[#EEF2F6]">
-            {queue?.length === 0 ? (
-              <p className="py-3 text-[13px] text-[#5B6B80]">Nothing scheduled.</p>
-            ) : null}
-            {(queue ?? []).map((q) => (
-              <button
-                key={q.id}
-                type="button"
-                onClick={() => {
-                  if (!callActive && q.phone) setInput(q.phone);
-                }}
-                disabled={callActive || !q.phone}
-                className="flex items-start justify-between gap-2 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-[14px] font-bold text-[#0F172A]">{q.name}</span>
-                  <span className="text-[12px] text-[#5B6B80]">
-                    {q.suburb} · {q.note}
-                  </span>
-                </span>
-                <span className="shrink-0 text-[12px] text-[#5B6B80]">
-                  {new Date(q.followUpDate).toLocaleDateString("en-AU", {
-                    day: "numeric",
-                    month: "short",
-                  })}
-                </span>
-              </button>
-            ))}
-          </div>
-
           <div className="flex flex-col gap-1.5 border-t border-[#EEF2F6] pt-3">
             <span className="text-[13px] font-bold text-[#0F172A]">Manual dial</span>
             <div className="flex items-center gap-2">
@@ -742,9 +743,11 @@ export function MasterAgentDialer() {
             </div>
           </div>
         </section>
+        </div>
 
         {/* Live dialer — the real thing */}
         <section className="flex flex-col gap-4">
+          <IncomingTransfers enabled={!callActive} onAccepted={takeCall} />
           {callActive ? (
             // In-call: real number, real timer, real mute/hang-up. No "Recording ·
             // consent announced" line like the mock's — we don't record calls or
@@ -769,7 +772,7 @@ export function MasterAgentDialer() {
                 </span>
                 <div className="flex flex-col">
                   <span className="text-[16px] font-bold">{activeNumber}</span>
-                  <span className="text-[12px] text-[#9FB0C8]">Outbound call</span>
+                  <span className="text-[12px] text-[#9FB0C8]">{transferId ? "Handed over by EasyLink AI" : "Outbound call"}</span>
                 </div>
               </div>
 
@@ -803,7 +806,7 @@ export function MasterAgentDialer() {
                 >
                   {muted ? "Unmute" : "Mute"}
                 </button>
-                {["Hold", "Transfer", "Conference", "Keypad", "Pause rec", "Hand to AI"].map((label) => (
+                {["Hold", "Transfer", "Conference"].map((label) => (
                   <span
                     key={label}
                     title="Not built yet"
@@ -884,6 +887,16 @@ export function MasterAgentDialer() {
                 ) : null}
               </div>
             </div>
+          )}
+
+          {(callActive || live.lines.length > 0) && (
+            <LiveTranscriptPanel
+              lines={live.lines}
+              status={live.status}
+              note={live.note}
+              callerName={customer.status === "found" ? customer.lead.name : (handover?.callerName ?? null)}
+              handover={transferId ? (handover?.summary ?? null) : null}
+            />
           )}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -1105,6 +1118,7 @@ export function MasterAgentDialer() {
 
           <section className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
             <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Wrap-up &amp; disposition</h2>
+            <AiCallAssist key={callRecordId ?? "none"} callId={callActive ? null : callRecordId} />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1 text-[13px] text-[#334155]">
                 Outcome
@@ -1311,27 +1325,15 @@ export function MasterAgentDialer() {
             )}
           </section>
 
-          {/* Activity timeline — sample */}
-          <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="m-0 text-[14px] font-bold text-[#0F172A]">Timeline</h2>
-              <SampleTag />
-            </div>
-            <div className="flex flex-col gap-3">
-              {TIMELINE.map((t, i) => (
-                <div key={i} className="flex gap-2.5">
-                  <span
-                    className="mt-1 size-2 shrink-0 rounded-full"
-                    style={{ background: t.color }}
-                  />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-[12px] font-semibold text-[#0F172A]">{t.title}</span>
-                    <span className="text-[11px] text-[#5B6B80]">{t.meta}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
+          {customer.status === "found" && (
+            <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
+              <h2 className="m-0 text-[14px] font-bold text-[#0F172A]">Their record</h2>
+              <ScreenPop leadId={customer.lead.id} refreshKey={listRefresh} />
+            </section>
+          )}
+          {customer.status === "found" && (
+            <CustomerAiSummary key={customer.lead.id} portal="admin" leadId={customer.lead.id} compact />
+          )}
         </div>
       </div>
     </div>

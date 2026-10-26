@@ -1,5 +1,7 @@
 "use client";
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { aud, publicMarket, systemLine, type PublicDeal } from "@/lib/ai-platform/market";
 import RangeSlider from "react-range-slider-input";
 import "react-range-slider-input/dist/style.css";
 
@@ -183,7 +185,38 @@ function VisualRange({
   );
 }
 
+type Card = { href: string; badge: string; bestValue?: boolean; kw: string; title: string; description: string; price: string };
+const toCard = (d: PublicDeal): Card => ({
+  href: `/ready-deals/${encodeURIComponent(d.id)}`,
+  badge: d.badge ?? (d.system.battery ? `${d.system.battery.usableKwh} kWh` : "Ready Deal"),
+  bestValue: !!d.wasPrice,
+  kw: d.kw ? `${d.kw}kW` : d.system.battery ? `${d.system.battery.usableKwh} kWh` : "Deal",
+  title: d.title,
+  description: `${systemLine(d.system, d.kw)}. Installed by ${d.installerName}.`,
+  price: aud(d.price).slice(1),
+});
+
+/** Live, EasyLink-approved Ready Deals when there are any; the sample packages otherwise. */
+function useHomeDeals() {
+  const [live, setLive] = useState<PublicDeal[] | null>(null);
+  useEffect(() => {
+    publicMarket.deals().then(setLive).catch(() => setLive([]));
+  }, []);
+  if (!live?.length) {
+    return {
+      featured: { href: "/ready-deals", badge: "", kw: "10.1kW", title: "10kW Solar System + 20kW Battery", description: "TRINA VeRTEX S+ N-Type Dual Glass 440 watt panels. FOXESS EQ4880 - 14.64kW Battery. FOXESS 9.9kW Hybrid Inverter.", price: "6,565" } as Card,
+      battery: batteryDeals.map((d) => ({ ...d, href: "/ready-deals", kw: "" })) as Card[],
+      more: morePackages.map((d) => ({ ...d, href: "/ready-deals", badge: "" })) as Card[],
+    };
+  }
+  const cards = live.map(toCard);
+  const batteryIdx = live.map((d, i) => (d.type === "battery" ? i : -1)).filter((i) => i >= 0);
+  const rest = cards.filter((_, i) => i !== 0 && !batteryIdx.includes(i));
+  return { featured: cards[0]!, battery: batteryIdx.slice(0, 2).map((i) => cards[i]!), more: rest.slice(0, 6) };
+}
+
 export function SpecialDealsSection() {
+  const { featured, battery, more } = useHomeDeals();
   return (
     <section className="px-4 py-16 sm:px-6">
       <div className="mx-auto max-w-[1216px]">
@@ -229,39 +262,39 @@ export function SpecialDealsSection() {
         {/* Featured Deal */}
         <div className="mx-auto mt-10 max-w-[672px] rounded-2xl bg-white p-6 shadow-[0_8px_32px_-8px_rgba(17,28,39,0.12)]">
           <span className="inline-block rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-            10.1kW
+            {featured.kw}
           </span>
           <h3 className="mt-3 font-source-sans text-xl font-bold tracking-[-0.5px] text-ink sm:text-2xl">
-            10kW Solar System + 20kW Battery
+            {featured.title}
           </h3>
           <p className="mt-2 text-sm leading-relaxed text-muted">
-            TRINA VeRTEX S+ N-Type Dual Glass 440 watt panels. FOXESS EQ4880 -
-            14.64kW Battery. FOXESS 9.9kW Hybrid Inverter.
+            {featured.description}
           </p>
           <div className="mt-4 flex items-baseline gap-1">
             <span className="text-sm text-ink">A$</span>
             <span className="font-source-sans text-3xl font-bold text-ink">
-              6,565
+              {featured.price}
             </span>
             <span className="text-sm text-muted">/incl. installation</span>
           </div>
-          <button
-            className="mt-4 w-full rounded-xl py-2.5 text-center text-base font-semibold text-white"
+          <Link
+            href={featured.href}
+            className="mt-4 block w-full rounded-xl py-2.5 text-center text-base font-semibold text-white"
             style={{
               backgroundImage:
                 "linear-gradient(132deg, var(--color-brand-blue) 0%, var(--color-brand-teal) 100%)",
             }}
           >
             Buy Now
-          </button>
+          </Link>
         </div>
 
         {/* Battery Deals */}
-        <h3 className="mt-12 text-center font-source-sans text-2xl font-bold text-ink">
+        {battery.length > 0 && <h3 className="mt-12 text-center font-source-sans text-2xl font-bold text-ink">
           Battery Deals
-        </h3>
+        </h3>}
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
-          {batteryDeals.map((deal) => (
+          {battery.map((deal) => (
             <div
               key={deal.title}
               className="relative rounded-2xl bg-white p-6 shadow-[0_8px_32px_-8px_rgba(17,28,39,0.12)]"
@@ -291,15 +324,16 @@ export function SpecialDealsSection() {
                 <GreenCheck />
                 <span>Installation Included</span>
               </div>
-              <button
-                className="mt-4 w-full rounded-xl py-2.5 text-center text-base font-semibold text-white"
+              <Link
+                href={deal.href}
+                className="mt-4 block w-full rounded-xl py-2.5 text-center text-base font-semibold text-white"
                 style={{
                   backgroundImage:
                     "linear-gradient(132deg, var(--color-brand-blue) 0%, var(--color-brand-teal) 100%)",
                 }}
               >
                 Buy Now
-              </button>
+              </Link>
             </div>
           ))}
         </div>
@@ -309,7 +343,7 @@ export function SpecialDealsSection() {
           More Packages
         </h3>
         <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {morePackages.map((pkg) => (
+          {more.map((pkg) => (
             <div
               key={pkg.title}
               className="flex flex-col justify-between rounded-2xl bg-white p-6 shadow-[0_8px_32px_-8px_rgba(17,28,39,0.12)]"
@@ -338,11 +372,16 @@ export function SpecialDealsSection() {
                   <span>incl. installation</span>
                 </div>
               </div>
-              <button className="mt-4 w-full rounded-xl border-2 border-border-soft py-2.5 text-center text-sm font-semibold text-ink transition hover:bg-slate-50">
+              <Link href={pkg.href} className="mt-4 block w-full rounded-xl border-2 border-border-soft py-2.5 text-center text-sm font-semibold text-ink transition hover:bg-slate-50">
                 View Details
-              </button>
+              </Link>
             </div>
           ))}
+        </div>
+        <div className="mt-8 text-center">
+          <Link href="/ready-deals" className="inline-block rounded-xl border-2 border-primary px-6 py-2.5 font-source-sans text-base font-semibold text-primary hover:bg-primary/5">
+            See all Ready Deals for your postcode
+          </Link>
         </div>
       </div>
       <style jsx>{`

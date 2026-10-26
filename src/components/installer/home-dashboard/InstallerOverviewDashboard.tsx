@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAppSelector } from "@/lib/store/hooks";
+import { ReadySitesBanner } from "@/components/market/ReadySitesBanner";
 
 /**
  * Matches the Easylink Designer "Installer Account Overview" mock exactly
@@ -132,24 +133,7 @@ export function InstallerOverviewDashboard() {
         </span>
       </div>
 
-      <div className="rounded-[16px] bg-gradient-to-br from-[#FFE866] to-[#F68A0A] p-0.5">
-        <div className="flex flex-wrap items-center gap-3.5 rounded-[14px] bg-[#0B1A2E] px-[18px] py-3.5 text-white">
-          <span className="rounded-full bg-[#F68A0A] px-2.5 py-[3px] text-[11px] font-extrabold text-[#3B1D00]">
-            READY SITES
-          </span>
-          <span className="flex flex-[1_1_320px] flex-col">
-            <strong className="text-[16px]">4 confirmed customers in your service areas</strong>
-            <span className="text-[13px] text-[#E6EDF7]">
-              Kellyville 10.12 kW + 10 kWh · Castle Hill 13.2 kW + 20 kWh · Marsden Park 6.6 kW ·
-              $47,030 in contracts, $3,000 in deposits already paid
-            </span>
-          </span>
-          <span className="text-[12px] font-bold text-[#FFE866]">Elite head start ends in 4 h</span>
-          <span className="flex h-10 items-center rounded-[10px] bg-[#F68A0A] px-4 text-[14px] font-bold text-[#3B1D00]">
-            View Ready Sites
-          </span>
-        </div>
-      </div>
+      <ReadySitesBanner />
 
       <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
         {KPIS.map((k) => (
