@@ -64,7 +64,7 @@ export function ScreenPop({ leadId, refreshKey }: { leadId: string; refreshKey: 
         </div>
       )}
       <span className="text-[12px] text-[#5B6B80]">
-        {pop.counts.calls} calls · {pop.counts.texts} texts · {pop.counts.emails} emails
+        {pop.counts.calls} {pop.counts.calls === 1 ? "call" : "calls"} · {pop.counts.texts} {pop.counts.texts === 1 ? "text" : "texts"} · {pop.counts.emails} {pop.counts.emails === 1 ? "email" : "emails"}
       </span>
       <Link href={`/master/customers/${leadId}`} className="text-[13px] font-bold text-[#0B4A7A] no-underline hover:underline">
         Open customer record
