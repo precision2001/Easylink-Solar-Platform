@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useAdminDialler } from "@/hooks/useAdminDialler";
 import { CallListPanel } from "@/components/call-lists/CallListPanel";
 import { ScreenPop, WrapUp } from "@/components/contact-centre/DiallerPanels";
+import { CustomerAiSummary, IncomingTransfers, LiveTranscriptPanel, PresenceToggle, useLiveTranscript } from "@/components/contact-centre/LiveCalls";
+import type { AcceptedTransfer } from "@/components/contact-centre/api";
 
 /**
  * "Agent Dialer" from the Easylink Designer mock — the real call mechanics
@@ -50,24 +52,8 @@ const FIELDS = [
   { label: "Decision makers present", value: "Yes · Karen and partner" },
 ] as const;
 
-const TRANSCRIPT = [
-  { who: "Sam", text: "How much of your solar do you think gets used in the evening?", color: "#1565C0" },
-  { who: "Karen", text: "Not much, we are exporting most of it and the feed-in is tiny now.", color: "#B45309" },
-  { who: "Sam", text: "That is very common. A battery stores that for the evening.", color: "#1565C0" },
-  { who: "Karen", text: "It is the upfront cost I worry about, to be honest.", color: "#B45309" },
-] as const;
-
-
 const SCRIPT_QUOTE =
   "“Under the federal Cheaper Home Batteries Program you could get a discount on a battery added to your existing solar. Can I check a few details about your system?”";
-
-const SUGGESTED_REPLY =
-  "Offer a free on-site assessment: “With a 6.6 kW system and evening use that high, a 10–13 kWh battery is usually the sweet spot. Could our assessor visit Thursday or Friday?”";
-
-const DETECTED_TAGS = ["Detected: battery interest", "Bill ~$680/qtr", "Objection: upfront cost"] as const;
-
-
-
 
 const KEYPAD = [
   ["1", "2", "3"],
@@ -92,6 +78,9 @@ export function MasterAgentDialer() {
     muted,
     durationSec,
     callId,
+    room,
+    transferId,
+    join,
     dial,
     hangUp,
     toggleMute,
@@ -105,6 +94,13 @@ export function MasterAgentDialer() {
   // Bumped when a call ends so the call list reloads with the new outcome.
   const [listRefresh, setListRefresh] = useState(0);
   const nextRef = useRef<(() => void) | null>(null);
+  // A call EasyLink AI handed over: who, and what the AI already found out.
+  const [handover, setHandover] = useState<AcceptedTransfer | null>(null);
+  const live = useLiveTranscript(room, state === "connected");
+  const takeCall = (t: AcceptedTransfer) => {
+    setHandover(t);
+    void join(t);
+  };
   const [prevState, setPrevState] = useState(state);
   if (prevState !== state) {
     setPrevState(state);
@@ -189,6 +185,7 @@ export function MasterAgentDialer() {
           Communication <span aria-hidden="true">/</span>{" "}
           <span className="font-semibold text-[#0F172A]">Agent Dialer</span>
         </nav>
+        <PresenceToggle onCall={callActive} />
       </header>
 
       <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 items-start gap-4 px-8 py-6 pb-14 lg:grid-cols-[260px_1fr_320px]">
@@ -250,6 +247,7 @@ export function MasterAgentDialer() {
 
         {/* Live dialer — the real thing */}
         <section className="flex flex-col gap-4">
+          <IncomingTransfers enabled={!callActive} onAccepted={takeCall} />
           {callActive ? (
             // In-call: real number, real timer, real mute/hang-up. No "Recording ·
             // consent announced" line like the mock's — we don't record calls or
@@ -274,7 +272,7 @@ export function MasterAgentDialer() {
                 </span>
                 <div className="flex flex-col">
                   <span className="text-[16px] font-bold">{activeNumber}</span>
-                  <span className="text-[12px] text-[#9FB0C8]">Outbound call</span>
+                  <span className="text-[12px] text-[#9FB0C8]">{transferId ? "Handed over by EasyLink AI" : "Outbound call"}</span>
                 </div>
               </div>
 
@@ -307,7 +305,7 @@ export function MasterAgentDialer() {
                 >
                   {muted ? "Unmute" : "Mute"}
                 </button>
-                {["Hold", "Transfer", "Conference", "Keypad", "Pause rec", "Hand to AI"].map((label) => (
+                {["Hold", "Transfer", "Conference"].map((label) => (
                   <span
                     key={label}
                     title="Not built yet"
@@ -415,38 +413,13 @@ export function MasterAgentDialer() {
               </div>
             </section>
 
-            <section className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
-              <div className="flex items-center justify-between">
-                <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Voxa live assist</h2>
-                <span className="rounded-full bg-[#DCFCE7] px-2.5 py-1 text-[12px] font-semibold text-[#166534]">
-                  Sentiment: positive
-                </span>
-              </div>
-              <div className="flex flex-col gap-2">
-                {TRANSCRIPT.map((t, i) => (
-                  <div key={i} className="flex gap-2 text-[13px]">
-                    <span className="w-12 shrink-0 font-semibold" style={{ color: t.color }}>
-                      {t.who}
-                    </span>
-                    <span className="text-[#334155]">{t.text}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-col gap-1 rounded-[10px] bg-[#EFF6FF] p-3">
-                <span className="text-[13px] font-bold text-[#1D4ED8]">Suggested reply</span>
-                <p className="m-0 text-[13px] leading-[19px] text-[#1E3A5F]">{SUGGESTED_REPLY}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {DETECTED_TAGS.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-[#F1F5F9] px-2.5 py-1 text-[12px] text-[#475569]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </section>
+            <LiveTranscriptPanel
+              lines={live.lines}
+              status={live.status}
+              note={live.note}
+              callerName={customer.status === "found" ? customer.lead.name : (handover?.callerName ?? null)}
+              handover={transferId ? (handover?.summary ?? null) : null}
+            />
           </div>
 
           <section className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
@@ -508,6 +481,9 @@ export function MasterAgentDialer() {
               <h2 className="m-0 text-[14px] font-bold text-[#0F172A]">Their record</h2>
               <ScreenPop leadId={customer.lead.id} refreshKey={listRefresh} />
             </section>
+          )}
+          {customer.status === "found" && (
+            <CustomerAiSummary key={customer.lead.id} portal="admin" leadId={customer.lead.id} compact />
           )}
         </div>
       </div>

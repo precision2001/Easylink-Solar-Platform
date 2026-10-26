@@ -95,6 +95,11 @@ export type CustomerRecord = {
   timeline: TimelineItem[];
 };
 
+export type Presence = "AVAILABLE" | "BUSY" | "AWAY";
+export type PendingTransfer = { id: string; callerNumber: string; callerName: string | null; leadId: string | null; summary: string; reason: string | null; secondsLeft: number };
+export type AcceptedTransfer = { transferId: string; roomName: string; callerNumber: string; callerName: string | null; leadId: string | null; summary: string; token: string; url: string };
+export type LeadSummary = { summary: string; itemCount: number; updatedAt: string };
+
 export function cc(portal: Portal) {
   const base = `/api/${portal}/cc`;
   async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<{ data: T; meta?: Record<string, unknown> }> {
@@ -130,6 +135,15 @@ export function cc(portal: Portal) {
     },
     addFollowUp: (body: { kind: FollowUp["kind"]; title: string; notes?: string; leadId?: string; callId?: string; phone?: string; dueAt: string }) =>
       call<FollowUp>(`/follow-ups`, { method: "POST", json: body }).then((r) => r.data),
+    leadSummary: (leadId: string) => call<LeadSummary | null>(`/customer-records/${leadId}/summary`),
+    writeLeadSummary: (leadId: string) => call<LeadSummary>(`/customer-records/${leadId}/summary`, { method: "POST", json: {} }).then((r) => r.data),
+    presence: () => call<{ me: { status: Presence }; team: { userId: string; name: string; status: Presence; lastSeenAt: string }[] }>(`/live-calls/presence`).then((r) => r.data),
+    setPresence: (status: Presence) => call(`/live-calls/presence`, { method: "PUT", json: { status } }),
+    pendingTransfers: () => call<PendingTransfer[]>(`/live-calls/transfers/pending`).then((r) => r.data),
+    acceptTransfer: (id: string) => call<AcceptedTransfer>(`/live-calls/transfers/${id}/accept`, { method: "POST", json: {} }).then((r) => r.data),
+    declineTransfer: (id: string) => call(`/live-calls/transfers/${id}/decline`, { method: "POST", json: {} }),
+    hangUpTransfer: (id: string) => call(`/live-calls/transfers/${id}/hang-up`, { method: "POST", json: {} }),
+    liveTranscriptToken: () => call<{ token: string; expiresIn: number; language: string }>(`/live-calls/live-transcript/token`, { method: "POST", json: {} }).then((r) => r.data),
     setFollowUp: (id: string, body: Partial<Pick<FollowUp, "status" | "dueAt" | "title">>) => call(`/follow-ups/${id}`, { method: "PATCH", json: body }),
   };
 }

@@ -5,6 +5,7 @@ import { Btn, inputCls, Pill } from "@/components/jobs/ui";
 import { cc, day, outcomeLabel, phoneFmt, when, type CustomerRecord as Rec, type Portal, type TimelineItem } from "./api";
 import { CallDetailModal } from "./CallDetail";
 import { FollowUpForm } from "./FollowUpForm";
+import { CustomerAiSummary } from "./LiveCalls";
 
 const KIND_LABEL = { CALLBACK: "Call back", SITE_VISIT: "Site visit", TASK: "Task" } as const;
 const FILTERS: { key: string; label: string; kinds: TimelineItem["kind"][] }[] = [
@@ -146,6 +147,7 @@ export function CustomerRecordView({ portal, leadId, compact }: { portal: Portal
         </section>
 
         <div className="order-1 flex flex-col gap-4 lg:order-2">
+          <CustomerAiSummary portal={portal} leadId={leadId} itemCount={rec.timeline.length} compact={compact} />
           {rec.pinned.length > 0 && (
             <section className="flex flex-col gap-2 rounded-[14px] border border-[#FDE68A] bg-[#FFFBEB] p-4">
               <h2 className="m-0 text-[14px] font-bold text-[#92400E]">Pinned</h2>

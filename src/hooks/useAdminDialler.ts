@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
+import { ParticipantKind, Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
 import { resolveLiveKitServerUrl } from "@/lib/livekit/livekit-url";
 import { extractMessage, unwrapApiData } from "@/lib/customers/backend";
 
@@ -30,6 +30,11 @@ export function useAdminDialler() {
   const [durationSec, setDurationSec] = useState<number | null>(null);
   /** The backend's record of the latest call, kept after it ends for the wrap-up. */
   const [callId, setCallId] = useState<string | null>(null);
+  /** The live room, for the live transcript. */
+  const [room, setRoom] = useState<Room | null>(null);
+  /** Set while on a call EasyLink AI handed over: hang-up goes through the transfer. */
+  const [transferId, setTransferId] = useState<string | null>(null);
+  const transferRef = useRef<string | null>(null);
 
   const roomRef = useRef<Room | null>(null);
   const roomNameRef = useRef<string | null>(null);
@@ -39,6 +44,9 @@ export function useAdminDialler() {
   const teardown = useCallback(() => {
     roomRef.current?.disconnect();
     roomRef.current = null;
+    setRoom(null);
+    transferRef.current = null;
+    setTransferId(null);
     roomNameRef.current = null;
     audioElRef.current?.remove();
     audioElRef.current = null;
@@ -77,7 +85,10 @@ export function useAdminDialler() {
     hangingUpRef.current = true;
 
     const roomName = roomNameRef.current;
-    if (roomName) void releaseCarrierLeg(roomName);
+    const handedOver = transferRef.current;
+    if (handedOver) {
+      void fetch(`/api/admin/cc/live-calls/transfers/${handedOver}/hang-up`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => undefined);
+    } else if (roomName) void releaseCarrierLeg(roomName);
 
     teardown();
     setState("idle");
@@ -117,6 +128,7 @@ export function useAdminDialler() {
 
         const room = new Room();
         roomRef.current = room;
+        setRoom(room);
         roomNameRef.current = data.roomName;
         setCallId(data.callId ?? null);
         setActiveNumber(data.toNumber);
@@ -161,6 +173,57 @@ export function useAdminDialler() {
         const message =
           err instanceof Error ? err.message : "Could not place the call.";
         setError(message);
+        teardown();
+        setState("idle");
+      }
+    },
+    [state, teardown, markConnected],
+  );
+
+  /** Join a live call EasyLink AI handed over: the caller is already on the line. */
+  const join = useCallback(
+    async (t: { transferId: string; roomName: string; callerNumber: string; token: string; url?: string | null }) => {
+      if (state !== "idle") return;
+      setError(null);
+      const url = resolveLiveKitServerUrl(t.url);
+      if (!url) {
+        setError("Calling server URL is not configured. Set NEXT_PUBLIC_LIVEKIT_URL.");
+        return;
+      }
+      setState("dialling");
+      try {
+        const room = new Room();
+        roomRef.current = room;
+        roomNameRef.current = t.roomName;
+        transferRef.current = t.transferId;
+        setTransferId(t.transferId);
+        setRoom(room);
+        setCallId(null);
+        setActiveNumber(t.callerNumber);
+        room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+          if (track.kind !== Track.Kind.Audio) return;
+          const el = track.attach();
+          el.style.display = "none";
+          document.body.appendChild(el);
+          audioElRef.current = el as HTMLAudioElement;
+        });
+        // The caller's line leaving ends it; EasyLink AI leaving is expected.
+        room.on(RoomEvent.ParticipantDisconnected, (p) => {
+          if (hangingUpRef.current || p.kind !== ParticipantKind.SIP) return;
+          void fetch(`/api/admin/cc/live-calls/transfers/${t.transferId}/hang-up`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => undefined);
+          teardown();
+          setState("ended");
+        });
+        room.on(RoomEvent.Disconnected, () => {
+          if (hangingUpRef.current) return;
+          teardown();
+          setState("ended");
+        });
+        await room.connect(url, t.token);
+        markConnected();
+        await room.localParticipant.setMicrophoneEnabled(true);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not join the call.");
         teardown();
         setState("idle");
       }
@@ -219,6 +282,9 @@ export function useAdminDialler() {
     muted,
     durationSec,
     callId,
+    room,
+    transferId,
+    join,
     dial,
     hangUp,
     toggleMute,

@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { backendAuthedFetch, forwardBackendJson } from "@/lib/server/backend-authed-fetch";
 
 /** Staff relay to the backend's contact-centre routes: calls, customer records, follow-ups. */
-const ALLOWED = new Set(["call-records", "customer-records", "follow-ups", "calls"]);
+const ALLOWED = new Set(["call-records", "customer-records", "follow-ups", "calls", "live-calls"]);
 
 async function relay(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
@@ -19,4 +19,5 @@ async function relay(req: NextRequest, ctx: { params: Promise<{ path: string[] }
 export const GET = relay;
 export const POST = relay;
 export const PATCH = relay;
+export const PUT = relay;
 export const DELETE = relay;
