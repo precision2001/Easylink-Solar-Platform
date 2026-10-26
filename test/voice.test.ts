@@ -129,6 +129,36 @@ describe("voice calls", () => {
     expect((await w.voice("POST", "/voice/calls/c9/verify", { code })).status).toBe(200);
   });
 
+  it("save the call on the customer's record in the backend when it ends", async () => {
+    const w = await world();
+    await w.voice("POST", "/voice/calls", { callId: "pstn-c10", from: "0400000301" });
+    const r = await w.voice("POST", "/voice/calls/pstn-c10/end", {
+      durationSec: 61.4,
+      startedAt: "2026-10-27T01:00:00.000Z",
+      recordingKey: "calls/2026-10-27/pstn-c10.ogg",
+      messages: ["Wants a battery quote"],
+      turns: [
+        { who: "agent", text: "Hi, EasyLink AI" },
+        { who: "system", tool_result: "ok" },
+        { who: "caller", text: "Battery quote please" },
+      ],
+    });
+    expect(r.status).toBe(200);
+    const sent = w.backend.calls.find((x) => x.method === "POST" && x.path === "/call-records/ai");
+    expect(sent?.body).toMatchObject({
+      roomName: "pstn-c10",
+      from: "+61400000301",
+      durationSec: 61,
+      verified: false,
+      recordingKey: "calls/2026-10-27/pstn-c10.ogg",
+      messages: ["Wants a battery quote"],
+      transcript: [
+        { who: "agent", text: "Hi, EasyLink AI" },
+        { who: "caller", text: "Battery quote please" },
+      ],
+    });
+  });
+
   it("stop after five wrong codes", async () => {
     const w = await world();
     await w.voice("POST", "/voice/calls", { callId: "c6", from: "+61400000301" });

@@ -284,7 +284,7 @@ export function registerVoiceRoutes(app: Hono<Env>, c: Container, jobs: JobServi
 
   app.post("/voice/calls/:callId/end", async (ctx) => {
     try {
-      const b = z.object({ durationSec: z.number().min(0).max(36000).optional(), transcriptKey: z.string().max(300).optional(), recordingKey: z.string().max(300).optional(), summary: z.string().max(1000).optional(), jobId: z.string().max(80).optional(), messages: z.array(z.string().max(600)).max(10).optional() }).parse(await ctx.req.json().catch(() => ({})));
+      const b = z.object({ durationSec: z.number().min(0).max(36000).optional(), transcriptKey: z.string().max(300).optional(), recordingKey: z.string().max(300).optional(), summary: z.string().max(1000).optional(), jobId: z.string().max(80).optional(), messages: z.array(z.string().max(600)).max(10).optional(), startedAt: z.string().max(40).optional(), turns: z.array(z.object({ who: z.string().max(20), text: z.string().max(4000).optional() }).passthrough()).max(2000).optional() }).parse(await ctx.req.json().catch(() => ({})));
       const v = await load(ctx.req.param("callId") ?? "");
       if (!v) throw new JobError("Call not found", 404);
       Object.assign(v, { endedAt: new Date().toISOString(), transcriptKey: b.transcriptKey, recordingKey: b.recordingKey, summary: b.summary });
@@ -298,6 +298,23 @@ export function registerVoiceRoutes(app: Hono<Env>, c: Container, jobs: JobServi
         const mins = Math.max(1, Math.round((b.durationSec ?? 0) / 60));
         await jobs.noteCall(b.jobId, v.principal, `Phone call with ${v.firstName || v.kind} (${mins} min)`, [b.summary, b.recordingKey && `Recording: ${b.recordingKey}`, b.transcriptKey && `Transcript: ${b.transcriptKey}`].filter(Boolean).join("\n"));
       }
+      // Save the call on the customer's record in the backend (phase 1 contact centre). Best effort:
+      // a backend without /call-records yet answers 404 and nothing else is affected.
+      const spoken = (b.turns ?? []).filter((t) => (t.who === "agent" || t.who === "caller") && t.text?.trim()).map((t) => ({ who: t.who as "agent" | "caller", text: String(t.text) }));
+      await c.backend
+        .call("POST", "/call-records/ai", {
+          roomName: v.id,
+          from: v.phone,
+          startedAt: b.startedAt ?? v.startedAt,
+          endedAt: v.endedAt,
+          durationSec: b.durationSec !== undefined ? Math.round(b.durationSec) : undefined,
+          verified: v.verified,
+          summary: b.summary || undefined,
+          recordingKey: b.recordingKey,
+          transcript: spoken.length ? spoken : undefined,
+          messages: b.messages?.length ? b.messages : undefined,
+        }, svc)
+        .catch((e) => console.error("voice call record", e));
       return ctx.json({ success: true, message: "OK", data: { saved: true } });
     } catch (e) {
       return fail(ctx, e);
