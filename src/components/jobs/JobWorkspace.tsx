@@ -1,5 +1,6 @@
 "use client";
 
+import { CustomerRecordView } from "@/components/contact-centre/CustomerRecord";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AiNotConnectedError, type AiPortal } from "@/lib/ai-platform/client";
@@ -15,7 +16,10 @@ import { DealOrderPanel } from "@/components/market/DealOrderPanel";
  * The AI platform decides what each person sees and may do; this screen shows
  * the journey, the person's next steps, and a tab per part of the job.
  */
-type Tab = "journey" | "invoices" | "documents" | "delivery" | "onsite" | "closeout" | "monitoring" | "matching";
+type Tab = "journey" | "invoices" | "documents" | "delivery" | "onsite" | "closeout" | "monitoring" | "matching" | "calls";
+
+/** Backend lead IDs are UUIDs; jobs made before they had one have none to show calls for. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const TAB_OF: Record<string, Tab> = {
   design_selected: "journey",
@@ -63,6 +67,7 @@ export function JobWorkspace({ portal, jobId, backHref }: { portal: AiPortal; jo
     ["closeout", "STCs and handover"],
     ["monitoring", "Monitoring"],
     ...(v.viewer === "staff" ? ([["matching", "Matching"]] as [Tab, string][]) : []),
+    ...(!customer && UUID.test(j.leadId) ? ([["calls", "Calls and notes"]] as [Tab, string][]) : []),
   ];
   const mine = v.next;
   const offer = v.viewer === "installer" ? v.offers.find((o) => o.status === "open") : undefined;
@@ -133,6 +138,7 @@ export function JobWorkspace({ portal, jobId, backHref }: { portal: AiPortal; jo
           {tab === "closeout" && <CloseOutPanel portal={portal} ctl={ctl} view={v} />}
           {tab === "monitoring" && <MonitoringPanel ctl={ctl} view={v} />}
           {tab === "matching" && <MatchingPanel ctl={ctl} view={v} />}
+          {tab === "calls" && <CustomerRecordView portal={v.viewer === "staff" ? "admin" : "installers"} leadId={j.leadId} compact />}
         </div>
       </div>}
     </section>

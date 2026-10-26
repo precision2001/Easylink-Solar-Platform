@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAdminDialler } from "@/hooks/useAdminDialler";
 import { CallListPanel } from "@/components/call-lists/CallListPanel";
+import { ScreenPop, WrapUp } from "@/components/contact-centre/DiallerPanels";
 
 /**
  * "Agent Dialer" from the Easylink Designer mock — the real call mechanics
@@ -56,13 +57,6 @@ const TRANSCRIPT = [
   { who: "Karen", text: "It is the upfront cost I worry about, to be honest.", color: "#B45309" },
 ] as const;
 
-const TIMELINE = [
-  { title: "AI qualification call · 2 min", meta: "Voxa Sales Qualifier · Tue 7 Oct · marked “hot”", color: "#F68A0A" },
-  { title: "SMS: quote link sent", meta: "Mon 6 Oct · delivered", color: "#1976D2" },
-  { title: "Solar design created", meta: "Mon 6 Oct · 10 kW + 13 kWh option", color: "#15803D" },
-  { title: "Web chat", meta: "Sun 5 Oct · Voxa Chat · asked about rebates", color: "#1976D2" },
-  { title: "Lead created", meta: "Sun 5 Oct · website quote form", color: "#64748B" },
-] as const;
 
 const SCRIPT_QUOTE =
   "“Under the federal Cheaper Home Batteries Program you could get a discount on a battery added to your existing solar. Can I check a few details about your system?”";
@@ -72,21 +66,8 @@ const SUGGESTED_REPLY =
 
 const DETECTED_TAGS = ["Detected: battery interest", "Bill ~$680/qtr", "Objection: upfront cost"] as const;
 
-const OUTCOME_OPTIONS = [
-  "Site visit booked",
-  "Call back later",
-  "Not interested",
-  "Voicemail left",
-  "Do not call",
-] as const;
 
-const INSTALLER_OPTIONS = [
-  "[Installer partner – Hills District]",
-  "[Installer partner – North West]",
-] as const;
 
-const WRAPUP_NOTES =
-  "6.6 kW system installed 2019, Fronius inverter. Evening usage high (2 teenagers, pool pump). Interested in 13 kWh battery if rebate applies. Concerned about upfront cost – mention finance options at visit.";
 
 const KEYPAD = [
   ["1", "2", "3"],
@@ -101,13 +82,6 @@ function formatDuration(totalSec: number) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-function SampleTag() {
-  return (
-    <span className="rounded-full bg-[#DBEAFE] px-2 py-0.5 text-[10px] font-bold text-[#1E40AF]">
-      Sample
-    </span>
-  );
-}
 
 export function MasterAgentDialer() {
   const [input, setInput] = useState("");
@@ -117,6 +91,7 @@ export function MasterAgentDialer() {
     activeNumber,
     muted,
     durationSec,
+    callId,
     dial,
     hangUp,
     toggleMute,
@@ -129,6 +104,7 @@ export function MasterAgentDialer() {
   const [customer, setCustomer] = useState<CustomerLookup>({ status: "idle" });
   // Bumped when a call ends so the call list reloads with the new outcome.
   const [listRefresh, setListRefresh] = useState(0);
+  const nextRef = useRef<(() => void) | null>(null);
   const [prevState, setPrevState] = useState(state);
   if (prevState !== state) {
     setPrevState(state);
@@ -223,6 +199,7 @@ export function MasterAgentDialer() {
           followUpsError={queueError}
           disabled={callActive}
           refreshKey={listRefresh}
+          nextRef={nextRef}
           onPick={(phone) => {
             if (!callActive) setInput(phone);
           }}
@@ -473,64 +450,13 @@ export function MasterAgentDialer() {
           </div>
 
           <section className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
-            <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Wrap-up &amp; disposition</h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <label className="flex flex-col gap-1 text-[13px] text-[#334155]">
-                Outcome
-                <select
-                  defaultValue={OUTCOME_OPTIONS[0]}
-                  className="h-10 rounded-[10px] border border-[#CBD5E1] bg-white px-3 text-[13px] text-[#0F172A]"
-                >
-                  {OUTCOME_OPTIONS.map((o) => (
-                    <option key={o}>{o}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-[13px] text-[#334155]">
-                Appointment
-                <input
-                  readOnly
-                  value="Thu 16 Oct · 10:00 am"
-                  className="h-10 rounded-[10px] border border-[#CBD5E1] bg-white px-3 text-[13px] text-[#0F172A]"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-[13px] text-[#334155]">
-                Assign to installer
-                <select className="h-10 rounded-[10px] border border-[#CBD5E1] bg-white px-3 text-[13px] text-[#0F172A]">
-                  {INSTALLER_OPTIONS.map((o) => (
-                    <option key={o}>{o}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <label className="flex flex-col gap-1 text-[13px] text-[#334155]">
-              Notes (AI draft – edit before saving)
-              <textarea
-                defaultValue={WRAPUP_NOTES}
-                rows={3}
-                className="rounded-[10px] border border-[#CBD5E1] bg-white p-3 text-[13px] leading-[19px] text-[#0F172A]"
-              />
-            </label>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="flex items-center gap-2 text-[13px] text-[#334155]">
-                <input type="checkbox" defaultChecked className="size-4" />
-                Send SMS confirmation (includes STOP opt-out)
-              </label>
-              <div className="flex gap-2">
-                <span
-                  title="Not built yet — no CRM/disposition backend connected"
-                  className="flex h-10 cursor-not-allowed items-center rounded-[10px] border border-[#CBD5E1] bg-white px-4 text-[13px] font-semibold text-[#94A3B8]"
-                >
-                  Save &amp; pause
-                </span>
-                <span
-                  title="Not built yet — no CRM/disposition backend connected"
-                  className="flex h-10 cursor-not-allowed items-center rounded-[10px] bg-[#F68A0A]/60 px-4 text-[13px] font-bold text-[#3B1D00]/60"
-                >
-                  Save &amp; dial next
-                </span>
-              </div>
-            </div>
+            <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Wrap-up</h2>
+            <WrapUp
+              key={callId ?? "none"}
+              callId={callActive ? null : callId}
+              onSaved={() => setListRefresh((n) => n + 1)}
+              onNext={() => nextRef.current?.()}
+            />
           </section>
         </section>
 
@@ -577,27 +503,12 @@ export function MasterAgentDialer() {
             )}
           </section>
 
-          {/* Activity timeline — sample */}
-          <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="m-0 text-[14px] font-bold text-[#0F172A]">Timeline</h2>
-              <SampleTag />
-            </div>
-            <div className="flex flex-col gap-3">
-              {TIMELINE.map((t, i) => (
-                <div key={i} className="flex gap-2.5">
-                  <span
-                    className="mt-1 size-2 shrink-0 rounded-full"
-                    style={{ background: t.color }}
-                  />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-[12px] font-semibold text-[#0F172A]">{t.title}</span>
-                    <span className="text-[11px] text-[#5B6B80]">{t.meta}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
+          {customer.status === "found" && (
+            <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
+              <h2 className="m-0 text-[14px] font-bold text-[#0F172A]">Their record</h2>
+              <ScreenPop leadId={customer.lead.id} refreshKey={listRefresh} />
+            </section>
+          )}
         </div>
       </div>
     </div>

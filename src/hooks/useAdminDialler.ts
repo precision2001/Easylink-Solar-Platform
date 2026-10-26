@@ -28,6 +28,8 @@ export function useAdminDialler() {
   const [muted, setMuted] = useState(false);
   /** Seconds since the far end picked up — null until then. */
   const [durationSec, setDurationSec] = useState<number | null>(null);
+  /** The backend's record of the latest call, kept after it ends for the wrap-up. */
+  const [callId, setCallId] = useState<string | null>(null);
 
   const roomRef = useRef<Room | null>(null);
   const roomNameRef = useRef<string | null>(null);
@@ -116,6 +118,7 @@ export function useAdminDialler() {
         const room = new Room();
         roomRef.current = room;
         roomNameRef.current = data.roomName;
+        setCallId(data.callId ?? null);
         setActiveNumber(data.toNumber);
 
         // The phone joining as a SIP participant is what "answered" means here.
@@ -215,6 +218,7 @@ export function useAdminDialler() {
     activeNumber,
     muted,
     durationSec,
+    callId,
     dial,
     hangUp,
     toggleMute,

@@ -155,7 +155,7 @@ const GROUPS: NavGroup[] = [
       { key: "cc", label: "Contact Centre", icon: "headset", href: "/master/contact-centre" },
       { key: "dialer", label: "Agent Dialer", icon: "phone", href: "/master/dialer" },
       { key: "calls", label: "Calls", icon: "phone", href: "/master/calls" },
-      { key: "lists", label: "Contact lists", icon: "upload" },
+      { key: "lists", label: "Contact lists", icon: "upload", href: "/master/dialer" },
       { key: "inbox", label: "Inbox", icon: "chat", badge: "6" },
     ],
   },

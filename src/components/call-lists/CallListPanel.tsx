@@ -30,6 +30,7 @@ export function CallListPanel({
   disabled,
   refreshKey,
   onPick,
+  nextRef,
 }: {
   followUps: FollowUp[] | null;
   followUpsError: string | null;
@@ -37,6 +38,8 @@ export function CallListPanel({
   /** Changes when a call ends, so the list reloads with the new outcome. */
   refreshKey: number;
   onPick: (phone: string, who: { leadId?: string; name: string }) => void;
+  /** Filled with this panel's "Call next", so the wrap-up's "Save and call next" can use it. */
+  nextRef?: { current: (() => void) | null };
 }) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [key, setKey] = useState("followups");
@@ -90,6 +93,11 @@ export function CallListPanel({
       setNotice(e instanceof Error ? e.message : "Couldn't get the next person");
     }
   };
+
+  useEffect(() => {
+    if (!nextRef) return;
+    nextRef.current = key === "followups" ? null : () => void callNext();
+  });
 
   const skip = async (c: ListContact) => {
     if (!c.entryId) return;
