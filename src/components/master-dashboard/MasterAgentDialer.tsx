@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAdminDialler } from "@/hooks/useAdminDialler";
+import { CallListPanel } from "@/components/call-lists/CallListPanel";
 
 /**
  * "Agent Dialer" from the Easylink Designer mock — the real call mechanics
@@ -126,6 +127,13 @@ export function MasterAgentDialer() {
   const [queue, setQueue] = useState<QueueEntry[] | null>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [customer, setCustomer] = useState<CustomerLookup>({ status: "idle" });
+  // Bumped when a call ends so the call list reloads with the new outcome.
+  const [listRefresh, setListRefresh] = useState(0);
+  const [prevState, setPrevState] = useState(state);
+  if (prevState !== state) {
+    setPrevState(state);
+    if (state === "ended") setListRefresh((n) => n + 1);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -208,46 +216,18 @@ export function MasterAgentDialer() {
       </header>
 
       <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 items-start gap-4 px-8 py-6 pb-14 lg:grid-cols-[260px_1fr_320px]">
-        {/* Up next queue — real leads with an upcoming follow-up */}
+        {/* Up next: follow-ups due, state lists and uploaded call lists */}
+        <div className="flex flex-col gap-4">
+        <CallListPanel
+          followUps={queue}
+          followUpsError={queueError}
+          disabled={callActive}
+          refreshKey={listRefresh}
+          onPick={(phone) => {
+            if (!callActive) setInput(phone);
+          }}
+        />
         <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
-          <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Up next</h2>
-          <p className="m-0 text-[12px] leading-[17px] text-[#5B6B80]">
-            {queueError
-              ? queueError
-              : queue === null
-                ? "Loading…"
-                : `${queue.length} lead${queue.length === 1 ? "" : "s"} with an upcoming follow-up`}
-          </p>
-          <div className="flex flex-col divide-y divide-[#EEF2F6] border-t border-[#EEF2F6]">
-            {queue?.length === 0 ? (
-              <p className="py-3 text-[13px] text-[#5B6B80]">Nothing scheduled.</p>
-            ) : null}
-            {(queue ?? []).map((q) => (
-              <button
-                key={q.id}
-                type="button"
-                onClick={() => {
-                  if (!callActive && q.phone) setInput(q.phone);
-                }}
-                disabled={callActive || !q.phone}
-                className="flex items-start justify-between gap-2 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-[14px] font-bold text-[#0F172A]">{q.name}</span>
-                  <span className="text-[12px] text-[#5B6B80]">
-                    {q.suburb} · {q.note}
-                  </span>
-                </span>
-                <span className="shrink-0 text-[12px] text-[#5B6B80]">
-                  {new Date(q.followUpDate).toLocaleDateString("en-AU", {
-                    day: "numeric",
-                    month: "short",
-                  })}
-                </span>
-              </button>
-            ))}
-          </div>
-
           <div className="flex flex-col gap-1.5 border-t border-[#EEF2F6] pt-3">
             <span className="text-[13px] font-bold text-[#0F172A]">Manual dial</span>
             <div className="flex items-center gap-2">
@@ -289,6 +269,7 @@ export function MasterAgentDialer() {
             </div>
           </div>
         </section>
+        </div>
 
         {/* Live dialer — the real thing */}
         <section className="flex flex-col gap-4">

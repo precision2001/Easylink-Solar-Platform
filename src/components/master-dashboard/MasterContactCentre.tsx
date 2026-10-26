@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import Icon from "@/components/ui/Icons";
+import { UploadCallList } from "@/components/call-lists/UploadCallList";
 
 type Tone = { bg: string; fg: string };
 
@@ -81,8 +83,16 @@ function Badge({ children, tone }: { children: React.ReactNode; tone: Tone }) {
 }
 
 export function MasterContactCentre() {
+  const [uploading, setUploading] = useState(false);
+  const [uploaded, setUploaded] = useState<string | null>(null);
   return (
     <div className="flex min-h-full flex-col">
+      {uploading && (
+        <UploadCallList
+          onClose={() => setUploading(false)}
+          onDone={(r) => setUploaded(`${r.entries} people added to \u201c${r.name}\u201d. Pick it under Up next in the Agent Dialer.`)}
+        />
+      )}
       <header className="flex flex-wrap items-center gap-3 border-b border-[#E3E8EF] bg-white px-8 py-3.5">
         <nav aria-label="Breadcrumb" className="flex-grow text-[13px] text-[#5B6B80]">
           Communication <span aria-hidden="true">/</span>{" "}
@@ -105,12 +115,13 @@ export function MasterContactCentre() {
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2.5">
-            <span
-              title="Uploading contact lists isn't built yet"
-              className="flex h-10 cursor-not-allowed items-center rounded-[10px] border border-[#CBD5E1] bg-white px-4 text-[14px] font-semibold text-[#94A3B8]"
+            <button
+              type="button"
+              onClick={() => setUploading(true)}
+              className="flex h-10 items-center rounded-[10px] border border-[#CBD5E1] bg-white px-4 text-[14px] font-semibold text-[#0F172A] hover:bg-[#F8FAFC]"
             >
               Upload contacts
-            </span>
+            </button>
             <span
               title="Outbound campaigns aren't built yet"
               className="flex h-10 cursor-not-allowed items-center rounded-[10px] border border-[#CBD5E1] bg-white px-4 text-[14px] font-semibold text-[#94A3B8]"
@@ -126,6 +137,8 @@ export function MasterContactCentre() {
             </Link>
           </div>
         </div>
+
+        {uploaded && <p className="m-0 rounded-[10px] bg-[#DCFCE7] px-3 py-2 text-[13px] font-semibold text-[#166534]">{uploaded}</p>}
 
         <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
           {KPIS.map((k) => (
