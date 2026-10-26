@@ -104,6 +104,8 @@ def receptionist(ctx: llm.ChatContext) -> Decision:
         return ("tool", "text_link", {"what": "pay"})
     if "pay by card" in t:
         return ("tool", "do_step", {"step": "pay_invoice"})
+    if "speak to a person" in t:
+        return ("tool", "transfer_to_person", {"summary": item.content[0], "reason": "asked for a person"})
     if "call me back" in t:
         return ("tool", "leave_message", {"message": item.content[0]})
     return ("say", "Could you tell me a bit more?")

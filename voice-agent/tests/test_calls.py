@@ -129,3 +129,16 @@ def test_call_folder_uses_sydney_date():
 
     # 22 Oct 2026, 2pm UTC is 23 Oct, 1am in Sydney.
     assert call_prefix(datetime(2026, 10, 22, 14, 0, tzinfo=timezone.utc)) == "calls/2026-10-23"
+
+
+async def test_asking_for_a_person_with_nobody_free_books_a_callback(platform_url, outbox):
+    p, agent, session = await call(platform_url, "pstn-test-person", "0412 555 000")
+    agent.poll_seconds = 0.01
+    async with session:
+        await session.start(agent)
+        r = await session.run(user_input="Can I speak to a person about a battery?")
+        events = tool_events(r)
+        assert events[0] == ("call", "transfer_to_person")
+        assert events[1][0] == "ok" and "call back" in events[1][1]
+        assert agent.handed_to is None
+    await p.aclose()

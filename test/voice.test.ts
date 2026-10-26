@@ -159,6 +159,47 @@ describe("voice calls", () => {
     });
   });
 
+  it("hand the call to a person who accepts, and note it on the call record", async () => {
+    const w = await world();
+    let status = "RINGING";
+    w.backend.routes.push((method, path, body) => {
+      if (method === "POST" && path === "/live-calls/transfers") return { ok: true, status: 201, data: { transferId: "tr_1", offered: true, status: "RINGING", ringSeconds: 30, sent: body } };
+      if (method === "GET" && path === "/live-calls/transfers/tr_1") return { ok: true, status: 200, data: { status, acceptedBy: status === "ACCEPTED" ? "Sujay" : null } };
+      return undefined;
+    });
+    await w.voice("POST", "/voice/calls", { callId: "pstn-t1", from: "0400000301" });
+    const offer = await w.voice("POST", "/voice/calls/pstn-t1/transfer", { summary: "Wants to book a site visit", reason: "Ready to book" });
+    expect(offer.body.data).toEqual({ offered: true, status: "RINGING", ringSeconds: 30 });
+    expect(w.backend.calls.find((x) => x.path === "/live-calls/transfers")?.body).toMatchObject({ roomName: "pstn-t1", callerNumber: "+61400000301", summary: "Wants to book a site visit" });
+    expect((await w.voice("GET", "/voice/calls/pstn-t1/transfer")).body.data.status).toBe("RINGING");
+    status = "ACCEPTED";
+    expect((await w.voice("GET", "/voice/calls/pstn-t1/transfer")).body.data).toEqual({ status: "ACCEPTED", acceptedBy: "Sujay" });
+    await w.voice("POST", "/voice/calls/pstn-t1/end", { summary: "Caller wants a site visit." });
+    expect(w.backend.calls.some((x) => x.path.endsWith("/cancel"))).toBe(false);
+    expect((w.backend.calls.find((x) => x.path === "/call-records/ai")?.body as { summary: string }).summary).toBe("Caller wants a site visit. Handed to Sujay, who took over the call.");
+  });
+
+  it("cancel the transfer when the caller hangs up while waiting, so they're called back", async () => {
+    const w = await world();
+    w.backend.routes.push((method, path) => {
+      if (method === "POST" && path === "/live-calls/transfers") return { ok: true, status: 201, data: { transferId: "tr_2", offered: true, status: "RINGING", ringSeconds: 30 } };
+      if (method === "POST" && path === "/live-calls/transfers/tr_2/cancel") return { ok: true, status: 200, data: { status: "CANCELLED" } };
+      return undefined;
+    });
+    await w.voice("POST", "/voice/calls", { callId: "pstn-t2", from: "0400000301" });
+    await w.voice("POST", "/voice/calls/pstn-t2/transfer", { summary: "Question about rebates" });
+    await w.voice("POST", "/voice/calls/pstn-t2/end", {});
+    expect(w.backend.calls.find((x) => x.path === "/live-calls/transfers/tr_2/cancel")?.body).toEqual({ reason: "the caller hung up while waiting" });
+  });
+
+  it("say so when the backend can't take a transfer", async () => {
+    const w = await world();
+    w.backend.routes.push((method, path) => (path === "/live-calls/transfers" ? { ok: false, status: 404, data: null, message: "Not found" } : undefined));
+    await w.voice("POST", "/voice/calls", { callId: "pstn-t3", from: "0400000301" });
+    const r = await w.voice("POST", "/voice/calls/pstn-t3/transfer", { summary: "x" });
+    expect(r.status).toBe(404);
+  });
+
   it("stop after five wrong codes", async () => {
     const w = await world();
     await w.voice("POST", "/voice/calls", { callId: "c6", from: "+61400000301" });
