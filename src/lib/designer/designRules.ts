@@ -31,6 +31,13 @@ export const DESIGN_RULES = {
   defaultRoofPitchDeg: 22.5,
   /** Pitches above this are treated as data noise and capped. */
   maxRoofPitchDeg: 45,
+  /**
+   * Alignment rule: every array's rows run parallel to the building's main
+   * walls. A roof whose own edge is within this many degrees of the main axis
+   * (or of the axis at 90° to it) is snapped onto it; only a genuinely angled
+   * wing beyond this keeps its own edge.
+   */
+  alignmentSnapDeg: 30,
 } as const;
 
 /**

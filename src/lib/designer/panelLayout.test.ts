@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  alignedRowAngles,
   generatePanelsForRoofPolygon,
   generatePanelsForRoofs,
 } from "@/lib/designer/panelLayout";
@@ -97,6 +98,49 @@ describe("roof pitch", () => {
     expect(roofPitchDegrees(undefined)).toBe(22.5);
     expect(roofPitchDegrees([{ pitchDegrees: 30, areaM2: 50 }], true)).toBe(22.5);
     expect(roofPitchDegrees([{ pitchDegrees: 70, areaM2: 50 }])).toBe(45);
+  });
+});
+
+/** `w` x `h` m rectangle rotated `deg` (counter-clockwise) about its corner, offset `dx` m east. */
+function rotatedRect(w: number, h: number, deg: number, dx = 0) {
+  const a = (deg * Math.PI) / 180;
+  const pt = (x: number, y: number) => {
+    const rx = x * Math.cos(a) - y * Math.sin(a) + dx;
+    const ry = x * Math.sin(a) + y * Math.cos(a);
+    return { lat: LAT0 + ry / M_PER_LAT, lng: LNG0 + rx / M_PER_LNG };
+  };
+  return [pt(0, 0), pt(w, 0), pt(w, h), pt(0, h)];
+}
+
+const norm = (deg: number) => ((Math.round(deg) % 180) + 180) % 180;
+
+describe("alignment rule", () => {
+  it("snaps a slightly skewed wing onto the house's main axis", () => {
+    // Main roof runs east–west; a wing traced 20° off it lines up with it.
+    const [main, wing] = alignedRowAngles([rect(14, 8), rotatedRect(5, 3, 20, 20)]);
+    expect(norm(main)).toBe(0);
+    expect(norm(wing)).toBe(0);
+  });
+
+  it("keeps a wing at 90° on the perpendicular axis", () => {
+    const [, wing] = alignedRowAngles([rect(14, 8), rotatedRect(5, 3, 88, 20)]);
+    expect(norm(wing)).toBe(90);
+  });
+
+  it("leaves a genuinely angled wing (over 30°) on its own edge", () => {
+    const [, wing] = alignedRowAngles([rect(14, 8), rotatedRect(5, 3, 40, 20)]);
+    expect(norm(wing)).toBe(40);
+  });
+
+  it("draws every panel of an aligned design at the same angle", () => {
+    const panels = generatePanelsForRoofs(
+      [rect(14, 8), rotatedRect(6, 4, 15, 20)],
+      PANEL,
+      { orientation: "PORTRAIT" },
+    );
+    expect(new Set(panels.map((p) => norm(p.rotationDegrees ?? 0)))).toEqual(
+      new Set([0]),
+    );
   });
 });
 
