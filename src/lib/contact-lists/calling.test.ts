@@ -220,11 +220,11 @@ describe("the four options quoted on the call", () => {
     for (const o of opts) expect(o.ratio).toBeLessThanOrEqual(o.limitPercent);
   });
 
-  it("allows 200% with a battery, 133% without", () => {
+  it("allows 200% with a hybrid or battery, 133% with neither", () => {
     const byKey = Object.fromEntries(opts.map((o) => [o.key, o.limitPercent]));
     expect(byKey.bill).toBe(200);
     expect(byKey.max).toBe(200);
-    expect(opts.find((o) => o.battery === 0)?.limitPercent).toBe(133);
+    expect(opts.find((o) => !o.hybrid && o.battery === 0)?.limitPercent).toBe(133);
   });
 
   it("leads with Bill-Buster", () => {
@@ -258,7 +258,7 @@ describe("the deal panel", () => {
     expect(d.oversized).toBe(false);
   });
 
-  it("no longer flags 138% now the battery limit is 200%", () => {
+  it("no longer flags 138% now the hybrid limit is 200%", () => {
     // 31 panels on a 9.9 kW hybrid with a battery is 138%.
     const d = dealValue(31);
     expect(d.ratio).toBe(138);

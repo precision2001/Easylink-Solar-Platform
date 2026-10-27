@@ -1512,27 +1512,26 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   {data?.estimated ? " (assumed)" : ""}
                 </p>
                 <p>
-                  With a battery: inverter from{" "}
-                  {inverterSizing.minInverterKwWithBattery.toFixed(1)} kW (
-                  {Math.round(DESIGN_RULES.dcAcRatioWithBattery * 100)}% sizing),{" "}
-                  {inverterSizing.phasesWithBattery === 1
+                  Hybrid inverter or battery: from{" "}
+                  {inverterSizing.minInverterKwHybridOrBattery.toFixed(1)} kW (
+                  {Math.round(DESIGN_RULES.dcAcRatioHybridOrBattery * 100)}% sizing),{" "}
+                  {inverterSizing.phasesHybridOrBattery === 1
                     ? "single phase"
                     : "three phase"}
                   .
                 </p>
                 <p>
-                  Without a battery: inverter from{" "}
-                  {inverterSizing.minInverterKwWithoutBattery.toFixed(1)} kW (
-                  {Math.round(DESIGN_RULES.dcAcRatioWithoutBattery * 100)}% STC
+                  Standard inverter, no battery: from{" "}
+                  {inverterSizing.minInverterKwStandard.toFixed(1)} kW (
+                  {Math.round(DESIGN_RULES.dcAcRatioStandard * 100)}% STC
                   limit),{" "}
-                  {inverterSizing.phasesWithoutBattery === 1
+                  {inverterSizing.phasesStandard === 1
                     ? "single phase"
                     : "three phase"}
                   .
                 </p>
                 <p className="text-ink/60">
-                  200% needs a battery (AC or DC coupled) and an inverter rated
-                  for it. Export up to {DESIGN_RULES.exportLimitKwPerPhase} kW per
+                  200% needs an inverter rated for it. Export up to {DESIGN_RULES.exportLimitKwPerPhase} kW per
                   phase.
                 </p>
               </div>

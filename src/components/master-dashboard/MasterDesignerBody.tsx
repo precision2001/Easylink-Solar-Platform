@@ -6,7 +6,7 @@ import {
   BATTERIES,
   BATTERY_SIZES,
   DCAC_LIMIT,
-  DCAC_LIMIT_WITH_BATTERY,
+  DCAC_LIMIT_HYBRID_OR_BATTERY,
   INVERTERS,
   PANEL_KW,
   PERIOD_DAYS,
@@ -160,11 +160,11 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const arrayKw = panels * PANEL_KW;
   const kwdc = (Math.round(arrayKw * 100) / 100).toString();
   const ratio = Math.round((arrayKw / inverter.kw) * 100);
-  // 200% once a battery is in the design (CEC guideline), else the 133% STC rule.
-  const withBattery = battery > 0;
-  const limitPct = dcAcLimitPercent(withBattery);
-  const limitLabel = dcAcLimitLabel(withBattery);
-  const inverterMaxPanels = Math.floor((inverter.kw * (withBattery ? DCAC_LIMIT_WITH_BATTERY : DCAC_LIMIT)) / PANEL_KW);
+  // 200% with a hybrid inverter or a battery, else the 133% STC rule.
+  const hybridOrBattery = inverter.hybrid || battery > 0;
+  const limitPct = dcAcLimitPercent(hybridOrBattery);
+  const limitLabel = dcAcLimitLabel(hybridOrBattery);
+  const inverterMaxPanels = Math.floor((inverter.kw * (hybridOrBattery ? DCAC_LIMIT_HYBRID_OR_BATTERY : DCAC_LIMIT)) / PANEL_KW);
   const maxPanels = Math.min(p.roofMax, inverterMaxPanels);
 
   const sim = useMemo(() => {
@@ -302,7 +302,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
       : bad(
           `Panel : inverter ${ratio}%`,
           `Over the ${limitLabel} · use ${inverterMaxPanels} panels${
-            withBattery ? "" : ", add a battery (200%)"
+            hybridOrBattery ? "" : ", use a hybrid inverter or add a battery (200%)"
           } or a larger inverter`,
         ),
     panels <= p.roofMax
