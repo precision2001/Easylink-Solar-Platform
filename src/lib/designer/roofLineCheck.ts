@@ -268,6 +268,8 @@ export function checkInteriorLine(
 export function interiorEdges(
   faces: { ring: LatLng[] }[],
   outlines: LatLng[][],
+  /** How close (m) a face edge must run to the outline to count as an eave. */
+  outlineTolM = 0.05,
 ): [LatLng, LatLng][] {
   const all = outlines.flat();
   if (all.length === 0) return [];
@@ -278,7 +280,7 @@ export function interiorEdges(
       const len = Math.hypot(v.x - u.x, v.y - u.y);
       if (len < 1e-6) return false;
       const dist = (w: XY) => Math.abs((v.x - u.x) * (u.y - w.y) - (u.x - w.x) * (v.y - u.y)) / len;
-      return dist(p) < 0.05 && dist(q) < 0.05;
+      return dist(p) < outlineTolM && dist(q) < outlineTolM;
     });
   const seen = new Set<string>();
   const key = (p: XY) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`;

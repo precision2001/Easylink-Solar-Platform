@@ -31,6 +31,7 @@ import {
 import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
 import { generatePanelsForFaces } from "@/lib/designer/panelLayout";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
+import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
 import {
   checkInteriorLine,
@@ -53,7 +54,7 @@ const MAP_CONTAINER: React.CSSProperties = {
   borderRadius: "25px",
 };
 
-const ACTIVE_LAYERS: SolarLayerType[] = ["rgb", "mask"];
+const ACTIVE_LAYERS: SolarLayerType[] = ["rgb", "mask", "dsm"];
 
 /** Hard cap on Google Maps Polygon instances for generated panels (perf). Keep ≥ typical “panels that fit” so the map matches the left-panel count. */
 const MAX_MAP_SOLAR_PANEL_POLYGONS = 1500;
@@ -686,6 +687,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
   const {
     rgb: rgbOverlay,
     mask: maskOverlay,
+    dsm: dsmRaster,
     loading: layersLoading,
     error: layersError,
     retry: layersRetry,
@@ -1142,8 +1144,42 @@ export const DesignsSolarPanelStepContent = forwardRef<
     });
   }, [selectedRoofId]);
 
-  /** Hip-roof faces of the saved roofs, drawn as roof lines on the map. */
-  const savedFaces = useMemo(() => splitRoofsIntoFaces(savedRoofs), [savedRoofs]);
+  /**
+   * Roof-line finder: faces come from Google's height model when it covers
+   * the roof (each face with its own pitch and slope direction), straightened
+   * so neighbouring faces share corners. Without usable height data, falls
+   * back to the standard hip split of each outline.
+   */
+  const facesFor = useCallback(
+    (paths: google.maps.LatLngLiteral[][]) => {
+      const detected = detectRoofFaces(dsmRaster, paths, maskRaster);
+      if (detected && detected.length > 0) {
+        const rings = regularizeRoofOutlines(detected.map((f) => f.ring));
+        return {
+          source: "height-model" as const,
+          faces: detected.map((f, i) => ({
+            ring: rings[i],
+            eaveDeg: f.eaveDeg,
+            pitchDeg: f.pitchDeg,
+            azimuthDeg: f.azimuthDeg as number | undefined,
+          })),
+        };
+      }
+      return {
+        source: "assumed-hip" as const,
+        faces: splitRoofsIntoFaces(paths).map((f) => ({
+          ring: f.ring,
+          eaveDeg: f.eaveDeg,
+          pitchDeg: undefined as number | undefined,
+          azimuthDeg: undefined as number | undefined,
+        })),
+      };
+    },
+    [dsmRaster, maskRaster],
+  );
+
+  const savedFaceSet = useMemo(() => facesFor(savedRoofs), [facesFor, savedRoofs]);
+  const savedFaces = savedFaceSet.faces;
 
   /**
    * Every roof line of the saved design, checked against Google's imagery:
@@ -1152,11 +1188,13 @@ export const DesignsSolarPanelStepContent = forwardRef<
   const lineChecks = useMemo((): LineCheck[] => {
     if (savedRoofs.length === 0) return [];
     const eaves = savedRoofs.flatMap((ring) => fitEavesToMask(ring, maskRaster).checks);
-    const inner = interiorEdges(savedFaces, savedRoofs).map(([a, b]) =>
+    // Faces traced from the height model run up to ~0.5 m inside the outline.
+    const tol = savedFaceSet.source === "height-model" ? 0.5 : 0.05;
+    const inner = interiorEdges(savedFaces, savedRoofs, tol).map(([a, b]) =>
       checkInteriorLine(a, b, rgbOverlay?.luma ?? null),
     );
     return [...eaves, ...inner];
-  }, [maskRaster, rgbOverlay, savedFaces, savedRoofs]);
+  }, [maskRaster, rgbOverlay, savedFaceSet.source, savedFaces, savedRoofs]);
 
   const lineCheckSummary = useMemo(() => {
     const checked = lineChecks.filter((c) => c.status !== "no-data");
@@ -1177,9 +1215,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
       orientation: PanelOrientation,
     ): SolarPanel[] | null => {
       if (!data?.panelDimensions) return null;
-      // Face rule: split each outline into its hip-roof faces and pack them
-      // one at a time, so no panel crosses a hip, valley or ridge.
-      const faces = splitRoofsIntoFaces(paths);
+      // Face rule: find each roof's faces (height model, else hip split) and
+      // pack them one at a time, so no panel crosses a hip, valley or ridge.
+      const { faces } = facesFor(paths);
       return dedupeSolarPanels(
         generatePanelsForFaces(faces, data.panelDimensions, {
           orientation,
@@ -1187,7 +1225,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
         }),
       );
     },
-    [data?.panelDimensions, roofPitchDeg],
+    [data?.panelDimensions, facesFor, roofPitchDeg],
   );
 
   /**
@@ -1589,6 +1627,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
 
             {!isEditing && lineCheckSummary.total > 0 && (
               <p className="w-full rounded-[10px] bg-white/80 px-4 py-2 text-center font-inter text-[12px] font-medium text-ink">
+                {savedFaceSet.source === "height-model"
+                  ? `${savedFaces.length} roof faces found from Google's height data. `
+                  : "Roof faces assumed (no usable height data) — check on site. "}
                 {lineCheckSummary.checked === 0
                   ? "Roof lines not checked — Google imagery isn't available for this roof. Confirm on site."
                   : `${lineCheckSummary.ok} of ${lineCheckSummary.total} roof lines confirmed against Google imagery (±${Math.round(

@@ -53,7 +53,7 @@ export const DESIGN_RULES = {
    */
   roofLineToleranceM: 0.1,
   /** Eaves found further than the tolerance (but within this) are moved onto the roof edge. */
-  eaveMaxShiftM: 1.0,
+  eaveMaxShiftM: 2.0,
 } as const;
 
 /**

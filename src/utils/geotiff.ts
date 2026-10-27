@@ -145,6 +145,21 @@ export async function parseGeoTiffMask(
   return { imageUrl, bounds, raster };
 }
 
+/** Parse a DSM (surface height, metres) GeoTIFF into a raster for roof-face detection. */
+export async function parseGeoTiffDsm(arrayBuffer: ArrayBuffer): Promise<GeoTiffRaster> {
+  const tiff = await fromArrayBuffer(arrayBuffer);
+  const image = await tiff.getImage();
+  const width = image.getWidth();
+  const height = image.getHeight();
+  const [originX, originY] = image.getOrigin();
+  const [resX, resY] = image.getResolution();
+  const bounds = computeBounds(originX, originY, width, height, resX, resY);
+  const rasters = await image.readRasters();
+  const band = rasters[0] as Float32Array | Float64Array;
+  const noData = image.getGDALNoData();
+  return { data: band, width, height, bounds, noDataValue: noData ?? null };
+}
+
 /**
  * Parse an annual flux GeoTIFF and render it as a heat-map overlay.
  * Higher flux values -> warmer colors (yellow -> red).

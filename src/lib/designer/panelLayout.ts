@@ -274,7 +274,7 @@ export function generatePanelsForRoofs(
  * walls (or 90° to them) under the alignment rule.
  */
 export function generatePanelsForFaces(
-  faces: { ring: LatLng[]; eaveDeg: number }[],
+  faces: { ring: LatLng[]; eaveDeg: number; pitchDeg?: number }[],
   panelDimensions: { heightM: number; widthM: number },
   options: PanelLayoutOptions,
   mainAxisDeg?: number,
@@ -296,6 +296,8 @@ export function generatePanelsForFaces(
     return generatePanelsForRoofPolygon(face.ring, panelDimensions, index, {
       ...options,
       rowAngleDeg: angle,
+      // A face measured from the height model uses its own pitch.
+      pitchDeg: face.pitchDeg ?? options.pitchDeg,
     });
   });
 }

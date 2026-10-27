@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   GeoTiffOverlay,
   GeoTiffMaskOverlay,
+  GeoTiffRaster,
   GeoTiffRgbOverlay,
 } from "@/utils/geotiff";
 import {
@@ -11,12 +12,14 @@ import {
   type DataLayersResult,
 } from "./solarCombinedFetch";
 
-export type SolarLayerType = "rgb" | "mask" | "flux";
+export type SolarLayerType = "rgb" | "mask" | "flux" | "dsm";
 
 export interface SolarLayersState {
   rgb: GeoTiffRgbOverlay | null;
   mask: GeoTiffMaskOverlay | null;
   flux: GeoTiffOverlay | null;
+  /** Surface heights — used to find each roof's faces and lines. */
+  dsm: GeoTiffRaster | null;
   loading: boolean;
   error: string | null;
 }
@@ -38,7 +41,7 @@ async function fetchAndParseLayer(
   tiffUrl: string,
   type: SolarLayerType,
   signal: AbortSignal,
-): Promise<GeoTiffOverlay | GeoTiffMaskOverlay> {
+): Promise<GeoTiffOverlay | GeoTiffMaskOverlay | GeoTiffRaster> {
   const proxyUrl = `/api/solar/geotiff-proxy?url=${encodeURIComponent(tiffUrl)}`;
   const res = await fetch(proxyUrl, { signal });
 
@@ -51,7 +54,7 @@ async function fetchAndParseLayer(
     throw new Error(`GeoTIFF response is empty (${type})`);
   }
 
-  const { parseGeoTiffRgb, parseGeoTiffMask, parseGeoTiffFlux } =
+  const { parseGeoTiffRgb, parseGeoTiffMask, parseGeoTiffFlux, parseGeoTiffDsm } =
     await import("@/utils/geotiff");
 
   switch (type) {
@@ -61,6 +64,8 @@ async function fetchAndParseLayer(
       return parseGeoTiffMask(buf);
     case "flux":
       return parseGeoTiffFlux(buf);
+    case "dsm":
+      return parseGeoTiffDsm(buf);
   }
 }
 
@@ -72,6 +77,7 @@ export function useSolarLayers(
     rgb: null,
     mask: null,
     flux: null,
+    dsm: null,
     loading: false,
     error: null,
   });
@@ -96,6 +102,7 @@ export function useSolarLayers(
         if (layers.includes("mask") && meta.maskUrl) urlMap.mask = meta.maskUrl;
         if (layers.includes("flux") && meta.annualFluxUrl)
           urlMap.flux = meta.annualFluxUrl;
+        if (layers.includes("dsm") && meta.dsmUrl) urlMap.dsm = meta.dsmUrl;
 
         if (Object.keys(urlMap).length === 0) {
           setState((prev) => ({
@@ -110,6 +117,7 @@ export function useSolarLayers(
           rgb?: GeoTiffRgbOverlay;
           mask?: GeoTiffMaskOverlay;
           flux?: GeoTiffOverlay;
+          dsm?: GeoTiffRaster;
         } = {};
         const errors: string[] = [];
 
@@ -124,6 +132,7 @@ export function useSolarLayers(
               if (type === "mask") results.mask = overlay as GeoTiffMaskOverlay;
               else if (type === "rgb") results.rgb = overlay as GeoTiffRgbOverlay;
               else if (type === "flux") results.flux = overlay as GeoTiffOverlay;
+              else if (type === "dsm") results.dsm = overlay as GeoTiffRaster;
             },
           ),
         );
@@ -148,6 +157,7 @@ export function useSolarLayers(
           rgb: results.rgb ?? null,
           mask: results.mask ?? null,
           flux: results.flux ?? null,
+          dsm: results.dsm ?? null,
           loading: false,
           error: errors.length > 0 ? errors.join("; ") : null,
         });
