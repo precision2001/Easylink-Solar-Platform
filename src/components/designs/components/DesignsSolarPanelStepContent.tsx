@@ -30,6 +30,7 @@ import {
 } from "@/utils/roofMaskContour";
 import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
 import { generatePanelsForRoofs } from "@/lib/designer/panelLayout";
+import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
 import {
   DESIGN_RULES,
   inverterSizingFor,
@@ -1253,8 +1254,12 @@ export const DesignsSolarPanelStepContent = forwardRef<
   );
 
   const handleSave = useCallback(() => {
-    /* Read final paths from imperative polygon refs (user may have dragged vertices) */
-    const validPaths = getCurrentEditingPaths().filter((p) => p.length >= 3);
+    /* Read final paths from imperative polygon refs (user may have dragged vertices),
+       then apply the roof-line rule: straight edges at 0/45/90° to the main
+       walls, corners at line intersections, shared corners between roofs. */
+    const validPaths = regularizeRoofOutlines(
+      getCurrentEditingPaths().filter((p) => p.length >= 3),
+    );
     setSavedRoofs(validPaths);
 
     if (validPaths.length === 0) {

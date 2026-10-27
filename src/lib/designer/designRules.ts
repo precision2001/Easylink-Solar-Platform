@@ -38,6 +38,14 @@ export const DESIGN_RULES = {
    * wing beyond this keeps its own edge.
    */
   alignmentSnapDeg: 30,
+  /**
+   * Roof-line rule: traced roof edges within this many degrees of the main
+   * walls, of 90° to them, or of 45° (hips and valleys) are straightened onto
+   * that direction, and each corner is rebuilt where its two lines meet.
+   */
+  roofLineSnapDeg: 20,
+  /** Corners of neighbouring roofs closer than this are merged into one shared corner. */
+  roofCornerMergeM: 0.3,
 } as const;
 
 /**
