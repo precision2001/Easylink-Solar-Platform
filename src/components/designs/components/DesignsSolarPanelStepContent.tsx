@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { GoogleMap, OverlayView, Polygon } from "@react-google-maps/api";
+import { GoogleMap, OverlayView, Polygon, Polyline } from "@react-google-maps/api";
 import Icon from "@/components/ui/Icons";
 import { useGoogleMaps } from "@/components/providers/GoogleMapsProvider";
 import {
@@ -32,6 +32,12 @@ import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
 import { generatePanelsForFaces } from "@/lib/designer/panelLayout";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
+import {
+  checkInteriorLine,
+  fitEavesToMask,
+  interiorEdges,
+  type LineCheck,
+} from "@/lib/designer/roofLineCheck";
 import {
   DESIGN_RULES,
   inverterSizingFor,
@@ -1139,6 +1145,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
   /** Hip-roof faces of the saved roofs, drawn as roof lines on the map. */
   const savedFaces = useMemo(() => splitRoofsIntoFaces(savedRoofs), [savedRoofs]);
 
+  /**
+   * Every roof line of the saved design, checked against Google's imagery:
+   * eaves against the roof mask, hips/valleys/ridges against the image.
+   */
+  const lineChecks = useMemo((): LineCheck[] => {
+    if (savedRoofs.length === 0) return [];
+    const eaves = savedRoofs.flatMap((ring) => fitEavesToMask(ring, maskRaster).checks);
+    const inner = interiorEdges(savedFaces, savedRoofs).map(([a, b]) =>
+      checkInteriorLine(a, b, rgbOverlay?.luma ?? null),
+    );
+    return [...eaves, ...inner];
+  }, [maskRaster, rgbOverlay, savedFaces, savedRoofs]);
+
+  const lineCheckSummary = useMemo(() => {
+    const checked = lineChecks.filter((c) => c.status !== "no-data");
+    const ok = checked.filter((c) => c.status === "confirmed" || c.status === "adjusted");
+    return { total: lineChecks.length, checked: checked.length, ok: ok.length };
+  }, [lineChecks]);
+
   /** Google's area-weighted roof pitch, or the 22.5° default when there's no real data. */
   const roofPitchDeg = useMemo(
     () => roofPitchDegrees(data?.roofSegments, data?.estimated),
@@ -1269,9 +1294,16 @@ export const DesignsSolarPanelStepContent = forwardRef<
     /* Read final paths from imperative polygon refs (user may have dragged vertices),
        then apply the roof-line rule: straight edges at 0/45/90° to the main
        walls, corners at line intersections, shared corners between roofs. */
-    const validPaths = regularizeRoofOutlines(
+    const straightened = regularizeRoofOutlines(
       getCurrentEditingPaths().filter((p) => p.length >= 3),
     );
+    // Roof-line check: fit each eave onto Google's roof mask (moved when the
+    // real edge is more than 100 mm away), then straighten again.
+    const validPaths = maskRaster
+      ? regularizeRoofOutlines(
+          straightened.map((ring) => fitEavesToMask(ring, maskRaster).ring),
+        )
+      : straightened;
     setSavedRoofs(validPaths);
 
     if (validPaths.length === 0) {
@@ -1327,6 +1359,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     dispatch,
     getCurrentEditingPaths,
     layoutPanels,
+    maskRaster,
     panelOrientation,
     persistSolarDesign,
     selectedLocation,
@@ -1554,6 +1587,16 @@ export const DesignsSolarPanelStepContent = forwardRef<
               </div>
             )}
 
+            {!isEditing && lineCheckSummary.total > 0 && (
+              <p className="w-full rounded-[10px] bg-white/80 px-4 py-2 text-center font-inter text-[12px] font-medium text-ink">
+                {lineCheckSummary.checked === 0
+                  ? "Roof lines not checked — Google imagery isn't available for this roof. Confirm on site."
+                  : `${lineCheckSummary.ok} of ${lineCheckSummary.total} roof lines confirmed against Google imagery (±${Math.round(
+                      DESIGN_RULES.roofLineToleranceM * 1000,
+                    )} mm). Dashed orange lines need checking on site.`}
+              </p>
+            )}
+
             {data?.estimated && (
               <p className="w-full rounded-[10px] bg-white/70 px-4 py-2 text-center font-inter text-[12px] font-medium text-ink/70">
                 Google Solar imagery is not available for this location yet.
@@ -1664,23 +1707,48 @@ export const DesignsSolarPanelStepContent = forwardRef<
                         );
                       })}
 
-                    {/* Roof lines of each saved roof — hips, valleys and ridge (view mode) */}
+                    {/* Roof lines (view mode): solid amber = confirmed against
+                        Google's imagery, dashed orange = check on site. */}
                     {!!mapReady &&
                       !isEditing &&
-                      savedFaces.map((face, idx) => (
-                        <Polygon
-                          key={`face-${idx}`}
-                          paths={face.ring}
-                          options={{
-                            fillOpacity: 0,
-                            strokeColor: "#FBBF24",
-                            strokeOpacity: 0.9,
-                            strokeWeight: 1.2,
-                            clickable: false,
-                            zIndex: 6,
-                          }}
-                        />
-                      ))}
+                      lineChecks.map((line, idx) => {
+                        const ok = line.status === "confirmed" || line.status === "adjusted";
+                        return (
+                          <Polyline
+                            key={`line-${idx}`}
+                            path={[line.a, line.b]}
+                            options={
+                              ok
+                                ? {
+                                    strokeColor: "#FBBF24",
+                                    strokeOpacity: 0.95,
+                                    strokeWeight: line.kind === "eave" ? 2 : 1.4,
+                                    clickable: false,
+                                    zIndex: 7,
+                                  }
+                                : {
+                                    strokeColor: "#FB923C",
+                                    strokeOpacity: 0,
+                                    clickable: false,
+                                    zIndex: 7,
+                                    icons: [
+                                      {
+                                        icon: {
+                                          path: "M 0,-1 0,1",
+                                          strokeOpacity: 1,
+                                          strokeColor: "#FB923C",
+                                          strokeWeight: 2,
+                                          scale: 2,
+                                        },
+                                        offset: "0",
+                                        repeat: "8px",
+                                      },
+                                    ],
+                                  }
+                            }
+                          />
+                        );
+                      })}
 
                     {/* Saved roof outlines (view mode) */}
                     {!!mapReady &&

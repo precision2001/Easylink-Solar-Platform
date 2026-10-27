@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GeoTiffOverlay, GeoTiffMaskOverlay } from "@/utils/geotiff";
+import type {
+  GeoTiffOverlay,
+  GeoTiffMaskOverlay,
+  GeoTiffRgbOverlay,
+} from "@/utils/geotiff";
 import {
   fetchCombinedSolarData,
   type DataLayersResult,
@@ -10,7 +14,7 @@ import {
 export type SolarLayerType = "rgb" | "mask" | "flux";
 
 export interface SolarLayersState {
-  rgb: GeoTiffOverlay | null;
+  rgb: GeoTiffRgbOverlay | null;
   mask: GeoTiffMaskOverlay | null;
   flux: GeoTiffOverlay | null;
   loading: boolean;
@@ -103,7 +107,7 @@ export function useSolarLayers(
         }
 
         const results: {
-          rgb?: GeoTiffOverlay;
+          rgb?: GeoTiffRgbOverlay;
           mask?: GeoTiffMaskOverlay;
           flux?: GeoTiffOverlay;
         } = {};
@@ -118,7 +122,7 @@ export function useSolarLayers(
                 controller.signal,
               );
               if (type === "mask") results.mask = overlay as GeoTiffMaskOverlay;
-              else if (type === "rgb") results.rgb = overlay as GeoTiffOverlay;
+              else if (type === "rgb") results.rgb = overlay as GeoTiffRgbOverlay;
               else if (type === "flux") results.flux = overlay as GeoTiffOverlay;
             },
           ),

@@ -46,6 +46,14 @@ export const DESIGN_RULES = {
   roofLineSnapDeg: 20,
   /** Corners of neighbouring roofs closer than this are merged into one shared corner. */
   roofCornerMergeM: 0.3,
+  /**
+   * Roof-line check: a line is confirmed when it sits within this distance of
+   * the edge found in Google's imagery — the roof mask for eaves, a brightness
+   * change between faces for hips, valleys and ridges.
+   */
+  roofLineToleranceM: 0.1,
+  /** Eaves found further than the tolerance (but within this) are moved onto the roof edge. */
+  eaveMaxShiftM: 1.0,
 } as const;
 
 /**
