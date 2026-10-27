@@ -111,10 +111,15 @@ function panelCorners(
   const metersPerLat = 111320;
   const metersPerLng = 111320 * Math.cos((center.lat * Math.PI) / 180);
 
+  // Same convention as the packer (panelLayout.ts): portrait = long side up
+  // the slope, whichever field the data source calls height — otherwise a
+  // swapped height/width draws every panel turned 90° from where it was packed.
+  const longSide = Math.max(heightM, widthM);
+  const shortSide = Math.min(heightM, widthM);
   const halfHeightMeters =
-    ((orientation === "LANDSCAPE" ? widthM : heightM) / 2) *
+    ((orientation === "LANDSCAPE" ? shortSide : longSide) / 2) *
     Math.cos((slopeDegrees * Math.PI) / 180);
-  const halfWidthMeters = (orientation === "LANDSCAPE" ? heightM : widthM) / 2;
+  const halfWidthMeters = (orientation === "LANDSCAPE" ? longSide : shortSide) / 2;
   const angle = (rotationDegrees * Math.PI) / 180;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
