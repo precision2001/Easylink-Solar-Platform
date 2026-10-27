@@ -801,7 +801,7 @@ export function MasterContactLists() {
                         <span className="text-[12px]" style={{ color: MUTED }}>
                           Savings from solar and battery at your $1,150 quarterly bill, 37c/kWh and
                           5c feed-in. EV fuel and hot-water savings come on top. Maximum is set at 29
-                          panels. With the battery, the 9.9 kW inverter could take
+                          panels. With the hybrid inverter, the 9.9 kW inverter could take
                           up to 45 panels (200%) if the roof fits them.
                         </span>
                       </>
@@ -1190,7 +1190,7 @@ export function MasterContactLists() {
                               style={{ background: "#FEE2E2", color: RED }}
                             >
                               Panel : inverter {deal.ratio}% is over the {CRM_LIMIT_PERCENT}%
-                              limit with a battery. Use fewer panels or a bigger inverter.
+                              hybrid / battery limit. Use fewer panels or a bigger inverter.
                             </p>
                           ) : null}
                         </>
