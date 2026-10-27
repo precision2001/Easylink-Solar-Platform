@@ -20,7 +20,7 @@ import {
 } from "@/lib/calls/transcript";
 
 import { cc, day, dur, phoneFmt, when, type CcOverview } from "@/components/contact-centre/api";
-import { PresenceToggle } from "@/components/contact-centre/LiveCalls";
+import { PresenceToggle, useListenIn } from "@/components/contact-centre/LiveCalls";
 
 /**
  * Contact Centre: the day at a glance, from real calls (a Sydney day).
@@ -279,6 +279,7 @@ export function MasterContactCentre() {
   const [data, setData] = useState<CcOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const listenIn = useListenIn();
 
   const load = useCallback(() => {
     cc("admin")
@@ -457,8 +458,24 @@ export function MasterContactCentre() {
                   <b>{c.customer?.name ?? phoneFmt(c.number)}</b> · {c.direction === "INBOUND" ? "inbound" : "outbound"} · {c.by}
                 </span>
                 <span className="text-[12px] text-[#475569]">since {new Date(c.startedAt).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" })}</span>
+                {listenIn.listening === c.id ? (
+                  <button type="button" onClick={listenIn.stop} className="shrink-0 rounded-full bg-[#0F172A] px-2.5 py-1 text-[12px] font-semibold text-white">
+                    Stop listening
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => void listenIn.listen(c.id)} title="Hear the call without being heard" className="shrink-0 rounded-full border border-[#CBD5E1] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#0F172A]">
+                    Listen in
+                  </button>
+                )}
               </div>
             ))}
+            {listenIn.error && <p className="m-0 text-[12.5px] text-[#991B1B]">{listenIn.error}</p>}
+            {listenIn.listening && (
+              <p className="m-0 text-[12.5px] text-[#475569]">
+                Listening only: the call can&apos;t hear you. Leave coaching comments on the call in{" "}
+                <Link href="/master/calls" className="text-[#0B4A7A]">Calls</Link>.
+              </p>
+            )}
             <div className="flex items-center gap-2.5 border-b border-[#EEF2F6] py-2">
               <span className="flex size-[34px] shrink-0 items-center justify-center rounded-full bg-[#FFB547] text-[12px] font-bold text-[#3B1D00]">AI</span>
               <span className="flex flex-grow flex-col">

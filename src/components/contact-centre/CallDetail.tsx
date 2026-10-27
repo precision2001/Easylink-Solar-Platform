@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Btn, Field, inputCls, Modal, Pill } from "@/components/jobs/ui";
-import { cc, dur, OUTCOMES, outcomeLabel, phoneFmt, when, type CallDetail as Detail, type Outcome, type Portal } from "./api";
+import { cc, dur, OUTCOMES, outcomeLabel, phoneFmt, when, type CallDetail as Detail, type CoachingComment, type Outcome, type Portal } from "./api";
 import { FollowUpForm } from "./FollowUpForm";
 
 const KIND_LABEL = { CALLBACK: "Call back", SITE_VISIT: "Site visit", TASK: "Task" } as const;
@@ -20,6 +20,7 @@ export function CallDetailModal({ portal, callId, onClose, onChanged }: { portal
   const [reload, setReload] = useState(0);
   const [audio, setAudio] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [outcome, setOutcome] = useState<Outcome | "">("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -163,7 +164,7 @@ export function CallDetailModal({ portal, callId, onClose, onChanged }: { portal
             <section className="flex flex-col gap-1.5">
               <h3 className="m-0 text-[14px] font-bold">Recording</h3>
               {audio ? (
-                <audio controls src={audio} className="w-full" />
+                <audio ref={audioRef} controls src={audio} className="w-full" />
               ) : (
                 <div>
                   <Btn small kind="secondary" onClick={() => void play()}>
@@ -236,6 +237,8 @@ export function CallDetailModal({ portal, callId, onClose, onChanged }: { portal
             )}
           </section>
 
+          {staff && <Coaching callId={call.id} audioRef={audioRef} hasAudio={Boolean(audio)} />}
+
           <section className="flex flex-col gap-1.5">
             <h3 className="m-0 text-[14px] font-bold">Transcript</h3>
             {call.transcriptSegments.length ? (
@@ -258,5 +261,109 @@ export function CallDetailModal({ portal, callId, onClose, onChanged }: { portal
         </div>
       )}
     </Modal>
+  );
+}
+
+/**
+ * Coaching comments on a call, from someone listening in or reviewing the
+ * recording. With the recording open, a comment can be pinned to the moment
+ * playing, and its time jumps the player there.
+ */
+function Coaching({ callId, audioRef, hasAudio }: { callId: string; audioRef: { current: HTMLAudioElement | null }; hasAudio: boolean }) {
+  const [items, setItems] = useState<CoachingComment[] | null>(null);
+  const [body, setBody] = useState("");
+  const [pin, setPin] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    cc("admin")
+      .comments(callId)
+      .then((r) => !cancelled && setItems(r))
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Couldn't load comments"));
+    return () => {
+      cancelled = true;
+    };
+  }, [callId, reload]);
+
+  const add = useCallback(async () => {
+    const at = hasAudio && pin && audioRef.current ? Math.round(audioRef.current.currentTime) : null;
+    try {
+      await cc("admin").addComment(callId, body.trim(), at);
+      setBody("");
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't add the comment");
+    }
+  }, [audioRef, body, callId, hasAudio, pin]);
+
+  const seek = (sec: number) => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = sec;
+    void audioRef.current.play().catch(() => undefined);
+  };
+
+  return (
+    <section className="flex flex-col gap-2 rounded-[10px] border border-[#E3E8EF] p-3">
+      <h3 className="m-0 text-[14px] font-bold">Coaching</h3>
+      {error && <p className="m-0 text-[12.5px] text-[#991B1B]">{error}</p>}
+      {items?.length === 0 && <p className="m-0 text-[13px] text-[#64748B]">No comments yet.</p>}
+      {items?.map((c) => (
+        <div key={c.id} className="flex items-start gap-2 text-[13.5px]">
+          {c.atSec !== null ? (
+            <button
+              type="button"
+              onClick={() => seek(c.atSec!)}
+              disabled={!hasAudio}
+              title={hasAudio ? "Play from here" : "Open the recording to jump here"}
+              className="shrink-0 rounded-full bg-[#EFF6FF] px-2 py-0.5 text-[12px] font-semibold tabular-nums text-[#1D4ED8] disabled:text-[#64748B]"
+            >
+              {dur(Math.round(c.atSec))}
+            </button>
+          ) : (
+            <span className="shrink-0 rounded-full bg-[#F1F5F9] px-2 py-0.5 text-[12px] text-[#64748B]">Whole call</span>
+          )}
+          <span className="min-w-0 flex-grow">
+            <span className="whitespace-pre-wrap">{c.body}</span>
+            <span className="block text-[12px] text-[#64748B]">
+              {c.author} · {when(c.createdAt)}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              void cc("admin")
+                .deleteComment(c.id)
+                .then(() => setReload((n) => n + 1))
+                .catch((e) => setError(e instanceof Error ? e.message : "Couldn't delete"))
+            }
+            className="shrink-0 text-[12px] font-semibold text-[#64748B] hover:underline"
+          >
+            Delete
+          </button>
+        </div>
+      ))}
+      <label className="sr-only" htmlFor="coach-body">
+        Coaching comment
+      </label>
+      <textarea
+        id="coach-body"
+        className={`${inputCls} min-h-[56px]`}
+        maxLength={2000}
+        placeholder="e.g. Good rapport. Next time, ask about their evening usage before quoting."
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+      />
+      <div className="flex items-center justify-between gap-2">
+        <label className="flex items-center gap-1.5 text-[12.5px] text-[#334155]" htmlFor="coach-pin">
+          <input id="coach-pin" type="checkbox" checked={pin && hasAudio} disabled={!hasAudio} onChange={(e) => setPin(e.target.checked)} />
+          {hasAudio ? "At the moment playing" : "Open the recording to pin a moment"}
+        </label>
+        <Btn small disabled={!body.trim()} onClick={() => void add()}>
+          Add comment
+        </Btn>
+      </div>
+    </section>
   );
 }

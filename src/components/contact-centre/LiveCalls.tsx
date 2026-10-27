@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ParticipantKind, Track, type Room, type RemoteTrack } from "livekit-client";
+import { ParticipantKind, Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
 import { Btn } from "@/components/jobs/ui";
 import { cc, phoneFmt, when, type AcceptedTransfer, type Assist, type LeadSummary, type PendingTransfer, type Portal, type Presence } from "./api";
 
@@ -534,4 +534,54 @@ export function LiveAssistPanel({ lines, active, leadId }: { lines: LiveLine[]; 
       )}
     </section>
   );
+}
+
+// ---------- listen-in ----------
+
+/**
+ * Listen to a live call: joins its room hidden and listen-only, so the people
+ * on the call can't hear you and don't see you. One call at a time.
+ */
+export function useListenIn() {
+  const [listening, setListening] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const roomRef = useRef<Room | null>(null);
+  const els = useRef<HTMLMediaElement[]>([]);
+
+  const stop = useCallback(() => {
+    roomRef.current?.disconnect();
+    roomRef.current = null;
+    els.current.forEach((e) => e.remove());
+    els.current = [];
+    setListening(null);
+  }, []);
+
+  const listen = useCallback(
+    async (callId: string) => {
+      stop();
+      setError(null);
+      try {
+        const pass = await cc("admin").listen(callId);
+        const room = new Room();
+        roomRef.current = room;
+        room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+          if (track.kind !== Track.Kind.Audio) return;
+          const el = track.attach();
+          el.style.display = "none";
+          document.body.appendChild(el);
+          els.current.push(el);
+        });
+        room.on(RoomEvent.Disconnected, () => stop());
+        await room.connect(pass.url, pass.token);
+        setListening(callId);
+      } catch (e) {
+        stop();
+        setError(e instanceof Error ? e.message : "Couldn't listen to that call");
+      }
+    },
+    [stop],
+  );
+
+  useEffect(() => stop, [stop]);
+  return { listening, error, listen, stop };
 }

@@ -99,6 +99,7 @@ export type Presence = "AVAILABLE" | "BUSY" | "AWAY";
 export type PendingTransfer = { id: string; callerNumber: string; callerName: string | null; leadId: string | null; summary: string; reason: string | null; secondsLeft: number };
 export type AcceptedTransfer = { transferId: string; roomName: string; callerNumber: string; callerName: string | null; leadId: string | null; summary: string; token: string; url: string };
 export type Assist = { suggestedReply: string | null; sentiment: "positive" | "neutral" | "negative" | null; topics: string[]; watchOut: string | null };
+export type CoachingComment = { id: string; atSec: number | null; body: string; createdAt: string; authorId: string; author: string };
 export type LeadSummary = { summary: string; itemCount: number; updatedAt: string };
 
 export type CcOverview = {
@@ -164,6 +165,11 @@ export function cc(portal: Portal) {
     writeLeadSummary: (leadId: string) => call<LeadSummary>(`/customer-records/${leadId}/summary`, { method: "POST", json: {} }).then((r) => r.data),
     assist: (lines: { who: "you" | "caller"; text: string }[], leadId?: string) =>
       call<Assist>(`/live-calls/assist`, { method: "POST", json: { lines, leadId } }).then((r) => r.data),
+    comments: (callId: string) => call<CoachingComment[]>(`/call-records/${callId}/comments`).then((r) => r.data),
+    addComment: (callId: string, body: string, atSec?: number | null) =>
+      call<{ id: string }>(`/call-records/${callId}/comments`, { method: "POST", json: { body, atSec: atSec ?? null } }),
+    deleteComment: (id: string) => call(`/call-records/comments/${id}`, { method: "DELETE" }),
+    listen: (callId: string) => call<{ callId: string; roomName: string; token: string; url: string }>(`/live-calls/listen`, { method: "POST", json: { callId } }).then((r) => r.data),
     overview: () => call<CcOverview>(`/live-calls/overview`).then((r) => r.data),
     presence: () => call<{ me: { status: Presence }; team: { userId: string; name: string; status: Presence; lastSeenAt: string }[] }>(`/live-calls/presence`).then((r) => r.data),
     setPresence: (status: Presence) => call(`/live-calls/presence`, { method: "PUT", json: { status } }),
