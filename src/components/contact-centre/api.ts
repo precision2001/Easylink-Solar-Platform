@@ -98,6 +98,7 @@ export type CustomerRecord = {
 export type Presence = "AVAILABLE" | "BUSY" | "AWAY";
 export type PendingTransfer = { id: string; callerNumber: string; callerName: string | null; leadId: string | null; summary: string; reason: string | null; secondsLeft: number };
 export type AcceptedTransfer = { transferId: string; roomName: string; callerNumber: string; callerName: string | null; leadId: string | null; summary: string; token: string; url: string };
+export type Assist = { suggestedReply: string | null; sentiment: "positive" | "neutral" | "negative" | null; topics: string[]; watchOut: string | null };
 export type LeadSummary = { summary: string; itemCount: number; updatedAt: string };
 
 export type CcOverview = {
@@ -161,6 +162,8 @@ export function cc(portal: Portal) {
       call<FollowUp>(`/follow-ups`, { method: "POST", json: body }).then((r) => r.data),
     leadSummary: (leadId: string) => call<LeadSummary | null>(`/customer-records/${leadId}/summary`),
     writeLeadSummary: (leadId: string) => call<LeadSummary>(`/customer-records/${leadId}/summary`, { method: "POST", json: {} }).then((r) => r.data),
+    assist: (lines: { who: "you" | "caller"; text: string }[], leadId?: string) =>
+      call<Assist>(`/live-calls/assist`, { method: "POST", json: { lines, leadId } }).then((r) => r.data),
     overview: () => call<CcOverview>(`/live-calls/overview`).then((r) => r.data),
     presence: () => call<{ me: { status: Presence }; team: { userId: string; name: string; status: Presence; lastSeenAt: string }[] }>(`/live-calls/presence`).then((r) => r.data),
     setPresence: (status: Presence) => call(`/live-calls/presence`, { method: "PUT", json: { status } }),

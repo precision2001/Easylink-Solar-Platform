@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ParticipantKind, Track, type Room, type RemoteTrack } from "livekit-client";
 import { Btn } from "@/components/jobs/ui";
-import { cc, phoneFmt, when, type AcceptedTransfer, type LeadSummary, type PendingTransfer, type Portal, type Presence } from "./api";
+import { cc, phoneFmt, when, type AcceptedTransfer, type Assist, type LeadSummary, type PendingTransfer, type Portal, type Presence } from "./api";
 
 const PRESENCE: { key: Presence; label: string; dot: string }[] = [
   { key: "AVAILABLE", label: "Available", dot: "#16A34A" },
@@ -432,6 +432,106 @@ export function CustomerAiSummary({ portal, leadId, itemCount, compact }: { port
         <p className="m-0 text-[13px] text-[#475569]">{enabled ? "A few lines on this customer from their calls, messages, notes and job: what they want, where it's up to, and what's next." : "AI summaries aren't switched on for this server."}</p>
       )}
       {error && <span className="text-[12.5px] text-[#991B1B]">{error}</span>}
+    </section>
+  );
+}
+
+// ---------- live assist ----------
+
+const MOOD = {
+  positive: { bg: "#DCFCE7", fg: "#166534", label: "Caller seems positive" },
+  neutral: { bg: "#F1F5F9", fg: "#334155", label: "Caller seems neutral" },
+  negative: { bg: "#FEE2E2", fg: "#991B1B", label: "Caller seems unhappy" },
+} as const;
+
+/**
+ * Suggests what to say next from the live transcript: asks again after two
+ * new finished lines, at most every 12 seconds, so a long call costs a few
+ * cents rather than a request per word.
+ */
+export function LiveAssistPanel({ lines, active, leadId }: { lines: LiveLine[]; active: boolean; leadId?: string | null }) {
+  const [assist, setAssist] = useState<Assist | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  // A ref, not state: whether a request is in flight never changes what is drawn.
+  const busy = useRef(false);
+  const lastAsked = useRef({ at: 0, count: 0 });
+  const finals = lines.filter((l) => l.final);
+
+  const [prevActive, setPrevActive] = useState(active);
+  if (prevActive !== active) {
+    setPrevActive(active);
+    if (active) {
+      setAssist(null);
+      setNote(null);
+    }
+  }
+
+  // Which call a reply belongs to: a reply arriving after the call ended is dropped.
+  const callSeq = useRef(0);
+  useEffect(() => {
+    callSeq.current += 1;
+    if (!active) lastAsked.current = { at: 0, count: 0 };
+  }, [active]);
+
+  const finalCount = finals.length;
+  useEffect(() => {
+    if (!active) return;
+    const due = finalCount - lastAsked.current.count >= 2 && Date.now() - lastAsked.current.at > 12_000;
+    if (!due || busy.current || note) return;
+    lastAsked.current = { at: Date.now(), count: finalCount };
+    busy.current = true;
+    const seq = callSeq.current;
+    cc("admin")
+      .assist(
+        finals.map((l) => ({ who: l.who, text: l.text })),
+        leadId ?? undefined,
+      )
+      .then((a) => seq === callSeq.current && setAssist(a))
+      .catch((e) => seq === callSeq.current && setNote(e instanceof Error ? e.message : "Live assist isn't available"))
+      .finally(() => {
+        busy.current = false;
+      });
+    // Runs when a line finishes; `finals` is read at that moment on purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, finalCount, note, leadId]);
+
+  const mood = assist?.sentiment ? MOOD[assist.sentiment] : null;
+  return (
+    <section className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Live assist</h2>
+        {mood ? (
+          <span className="rounded-full px-2.5 py-1 text-[12px] font-semibold" style={{ background: mood.bg, color: mood.fg }}>
+            {mood.label}
+          </span>
+        ) : (
+          <span className="text-[12px] text-[#64748B]">{active ? "Listening" : ""}</span>
+        )}
+      </div>
+      {note ? (
+        <p className="m-0 text-[12.5px] text-[#92400E]">{note}</p>
+      ) : !assist ? (
+        <p className="m-0 text-[13px] text-[#5B6B80]">{active ? "Suggestions appear once the conversation gets going." : "During a call, EasyLink AI suggests what to say next."}</p>
+      ) : (
+        <>
+          {assist.watchOut && <p className="m-0 rounded-[10px] bg-[#FEF2F2] p-2.5 text-[13px] font-semibold text-[#991B1B]">{assist.watchOut}</p>}
+          {assist.suggestedReply && (
+            <div className="flex flex-col gap-1 rounded-[10px] bg-[#EFF6FF] p-3">
+              <span className="text-[13px] font-bold text-[#1D4ED8]">Suggested reply</span>
+              <p className="m-0 text-[13px] leading-[19px] text-[#1E3A5F]">{assist.suggestedReply}</p>
+            </div>
+          )}
+          {assist.topics.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {assist.topics.map((t) => (
+                <span key={t} className="rounded-full bg-[#F1F5F9] px-2.5 py-1 text-[12px] text-[#475569]">
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }

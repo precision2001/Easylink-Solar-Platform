@@ -22,7 +22,7 @@ import {
 } from "@/lib/calls/transcript";
 import { CallListPanel } from "@/components/call-lists/CallListPanel";
 import { AiCallAssist, ScreenPop } from "@/components/contact-centre/DiallerPanels";
-import { CustomerAiSummary, IncomingTransfers, LiveTranscriptPanel, PresenceToggle, useLiveTranscript } from "@/components/contact-centre/LiveCalls";
+import { CustomerAiSummary, IncomingTransfers, LiveAssistPanel, LiveTranscriptPanel, PresenceToggle, useLiveTranscript } from "@/components/contact-centre/LiveCalls";
 import type { AcceptedTransfer } from "@/components/contact-centre/api";
 
 /**
@@ -90,11 +90,6 @@ type WrapUp = {
 
 const SCRIPT_QUOTE =
   "“Under the federal Cheaper Home Batteries Program you could get a discount on a battery added to your existing solar. Can I check a few details about your system?”";
-
-const SUGGESTED_REPLY =
-  "Offer a free on-site assessment: “With a 6.6 kW system and evening use that high, a 10–13 kWh battery is usually the sweet spot. Could our assessor visit Thursday or Friday?”";
-
-const DETECTED_TAGS = ["Detected: battery interest", "Bill ~$680/qtr", "Objection: upfront cost"] as const;
 
 const OUTCOME_OPTIONS = [
   "Site visit booked",
@@ -244,14 +239,6 @@ function TranscriptBadge({ transcript }: { transcript: CallTranscript | null }) 
       style={{ background: bg, color: fg }}
     >
       {label}
-    </span>
-  );
-}
-
-function SampleTag() {
-  return (
-    <span className="rounded-full bg-[#DBEAFE] px-2 py-0.5 text-[10px] font-bold text-[#1E40AF]">
-      Sample
     </span>
   );
 }
@@ -898,6 +885,13 @@ export function MasterAgentDialer() {
               handover={transferId ? (handover?.summary ?? null) : null}
             />
           )}
+          {(callActive || live.lines.length > 0) && (
+            <LiveAssistPanel
+              lines={live.lines}
+              active={state === "connected"}
+              leadId={customer.status === "found" ? customer.lead.id : (handover?.leadId ?? null)}
+            />
+          )}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <section className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
@@ -1095,23 +1089,6 @@ export function MasterAgentDialer() {
                     {transcriptMessage(transcript, Boolean(viewingCallId))}
                   </p>
                 )}
-              </div>
-              <div className="flex flex-col gap-1 rounded-[10px] bg-[#EFF6FF] p-3">
-                <span className="flex items-center gap-2 text-[13px] font-bold text-[#1D4ED8]">
-                  Suggested reply <SampleTag />
-                </span>
-                <p className="m-0 text-[13px] leading-[19px] text-[#1E3A5F]">{SUGGESTED_REPLY}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <SampleTag />
-                {DETECTED_TAGS.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-[#F1F5F9] px-2.5 py-1 text-[12px] text-[#475569]"
-                  >
-                    {tag}
-                  </span>
-                ))}
               </div>
             </section>
           </div>
