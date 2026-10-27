@@ -29,8 +29,10 @@ export function AiRecordPanel({ record, portal, compact = false }: { record: Rec
   const load = useCallback(() => {
     ai.panel(portal, record)
       .then((p) => {
-        setPanel(p);
-        setState("ready");
+        // A record the AI platform doesn't know yet comes back without lists; treat that as empty.
+        const list = <T,>(v: T[] | undefined) => (Array.isArray(v) ? v : []);
+        setPanel(p ? { ...p, files: list(p.files), facts: list(p.facts), inbox: list(p.inbox), decisions: list(p.decisions), summary: p.summary ? { ...p.summary, openItems: list(p.summary.openItems) } : p.summary } : null);
+        setState(p ? "ready" : "hidden");
       })
       .catch((e) => setState(e instanceof AiNotConnectedError ? "hidden" : "hidden"));
   }, [portal, record]);
@@ -193,9 +195,10 @@ export function useAiFileLabels(portal: AiPortal, record: RecordRef | null, refr
         const p = await ai.panel(portal, { type, id });
         if (!alive) return;
         const m = new Map<string, { label: string; confidence: number; reviewState: string }>();
-        for (const f of p.files) if (f.labels[0]) m.set(f.id, { ...f.labels[0], reviewState: f.reviewState });
+        const files = Array.isArray(p?.files) ? p.files : [];
+        for (const f of files) if (f.labels?.[0]) m.set(f.id, { ...f.labels[0], reviewState: f.reviewState });
         setLabels(m);
-        if (p.files.some((f) => f.reviewState === "pending") && tries++ < 5) setTimeout(() => void tick(), 4000);
+        if (files.some((f) => f.reviewState === "pending") && tries++ < 5) setTimeout(() => void tick(), 4000);
       } catch {
         /* not connected: no labels */
       }
