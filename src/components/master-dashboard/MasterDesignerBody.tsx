@@ -6,6 +6,7 @@ import {
   BATTERIES,
   BATTERY_SIZES,
   DCAC_LIMIT,
+  DCAC_LIMIT_HYBRID_OR_BATTERY,
   INVERTERS,
   PANEL_KW,
   PERIOD_DAYS,
@@ -27,6 +28,7 @@ import {
   simulate,
   yearlyConsumption,
 } from "@/lib/designer/simulation";
+import { dcAcLimitLabel, dcAcLimitPercent } from "@/lib/designer/designRules";
 
 /**
  * Matches the Easylink Designer "Solar designer" mock (DesignerBody.dc.html)
@@ -158,7 +160,12 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const arrayKw = panels * PANEL_KW;
   const kwdc = (Math.round(arrayKw * 100) / 100).toString();
   const ratio = Math.round((arrayKw / inverter.kw) * 100);
-  const maxPanels = Math.min(p.roofMax, Math.floor((inverter.kw * DCAC_LIMIT) / PANEL_KW));
+  // 200% with a hybrid inverter or a battery, else the 133% STC rule.
+  const hybridOrBattery = inverter.hybrid || battery > 0;
+  const limitPct = dcAcLimitPercent(hybridOrBattery);
+  const limitLabel = dcAcLimitLabel(hybridOrBattery);
+  const inverterMaxPanels = Math.floor((inverter.kw * (hybridOrBattery ? DCAC_LIMIT_HYBRID_OR_BATTERY : DCAC_LIMIT)) / PANEL_KW);
+  const maxPanels = Math.min(p.roofMax, inverterMaxPanels);
 
   const sim = useMemo(() => {
     const consumption = yearlyConsumption(bill, days, rate);
@@ -181,11 +188,11 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const expC = exportIncome * f;
   const billCost = supplyC + gridC - expC;
 
-  const pricing = priceSystem({ arrayKw, panels, battery, tier, ratioPercent: ratio });
+  const pricing = priceSystem({ arrayKw, panels, battery, tier, ratioPercent: ratio, limitPercent: limitPct });
   const payback = yearly > 0 ? pricing.total / yearly : 0;
   const save25 = lifetimeSavings(yearly) - pricing.total;
 
-  const blocked = ratio > 133 || panels > p.roofMax;
+  const blocked = ratio > limitPct || panels > p.roofMax;
   const stepName = step === 9 ? finalStepName(role) : STEP_NAMES[step - 1];
 
   const set = (fn: () => void) => {
@@ -290,11 +297,13 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const warn = (t: string, dd: string) => ({ t, d: dd, m: "!", bg: "#FFFBEB", fg: "#92400E" });
 
   const checks = [
-    ratio <= 133
-      ? ok(`Panel : inverter ${ratio}%`, "Within the 133% STC limit")
+    ratio <= limitPct
+      ? ok(`Panel : inverter ${ratio}%`, `Within the ${limitLabel}`)
       : bad(
           `Panel : inverter ${ratio}%`,
-          `Over the 133% STC limit · use ${Math.floor((inverter.kw * DCAC_LIMIT) / PANEL_KW)} panels or a larger inverter`,
+          `Over the ${limitLabel} · use ${inverterMaxPanels} panels${
+            hybridOrBattery ? "" : ", use a hybrid inverter or add a battery (200%)"
+          } or a larger inverter`,
         ),
     panels <= p.roofMax
       ? ok("Fits the roof", `${panels} of ${p.roofMax} possible panels`)
@@ -917,8 +926,8 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
           </div>
           <p className="m-0 rounded-[12px] px-3.5 py-3 text-[13px]" style={{ background: NAVY_2, color: NAV_TEXT }}>
             Showing {panelsShown} panels: sized to your usage and a {inverter.kw} kW inverter (max {maxPanels} within
-            the 133% rule). The roof could fit {p.roofMax}, but more panels than the inverter can use would not earn
-            STCs.
+            the {limitLabel}). The roof could fit {p.roofMax}, but more panels than the inverter is allowed would not
+            earn STCs.
           </p>
         </div>
       )}

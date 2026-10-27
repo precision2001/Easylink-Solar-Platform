@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { dcAcLimitLabel, dcAcLimitPercent } from "@/lib/designer/designRules";
 
 /**
  * Matches the Easylink Designer "Ready Sites" mock exactly
@@ -299,6 +300,9 @@ export function MasterReadySites() {
   const inv = INV[f.inv] ?? INV.fx99!;
   const bat = BAT[f.bat] ?? BAT.none!;
   const ratio = inv[1] ? Math.round((kw / inv[1]) * 100) : 0;
+  // 200% with a hybrid inverter or a battery, else the 133% STC rule.
+  const limitHybridOrBattery = inv[0].includes("hybrid") || bat[1] > 0;
+  const limitPct = dcAcLimitPercent(limitHybridOrBattery);
   const fee = f.feeModel === "pct" ? Math.round((f.contract * f.pct) / 100) : f.fee;
   const autoTitle =
     (f.panels ? kw + " kW solar" : "Battery retrofit") +
@@ -956,7 +960,8 @@ export function MasterReadySites() {
                   <h2 className="m-0 flex-grow text-[16px] font-bold text-[#0F172A]">System</h2>
                   <span className="text-[12px] text-[#5B6B80]">
                     {kw} kW · {ratio}% of inverter{" "}
-                    {ratio > 133 ? "· over the 133% limit" : "· within the 133% limit"}
+                    {ratio > limitPct ? "· over the " : "· within the "}
+                    {dcAcLimitLabel(limitHybridOrBattery)}
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2.5">
