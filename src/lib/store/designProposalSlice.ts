@@ -12,6 +12,8 @@ export type DesignProposalSolarDesign = {
   panelCountInput: string;
   /** PNG data URL from html2canvas on Save — for proposals / PDFs */
   mapScreenshotDataUrl: string | null;
+  /** The single orientation every panel in the design uses. Older saved designs omit it (treated as portrait). */
+  panelOrientation?: "PORTRAIT" | "LANDSCAPE";
 };
 
 export type DesignProposalSummary = {
