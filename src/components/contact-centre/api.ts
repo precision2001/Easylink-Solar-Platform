@@ -100,6 +100,30 @@ export type PendingTransfer = { id: string; callerNumber: string; callerName: st
 export type AcceptedTransfer = { transferId: string; roomName: string; callerNumber: string; callerName: string | null; leadId: string | null; summary: string; token: string; url: string };
 export type LeadSummary = { summary: string; itemCount: number; updatedAt: string };
 
+export type CcOverview = {
+  day: string;
+  kpis: {
+    callsToday: number;
+    inbound: number;
+    outbound: number;
+    answeredByAi: number;
+    handedOver: number;
+    callbacksBooked: number;
+    missed: number;
+    outboundConnected: number;
+    siteVisitsBooked: number;
+    avgHandleSec: number | null;
+  };
+  waiting: { id: string; callerNumber: string; callerName: string | null; reason: string | null; secondsLeft: number }[];
+  liveCalls: { id: string; direction: "INBOUND" | "OUTBOUND"; status: string; handledBy: "PERSON" | "AI"; number: string; startedAt: string; roomName: string | null; customer: { id: string; name: string } | null; by: string }[];
+  followUps: {
+    dueToday: number;
+    items: { id: string; kind: FollowUp["kind"]; title: string; notes: string | null; dueAt: string; overdue: boolean; phone: string | null; fromAi: boolean; customer: { id: string; name: string; address: string | null } | null }[];
+  };
+  lines: { number: string; name: string; route: string; waiting: number }[];
+  team: { userId: string; name: string; status: Presence; lastSeenAt: string }[];
+};
+
 export function cc(portal: Portal) {
   const base = `/api/${portal}/cc`;
   async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<{ data: T; meta?: Record<string, unknown> }> {
@@ -137,6 +161,7 @@ export function cc(portal: Portal) {
       call<FollowUp>(`/follow-ups`, { method: "POST", json: body }).then((r) => r.data),
     leadSummary: (leadId: string) => call<LeadSummary | null>(`/customer-records/${leadId}/summary`),
     writeLeadSummary: (leadId: string) => call<LeadSummary>(`/customer-records/${leadId}/summary`, { method: "POST", json: {} }).then((r) => r.data),
+    overview: () => call<CcOverview>(`/live-calls/overview`).then((r) => r.data),
     presence: () => call<{ me: { status: Presence }; team: { userId: string; name: string; status: Presence; lastSeenAt: string }[] }>(`/live-calls/presence`).then((r) => r.data),
     setPresence: (status: Presence) => call(`/live-calls/presence`, { method: "PUT", json: { status } }),
     pendingTransfers: () => call<PendingTransfer[]>(`/live-calls/transfers/pending`).then((r) => r.data),
