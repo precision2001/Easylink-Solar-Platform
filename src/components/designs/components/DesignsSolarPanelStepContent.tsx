@@ -33,6 +33,7 @@ import { generatePanelsForRoofs } from "@/lib/designer/panelLayout";
 import {
   DESIGN_RULES,
   inverterSizingFor,
+  roofPitchDegrees,
   type PanelOrientation,
 } from "@/lib/designer/designRules";
 import { mergeProposalData } from "@/lib/store/designProposalSlice";
@@ -103,11 +104,15 @@ function panelCorners(
   widthM: number,
   orientation: "PORTRAIT" | "LANDSCAPE",
   rotationDegrees = 0,
+  /** Roof pitch: the up-slope side looks shorter from above by cos(pitch). */
+  slopeDegrees = 0,
 ): google.maps.LatLngLiteral[] {
   const metersPerLat = 111320;
   const metersPerLng = 111320 * Math.cos((center.lat * Math.PI) / 180);
 
-  const halfHeightMeters = (orientation === "LANDSCAPE" ? widthM : heightM) / 2;
+  const halfHeightMeters =
+    ((orientation === "LANDSCAPE" ? widthM : heightM) / 2) *
+    Math.cos((slopeDegrees * Math.PI) / 180);
   const halfWidthMeters = (orientation === "LANDSCAPE" ? heightM : widthM) / 2;
   const angle = (rotationDegrees * Math.PI) / 180;
   const cos = Math.cos(angle);
@@ -191,6 +196,7 @@ function useImperativePanels(
           panelDimensions.widthM,
           panel.orientation,
           panel.rotationDegrees,
+          panel.slopeDegrees,
         ),
         strokeColor: "#FFF176",
         strokeWeight: 0.8,
@@ -1123,7 +1129,13 @@ export const DesignsSolarPanelStepContent = forwardRef<
     });
   }, [selectedRoofId]);
 
-  /** Packs every roof with the design's single orientation and the 100 mm setback rule. */
+  /** Google's area-weighted roof pitch, or the 22.5° default when there's no real data. */
+  const roofPitchDeg = useMemo(
+    () => roofPitchDegrees(data?.roofSegments, data?.estimated),
+    [data?.estimated, data?.roofSegments],
+  );
+
+  /** Packs every roof with the design's single orientation, the 100 mm setback and the roof pitch. */
   const layoutPanels = useCallback(
     (
       paths: google.maps.LatLngLiteral[][],
@@ -1131,10 +1143,13 @@ export const DesignsSolarPanelStepContent = forwardRef<
     ): SolarPanel[] | null => {
       if (!data?.panelDimensions) return null;
       return dedupeSolarPanels(
-        generatePanelsForRoofs(paths, data.panelDimensions, { orientation }),
+        generatePanelsForRoofs(paths, data.panelDimensions, {
+          orientation,
+          pitchDeg: roofPitchDeg,
+        }),
       );
     },
-    [data?.panelDimensions],
+    [data?.panelDimensions, roofPitchDeg],
   );
 
   /**
@@ -1493,7 +1508,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   {inverterSizing.arrayKw.toFixed(1)} kW of panels ·{" "}
                   {panelOrientation === "PORTRAIT" ? "portrait" : "landscape"}{" "}
                   on every roof · {Math.round(DESIGN_RULES.edgeSetbackM * 1000)} mm
-                  edge setback
+                  edge setback · {Math.round(roofPitchDeg)}° pitch
+                  {data?.estimated ? " (assumed)" : ""}
                 </p>
                 <p>
                   Hybrid inverter: from{" "}

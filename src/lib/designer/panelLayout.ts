@@ -18,6 +18,13 @@ export type PanelLayoutOptions = {
   setbackM?: number;
   /** Gap between neighbouring panels; defaults to the EasyLink rule. */
   gapM?: number;
+  /**
+   * Roof pitch. The outline is a plan (top-down) view, so the up-slope side
+   * of each panel — and the gap between rows — is foreshortened by
+   * cos(pitch). Rows are assumed to run along the eave (the longest edge).
+   * Defaults to flat.
+   */
+  pitchDeg?: number;
 };
 
 const METRES_PER_DEG_LAT = 111320;
@@ -105,7 +112,12 @@ export function generatePanelsForRoofPolygon(
   polygon: LatLng[],
   panelDimensions: { heightM: number; widthM: number },
   segmentIndex: number,
-  { orientation, setbackM = DESIGN_RULES.edgeSetbackM, gapM = DESIGN_RULES.panelGapM }: PanelLayoutOptions,
+  {
+    orientation,
+    setbackM = DESIGN_RULES.edgeSetbackM,
+    gapM = DESIGN_RULES.panelGapM,
+    pitchDeg = 0,
+  }: PanelLayoutOptions,
 ): SolarPanel[] {
   if (polygon.length < 3) return [];
 
@@ -120,15 +132,20 @@ export function generatePanelsForRoofPolygon(
   const longSide = Math.max(panelDimensions.heightM, panelDimensions.widthM);
   const shortSide = Math.min(panelDimensions.heightM, panelDimensions.widthM);
   const isLandscape = orientation === "LANDSCAPE";
-  // Width runs along the row (the roof's longest edge), height across it.
+  const slope = Math.min(Math.max(pitchDeg, 0), 89);
+  const cosSlope = Math.cos((slope * Math.PI) / 180);
+  // Width runs along the row (the roof's longest edge), height up the slope,
+  // seen from above.
   const pw = isLandscape ? longSide : shortSide;
-  const ph = isLandscape ? shortSide : longSide;
+  const ph = (isLandscape ? shortSide : longSide) * cosSlope;
+  const rowGap = gapM * cosSlope;
   const s = Math.max(0, setbackM);
 
   const toPanel = (x: number, y: number): SolarPanel => ({
     center: planarToLatLng(rotate({ x, y }, center, rowAngle), avgLat),
     orientation,
     rotationDegrees: rowAngleDeg,
+    ...(slope > 0 ? { slopeDegrees: slope } : {}),
     segmentIndex,
     yearlyEnergyDcKwh: 0,
   });
@@ -158,7 +175,7 @@ export function generatePanelsForRoofPolygon(
   };
 
   let best: SolarPanel[] = [];
-  const yStep = ph + gapM;
+  const yStep = ph + rowGap;
   for (let k = 0; k < ROW_OFFSET_SAMPLES; k++) {
     const yOffset = (k / ROW_OFFSET_SAMPLES) * yStep;
     const generated: SolarPanel[] = [];

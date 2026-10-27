@@ -22,7 +22,29 @@ export const DESIGN_RULES = {
   dcAcRatioStandardInverter: 1.33,
   /** Network export limit per phase — Ausgrid and Endeavour Energy. */
   exportLimitKwPerPhase: 10,
+  /** Pitch assumed when Google has no roof data — a typical Australian tiled roof. */
+  defaultRoofPitchDeg: 22.5,
+  /** Pitches above this are treated as data noise and capped. */
+  maxRoofPitchDeg: 45,
 } as const;
+
+/**
+ * Pitch to lay panels out at: Google's roof segments, weighted by area, when
+ * real (non-estimated) data exists — otherwise the default tiled-roof pitch.
+ */
+export function roofPitchDegrees(
+  segments: { pitchDegrees: number; areaM2: number }[] | undefined,
+  estimated = false,
+): number {
+  const usable = (segments ?? []).filter(
+    (s) => Number.isFinite(s.pitchDegrees) && s.areaM2 > 0,
+  );
+  const totalArea = usable.reduce((sum, s) => sum + s.areaM2, 0);
+  if (estimated || totalArea <= 0) return DESIGN_RULES.defaultRoofPitchDeg;
+  const weighted =
+    usable.reduce((sum, s) => sum + s.pitchDegrees * s.areaM2, 0) / totalArea;
+  return Math.min(Math.max(weighted, 0), DESIGN_RULES.maxRoofPitchDeg);
+}
 
 export type InverterSizing = {
   arrayKw: number;
