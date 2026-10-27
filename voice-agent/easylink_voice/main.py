@@ -109,7 +109,7 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(finish)
 
     await session.start(agent=agent, room=ctx.room)
-    notice = "This call is recorded so we can help you properly. " if recording_key else ""
+    notice = "This call is recorded and may be monitored so we can help you properly. " if recording_key else ""
     if recording_key and not recording_key.startswith("calls/"):
         recording_key = None
     if who.get("known"):
