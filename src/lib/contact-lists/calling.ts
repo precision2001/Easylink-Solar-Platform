@@ -165,7 +165,7 @@ export type OptionSpec = {
   panels: number;
   inverterKw: number;
   inverter: string;
-  /** A hybrid inverter — with a battery, the array may reach 200% of it. */
+  /** A hybrid inverter (can take a DC-coupled battery). */
   hybrid: boolean;
   battery: number;
   batterySku: string;
@@ -237,7 +237,7 @@ export const OPTION_SPECS: OptionSpec[] = [
 export type PricedOption = OptionSpec & {
   kw: number;
   ratio: number;
-  /** Panel : inverter limit (%) for this option — 200 with a hybrid inverter, else 133. */
+  /** Panel : inverter limit (%) for this option — 200 with a battery installed, else 133. */
   limitPercent: number;
   /** Everything installed, including the extras. */
   price: number;
@@ -264,7 +264,7 @@ export function priceOptions(
     // Rounded to the cent of a kW, as the catalogue quotes it.
     const kw = Math.round(s.panels * 44) / 100;
     const ratio = Math.round((kw / s.inverterKw) * 100);
-    const limitPercent = dcAcLimitPercent(s.hybrid);
+    const limitPercent = dcAcLimitPercent(s.battery > 0);
     const gen = generation(kw, 0);
     const r = simulate({ battery: s.battery, consumption, generation: gen, mode: "self", age: 0 });
     const yearly = r.exported * fit + r.selfUsed * rate;
@@ -290,15 +290,15 @@ export const STAGE_PROBABILITY = 25;
 /** The battery the CRM's System tab assumes. */
 export const CRM_BATTERY_KWH = 20;
 const CRM_INVERTER_KW = 9.9;
-/** The CRM's 9.9 kW inverter is a hybrid, so the 200% limit applies. */
-export const CRM_LIMIT_PERCENT = dcAcLimitPercent(true);
+/** The CRM's system includes a battery, so the 200% limit applies. */
+export const CRM_LIMIT_PERCENT = dcAcLimitPercent(CRM_BATTERY_KWH > 0);
 
 export type DealValue = {
   kw: number;
   ratio: number;
   price: number;
   weighted: number;
-  /** Over the panel : inverter limit (200% with a hybrid inverter), so the array would earn no certificates. */
+  /** Over the panel : inverter limit (200% with a battery), so the array would earn no certificates. */
   oversized: boolean;
 };
 

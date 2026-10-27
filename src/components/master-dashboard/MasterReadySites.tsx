@@ -300,9 +300,9 @@ export function MasterReadySites() {
   const inv = INV[f.inv] ?? INV.fx99!;
   const bat = BAT[f.bat] ?? BAT.none!;
   const ratio = inv[1] ? Math.round((kw / inv[1]) * 100) : 0;
-  // 200% with a hybrid inverter (battery optional), else the 133% STC rule.
-  const limitHybrid = inv[0].includes("hybrid");
-  const limitPct = dcAcLimitPercent(limitHybrid);
+  // 200% once a battery is on the site (CEC guideline), else the 133% STC rule.
+  const limitWithBattery = bat[1] > 0;
+  const limitPct = dcAcLimitPercent(limitWithBattery);
   const fee = f.feeModel === "pct" ? Math.round((f.contract * f.pct) / 100) : f.fee;
   const autoTitle =
     (f.panels ? kw + " kW solar" : "Battery retrofit") +
@@ -961,7 +961,7 @@ export function MasterReadySites() {
                   <span className="text-[12px] text-[#5B6B80]">
                     {kw} kW · {ratio}% of inverter{" "}
                     {ratio > limitPct ? "· over the " : "· within the "}
-                    {dcAcLimitLabel(limitHybrid)}
+                    {dcAcLimitLabel(limitWithBattery)}
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2.5">
