@@ -100,6 +100,23 @@ export type PendingTransfer = { id: string; callerNumber: string; callerName: st
 export type AcceptedTransfer = { transferId: string; roomName: string; callerNumber: string; callerName: string | null; leadId: string | null; summary: string; token: string; url: string };
 export type Assist = { suggestedReply: string | null; sentiment: "positive" | "neutral" | "negative" | null; topics: string[]; watchOut: string | null };
 export type CoachingComment = { id: string; atSec: number | null; body: string; createdAt: string; authorId: string; author: string };
+export type CampaignStatus = "DRAFT" | "ACTIVE" | "PAUSED" | "DONE";
+export type Campaign = {
+  id: string;
+  name: string;
+  listKey: string;
+  goal: string | null;
+  script: string | null;
+  status: CampaignStatus;
+  restDays: number;
+  wrapSeconds: number;
+  createdAt: string;
+  updatedAt: string;
+  list: { name: string; callable: number; total: number };
+  stats: { calls: number; connected: number; connectRate: number | null; outcomes: Partial<Record<Outcome, number>>; siteVisits: number; quotes: number };
+};
+export type CampaignInput = { name: string; listKey: string; goal?: string | null; script?: string | null; restDays?: number; wrapSeconds?: number };
+export type NextPerson = { name: string; phone: string | null; leadId: string | null; contactId?: string; address: string | null } | null;
 export type LeadSummary = { summary: string; itemCount: number; updatedAt: string };
 
 export type CcOverview = {
@@ -170,6 +187,13 @@ export function cc(portal: Portal) {
       call<{ id: string }>(`/call-records/${callId}/comments`, { method: "POST", json: { body, atSec: atSec ?? null } }),
     deleteComment: (id: string) => call(`/call-records/comments/${id}`, { method: "DELETE" }),
     listen: (callId: string) => call<{ callId: string; roomName: string; token: string; url: string }>(`/live-calls/listen`, { method: "POST", json: { callId } }).then((r) => r.data),
+    campaigns: () => call<Campaign[]>(`/campaigns`).then((r) => r.data),
+    campaign: (id: string) => call<Campaign>(`/campaigns/${id}`).then((r) => r.data),
+    createCampaign: (body: CampaignInput) => call<Campaign>(`/campaigns`, { method: "POST", json: body }).then((r) => r.data),
+    updateCampaign: (id: string, body: Partial<CampaignInput> & { status?: CampaignStatus }) =>
+      call<Campaign>(`/campaigns/${id}`, { method: "PATCH", json: body }).then((r) => r.data),
+    deleteCampaign: (id: string) => call(`/campaigns/${id}`, { method: "DELETE" }),
+    campaignNext: (id: string) => call<NextPerson>(`/campaigns/${id}/next`).then((r) => r.data),
     overview: () => call<CcOverview>(`/live-calls/overview`).then((r) => r.data),
     presence: () => call<{ me: { status: Presence }; team: { userId: string; name: string; status: Presence; lastSeenAt: string }[] }>(`/live-calls/presence`).then((r) => r.data),
     setPresence: (status: Presence) => call(`/live-calls/presence`, { method: "PUT", json: { status } }),

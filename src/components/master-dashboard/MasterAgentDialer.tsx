@@ -23,7 +23,7 @@ import {
 import { CallListPanel } from "@/components/call-lists/CallListPanel";
 import { AiCallAssist, ScreenPop } from "@/components/contact-centre/DiallerPanels";
 import { CustomerAiSummary, IncomingTransfers, LiveAssistPanel, LiveTranscriptPanel, PresenceToggle, useLiveTranscript } from "@/components/contact-centre/LiveCalls";
-import type { AcceptedTransfer } from "@/components/contact-centre/api";
+import { cc, type AcceptedTransfer, type Campaign } from "@/components/contact-centre/api";
 
 /**
  * "Agent Dialer" from the Easylink Designer mock — the real call mechanics
@@ -253,6 +253,8 @@ export function MasterAgentDialer() {
    */
   const searchParams = useSearchParams();
   const handedNumber = searchParams.get("number");
+  /** `?campaign=` turns on campaign mode: its script, its calls tagged, power dialling. */
+  const campaignId = searchParams.get("campaign");
   useEffect(() => {
     if (handedNumber) setInput(handedNumber);
   }, [handedNumber]);
@@ -294,12 +296,66 @@ export function MasterAgentDialer() {
     setHandover(t);
     void join(t);
   };
+  // ---------- campaign mode ----------
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [campaignNote, setCampaignNote] = useState<string | null>(null);
+  const [power, setPower] = useState(true);
+  /** Seconds until power dialling rings the next person; null when not counting. */
+  const [countdown, setCountdown] = useState<number | null>(null);
+  useEffect(() => {
+    if (!campaignId) return;
+    let cancelled = false;
+    cc("admin")
+      .campaign(campaignId)
+      .then((c) => !cancelled && setCampaign(c))
+      .catch((e) => !cancelled && setCampaignNote(e instanceof Error ? e.message : "Couldn't load the campaign"));
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, listRefresh]);
+  const running = campaign?.status === "ACTIVE";
+  /** Every dial while a campaign runs is counted towards it. */
+  const dialNumber = (phone: string) => dial(phone, running && campaign ? { campaignId: campaign.id } : undefined);
+
+  const callNextInCampaign = async () => {
+    if (!campaign) return;
+    setCountdown(null);
+    try {
+      const next = await cc("admin").campaignNext(campaign.id);
+      if (!next?.phone) {
+        setCampaignNote("Nobody left to call in this campaign right now.");
+        return;
+      }
+      setCampaignNote(`Calling ${next.name}`);
+      setInput(next.phone);
+      void dialNumber(next.phone);
+    } catch (e) {
+      setCampaignNote(e instanceof Error ? e.message : "Couldn't get the next person");
+    }
+  };
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (callActive) {
+      setCountdown(null);
+      return;
+    }
+    if (countdown <= 0) {
+      void callNextInCampaign();
+      return;
+    }
+    const t = window.setTimeout(() => setCountdown((c) => (c === null ? null : c - 1)), 1000);
+    return () => window.clearTimeout(t);
+    // callNextInCampaign reads the latest campaign when the count reaches zero.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown, callActive]);
+
   const pick = (phone: string) => {
     if (callActive) return;
     setInput(phone);
     if (dialAfterPick.current) {
       dialAfterPick.current = false;
-      void dial(phone);
+      void dialNumber(phone);
     }
   };
 
@@ -531,7 +587,12 @@ export function MasterAgentDialer() {
 
       setWrapSave({ status: "saved" });
       setListRefresh((n) => n + 1);
-      if (thenDialNext && nextRef.current) {
+      if (thenDialNext && running && power) {
+        // Power dialling: a short pause to breathe, then the next person in the campaign.
+        setCountdown(campaign!.wrapSeconds);
+      } else if (thenDialNext && running) {
+        void callNextInCampaign();
+      } else if (thenDialNext && nextRef.current) {
         // A call list is open: it picks the next person, and `pick` dials them.
         dialAfterPick.current = true;
         nextRef.current();
@@ -539,7 +600,7 @@ export function MasterAgentDialer() {
         const next = queue?.find((q) => q.phone);
         if (next?.phone) {
           setInput(next.phone);
-          void dial(next.phone);
+          void dialNumber(next.phone);
         }
       }
     } catch (err) {
@@ -697,7 +758,7 @@ export function MasterAgentDialer() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !callActive && input.trim()) {
-                    void dial(input);
+                    void dialNumber(input);
                   }
                 }}
                 disabled={callActive}
@@ -708,7 +769,7 @@ export function MasterAgentDialer() {
               />
               <button
                 type="button"
-                onClick={() => void dial(input)}
+                onClick={() => void dialNumber(input)}
                 disabled={!input.trim() || callActive}
                 aria-label="Call"
                 className="flex size-11 shrink-0 items-center justify-center rounded-[10px] bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -734,7 +795,47 @@ export function MasterAgentDialer() {
 
         {/* Live dialer — the real thing */}
         <section className="flex flex-col gap-4">
-          <IncomingTransfers enabled={!callActive} onAccepted={takeCall} />
+          {campaignId && (
+            <section className="flex flex-col gap-2 rounded-[14px] border-2 border-[#F68A0A] bg-[#FFF7E6] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-col">
+                  <span className="text-[12px] font-bold uppercase tracking-[0.6px] text-[#92400E]">Campaign</span>
+                  <span className="text-[16px] font-bold text-[#3B1D00]">{campaign?.name ?? "Loading…"}</span>
+                  {campaign && (
+                    <span className="text-[12.5px] text-[#78350F]">
+                      {campaign.list.name} · {campaign.list.callable} left to call · {campaign.stats.calls} calls so far
+                      {campaign.goal ? ` · Goal: ${campaign.goal}` : ""}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-[13px] font-semibold text-[#3B1D00]" htmlFor="power-dial">
+                    <input id="power-dial" type="checkbox" checked={power} onChange={(e) => {
+                      setPower(e.target.checked);
+                      if (!e.target.checked) setCountdown(null);
+                    }} />
+                    Power dialling
+                  </label>
+                  {running && !callActive && countdown === null && (
+                    <button type="button" onClick={() => void callNextInCampaign()} className="rounded-[10px] bg-[#F68A0A] px-3 py-1.5 text-[13px] font-bold text-[#3B1D00]">
+                      Call next
+                    </button>
+                  )}
+                  {!running && campaign && <span className="text-[12.5px] font-semibold text-[#92400E]">This campaign isn&apos;t running. Start it on the Campaigns page.</span>}
+                </div>
+              </div>
+              {countdown !== null && (
+                <div className="flex items-center justify-between gap-2 rounded-[10px] bg-white px-3 py-2">
+                  <span className="text-[14px] font-semibold text-[#3B1D00]">Next call in {countdown}s</span>
+                  <button type="button" onClick={() => setCountdown(null)} className="text-[13px] font-semibold text-[#0B4A7A] hover:underline">
+                    Pause
+                  </button>
+                </div>
+              )}
+              {campaignNote && <span className="text-[12.5px] text-[#78350F]">{campaignNote}</span>}
+            </section>
+          )}
+          <IncomingTransfers enabled={!callActive && countdown === null} onAccepted={takeCall} />
           {callActive ? (
             // In-call: real number, real timer, real mute/hang-up. No "Recording ·
             // consent announced" line like the mock's — we don't record calls or
@@ -829,7 +930,7 @@ export function MasterAgentDialer() {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && input.trim()) {
-                        void dial(input);
+                        void dialNumber(input);
                       }
                     }}
                     inputMode="tel"
@@ -857,7 +958,7 @@ export function MasterAgentDialer() {
 
                 <button
                   type="button"
-                  onClick={() => void dial(input)}
+                  onClick={() => void dialNumber(input)}
                   disabled={!input.trim() || state === "dialling"}
                   className="flex h-11 w-full items-center justify-center rounded-[10px] bg-emerald-600 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -902,7 +1003,7 @@ export function MasterAgentDialer() {
                 <span className="shrink-0 text-[12px] text-[#5B6B80]">Step 3 of 6</span>
               </div>
               <p className="m-0 rounded-[10px] bg-[#FFF7E6] p-3 text-[13px] leading-[19px] text-[#3B1D00]">
-                {SCRIPT_QUOTE}
+                {campaign?.script ?? SCRIPT_QUOTE}
               </p>
               <div className="flex flex-col gap-2.5">
                 {FIELDS.map((f) => (

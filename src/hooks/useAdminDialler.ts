@@ -246,7 +246,7 @@ export function useAdminDialler() {
   }, [releaseCarrierLeg, teardown]);
 
   const dial = useCallback(
-    async (rawNumber: string) => {
+    async (rawNumber: string, opts?: { campaignId?: string }) => {
       if (state !== "idle") return;
 
       setError(null);
@@ -256,7 +256,7 @@ export function useAdminDialler() {
         const res = await fetch("/api/admin/calls/dial", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ toNumber: rawNumber }),
+          body: JSON.stringify({ toNumber: rawNumber, ...(opts?.campaignId ? { campaignId: opts.campaignId } : {}) }),
         });
 
         const payload = await res.json().catch(() => null);
