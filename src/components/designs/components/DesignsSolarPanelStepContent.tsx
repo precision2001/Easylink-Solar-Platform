@@ -1496,20 +1496,20 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   edge setback
                 </p>
                 <p>
-                  With a battery: inverter from{" "}
-                  {inverterSizing.minInverterKwWithBattery.toFixed(1)} kW (
-                  {Math.round(DESIGN_RULES.dcAcRatioWithBattery * 100)}% sizing),{" "}
-                  {inverterSizing.phasesWithBattery === 1
+                  Hybrid inverter: from{" "}
+                  {inverterSizing.minHybridInverterKw.toFixed(1)} kW (
+                  {Math.round(DESIGN_RULES.dcAcRatioHybridInverter * 100)}% sizing),{" "}
+                  {inverterSizing.phasesHybrid === 1
                     ? "single phase"
                     : "three phase"}
                   .
                 </p>
                 <p>
-                  Without a battery: inverter from{" "}
-                  {inverterSizing.minInverterKwWithoutBattery.toFixed(1)} kW (
-                  {Math.round(DESIGN_RULES.dcAcRatioWithoutBattery * 100)}% STC
+                  Standard inverter: from{" "}
+                  {inverterSizing.minStandardInverterKw.toFixed(1)} kW (
+                  {Math.round(DESIGN_RULES.dcAcRatioStandardInverter * 100)}% STC
                   limit),{" "}
-                  {inverterSizing.phasesWithoutBattery === 1
+                  {inverterSizing.phasesStandard === 1
                     ? "single phase"
                     : "three phase"}
                   .

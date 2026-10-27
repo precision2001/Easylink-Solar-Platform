@@ -80,17 +80,17 @@ describe("generatePanelsForRoofs", () => {
 });
 
 describe("inverterSizingFor", () => {
-  it("sizes 43 x 440 W for 200% with a battery and 133% without", () => {
+  it("sizes 43 x 440 W for 200% with a hybrid inverter and 133% with a standard one", () => {
     const s = inverterSizingFor(43, 440);
     expect(s.arrayKw).toBeCloseTo(18.92, 2);
-    expect(s.minInverterKwWithBattery).toBe(9.5);
-    expect(s.phasesWithBattery).toBe(1);
-    expect(s.minInverterKwWithoutBattery).toBe(14.3);
-    expect(s.phasesWithoutBattery).toBe(3);
+    expect(s.minHybridInverterKw).toBe(9.5);
+    expect(s.phasesHybrid).toBe(1);
+    expect(s.minStandardInverterKw).toBe(14.3);
+    expect(s.phasesStandard).toBe(3);
   });
 
   it("keeps a 10 kW inverter on single phase under the 10 kW per phase export limit", () => {
     // 20 kW of panels at 200% → exactly a 10 kW inverter.
-    expect(inverterSizingFor(50, 400).phasesWithBattery).toBe(1);
+    expect(inverterSizingFor(50, 400).phasesHybrid).toBe(1);
   });
 });

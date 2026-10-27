@@ -216,8 +216,15 @@ describe("the four options quoted on the call", () => {
     expect(opts.map((o) => o.payback.toFixed(1))).toEqual(["3.3", "5.4", "6.1", "7.1"]);
   });
 
-  it("keeps every option inside the 133% certificate limit", () => {
-    for (const o of opts) expect(o.ratio).toBeLessThanOrEqual(133);
+  it("keeps every option inside its certificate limit", () => {
+    for (const o of opts) expect(o.ratio).toBeLessThanOrEqual(o.limitPercent);
+  });
+
+  it("allows 200% with a hybrid inverter, 133% with a standard one", () => {
+    const byKey = Object.fromEntries(opts.map((o) => [o.key, o.limitPercent]));
+    expect(byKey.bill).toBe(200);
+    expect(byKey.max).toBe(200);
+    expect(opts.find((o) => !o.hybrid)?.limitPercent).toBe(133);
   });
 
   it("leads with Bill-Buster", () => {
@@ -251,16 +258,23 @@ describe("the deal panel", () => {
     expect(d.oversized).toBe(false);
   });
 
+  it("no longer flags 138% now the hybrid inverter limit is 200%", () => {
+    // 31 panels on a 9.9 kW hybrid is 138%.
+    const d = dealValue(31);
+    expect(d.ratio).toBe(138);
+    expect(d.oversized).toBe(false);
+  });
+
   it("flags an array that would lose the rebate", () => {
-    // 31 panels on a 9.9 kW inverter is 138%.
-    const over = dealValue(31);
-    expect(over.ratio).toBe(138);
+    // 46 panels on a 9.9 kW inverter is 204%.
+    const over = dealValue(46);
+    expect(over.ratio).toBe(204);
     expect(over.oversized).toBe(true);
   });
 
-  it("sits right on the limit at 133%", () => {
-    const at = dealValue(30);
-    expect(at.ratio).toBe(133);
+  it("sits right on the limit at 200%", () => {
+    const at = dealValue(45);
+    expect(at.ratio).toBe(200);
     expect(at.oversized).toBe(false);
   });
 

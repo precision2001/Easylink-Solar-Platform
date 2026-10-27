@@ -19,6 +19,7 @@ import {
   simulate,
   yearlyConsumption,
 } from "@/lib/designer/simulation";
+import { dcAcLimitPercent } from "@/lib/designer/designRules";
 
 /* ------------------------------------------------------------------ */
 /* Contacts                                                            */
@@ -164,6 +165,8 @@ export type OptionSpec = {
   panels: number;
   inverterKw: number;
   inverter: string;
+  /** A hybrid inverter — with a battery, the array may reach 200% of it. */
+  hybrid: boolean;
   battery: number;
   batterySku: string;
   ev: boolean;
@@ -180,6 +183,7 @@ export const OPTION_SPECS: OptionSpec[] = [
     panels: 15,
     inverterKw: 5,
     inverter: "5 kW · INV-S5",
+    hybrid: false,
     battery: 0,
     batterySku: "",
     ev: false,
@@ -193,6 +197,7 @@ export const OPTION_SPECS: OptionSpec[] = [
     panels: 25,
     inverterKw: 9.9,
     inverter: "9.9 kW hybrid · INV-FX99",
+    hybrid: true,
     battery: 10,
     batterySku: "BAT-100S",
     ev: false,
@@ -206,6 +211,7 @@ export const OPTION_SPECS: OptionSpec[] = [
     panels: 29,
     inverterKw: 9.9,
     inverter: "9.9 kW hybrid · INV-FX99",
+    hybrid: true,
     battery: 20,
     batterySku: "BAT-100S × 2",
     ev: true,
@@ -219,6 +225,7 @@ export const OPTION_SPECS: OptionSpec[] = [
     panels: 29,
     inverterKw: 9.9,
     inverter: "9.9 kW hybrid · INV-FX99",
+    hybrid: true,
     battery: 32.61,
     batterySku: "BAT-FX4660",
     ev: true,
@@ -230,6 +237,8 @@ export const OPTION_SPECS: OptionSpec[] = [
 export type PricedOption = OptionSpec & {
   kw: number;
   ratio: number;
+  /** Panel : inverter limit (%) for this option — 200 with a hybrid inverter, else 133. */
+  limitPercent: number;
   /** Everything installed, including the extras. */
   price: number;
   /** Savings a year from solar and battery only. */
@@ -255,6 +264,7 @@ export function priceOptions(
     // Rounded to the cent of a kW, as the catalogue quotes it.
     const kw = Math.round(s.panels * 44) / 100;
     const ratio = Math.round((kw / s.inverterKw) * 100);
+    const limitPercent = dcAcLimitPercent(s.hybrid);
     const gen = generation(kw, 0);
     const r = simulate({ battery: s.battery, consumption, generation: gen, mode: "self", age: 0 });
     const yearly = r.exported * fit + r.selfUsed * rate;
@@ -264,9 +274,10 @@ export function priceOptions(
       battery: s.battery,
       tier: "prem",
       ratioPercent: ratio,
+      limitPercent,
     }).total;
     const extras = (s.ev ? EV_CHARGER_COST : 0) + (s.heatPump ? HEAT_PUMP_COST : 0);
-    return { ...s, kw, ratio, price: system + extras, yearly, generation: gen, payback: system / yearly };
+    return { ...s, kw, ratio, limitPercent, price: system + extras, yearly, generation: gen, payback: system / yearly };
   });
 }
 
@@ -279,13 +290,15 @@ export const STAGE_PROBABILITY = 25;
 /** The battery the CRM's System tab assumes. */
 export const CRM_BATTERY_KWH = 20;
 const CRM_INVERTER_KW = 9.9;
+/** The CRM's 9.9 kW inverter is a hybrid, so the 200% limit applies. */
+export const CRM_LIMIT_PERCENT = dcAcLimitPercent(true);
 
 export type DealValue = {
   kw: number;
   ratio: number;
   price: number;
   weighted: number;
-  /** Over the 133% limit, so the array would earn no certificates. */
+  /** Over the panel : inverter limit (200% with a hybrid inverter), so the array would earn no certificates. */
   oversized: boolean;
 };
 
@@ -298,13 +311,14 @@ export function dealValue(panels: number): DealValue {
     battery: CRM_BATTERY_KWH,
     tier: "prem",
     ratioPercent: ratio,
+    limitPercent: CRM_LIMIT_PERCENT,
   }).total;
   return {
     kw,
     ratio,
     price,
     weighted: (price * STAGE_PROBABILITY) / 100,
-    oversized: ratio > 133,
+    oversized: ratio > CRM_LIMIT_PERCENT,
   };
 }
 

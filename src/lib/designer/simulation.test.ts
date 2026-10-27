@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BATTERY_SIZES,
+  DCAC_LIMIT_HYBRID,
   PANEL_KW,
   PERIOD_DAYS,
   batteryStcs,
@@ -172,6 +173,11 @@ describe("certificates", () => {
     expect(solarStcs(6.6, 133)).toBe(45);
   });
 
+  it("lets a hybrid inverter reach 200%", () => {
+    expect(solarStcs(13.2, 200, 200)).toBe(91);
+    expect(solarStcs(13.2, 201, 200)).toBe(0);
+  });
+
   it("caps battery certificates at the first 50 kWh", () => {
     expect(batteryStcs(10)).toBe(68);
     expect(batteryStcs(50)).toBe(340);
@@ -278,6 +284,11 @@ describe("roof capacity", () => {
     expect(Math.floor((9.9 * 1.33) / PANEL_KW)).toBe(29);
     // 5 kW string: only 15.
     expect(Math.floor((5 * 1.33) / PANEL_KW)).toBe(15);
+  });
+
+  it("doubles the inverter's panel allowance with a hybrid inverter", () => {
+    // 9.9 kW hybrid: 9.9 * 2.0 / 0.44 = 45 panels.
+    expect(Math.floor((9.9 * DCAC_LIMIT_HYBRID) / PANEL_KW)).toBe(45);
   });
 
   it("counts the roof faces that hold them", () => {
