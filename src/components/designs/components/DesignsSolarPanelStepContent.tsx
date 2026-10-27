@@ -29,7 +29,8 @@ import {
   type RoofOutline,
 } from "@/utils/roofMaskContour";
 import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
-import { generatePanelsForRoofs } from "@/lib/designer/panelLayout";
+import { generatePanelsForFaces } from "@/lib/designer/panelLayout";
+import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
 import {
   DESIGN_RULES,
@@ -1135,6 +1136,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
     });
   }, [selectedRoofId]);
 
+  /** Hip-roof faces of the saved roofs, drawn as roof lines on the map. */
+  const savedFaces = useMemo(() => splitRoofsIntoFaces(savedRoofs), [savedRoofs]);
+
   /** Google's area-weighted roof pitch, or the 22.5° default when there's no real data. */
   const roofPitchDeg = useMemo(
     () => roofPitchDegrees(data?.roofSegments, data?.estimated),
@@ -1148,8 +1152,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
       orientation: PanelOrientation,
     ): SolarPanel[] | null => {
       if (!data?.panelDimensions) return null;
+      // Face rule: split each outline into its hip-roof faces and pack them
+      // one at a time, so no panel crosses a hip, valley or ridge.
+      const faces = splitRoofsIntoFaces(paths);
       return dedupeSolarPanels(
-        generatePanelsForRoofs(paths, data.panelDimensions, {
+        generatePanelsForFaces(faces, data.panelDimensions, {
           orientation,
           pitchDeg: roofPitchDeg,
         }),
@@ -1656,6 +1663,24 @@ export const DesignsSolarPanelStepContent = forwardRef<
                           />
                         );
                       })}
+
+                    {/* Roof lines of each saved roof — hips, valleys and ridge (view mode) */}
+                    {!!mapReady &&
+                      !isEditing &&
+                      savedFaces.map((face, idx) => (
+                        <Polygon
+                          key={`face-${idx}`}
+                          paths={face.ring}
+                          options={{
+                            fillOpacity: 0,
+                            strokeColor: "#FBBF24",
+                            strokeOpacity: 0.9,
+                            strokeWeight: 1.2,
+                            clickable: false,
+                            zIndex: 6,
+                          }}
+                        />
+                      ))}
 
                     {/* Saved roof outlines (view mode) */}
                     {!!mapReady &&

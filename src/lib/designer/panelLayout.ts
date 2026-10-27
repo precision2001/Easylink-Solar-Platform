@@ -266,3 +266,36 @@ export function generatePanelsForRoofs(
     }),
   );
 }
+
+/**
+ * Face rule: lays panels out one roof face at a time (see `splitRoofIntoFaces`),
+ * so no panel crosses a hip, valley or ridge, and the setback applies to every
+ * roof line. Each face's rows run along its own eave, snapped onto the main
+ * walls (or 90° to them) under the alignment rule.
+ */
+export function generatePanelsForFaces(
+  faces: { ring: LatLng[]; eaveDeg: number }[],
+  panelDimensions: { heightM: number; widthM: number },
+  options: PanelLayoutOptions,
+  mainAxisDeg?: number,
+): SolarPanel[] {
+  if (faces.length === 0) return [];
+  const main = mainAxisDeg ?? faces[0].eaveDeg;
+  const snap = DESIGN_RULES.alignmentSnapDeg;
+  return faces.flatMap((face, index) => {
+    let angle = face.eaveDeg;
+    let bestDiff = Infinity;
+    for (let k = -4; k <= 4; k++) {
+      const candidate = main + k * 90;
+      const diff = angleDiffDeg(face.eaveDeg, candidate);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        if (diff <= snap) angle = candidate;
+      }
+    }
+    return generatePanelsForRoofPolygon(face.ring, panelDimensions, index, {
+      ...options,
+      rowAngleDeg: angle,
+    });
+  });
+}
