@@ -22,7 +22,7 @@ const OUTCOME: Record<string, string> = {
   ASKED_NOT_TO_BE_CALLED: "Asked not to be called",
 };
 
-const day = (iso: string) => new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+const day = (iso: string) => new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Sydney" });
 const suburbOf = (a: string | null) => (a ? (a.split(",").map((p) => p.trim()).filter(Boolean).at(-1) ?? a) : "No address");
 
 /**
