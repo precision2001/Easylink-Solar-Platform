@@ -3,7 +3,11 @@ import {
   generatePanelsForRoofPolygon,
   generatePanelsForRoofs,
 } from "@/lib/designer/panelLayout";
-import { DESIGN_RULES, inverterSizingFor } from "@/lib/designer/designRules";
+import {
+  DESIGN_RULES,
+  inverterSizingFor,
+  roofPitchDegrees,
+} from "@/lib/designer/designRules";
 
 const LAT0 = -33.8526;
 const LNG0 = 151.0522;
@@ -62,6 +66,37 @@ describe("generatePanelsForRoofPolygon", () => {
         setbackM,
       }).length;
     expect(at(0.4)).toBeLessThan(at(0.1));
+  });
+});
+
+describe("roof pitch", () => {
+  it("fits more rows on a pitched roof, since panels look shorter from above", () => {
+    // 7.0 m usable across the roof: 3 flat rows of 1.879 m, but at 30° each
+    // row is 1.879 × cos 30° = 1.63 m seen from above, so 4 rows fit.
+    const at = (pitchDeg: number) =>
+      generatePanelsForRoofPolygon(rect(10, 7.2), PANEL, 0, {
+        orientation: "PORTRAIT",
+        pitchDeg,
+      });
+    expect(at(0)).toHaveLength(27);
+    const pitched = at(30);
+    expect(pitched).toHaveLength(36);
+    expect(pitched.every((p) => p.slopeDegrees === 30)).toBe(true);
+  });
+
+  it("weights Google's segment pitches by area", () => {
+    expect(
+      roofPitchDegrees([
+        { pitchDegrees: 20, areaM2: 30 },
+        { pitchDegrees: 30, areaM2: 10 },
+      ]),
+    ).toBeCloseTo(22.5, 6);
+  });
+
+  it("falls back to 22.5° with no real data, and caps noisy pitches", () => {
+    expect(roofPitchDegrees(undefined)).toBe(22.5);
+    expect(roofPitchDegrees([{ pitchDegrees: 30, areaM2: 50 }], true)).toBe(22.5);
+    expect(roofPitchDegrees([{ pitchDegrees: 70, areaM2: 50 }])).toBe(45);
   });
 });
 
