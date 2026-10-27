@@ -16,10 +16,14 @@ export const DESIGN_RULES = {
    * portrait or landscape, never mixed. Portrait is the starting choice.
    */
   defaultOrientation: "PORTRAIT" as PanelOrientation,
-  /** Panel (DC) to inverter (AC) ratio allowed with a hybrid inverter — a battery is not required. */
-  dcAcRatioHybridInverter: 2.0,
-  /** Panel to inverter ratio allowed with a standard (non-hybrid) inverter — CEC 133% rule for STCs. */
-  dcAcRatioStandardInverter: 1.33,
+  /**
+   * Panel (DC) to inverter (AC) ratio allowed when a battery is installed
+   * (AC- or DC-coupled), per the CEC design guidelines from 21 June 2024 —
+   * and only up to the inverter manufacturer's own oversizing limit.
+   */
+  dcAcRatioWithBattery: 2.0,
+  /** Panel to inverter ratio allowed without a battery — CEC 133% rule for STCs. */
+  dcAcRatioWithoutBattery: 1.33,
   /** Network export limit per phase — Ausgrid and Endeavour Energy. */
   exportLimitKwPerPhase: 10,
   /** Pitch assumed when Google has no roof data — a typical Australian tiled roof. */
@@ -49,26 +53,26 @@ export function roofPitchDegrees(
 export type InverterSizing = {
   arrayKw: number;
   /** Smallest inverter that keeps the array within the oversizing allowance. */
-  minHybridInverterKw: number;
-  minStandardInverterKw: number;
+  minInverterKwWithBattery: number;
+  minInverterKwWithoutBattery: number;
   /** Phases needed so the inverter's full output stays within the per-phase export limit. */
-  phasesHybrid: 1 | 3;
-  phasesStandard: 1 | 3;
+  phasesWithBattery: 1 | 3;
+  phasesWithoutBattery: 1 | 3;
 };
 
-/** Panel : inverter limit (%) — 200% with a hybrid inverter (battery optional), 133% otherwise. */
-export function dcAcLimitPercent(hybridInverter: boolean): number {
+/** Panel : inverter limit (%) — 200% when a battery is installed, 133% otherwise. */
+export function dcAcLimitPercent(withBattery: boolean): number {
   return Math.round(
-    (hybridInverter
-      ? DESIGN_RULES.dcAcRatioHybridInverter
-      : DESIGN_RULES.dcAcRatioStandardInverter) * 100,
+    (withBattery
+      ? DESIGN_RULES.dcAcRatioWithBattery
+      : DESIGN_RULES.dcAcRatioWithoutBattery) * 100,
   );
 }
 
 /** How the limit is described on screen. */
-export function dcAcLimitLabel(hybridInverter: boolean): string {
-  return hybridInverter
-    ? `${dcAcLimitPercent(true)}% hybrid inverter limit`
+export function dcAcLimitLabel(withBattery: boolean): string {
+  return withBattery
+    ? `${dcAcLimitPercent(true)}% limit with a battery`
     : `${dcAcLimitPercent(false)}% STC limit`;
 }
 
@@ -83,15 +87,15 @@ export function inverterSizingFor(
   panelWatts: number,
 ): InverterSizing {
   const arrayKw = Math.max(0, (panelCount * panelWatts) / 1000);
-  const withBattery = roundUp1dp(arrayKw / DESIGN_RULES.dcAcRatioHybridInverter);
+  const withBattery = roundUp1dp(arrayKw / DESIGN_RULES.dcAcRatioWithBattery);
   const withoutBattery = roundUp1dp(
-    arrayKw / DESIGN_RULES.dcAcRatioStandardInverter,
+    arrayKw / DESIGN_RULES.dcAcRatioWithoutBattery,
   );
   return {
     arrayKw,
-    minHybridInverterKw: withBattery,
-    minStandardInverterKw: withoutBattery,
-    phasesHybrid: phasesFor(withBattery),
-    phasesStandard: phasesFor(withoutBattery),
+    minInverterKwWithBattery: withBattery,
+    minInverterKwWithoutBattery: withoutBattery,
+    phasesWithBattery: phasesFor(withBattery),
+    phasesWithoutBattery: phasesFor(withoutBattery),
   };
 }

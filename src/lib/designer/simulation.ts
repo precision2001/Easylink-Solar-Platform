@@ -243,14 +243,14 @@ const DEEMING_YEARS = 5;
 const BATTERY_STC_PER_KWH = 6.8;
 /** Certificates are only earned up to this battery size. */
 export const BATTERY_STC_CAP = 50;
-/** Panels may exceed inverter capacity by this much and still earn STCs (standard inverter). */
-export const DCAC_LIMIT = DESIGN_RULES.dcAcRatioStandardInverter;
-/** With a hybrid inverter, the array may reach 200% of the inverter. */
-export const DCAC_LIMIT_HYBRID = DESIGN_RULES.dcAcRatioHybridInverter;
+/** Panels may exceed inverter capacity by this much and still earn STCs (no battery). */
+export const DCAC_LIMIT = DESIGN_RULES.dcAcRatioWithoutBattery;
+/** With a battery installed, the array may reach 200% of the inverter. */
+export const DCAC_LIMIT_WITH_BATTERY = DESIGN_RULES.dcAcRatioWithBattery;
 
 /**
  * @param limitPercent panel : inverter limit — see `dcAcLimitPercent`. Defaults
- *   to the 133% rule for standard (non-hybrid) inverters.
+ *   to the 133% rule for systems without a battery.
  */
 export function solarStcs(
   arrayKw: number,
@@ -272,7 +272,7 @@ export type PriceInput = {
   battery: number;
   tier: string;
   ratioPercent: number;
-  /** Panel : inverter limit (%); 200 with a hybrid inverter, else 133. */
+  /** Panel : inverter limit (%); 200 with a battery installed, else 133. */
   limitPercent?: number;
 };
 
