@@ -4694,16 +4694,40 @@ html:has(.svc-page) {
 }
 
 .ba-logo-track {
-  animation: ba-logo-scroll 28s linear infinite;
+  /* Duration scales with track length so the apparent scroll speed stays put. */
+  animation: ba-logo-scroll 38s linear infinite;
 }
 
 .ba-logo-track:hover {
   animation-play-state: paused;
 }
 
+/* The supplied manufacturer logos ship with a baked-in white background rather
+   than a transparent one, so the tile is pure white too: plate and artwork
+   share the exact same white and the logo's edge disappears into the card.
+   Anything less than #fff over the navy reads blue-grey and shows a seam. */
+.ba-logo-tile {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(2, 6, 23, 0.28);
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.ba-logo-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.38);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ba-logo-track {
     animation: none;
+  }
+
+  .ba-logo-tile,
+  .ba-logo-tile:hover {
+    transform: none;
+    transition: none;
   }
 }
 
