@@ -1,3 +1,4 @@
+import { DESIGN_RULES, dcAcLimitPercent } from "@/lib/designer/designRules";
 /**
  * The solar designer's sizing and savings engine, ported from the Easylink
  * Designer mock (DesignerBody.dc.html).
@@ -242,12 +243,22 @@ const DEEMING_YEARS = 5;
 const BATTERY_STC_PER_KWH = 6.8;
 /** Certificates are only earned up to this battery size. */
 export const BATTERY_STC_CAP = 50;
-/** Panels may exceed inverter capacity by this much and still earn STCs. */
-export const DCAC_LIMIT = 1.33;
+/** Panels may exceed inverter capacity by this much and still earn STCs (standard inverter). */
+export const DCAC_LIMIT = DESIGN_RULES.dcAcRatioStandardInverter;
+/** With a hybrid inverter, the array may reach 200% of the inverter. */
+export const DCAC_LIMIT_HYBRID = DESIGN_RULES.dcAcRatioHybridInverter;
 
-export function solarStcs(arrayKw: number, ratioPercent: number): number {
+/**
+ * @param limitPercent panel : inverter limit — see `dcAcLimitPercent`. Defaults
+ *   to the 133% rule for standard (non-hybrid) inverters.
+ */
+export function solarStcs(
+  arrayKw: number,
+  ratioPercent: number,
+  limitPercent = dcAcLimitPercent(false),
+): number {
   // An oversized array earns nothing, so the check has to come first.
-  if (ratioPercent > 133) return 0;
+  if (ratioPercent > limitPercent) return 0;
   return Math.floor(arrayKw * ZONE_RATING * DEEMING_YEARS);
 }
 
@@ -261,6 +272,8 @@ export type PriceInput = {
   battery: number;
   tier: string;
   ratioPercent: number;
+  /** Panel : inverter limit (%); 200 with a hybrid inverter, else 133. */
+  limitPercent?: number;
 };
 
 export type PriceResult = {
@@ -271,8 +284,15 @@ export type PriceResult = {
   total: number;
 };
 
-export function priceSystem({ arrayKw, panels, battery, tier, ratioPercent }: PriceInput): PriceResult {
-  const sStc = solarStcs(arrayKw, ratioPercent);
+export function priceSystem({
+  arrayKw,
+  panels,
+  battery,
+  tier,
+  ratioPercent,
+  limitPercent,
+}: PriceInput): PriceResult {
+  const sStc = solarStcs(arrayKw, ratioPercent, limitPercent);
   const bStc = batteryStcs(battery);
   const solarGross = arrayKw * 1100 + TIERS[tier].per * panels;
   const batteryGross = battery * 900;
