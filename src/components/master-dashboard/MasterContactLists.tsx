@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   ACCEPTED_FORMATS,
   CRM_BATTERY_KWH,
+  CRM_LIMIT_PERCENT,
   FILTERS,
   type FilterKey,
   INTERESTS,
@@ -1391,9 +1392,9 @@ export function MasterContactLists() {
                         </div>
                         <span className="text-[12px]" style={{ color: MUTED }}>
                           Savings from solar and battery at your $1,150 quarterly bill, 37c/kWh and
-                          5c feed-in. EV fuel and hot-water savings come on top. Maximum stays at 29
-                          panels because a single-phase home is limited to a 10 kVA inverter and the
-                          133% STC rule; three-phase would allow up to 38.
+                          5c feed-in. EV fuel and hot-water savings come on top. Maximum is set at 29
+                          panels. With the hybrid inverter, the 9.9 kW inverter could take
+                          up to 45 panels (200%) if the roof fits them.
                         </span>
                       </>
                     )}
@@ -1856,8 +1857,8 @@ export function MasterContactLists() {
                               className="m-0 rounded-[10px] px-3 py-2.5 text-[13px] font-semibold"
                               style={{ background: "#FEE2E2", color: RED }}
                             >
-                              Panel : inverter {deal.ratio}% is over the 133% STC limit. Use 29
-                              panels or a bigger inverter.
+                              Panel : inverter {deal.ratio}% is over the {CRM_LIMIT_PERCENT}%
+                              hybrid / battery limit. Use fewer panels or a bigger inverter.
                             </p>
                           ) : null}
                         </>

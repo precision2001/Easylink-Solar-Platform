@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  /**
+   * Build output folder. scripts/start.sh builds into a separate folder
+   * (NEXT_DIST_DIR=.next-new) and only swaps it in once the build succeeds,
+   * so a failed server build never takes the live site down.
+   */
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   /** Hide the bottom-right “Compiling / Rendering” dev badge; compile status stays in the terminal. */
   devIndicators: false,
   /**

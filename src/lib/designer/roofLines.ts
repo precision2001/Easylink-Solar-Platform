@@ -1,0 +1,186 @@
+import { DESIGN_RULES } from "@/lib/designer/designRules";
+import { longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
+
+/**
+ * Roof-line rule. Traced roofs come in with wobbly edges and corners that
+ * don't quite meet their neighbours. This straightens them so outlines follow
+ * real roof lines:
+ *  1. Corners of different roofs within `roofCornerMergeM` become one shared
+ *     corner, so faces meet exactly — no gaps or overlaps at ridges and hips.
+ *  2. Each edge within `roofLineSnapDeg` of the building's main axis, of 90°
+ *     to it, or of 45° (hips and valleys) is snapped onto that direction.
+ *  3. Every corner is rebuilt where its two neighbouring lines intersect, and
+ *     corners on a straight run are dropped.
+ *  4. Corners are shared again after straightening.
+ * A ring that comes out invalid (self-crossing, collapsed, or with its area
+ * changed by more than 25%) is left as traced.
+ */
+
+type LatLng = { lat: number; lng: number };
+type XY = { x: number; y: number };
+
+const M_PER_LAT = 111320;
+
+export type RoofLineOptions = {
+  snapDeg?: number;
+  mergeM?: number;
+  /** Main-wall direction (degrees from east, counter-clockwise); defaults to the largest roof's longest edge. */
+  mainAxisDeg?: number;
+};
+
+function ringArea(r: XY[]): number {
+  let a = 0;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += r[j].x * r[i].y - r[i].x * r[j].y;
+  return a / 2;
+}
+
+function segmentsCross(a: XY, b: XY, c: XY, d: XY): boolean {
+  const o = (p: XY, q: XY, r: XY) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const o1 = o(a, b, c), o2 = o(a, b, d), o3 = o(c, d, a), o4 = o(c, d, b);
+  return o1 * o2 < 0 && o3 * o4 < 0;
+}
+
+function isSimple(r: XY[]): boolean {
+  const n = r.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (Math.abs(i - j) <= 1 || (i === 0 && j === n - 1)) continue;
+      if (segmentsCross(r[i], r[(i + 1) % n], r[j], r[(j + 1) % n])) return false;
+    }
+  }
+  return true;
+}
+
+/** Merge points (across all rings) closer than `tol` into their shared average. */
+function shareCorners(rings: XY[][], tol: number): XY[][] {
+  const groups: { sum: XY; n: number; members: XY[] }[] = [];
+  for (const ring of rings) {
+    for (const p of ring) {
+      const g = groups.find((g) => Math.hypot(g.sum.x / g.n - p.x, g.sum.y / g.n - p.y) <= tol);
+      if (g) {
+        g.sum = { x: g.sum.x + p.x, y: g.sum.y + p.y };
+        g.n += 1;
+        g.members.push(p);
+      } else groups.push({ sum: { ...p }, n: 1, members: [p] });
+    }
+  }
+  const rep = (p: XY) => {
+    const g = groups.find((g) => g.members.includes(p))!;
+    return { x: g.sum.x / g.n, y: g.sum.y / g.n };
+  };
+  return rings.map((ring) => dropDuplicates(ring.map(rep)));
+}
+
+function dropDuplicates(r: XY[]): XY[] {
+  const out: XY[] = [];
+  for (const p of r) {
+    const last = out[out.length - 1];
+    if (!last || Math.hypot(last.x - p.x, last.y - p.y) > 1e-6) out.push(p);
+  }
+  if (out.length > 1 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) < 1e-6) out.pop();
+  return out;
+}
+
+function straighten(ring: XY[], axisRad: number, snapRad: number): XY[] {
+  const n = ring.length;
+  if (n < 3) return ring;
+  const lines: { p: XY; a: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % n];
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    let best = ang;
+    let bestDiff = Infinity;
+    for (let k = -8; k <= 8; k++) {
+      const cand = axisRad + (k * Math.PI) / 4;
+      const diff = Math.abs(Math.atan2(Math.sin(ang - cand), Math.cos(ang - cand)));
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = cand;
+      }
+    }
+    lines.push({ p: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, a: bestDiff <= snapRad ? best : ang });
+  }
+  // Consecutive edges that are now parallel are one straight run.
+  const merged: typeof lines = [];
+  for (const l of lines) {
+    const prev = merged[merged.length - 1];
+    if (prev && Math.abs(Math.sin(l.a - prev.a)) < 1e-9) continue;
+    merged.push(l);
+  }
+  if (merged.length > 1 && Math.abs(Math.sin(merged[0].a - merged[merged.length - 1].a)) < 1e-9) merged.pop();
+  if (merged.length < 3) return ring;
+  const out: XY[] = [];
+  for (let i = 0; i < merged.length; i++) {
+    const l1 = merged[(i - 1 + merged.length) % merged.length];
+    const l2 = merged[i];
+    const d1 = { x: Math.cos(l1.a), y: Math.sin(l1.a) };
+    const d2 = { x: Math.cos(l2.a), y: Math.sin(l2.a) };
+    const den = d1.x * d2.y - d1.y * d2.x;
+    if (Math.abs(den) < 1e-9) return ring;
+    const t = ((l2.p.x - l1.p.x) * d2.y - (l2.p.y - l1.p.y) * d2.x) / den;
+    out.push({ x: l1.p.x + t * d1.x, y: l1.p.y + t * d1.y });
+  }
+  return out;
+}
+
+export function regularizeRoofOutlines(
+  roofs: LatLng[][],
+  {
+    snapDeg = DESIGN_RULES.roofLineSnapDeg,
+    mergeM = DESIGN_RULES.roofCornerMergeM,
+    mainAxisDeg,
+  }: RoofLineOptions = {},
+): LatLng[][] {
+  const all = roofs.flat();
+  if (all.length < 3) return roofs;
+  const refLat = all.reduce((s, p) => s + p.lat, 0) / all.length;
+  const mLng = M_PER_LAT * Math.cos((refLat * Math.PI) / 180);
+  const toXY = (p: LatLng): XY => ({ x: p.lng * mLng, y: p.lat * M_PER_LAT });
+  const toLL = (p: XY): LatLng => ({ lat: p.y / M_PER_LAT, lng: p.x / mLng });
+
+  const original = roofs.map((r) => r.map(toXY));
+  const valid = original.map((r) => r.length >= 3);
+  let axisDeg = mainAxisDeg;
+  if (axisDeg === undefined) {
+    // Seed with the largest roof's longest edge, then refine with a
+    // length-weighted mean over edges within the snap angle of that direction
+    // or 90° to it (the walls) — hips and valleys don't pull it off.
+    const areas = original.map((r, i) => (valid[i] ? Math.abs(ringArea(r)) : 0));
+    const seed = (longestEdgeAngleDegrees(roofs[areas.indexOf(Math.max(...areas))]) * Math.PI) / 180;
+    let sx = 0;
+    let sy = 0;
+    original.forEach((r, i) => {
+      if (!valid[i]) return;
+      for (let k = 0; k < r.length; k++) {
+        const p = r[k];
+        const q = r[(k + 1) % r.length];
+        const len = Math.hypot(q.x - p.x, q.y - p.y);
+        const ang = Math.atan2(q.y - p.y, q.x - p.x);
+        const off = Math.atan2(Math.sin(4 * (ang - seed)), Math.cos(4 * (ang - seed))) / 4;
+        if (Math.abs(off) > (snapDeg * Math.PI) / 180) continue;
+        sx += len * Math.cos(off);
+        sy += len * Math.sin(off);
+      }
+    });
+    axisDeg = ((seed + Math.atan2(sy, sx)) * 180) / Math.PI;
+  }
+  const axis = (axisDeg * Math.PI) / 180;
+  const snap = (snapDeg * Math.PI) / 180;
+
+  let rings = shareCorners(original, mergeM);
+  rings = rings.map((r, i) => (valid[i] ? straighten(r, axis, snap) : r));
+  rings = shareCorners(rings, mergeM);
+
+  return rings.map((r, i) => {
+    if (!valid[i]) return roofs[i];
+    const before = Math.abs(ringArea(original[i]));
+    const after = Math.abs(ringArea(r));
+    const ok =
+      r.length >= 3 &&
+      isSimple(r) &&
+      before > 0 &&
+      Math.abs(after - before) / before <= 0.25;
+    return ok ? r.map(toLL) : roofs[i];
+  });
+}

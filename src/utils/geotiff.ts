@@ -20,6 +20,11 @@ export interface GeoTiffOverlay {
   bounds: GeoTiffBounds;
 }
 
+/** RGB overlay plus a luminance raster, used to check roof lines against the image. */
+export interface GeoTiffRgbOverlay extends GeoTiffOverlay {
+  luma: GeoTiffRaster;
+}
+
 /** Mask overlay plus raw single-band raster for geometry (roof perimeter tracing). */
 export interface GeoTiffMaskOverlay extends GeoTiffOverlay {
   raster: GeoTiffRaster;
@@ -31,7 +36,7 @@ export interface GeoTiffMaskOverlay extends GeoTiffOverlay {
  */
 export async function parseGeoTiffRgb(
   arrayBuffer: ArrayBuffer,
-): Promise<GeoTiffOverlay> {
+): Promise<GeoTiffRgbOverlay> {
   const tiff = await fromArrayBuffer(arrayBuffer);
   const image = await tiff.getImage();
 
@@ -51,12 +56,14 @@ export async function parseGeoTiffRgb(
   const ctx = canvas.getContext("2d")!;
   const imageData = ctx.createImageData(width, height);
   const data = imageData.data;
+  const luma = new Float32Array(width * height);
 
   if (samplesPerPixel >= 3) {
     const r = rasters[0] as Uint8Array;
     const g = rasters[1] as Uint8Array;
     const b = rasters[2] as Uint8Array;
     for (let i = 0; i < width * height; i++) {
+      luma[i] = 0.299 * r[i] + 0.587 * g[i] + 0.114 * b[i];
       data[i * 4] = r[i];
       data[i * 4 + 1] = g[i];
       data[i * 4 + 2] = b[i];
@@ -65,6 +72,7 @@ export async function parseGeoTiffRgb(
   } else {
     const band = rasters[0] as Uint8Array;
     for (let i = 0; i < width * height; i++) {
+      luma[i] = band[i];
       data[i * 4] = band[i];
       data[i * 4 + 1] = band[i];
       data[i * 4 + 2] = band[i];
@@ -75,7 +83,11 @@ export async function parseGeoTiffRgb(
   ctx.putImageData(imageData, 0, 0);
 
   const imageUrl = await canvasToBlobUrl(canvas);
-  return { imageUrl, bounds };
+  return {
+    imageUrl,
+    bounds,
+    luma: { data: luma, width, height, bounds, noDataValue: null },
+  };
 }
 
 /**
@@ -131,6 +143,21 @@ export async function parseGeoTiffMask(
     noDataValue: noData ?? null,
   };
   return { imageUrl, bounds, raster };
+}
+
+/** Parse a DSM (surface height, metres) GeoTIFF into a raster for roof-face detection. */
+export async function parseGeoTiffDsm(arrayBuffer: ArrayBuffer): Promise<GeoTiffRaster> {
+  const tiff = await fromArrayBuffer(arrayBuffer);
+  const image = await tiff.getImage();
+  const width = image.getWidth();
+  const height = image.getHeight();
+  const [originX, originY] = image.getOrigin();
+  const [resX, resY] = image.getResolution();
+  const bounds = computeBounds(originX, originY, width, height, resX, resY);
+  const rasters = await image.readRasters();
+  const band = rasters[0] as Float32Array | Float64Array;
+  const noData = image.getGDALNoData();
+  return { data: band, width, height, bounds, noDataValue: noData ?? null };
 }
 
 /**
