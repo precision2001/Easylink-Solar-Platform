@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Btn, Field, inputCls } from "@/components/jobs/ui";
 import { aud, type ReadySite } from "@/lib/ai-platform/market";
+import { dcAcLimitLabel, dcAcLimitPercent } from "@/lib/designer/designRules";
 
 export type SiteInput = Partial<ReadySite>;
 
@@ -34,6 +35,9 @@ export function SiteForm({ initial, staff, busy, error, onSave }: { initial?: Re
   const sys = s.system!;
   const kw = sys.panels ? Math.round((sys.panels.watts * sys.panels.count) / 10) / 100 : 0;
   const ratio = kw && sys.inverter?.kw ? kw / sys.inverter.kw : 0;
+  // 200% with a hybrid inverter or a battery, else the 133% STC rule.
+  const hybridOrBattery = !!sys.inverter?.hybrid || !!sys.battery;
+  const limitPct = dcAcLimitPercent(hybridOrBattery);
   const up = (patch: Partial<SiteInput>) => setS((x) => ({ ...x, ...patch }));
   const upSys = (patch: Partial<NonNullable<SiteInput["system"]>>) => setS((x) => ({ ...x, system: { ...x.system!, ...patch } }));
   const upConf = (patch: Partial<NonNullable<SiteInput["confirmed"]>>) => setS((x) => ({ ...x, confirmed: { ...x.confirmed!, ...patch } }));
@@ -110,7 +114,7 @@ export function SiteForm({ initial, staff, busy, error, onSave }: { initial?: Re
         </Field>
         <div className="col-span-2 flex items-end pb-1.5 text-[13px] text-[#334155]">
           = <b className="mx-1">{kw} kW</b>
-          {ratio > 1.33 && <span className="text-[#991B1B]">· over 133% of the inverter</span>}
+          {ratio * 100 > limitPct && <span className="text-[#991B1B]">· over the {dcAcLimitLabel(hybridOrBattery)}</span>}
         </div>
         <div className="col-span-2">
           <Field label="Inverter model">
