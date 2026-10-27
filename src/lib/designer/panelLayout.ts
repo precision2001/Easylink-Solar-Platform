@@ -25,6 +25,12 @@ export type PanelLayoutOptions = {
    * Defaults to flat.
    */
   pitchDeg?: number;
+  /**
+   * Row direction in degrees (planar, from east, counter-clockwise). Omit to
+   * use the roof's own longest edge; `generatePanelsForRoofs` sets it from the
+   * alignment rule.
+   */
+  rowAngleDeg?: number;
 };
 
 const METRES_PER_DEG_LAT = 111320;
@@ -117,6 +123,7 @@ export function generatePanelsForRoofPolygon(
     setbackM = DESIGN_RULES.edgeSetbackM,
     gapM = DESIGN_RULES.panelGapM,
     pitchDeg = 0,
+    rowAngleDeg: rowAngleOverride,
   }: PanelLayoutOptions,
 ): SolarPanel[] {
   if (polygon.length < 3) return [];
@@ -124,7 +131,7 @@ export function generatePanelsForRoofPolygon(
   const avgLat = polygon.reduce((s, p) => s + p.lat, 0) / polygon.length;
   const polygonXY = polygon.map((p) => toPlanar(p, avgLat));
   const center = centroid(polygonXY);
-  const rowAngleDeg = longestEdgeAngleDegrees(polygon);
+  const rowAngleDeg = rowAngleOverride ?? longestEdgeAngleDegrees(polygon);
   const rowAngle = (rowAngleDeg * Math.PI) / 180;
   const rotPoly = polygonXY.map((p) => rotate(p, center, -rowAngle));
   const bounds = planarBounds(rotPoly);
@@ -191,13 +198,71 @@ export function generatePanelsForRoofPolygon(
   return best;
 }
 
-/** Lays out every roof of a design with one shared orientation. */
+function planarArea(points: PlanarXY[]): number {
+  let a = 0;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    a += points[j].x * points[i].y - points[i].x * points[j].y;
+  }
+  return Math.abs(a) / 2;
+}
+
+/** Smallest difference between two angles (degrees), in [0, 180]. */
+function angleDiffDeg(a: number, b: number): number {
+  return Math.abs(((((a - b) % 360) + 540) % 360) - 180);
+}
+
+/**
+ * Alignment rule. The building's main axis is the longest edge of its
+ * largest roof. Every other roof's row direction is snapped onto that axis,
+ * or the one at 90° to it, when its own longest edge is within
+ * `alignmentSnapDeg` — so wings, hip ends and roughly traced sections line
+ * up with the rest of the house instead of following a skewed edge.
+ */
+export function alignedRowAngles(
+  roofs: LatLng[][],
+  snapDeg: number = DESIGN_RULES.alignmentSnapDeg,
+): number[] {
+  const valid = roofs.map((r) => r.length >= 3);
+  if (!valid.some(Boolean)) return roofs.map(() => 0);
+  const own = roofs.map((r) => (r.length >= 2 ? longestEdgeAngleDegrees(r) : 0));
+  const areas = roofs.map((r) => {
+    if (r.length < 3) return 0;
+    const avgLat = r.reduce((s, p) => s + p.lat, 0) / r.length;
+    return planarArea(r.map((p) => toPlanar(p, avgLat)));
+  });
+  const mainIndex = areas.indexOf(Math.max(...areas));
+  const mainAxis = own[mainIndex];
+
+  return own.map((angle, i) => {
+    if (i === mainIndex) return angle;
+    let best = angle;
+    let bestDiff = Infinity;
+    for (let k = -4; k <= 4; k++) {
+      const candidate = mainAxis + k * 90;
+      const diff = angleDiffDeg(angle, candidate);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = candidate;
+      }
+    }
+    return bestDiff <= snapDeg ? best : angle;
+  });
+}
+
+/**
+ * Lays out every roof of a design with one shared orientation, and rows
+ * aligned to the building's main walls (see `alignedRowAngles`).
+ */
 export function generatePanelsForRoofs(
   roofs: LatLng[][],
   panelDimensions: { heightM: number; widthM: number },
   options: PanelLayoutOptions,
 ): SolarPanel[] {
+  const angles = alignedRowAngles(roofs);
   return roofs.flatMap((ring, index) =>
-    generatePanelsForRoofPolygon(ring, panelDimensions, index, options),
+    generatePanelsForRoofPolygon(ring, panelDimensions, index, {
+      ...options,
+      rowAngleDeg: options.rowAngleDeg ?? angles[index],
+    }),
   );
 }
