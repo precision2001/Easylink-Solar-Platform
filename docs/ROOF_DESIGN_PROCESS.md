@@ -86,6 +86,42 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-28 — 66 Frances St, Lidcombe (white low-pitch metal roof, about 320 m²)
+1. **White metal roof: the plain image shows almost no lines.** Raising
+   the contrast just blows the whole roof out to white. *Added:*
+   `local-contrast.py`, which shows the image minus its blur, ×5, on a
+   grid. Section edges and the steps between sections show clearly.
+2. **Steps appear as a thick dark band.** It is the shadow of the higher
+   section, falling on the lower one. Face edges go on each section's own
+   side of the band, so no panel sits in the shadow.
+3. **The sections**, from the image:
+   - A: the front-left block, crossed by a diagonal fold corner to corner,
+     so two faces;
+   - B and C: blocks stepping down to the south-west;
+   - D: a small vent block, treated as one obstruction;
+   - E: the main skillion falling ESE (the height model shows about 1 m of
+     fall), wrapping around F;
+   - F: a framed box with a large dark oval, treated as an obstruction.
+   Thin lines that stop part-way across a section are flashings or
+   shadows, not section edges.
+4. **`confirm-google.py` skipped every segment**, because it treats pitches
+   under 5° as flat. *Added:* `flat_roof: true`. Low-pitch segments then
+   count, and position and area are checked, but not facing. Google's
+   83 m² west segment covers A, B and C together. The total was −2.0%.
+5. **Size limits matter here, not roof space.**
+   - At 96 panels (42 kW), the 200% rule needs at least a 21 kW
+     three-phase inverter.
+   - The 133% rule needs 32 kW, which is above 30 kW (10 kW per phase on
+     three phases), so export limiting is needed.
+   - Check the network connection rules for a system this size.
+   - The design should be sized to the customer's use, not to fill the
+     roof.
+
+Result:
+- 96 landscape (42.2 kW): A 3+3, B 7, C 3, E 74, F 6.
+- 95 portrait (41.8 kW).
+Flush mount at 1.7–4.9°.
+
 ### 2026-10-28 — 57 Harry Ave, Lidcombe (L-shaped hip roof)
 First roof done with the saved skill (`easylink-roof-design`).
 1. **Faces read from the image.** There are six:
@@ -298,6 +334,7 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
   the image (step 5); `--refine` moves free points such as the ridge ends.
 - `confirm-google.py roofs/x.json`: confirms image-read faces against Google segments (step 4b).
 - `pack-faces.ts roofs/x.json out.json`: packs image-read faces (any roof json with scale and centre).
+- `local-contrast.py x0 y0 x1 y1 scale out.png`: local-contrast gridded view for white or grey metal roofs.
 - `layout.ts`: packs the faces with the live site's packer (all rules,
   obstructions), in portrait and landscape.
 - `draw.py`: draws the result for the customer or installer.

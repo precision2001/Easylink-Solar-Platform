@@ -16,7 +16,9 @@ optional google_offset_px [dx, dy]: shift Google centres onto the image when the
 photo is oblique (measure it by matching height-model face junctions to the
 image, e.g. the ridge ends; 61 Harry Ave: [-18, -15], about 0.7 m),
 optional google_excluded {index: reason}: segments that are not this roof
-(a neighbour, a metal patio roof); listed with the reason, left out of the total.
+(a neighbour, a metal patio roof); listed with the reason, left out of the total,
+optional flat_roof true: a low-pitch metal roof, where segments under 5 deg are
+the roof itself; position and area are checked, facing is not (66 Frances St).
 """
 import json, math, sys
 
@@ -46,7 +48,7 @@ for i, s in enumerate(R.get("google_segments", [])):
     if i in excl:
         print(f"Google segment {i} ({s['azimuth']} deg, {s['pitch']} pitch, {s['areaM2']} m2): left out - {excl[i]}")
         continue
-    if s["pitch"] < 5:
+    if s["pitch"] < 5 and not R.get("flat_roof"):
         print(f"Google flat segment {s['areaM2']} m2 at {s['px']}: skipped (flat / other roof)")
         continue
     gtot += s["areaM2"]
@@ -58,7 +60,7 @@ for i, s in enumerate(R.get("google_segments", [])):
     f = owner[0]
     hit[f["name"]].append(s)
     d = adiff(f["bearing"], s["azimuth"])
-    if d > 15:
+    if d > 15 and s["pitch"] >= 5:
         problems.append(f"{f['name']}: facing {f['bearing']} vs Google {s['azimuth']} ({d:.0f} deg)")
 
 mytot = 0.0
@@ -70,7 +72,7 @@ for f in faces:
     if g:
         ga = sum(s["areaM2"] for s in g)
         az = "/".join(str(s["azimuth"]) for s in g)
-        ok = all(adiff(f["bearing"], s["azimuth"]) <= 15 for s in g)
+        ok = all(adiff(f["bearing"], s["azimuth"]) <= 15 or s["pitch"] < 5 for s in g)
         print(f"{f['name']:18} {sa:9.1f} {ga:9.1f} {f['bearing']:7} {az:>7}  {'confirmed' if ok else 'CHECK facing'}")
     else:
         print(f"{f['name']:18} {sa:9.1f} {'-':>9} {f['bearing']:7} {'-':>7}  image only (strip Google merged?)")
