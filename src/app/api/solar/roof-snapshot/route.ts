@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     size: "640x640",
     scale: "2",
     maptype: "satellite",
-    format: "png",
+    format: "png32",
     key,
   });
   let res: Response;

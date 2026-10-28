@@ -102,6 +102,45 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-28 — Live Designs page: obstruction finder, spike fix, no loading rectangle
+1. **Loading rectangle.** Google's building box was drawn as a cyan
+   rectangle while the zoomed image was analysed. *Fixed:* the preview
+   draws only the traced roof, once the analysis is done
+   (`useImperativeRoofOutline`).
+2. **Spike on 1 Frampton St.** A face corner rebuilt from two nearly
+   parallel lines landed 2 m past the north-east wall, so a face line ran
+   off the roof. *Fixed in `roofLineCorrect.ts`:*
+   - `keepFacesInsideRoofs` pulls any corner outside every outline back
+     onto the nearest outline edge;
+   - `facesValid` now also rejects corrections that put a corner more than
+     0.15 m off the roof.
+3. **Obstructions on the live page.** *Added:* `roofObstructions.ts`
+   (`findRoofObstructions`), the same method as `find-obstructions.py`. It
+   looks for spots and steps in the zoomed image's brightness inside each
+   face, away from the face edges.
+   - **White or light sheet roofs:** a pixel counts if it is 18 grey
+     levels below its surroundings.
+   - **Tiles** (texture noise reaches −32): 22 grey levels, plus a dark
+     core, with at least a tenth of the group darker than −35.
+   - Spots within about 25 cm of each other are merged into one.
+   - Dark shadow bands at steps and strips count as steps, so strips get no
+     panels.
+   - The packer packs around everything found, and the page draws each one
+     as an orange box and counts them in the status text.
+   - On tiles it errs towards flagging: shaded tile texture can be flagged
+     too, and the installer checks on site.
+4. **Snapshots use `format=png32`** (the full-colour image) in both routes.
+5. **Results on Google data** (`scripts/roof-design/live-pipeline.ts`,
+   drawn with `live-draw.py`), portrait / landscape:
+   - 1 Frampton St: 60 / 66 (was 82 / 91; manual 60 / 65);
+   - 57 Harry Ave: 24 / 27 (manual 22 / 25);
+   - 66 Frances St: 89 / 102 (manual 89 / 84);
+   - 61 Harry Ave: 33 / 35 (manual 22 / 25).
+   Faces still come from the height model. Reading faces from the image
+   (as in the manual process) needs an AI model: Claude Opus 5.5 in Bedrock
+   (Sydney) needs the model agreement accepted and the tokens-per-minute
+   quota raised from 0.
+
 ### 2026-10-28 — 1 Frampton St, Lidcombe (long hip roof, cross strips, lower south wing), and a live-site check
 1. **Live Designs page, same address.**
    - While the roof loads, the map shows a cyan rectangle (Google's
@@ -406,6 +445,7 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
 - `pack-faces.ts roofs/x.json out.json`: packs image-read faces (any roof json with scale and centre).
 - `find-obstructions.py roofs/x.json crop.png out.png [--thr]`: every dark spot (vent, fan, antenna) and thin line (level difference) inside the faces, for review (step 6).
 - `check-eaves.py roofs/x.json crop.png [--metal]`: where the tiles or sheets end across every eave (step 5).
+- `live-pipeline.ts <lat> <lng> <outDir>` (set GKEY, NODE_USE_ENV_PROXY=1 in the workspace) and `live-draw.py <outDir>`: run and draw the live page's pipeline on Google data.
 - `local-contrast.py x0 y0 x1 y1 scale out.png`: local-contrast gridded view for white or grey metal roofs.
 - `layout.ts`: packs the faces with the live site's packer (all rules,
   obstructions), in portrait and landscape.

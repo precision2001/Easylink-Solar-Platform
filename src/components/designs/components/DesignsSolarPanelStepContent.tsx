@@ -36,6 +36,7 @@ import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
+import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
 import {
   DESIGN_RULES,
   inverterSizingFor,
@@ -1197,7 +1198,13 @@ export const DesignsSolarPanelStepContent = forwardRef<
       // Correct the lines against the zoomed image: faces meet the eaves
       // exactly, and hips / ridges / valleys move onto the edges seen in it.
       const corrected = correctInteriorLines(faces, paths, lineLuma);
-      return { source, faces: corrected.faces, interiorChecks: corrected.checks, moved: corrected.moved };
+      // Obstructions and steps (vents, whirlybirds, antennas, level
+      // differences) found on the zoomed image inside the faces; the packer
+      // keeps 100 mm clear of each and packs around them.
+      const obstructions: RoofObstruction[] = roofSnapshot.analysis
+        ? findRoofObstructions(roofSnapshot.analysis.luma, corrected.faces.map((f) => f.ring))
+        : [];
+      return { source, faces: corrected.faces, interiorChecks: corrected.checks, moved: corrected.moved, obstructions };
     },
     [dsmRaster, lineLuma, maskRaster, roofSnapshot.analysis],
   );
@@ -1236,7 +1243,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
       if (!data?.panelDimensions) return null;
       // Face rule: find each roof's faces (height model, else hip split) and
       // pack them one at a time, so no panel crosses a hip, valley or ridge.
-      const { faces } = facesFor(paths);
+      const { faces, obstructions } = facesFor(paths);
       // Alignment rule: rows parallel to the main walls — the longest edge of
       // the largest roof outline, not whichever face happens to come first.
       const largest = paths.reduce<google.maps.LatLngLiteral[] | null>(
@@ -1247,7 +1254,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
         generatePanelsForFaces(
           faces,
           data.panelDimensions,
-          { orientation, pitchDeg: roofPitchDeg },
+          { orientation, pitchDeg: roofPitchDeg, obstructions: obstructions.map((o) => o.ring) },
           largest ? longestEdgeAngleDegrees(largest) : undefined,
         ),
       );
@@ -1470,10 +1477,13 @@ export const DesignsSolarPanelStepContent = forwardRef<
     data?.panelDimensions,
     showPanels,
   );
+  // Preview outline before editing: only the traced roof, once the zoom-in
+  // analysis has finished. Google's building box is never drawn as a
+  // rectangle here (it flashed up while loading, before the real outline).
   useImperativeRoofOutline(
     mapReady,
-    bestAvailableOutlines,
-    boundingBoxNearPin,
+    roofSnapshot.loading ? null : bestAvailableOutlines,
+    undefined,
     showPanels && !isEditing && savedRoofs.length === 0,
   );
 
@@ -1659,6 +1669,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   ? `${savedFaces.length} roof faces found from Google's height data. `
                   : "Roof faces assumed (no usable height data) — check on site. "}
                 {savedFaceSet.moved > 0 ? `${savedFaceSet.moved} roof lines moved onto the edges in the image. ` : ""}
+                {savedFaceSet.obstructions.length > 0
+                  ? `${savedFaceSet.obstructions.filter((o) => o.kind === "spot").length} possible vents, fans or antennas and ${
+                      savedFaceSet.obstructions.filter((o) => o.kind === "step").length
+                    } level differences or shadow bands found and packed around (orange boxes) — check on site. `
+                  : ""}
                 {lineCheckSummary.checked === 0
                   ? "Roof lines not checked — Google imagery isn't available for this roof. Confirm on site."
                   : `${lineCheckSummary.ok} of ${lineCheckSummary.total} roof lines confirmed against Google imagery (±${Math.round(
@@ -1821,6 +1836,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
                           />
                         );
                       })}
+
+                    {/* Obstructions and steps found on the zoomed image (view mode) */}
+                    {!!mapReady &&
+                      !isEditing &&
+                      savedFaceSet.obstructions.map((o, idx) => (
+                        <Polygon
+                          key={`obs-${idx}`}
+                          paths={o.ring}
+                          options={{
+                            fillColor: "#FB923C",
+                            fillOpacity: 0.15,
+                            strokeColor: "#FB923C",
+                            strokeOpacity: 1,
+                            strokeWeight: 1.5,
+                            clickable: false,
+                            zIndex: 8,
+                          }}
+                        />
+                      ))}
 
                     {/* Saved roof outlines (view mode) */}
                     {!!mapReady &&
