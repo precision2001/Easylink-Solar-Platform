@@ -700,7 +700,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
    * found by its colour and traced (see roofSnapshot.ts). Its mask fits the
    * eaves and its brightness finds the hips, ridges and valleys.
    */
-  const roofSnapshot = useRoofSnapshot(selectedLocation ?? null, maskRaster, layersLoading);
+  const roofSnapshot = useRoofSnapshot(selectedLocation ?? null, maskRaster, layersLoading, dsmRaster);
   const snapshotOutlines = useMemo((): LatLngRing[] | null => {
     const found = roofSnapshot.analysis?.outlines;
     if (!found || found.length === 0) return null;

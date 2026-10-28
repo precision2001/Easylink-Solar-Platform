@@ -67,6 +67,55 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-28 — 77 Harry Ave, Lidcombe (multi-wing terracotta hip roof)
+1. **Imagery is now fetched directly.** `maps.googleapis.com` and
+   `solar.googleapis.com` are allowed for the workspace. The image is a
+   zoom-21 Static Maps crop around Google's building box (3.1 cm/px). Use
+   `format=png32`: plain `png` comes back palette-reduced.
+2. **The colour finder traced the courtyard, the lawn edge and the flat
+   roof.** The paving is the colour of the tiles. Also, Google's roof mask
+   joins neighbouring buildings into one region. *Fixed in `roofSnapshot.ts`:*
+   - the hint uses only the part of Google's mask within 3 m of the pin
+     (this building);
+   - a new height filter counts a pixel as roof only if it is at least
+     2.2 m above yard level (the 25th percentile of the height model, not
+     the lowest point: the street sits lower, and the courtyard here is a
+     deck 1.3 m above the lawn).
+   The page now passes the height model to the finder.
+3. **Read the roof as overlapping hip rectangles.** Most internal lines run
+   at 45° to the walls; they are hips and valleys, not walls. Here: a north
+   wing (ridge along the walls, NNE and SSW faces) plus a main body (ridge
+   at 90°, WNW and ESE faces, SSW hip end), joined by valleys. Corners are
+   computed as intersections of the detected straight lines
+   (`complex/lines77.py`). Consistency check: the NE corner from two
+   different line pairs agreed within 0.3 px, and the main SE corner landed
+   exactly on the east eave line.
+4. **The east side is stepped and seen at an angle.** This image is a
+   little off-vertical, so tall walls show as a dark band, and the roof's
+   east edge runs at an angle the wall directions can't represent. Fitting
+   wall-direction lines put a step outside the roof. Fix: use the eave
+   lines on the north, west and south sides, and the traced roof edge on
+   the east (`complex/hybrid.py`).
+5. **Smoothing destroyed small faces.** Dropping trace steps under 0.8 m
+   merged the east steps and collapsed the north wing's west face from
+   14 m² to 3 m². Fix: faces whose lines are known are built straight from
+   the line intersections (`complex/nwing.py`), and the outline keeps steps
+   down to 0.35 m.
+6. **Rows from the face's slope direction.** The "outline edge the face
+   sits on" picked a hip on small faces, and the fallback formula was out
+   by 90°. Rows now run at −bearing (compass to degrees from east,
+   counter-clockwise), which is exact because bearings are snapped to the
+   walls (`complex/pack77.ts`).
+7. **Equal-pitch hip roofs with square walls follow exactly from the
+   outline.** Each point belongs to its nearest eave in L∞ distance along
+   the walls (`complex/skel.py`). This is only correct with a correct
+   outline: every notch or noise step creates a false face.
+
+Result: 32 landscape (14.1 kW) or 28 portrait (12.3 kW). 29 of 54 lines
+are confirmed within ±100 mm. The rest are the traced east edge (about
+±0.3 m), a weak south-eave shadow, ridge-cap edges, and the narrow SSW strip
+(no panels). Design data is in `scripts/roof-design/roofs/77-harry-ave.json`.
+
 ### 2026-10-28 — 85 Bombay St, Lidcombe (dark grey hip roof)
 1. **The colour finder found no roof.** The roof is dark grey with low
    contrast against the shadows and the dark ground around it. Faces had
@@ -145,3 +194,6 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
 - `layout.ts`: packs the faces with the live site's packer (all rules,
   obstructions), in portrait and landscape.
 - `draw.py`: draws the result for the customer or installer.
+- `complex/`: the multi-wing tools used on 77 Harry Ave (line detection
+  and intersections, faces from the height model, partition, hybrid
+  outline, L∞ hip-roof faces, line verification, packing).

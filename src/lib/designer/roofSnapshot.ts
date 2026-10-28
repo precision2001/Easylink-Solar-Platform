@@ -73,6 +73,13 @@ export type SnapshotOptions = {
   hint?: GeoTiffRaster | null;
   /** How far (m) the roof may extend beyond the hint mask. */
   hintMarginM?: number;
+  /**
+   * Google's height model (DSM). When given, only pixels at least
+   * `minHeightM` above the ground count as roof — so paving, paths and
+   * courtyards the colour of the tiles are left out (77 Harry Ave).
+   */
+  dsm?: GeoTiffRaster | null;
+  minHeightM?: number;
 };
 
 const MIN_ROOF_M2 = 25;
@@ -231,7 +238,7 @@ function median(v: number[]): number {
 export function analyseRoofSnapshot(
   rgba: Uint8ClampedArray | Uint8Array,
   geo: SnapshotGeo,
-  { pin, hint = null, hintMarginM = 1.5 }: SnapshotOptions,
+  { pin, hint = null, hintMarginM = 1.5, dsm = null, minHeightM = 2.2 }: SnapshotOptions,
 ): RoofSnapshotAnalysis | null {
   const W = geo.widthPx;
   const H = geo.heightPx;
@@ -282,8 +289,60 @@ export function analyseRoofSnapshot(
       }
     }
     if (any > 0) {
-      near = dilate(hb, W, H, hintMarginM / mpp);
-      hintCore = erode(hb, W, H, 0.3 / mpp);
+      // Only the building under the pin: Google's mask covers every building
+      // around it, and a roof-coloured path or courtyard can join them
+      // (77 Harry Ave, Oct 2026: paving the colour of the tiles led the trace
+      // to the image edge). Keep the mask's part within 3 m of the pin.
+      const pin0 = pointInRaster(bounds, W, H, pin);
+      const near3 = new Uint8Array(W * H);
+      const r3 = 3 / mpp;
+      for (let r = Math.max(0, Math.floor(pin0.row - r3)); r <= Math.min(H - 1, Math.ceil(pin0.row + r3)); r++) {
+        for (let c = Math.max(0, Math.floor(pin0.col - r3)); c <= Math.min(W - 1, Math.ceil(pin0.col + r3)); c++) {
+          if (Math.hypot(r - pin0.row, c - pin0.col) <= r3) near3[r * W + c] = 1;
+        }
+      }
+      const building = keepSeeded(hb, near3, W, H);
+      let n = 0;
+      for (let i = 0; i < building.length; i++) n += building[i];
+      const base = n > 0 ? building : hb;
+      near = dilate(base, W, H, hintMarginM / mpp);
+      hintCore = erode(base, W, H, 0.3 / mpp);
+    }
+  }
+
+  // Height filter: only pixels clearly above the ground can be roof. Ground
+  // is the yard level (25th percentile of the tile), not the lowest point —
+  // the street sits lower, and a raised deck or courtyard (77 Harry Ave: 1.3 m
+  // above the lawn, tile-coloured paving) must not pass as roof. Eaves of a
+  // single-storey house are ~2.5–3 m up.
+  let high: Uint8Array | null = null;
+  if (dsm) {
+    const vals: number[] = [];
+    for (let i = 0; i < dsm.data.length; i += 3) {
+      const v = dsm.data[i];
+      if (Number.isFinite(v) && (dsm.noDataValue === null || v !== dsm.noDataValue)) vals.push(v);
+    }
+    if (vals.length > 20) {
+      vals.sort((p, q) => p - q);
+      const ground = vals[Math.floor(vals.length * 0.25)];
+      high = new Uint8Array(W * H);
+      // Sample the (0.5 m) height model on a coarse step and fill blocks.
+      const step = Math.max(1, Math.round(0.25 / mpp));
+      for (let r = 0; r < H; r += step) {
+        const lat = bounds.north + ((r + step / 2) / H) * (bounds.south - bounds.north);
+        for (let c = 0; c < W; c += step) {
+          const lng = bounds.west + ((c + step / 2) / W) * (bounds.east - bounds.west);
+          const { col, row } = rasterPixelOf(dsm, lat, lng);
+          const ci = Math.floor(col);
+          const ri = Math.floor(row);
+          if (ci < 0 || ri < 0 || ci >= dsm.width || ri >= dsm.height) continue;
+          const z = dsm.data[ri * dsm.width + ci];
+          if (!(z - ground >= minHeightM)) continue;
+          for (let rr = r; rr < Math.min(H, r + step); rr++) for (let cc = c; cc < Math.min(W, c + step); cc++) high[rr * W + cc] = 1;
+        }
+      }
+      // The height model is coarse: allow 0.5 m beyond it at the eaves.
+      high = dilate(high, W, H, 0.5 / mpp);
     }
   }
 
@@ -327,6 +386,7 @@ export function analyseRoofSnapshot(
     const link = new Uint8Array(W * H);
     for (let i = 0; i < W * H; i++) {
       if (near && !near[i]) continue;
+      if (high && !high[i]) continue;
       if (L[i] < darkest) continue; // gaps, gutters and deep shadow between buildings
       const d = ((L[i] - mL) / tL) ** 2 + ((A[i] - mA) / tA) ** 2 + ((B[i] - mB) / tB) ** 2;
       if (d <= 1) like[i] = 1;

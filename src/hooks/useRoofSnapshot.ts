@@ -41,11 +41,13 @@ export function useRoofSnapshot(
   pin: LatLng | null,
   hint: GeoTiffRaster | null,
   hintPending: boolean,
+  /** Google's height model: keeps tile-coloured paving and decks out of the roof. */
+  dsm: GeoTiffRaster | null = null,
 ): RoofSnapshotState {
   const lat = pin?.lat;
   const lng = pin?.lng;
   const key = lat === undefined || lng === undefined ? null : `${lat},${lng}`;
-  const [result, setResult] = useState<{ key: string; hint: GeoTiffRaster | null; analysis: RoofSnapshotAnalysis | null; error: string | null } | null>(null);
+  const [result, setResult] = useState<{ key: string; hint: GeoTiffRaster | null; dsm: GeoTiffRaster | null; analysis: RoofSnapshotAnalysis | null; error: string | null } | null>(null);
 
   useEffect(() => {
     if (key === null || lat === undefined || lng === undefined || hintPending) return;
@@ -66,24 +68,24 @@ export function useRoofSnapshot(
           // Let the page paint before the analysis (a few hundred ms).
           await new Promise((r) => setTimeout(r, 0));
           if (controller.signal.aborted) return;
-          const analysis = analyseRoofSnapshot(img.data, geo, { pin: { lat, lng }, hint });
+          const analysis = analyseRoofSnapshot(img.data, geo, { pin: { lat, lng }, hint, dsm });
           if (controller.signal.aborted) return;
           if (analysis) {
-            setResult({ key, hint, analysis, error: null });
+            setResult({ key, hint, dsm, analysis, error: null });
             return;
           }
         }
-        setResult({ key, hint, analysis: null, error: "No roof found in the zoomed image" });
+        setResult({ key, hint, dsm, analysis: null, error: "No roof found in the zoomed image" });
       } catch (e) {
         if (controller.signal.aborted) return;
-        setResult({ key, hint, analysis: null, error: e instanceof Error ? e.message : String(e) });
+        setResult({ key, hint, dsm, analysis: null, error: e instanceof Error ? e.message : String(e) });
       }
     })();
     return () => controller.abort();
-  }, [key, lat, lng, hint, hintPending]);
+  }, [key, lat, lng, hint, hintPending, dsm]);
 
   if (key === null) return { analysis: null, loading: false, error: null };
-  const current = result && result.key === key && result.hint === hint ? result : null;
+  const current = result && result.key === key && result.hint === hint && result.dsm === dsm ? result : null;
   if (!current) return { analysis: null, loading: true, error: null };
   return { analysis: current.analysis, loading: false, error: current.error };
 }
