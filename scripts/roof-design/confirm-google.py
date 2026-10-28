@@ -11,7 +11,10 @@ mismatch, means look at the image again. Never move a line to match Google.
 
 Usage: confirm-google.py roofs/x.json
 Needs in the json: faces[{name, ring(px), bearing, pitch}], scale_m_per_px,
-google_segments[{pitch, azimuth, areaM2, px}] (centres in the same image px).
+google_segments[{pitch, azimuth, areaM2, px}] (centres in the same image px),
+optional google_offset_px [dx, dy]: shift Google centres onto the image when the
+photo is oblique (measure it by matching height-model face junctions to the
+image, e.g. the ridge ends; 61 Harry Ave: [-18, -15], about 0.7 m).
 """
 import json, math, sys
 
@@ -33,6 +36,7 @@ def adiff(a, b):
     return abs((a - b + 180) % 360 - 180)
 
 faces = R["faces"]
+odx, ody = R.get("google_offset_px", [0, 0])
 hit = {f["name"]: [] for f in faces}
 problems, gtot = [], 0.0
 for s in R.get("google_segments", []):
@@ -40,9 +44,10 @@ for s in R.get("google_segments", []):
         print(f"Google flat segment {s['areaM2']} m2 at {s['px']}: skipped (flat / other roof)")
         continue
     gtot += s["areaM2"]
-    owner = [f for f in faces if inside(s["px"], f["ring"])]
+    c = [s["px"][0] + odx, s["px"][1] + ody]
+    owner = [f for f in faces if inside(c, f["ring"])]
     if not owner:
-        problems.append(f"Google segment az {s['azimuth']} ({s['areaM2']} m2) at {s['px']} is not inside any face")
+        problems.append(f"Google segment az {s['azimuth']} pitch {s['pitch']} ({s['areaM2']} m2) at {[round(v) for v in c]} is not inside any face")
         continue
     f = owner[0]
     hit[f["name"]].append(s)

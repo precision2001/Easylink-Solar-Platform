@@ -1,0 +1,529 @@
+{
+ "pts": {
+  "NW": [
+   161,
+   141
+  ],
+  "Wm": [
+   148,
+   290
+  ],
+  "SW": [
+   91,
+   392
+  ],
+  "H0": [
+   210,
+   166
+  ],
+  "W1": [
+   277,
+   334
+  ],
+  "E1": [
+   363,
+   377
+  ],
+  "NE1": [
+   540,
+   335
+  ],
+  "NEo": [
+   590,
+   361
+  ],
+  "Ee": [
+   580,
+   379
+  ],
+  "D2": [
+   503,
+   389
+  ],
+  "U": [
+   520,
+   452
+  ],
+  "Ve": [
+   533,
+   459
+  ],
+  "Vb": [
+   530,
+   467
+  ],
+  "T": [
+   392,
+   465
+  ],
+  "W": [
+   431,
+   487
+  ],
+  "SE": [
+   460,
+   595
+  ]
+ },
+ "faces": [
+  {
+   "name": "WNW hip end",
+   "v": [
+    "NW",
+    "H0",
+    "W1",
+    "SW",
+    "Wm"
+   ],
+   "ring": [
+    [
+     161,
+     141
+    ],
+    [
+     210,
+     166
+    ],
+    [
+     277,
+     334
+    ],
+    [
+     91,
+     392
+    ],
+    [
+     148,
+     290
+    ]
+   ],
+   "bearing": 298,
+   "pitch": 24.3
+  },
+  {
+   "name": "NNE main",
+   "v": [
+    "H0",
+    "NE1",
+    "E1",
+    "W1"
+   ],
+   "ring": [
+    [
+     210,
+     166
+    ],
+    [
+     540,
+     335
+    ],
+    [
+     363,
+     377
+    ],
+    [
+     277,
+     334
+    ]
+   ],
+   "bearing": 28,
+   "pitch": 30.1
+  },
+  {
+   "name": "SSW main",
+   "v": [
+    "SW",
+    "W1",
+    "E1",
+    "T",
+    "W",
+    "SE"
+   ],
+   "ring": [
+    [
+     91,
+     392
+    ],
+    [
+     277,
+     334
+    ],
+    [
+     363,
+     377
+    ],
+    [
+     392,
+     465
+    ],
+    [
+     431,
+     487
+    ],
+    [
+     460,
+     595
+    ]
+   ],
+   "bearing": 208,
+   "pitch": 22.8
+  },
+  {
+   "name": "ESE upper",
+   "v": [
+    "E1",
+    "NE1",
+    "D2",
+    "U",
+    "T"
+   ],
+   "ring": [
+    [
+     363,
+     377
+    ],
+    [
+     540,
+     335
+    ],
+    [
+     503,
+     389
+    ],
+    [
+     520,
+     452
+    ],
+    [
+     392,
+     465
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 28.4
+  },
+  {
+   "name": "NE strip",
+   "v": [
+    "NE1",
+    "NEo",
+    "Ee",
+    "D2"
+   ],
+   "ring": [
+    [
+     540,
+     335
+    ],
+    [
+     590,
+     361
+    ],
+    [
+     580,
+     379
+    ],
+    [
+     503,
+     389
+    ]
+   ],
+   "bearing": 28,
+   "pitch": 25
+  },
+  {
+   "name": "ESE steep",
+   "v": [
+    "D2",
+    "Ee",
+    "Ve",
+    "U"
+   ],
+   "ring": [
+    [
+     503,
+     389
+    ],
+    [
+     580,
+     379
+    ],
+    [
+     533,
+     459
+    ],
+    [
+     520,
+     452
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 36.9
+  },
+  {
+   "name": "Middle strip",
+   "v": [
+    "T",
+    "U",
+    "Ve",
+    "Vb",
+    "W"
+   ],
+   "ring": [
+    [
+     392,
+     465
+    ],
+    [
+     520,
+     452
+    ],
+    [
+     533,
+     459
+    ],
+    [
+     530,
+     467
+    ],
+    [
+     431,
+     487
+    ]
+   ],
+   "bearing": 28,
+   "pitch": 25
+  },
+  {
+   "name": "ESE lower tri",
+   "v": [
+    "W",
+    "Vb",
+    "SE"
+   ],
+   "ring": [
+    [
+     431,
+     487
+    ],
+    [
+     530,
+     467
+    ],
+    [
+     460,
+     595
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 28.4
+  }
+ ],
+ "obstructions": [
+  [
+   [
+    140,
+    208
+   ],
+   [
+    192,
+    221
+   ],
+   [
+    190,
+    243
+   ],
+   [
+    138,
+    229
+   ]
+  ],
+  [
+   [
+    203,
+    160
+   ],
+   [
+    221,
+    160
+   ],
+   [
+    221,
+    250
+   ],
+   [
+    203,
+    250
+   ]
+  ],
+  [
+   [
+    398,
+    286
+   ],
+   [
+    412,
+    286
+   ],
+   [
+    412,
+    300
+   ],
+   [
+    398,
+    300
+   ]
+  ]
+ ],
+ "outline": [
+  [
+   161,
+   141
+  ],
+  [
+   210,
+   166
+  ],
+  [
+   540,
+   335
+  ],
+  [
+   590,
+   361
+  ],
+  [
+   580,
+   379
+  ],
+  [
+   533,
+   459
+  ],
+  [
+   530,
+   467
+  ],
+  [
+   460,
+   595
+  ],
+  [
+   91,
+   392
+  ],
+  [
+   148,
+   290
+  ]
+ ],
+ "scale_m_per_px": 0.030994801910056824,
+ "google_segments": [
+  {
+   "pitch": 22.8,
+   "azimuth": 196,
+   "areaM2": 48.0,
+   "px": [
+    334.9,
+    466.7
+   ]
+  },
+  {
+   "pitch": 36.9,
+   "azimuth": 106,
+   "areaM2": 12.8,
+   "px": [
+    554.7,
+    431.8
+   ]
+  },
+  {
+   "pitch": 28.4,
+   "azimuth": 109,
+   "areaM2": 15.0,
+   "px": [
+    464.7,
+    420.7
+   ]
+  },
+  {
+   "pitch": 35.2,
+   "azimuth": 299,
+   "areaM2": 9.7,
+   "px": [
+    125.0,
+    307.2
+   ]
+  },
+  {
+   "pitch": 24.3,
+   "azimuth": 300,
+   "areaM2": 22.2,
+   "px": [
+    206.1,
+    282.8
+   ]
+  },
+  {
+   "pitch": 30.1,
+   "azimuth": 32,
+   "areaM2": 36.6,
+   "px": [
+    366.8,
+    298.9
+   ]
+  },
+  {
+   "pitch": 11.6,
+   "azimuth": 43,
+   "areaM2": 15.1,
+   "px": [
+    311.7,
+    152.0
+   ]
+  }
+ ],
+ "center_latlng": [
+  -33.8547067,
+  151.049966
+ ],
+ "center_px": [
+  340,
+  360
+ ],
+ "axis_deg": -28,
+ "google_offset_px": [
+  -18,
+  -15
+ ],
+ "image": "61-harry-ave.png",
+ "source": "zoom-21 Static Maps 1280px centred on Google building centre, crop offset (300,280); faces read face by face from the image, confirmed with Google segments (confirm-google.py)",
+ "result": {
+  "PORTRAIT": {
+   "WNW hip end": 2,
+   "NNE main": 8,
+   "SSW main": 10,
+   "ESE upper": 2,
+   "NE strip": 0,
+   "ESE steep": 0,
+   "Middle strip": 0,
+   "ESE lower tri": 0
+  },
+  "LANDSCAPE": {
+   "WNW hip end": 3,
+   "NNE main": 8,
+   "SSW main": 11,
+   "ESE upper": 2,
+   "NE strip": 0,
+   "ESE steep": 0,
+   "Middle strip": 0,
+   "ESE lower tri": 1
+  }
+ },
+ "notes": [
+  "Cream strip on the west edge (Google seg 35 deg WNW 9.7 m2) is not tiles: wall seen at an angle or a lower roof. Check on site; no panels.",
+  "Grey low-pitch roof north of the house (Google 11.6 deg NNE 15.1 m2) is a separate patio roof, not included.",
+  "Obstructions: flue at the NW hip top, dark bar near the west edge, possible vent on the NNE face. Check on site.",
+  "Photo slightly oblique: Google data sits about 0.7 m off (google_offset_px)."
+ ]
+}

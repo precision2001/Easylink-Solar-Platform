@@ -86,6 +86,40 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-28 — 61 Harry Ave, Lidcombe (hip roof with stepped east end)
+First roof done end to end with the image-first rule.
+1. **Faces from the image.** The roof is a main hip (WNW end, NNE, SSW)
+   with an east hip end split by light strips, the same builder pattern as
+   77 Harry Ave. The east end has:
+   - an upper ESE face and a steeper ESE face;
+   - a lit NNE strip along the north-east eave;
+   - a light strip across the middle;
+   - a lower ESE triangle.
+   The main SE hip is offset by the middle strip: hip, then the strip's
+   edge along the walls, then hip again.
+2. **Using the height model to read the image.** It showed which face is
+   where, as a colour-by-facing overlay, before the lines were read. It
+   never set a line.
+3. **Oblique photo: Google sits about 0.7 m off the image.** The ridge ends
+   in the height model were 18 px east and 15 px south of the image. Google's
+   segment centres need the same shift (`google_offset_px` in
+   `confirm-google.py`), or a correct face reads as "not confirmed".
+4. **The cream strip on the west edge is not roof.** Google reports a 35°
+   WNW segment (9.7 m²) there. It is either the west wall seen at an angle
+   or a lower roof. The face edge follows the tiles. The check measures the
+   colour along each row (pink tiles against cream), which moved one
+   corner 27 px from my first eyeball reading. Check it on site.
+5. **The low grey roof to the north is a separate patio roof** (Google
+   11.6°, 15 m²). It is not included.
+
+Result:
+- 25 landscape (11.0 kW): WNW 3, NNE 8, SSW 11, ESE upper 2, ESE lower 1.
+- 22 portrait (9.7 kW).
+Google confirmed 5 faces, with facing within 4–12°. The image faces total
+123 m² against 134 m² from Google's tiled-roof segments (−9%; the height
+model's blurred edges).
+Design data: `scripts/roof-design/roofs/61-harry-ave.json`.
+
 ### 2026-10-28 — 77 Harry Ave, Lidcombe (multi-wing terracotta hip roof)
 1. **Imagery is now fetched directly.** `maps.googleapis.com` and
    `solar.googleapis.com` are allowed for the workspace. The image is a
@@ -235,6 +269,7 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
 - `check-lines.py roofs/x.json [--refine A,B]`: checks every line against
   the image (step 5); `--refine` moves free points such as the ridge ends.
 - `confirm-google.py roofs/x.json`: confirms image-read faces against Google segments (step 4b).
+- `pack-faces.ts roofs/x.json out.json`: packs image-read faces (any roof json with scale and centre).
 - `layout.ts`: packs the faces with the live site's packer (all rules,
   obstructions), in portrait and landscape.
 - `draw.py`: draws the result for the customer or installer.
