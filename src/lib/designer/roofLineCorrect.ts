@@ -95,7 +95,7 @@ export function correctInteriorLines<F extends { ring: LatLng[] }>(
     maxShiftM = 0.6,
   }: { toleranceM?: number; maxShiftM?: number } = {},
 ): CorrectedRoofLines<F> {
-  let current = snapFacesToOutline(faces, outlines);
+  let current = keepFacesInsideRoofs(snapFacesToOutline(faces, outlines), outlines);
   const all = [...outlines.flat(), ...current.flatMap((f) => f.ring)];
   if (!luma || all.length === 0) {
     return {
@@ -155,7 +155,7 @@ export function correctInteriorLines<F extends { ring: LatLng[] }>(
     const c = checkInteriorLine(a, b, luma, { toleranceM });
     return c;
   });
-  return { faces: current, checks, moved: moved.size };
+  return { faces: keepFacesInsideRoofs(current, outlines), checks, moved: moved.size };
 }
 
 /**
@@ -315,10 +315,64 @@ function ringSimple(r: XY[]): boolean {
 }
 
 /** Every face a simple shape, and together no bigger than the roof (no overlaps). */
+
+function pointInRing(p: XY, r: XY[]): boolean {
+  let inside = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const a = r[i];
+    const b = r[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Distance (m) from p to the nearest roof outline edge, and that nearest point. */
+function nearestOnOutlines(p: XY, outlines: XY[][]): { q: XY; d: number } {
+  let best = { q: p, d: Infinity };
+  for (const r of outlines) {
+    for (let i = 0; i < r.length; i++) {
+      const hit = projectOnSegment(p, r[i], r[(i + 1) % r.length]);
+      if (hit.d < best.d) best = hit;
+    }
+  }
+  return best;
+}
+
+function insideRoofs(p: XY, outlines: XY[][], tolM: number): boolean {
+  return outlines.some((r) => pointInRing(p, r)) || nearestOnOutlines(p, outlines).d <= tolM;
+}
+
+/**
+ * Keeps every face corner on the roof: a corner outside every outline is
+ * pulled back onto the nearest outline edge. Rebuilding a corner from two
+ * nearly parallel lines can throw it metres away (1 Frampton St, Lidcombe:
+ * a face line shot 2 m past the north-east corner and showed as a spike).
+ */
+export function keepFacesInsideRoofs<F extends { ring: LatLng[] }>(
+  faces: F[],
+  outlines: LatLng[][],
+  tolM = 0.05,
+): F[] {
+  const all = [...outlines.flat(), ...faces.flatMap((f) => f.ring)];
+  if (outlines.length === 0 || all.length === 0) return faces;
+  const { toXY, toLL } = frame(all);
+  const rings = outlines.map((r) => r.map(toXY));
+  return faces.map((f) => ({
+    ...f,
+    ring: f.ring.map((ll) => {
+      const p = toXY(ll);
+      if (insideRoofs(p, rings, tolM)) return ll;
+      return toLL(nearestOnOutlines(p, rings).q);
+    }),
+  }));
+}
+
 function facesValid(faces: XY[][], outlines: XY[][]): boolean {
   if (!faces.every((f) => f.length >= 3 && ringSimple(f) && Math.abs(ringArea(f)) > 0.05)) return false;
   const total = faces.reduce((s, f) => s + Math.abs(ringArea(f)), 0);
   const roof = outlines.reduce((s, o) => s + Math.abs(ringArea(o)), 0);
+  // Every corner must stay on the roof (within 0.15 m of it).
+  if (outlines.length > 0 && !faces.every((f) => f.every((p) => insideRoofs(p, outlines, 0.15)))) return false;
   return roof <= 0 || total <= roof * 1.03;
 }
 

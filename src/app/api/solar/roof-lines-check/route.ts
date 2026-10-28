@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     }
     const sharp = (await import("sharp")).default;
     const png = await get(
-      `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${ROOF_SNAPSHOT.zoom}&size=640x640&scale=2&maptype=satellite&format=png&key=${mapsKey}`,
+      `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${ROOF_SNAPSHOT.zoom}&size=640x640&scale=2&maptype=satellite&format=png32&key=${mapsKey}`,
     );
     const { data, info } = await sharp(Buffer.from(png)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const geo: SnapshotGeo = {

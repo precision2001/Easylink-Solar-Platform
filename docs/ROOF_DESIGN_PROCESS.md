@@ -31,7 +31,13 @@ write down what happened, why, and what changed in the code.
 3. **Main walls.** The wall direction comes from the longest straight eaves,
    and from straight-edged neighbours (a carport, a patio) where the roof
    edge is faint. Hips run at 45° to the walls in plan.
-4. **Faces.** Read the faces from Google's data together with the image:
+4. **Faces — read each face from the image first.** Look at the zoomed
+   image and mark every face as its own tiled surface: each colour/shade
+   region bounded by the visible eaves, hips, ridges and valleys, including
+   narrow strips and small triangles. Every corner sits where two visible
+   lines meet. Then confirm the corners against the line equations (walls,
+   45° hips) and Google's segments. Never let the height model or line
+   detection decide the faces (lesson 77 Harry Ave #8). Supporting data:
    - Google building insights gives each face's pitch, facing direction and
      area. It tells you which faces exist and how big they are.
    - The height model (DSM, 0.5 m) shows where each face sits. It is coarse
@@ -42,6 +48,19 @@ write down what happened, why, and what changed in the code.
    On the site, faces from the height model are filled out to the outline
    on the 3 cm grid (`fillFacesOnRoofs`), with each face's rows following its
    own eave.
+   **4b. Confirm with Google (never decide with it).** Run
+   `confirm-google.py roofs/x.json`:
+   - Each Google segment centre must fall inside one image face, with its
+     facing within 15°.
+   - The total sloped area must be within 10% of Google's.
+   - A face with no segment is fine when it is a narrow strip Google has
+     merged into a neighbour.
+   - A segment outside every face, or a facing or area mismatch, means
+     look at the image again. Lines are never moved to match Google.
+   77 Harry Ave: 6 of 7 faces confirmed, and the total was −0.8%. The east
+   face was flagged (23°): its east edge is seen at an angle and runs at
+   about 100° in the image, within 5° of Google. Rows stay square to the
+   walls (alignment rule).
 5. **Check every line against the image.** For each eave, hip, valley and
    ridge, look for the strongest brightness edge within ±40 px across it
    (`checkInteriorLine`, or the `fit.py` check used manually).
@@ -52,10 +71,26 @@ write down what happened, why, and what changed in the code.
      dashed orange: check on site.
    - A correction is undone if it would fold a face or make faces overlap
      (`facesValid`).
-6. **Obstructions.** Trace each obstruction's real shape (vents,
-   skylights, solar hot water, a lower roof breaking into a face). Pass it
-   to the packer as `obstructions`. The packer keeps 100 mm clear and packs
-   around it. Never delete panels afterwards (see lesson 4).
+   - **Always run `check-eaves.py roofs/x.json crop.png`** (add `--metal`
+     for sheet roofs). It measures where the tiles end across every eave.
+     A dark band along an eave is gutter plus shadow, not roof. Tiles are
+     tested by red minus green, because cream walls and gutters also pass a
+     red-minus-blue test. On 57 Harry Ave, two eaves were 0.3 m and 0.6 m
+     outside the tiles, so panels would have overhung the gutter.
+6. **Obstructions.** **Always run `find-obstructions.py roofs/x.json
+   crop.png out.png`, and review every NEW candidate on a close-up.**
+   - Spots are vents, whirlybirds (circulating fans), antennas and flues.
+   - Lines are level differences (steps), which often end part way across
+     a section. Never dismiss a line as a flashing.
+   - The dark wedge where a higher section shades a lower one is an
+     obstruction too.
+   - On tiles the finder is noisy (tile gaps, hip shadows). Raise `--thr`
+     to 22 and review by eye.
+   Trace each real one at its true shape and pass it to the packer as
+   `obstructions` (with a name in `obstruction_names`). Steps that end
+   part way across a section are thin obstruction strips. The packer keeps
+   100 mm clear and packs around them. Never delete panels afterwards (see
+   lesson 4).
 7. **Pack.** For each face, pack rows along its eave with its own pitch
    (the panel's depth up the slope is shortened by cos(pitch) in plan). Do
    this for portrait and for landscape, and offer both totals.
@@ -66,6 +101,197 @@ write down what happened, why, and what changed in the code.
 ## Lessons log
 
 Newest first. Add an entry whenever a design comes out wrong.
+
+### 2026-10-28 — Live Designs page: obstruction finder, spike fix, no loading rectangle
+1. **Loading rectangle.** Google's building box was drawn as a cyan
+   rectangle while the zoomed image was analysed. *Fixed:* the preview
+   draws only the traced roof, once the analysis is done
+   (`useImperativeRoofOutline`).
+2. **Spike on 1 Frampton St.** A face corner rebuilt from two nearly
+   parallel lines landed 2 m past the north-east wall, so a face line ran
+   off the roof. *Fixed in `roofLineCorrect.ts`:*
+   - `keepFacesInsideRoofs` pulls any corner outside every outline back
+     onto the nearest outline edge;
+   - `facesValid` now also rejects corrections that put a corner more than
+     0.15 m off the roof.
+3. **Obstructions on the live page.** *Added:* `roofObstructions.ts`
+   (`findRoofObstructions`), the same method as `find-obstructions.py`. It
+   looks for spots and steps in the zoomed image's brightness inside each
+   face, away from the face edges.
+   - **White or light sheet roofs:** a pixel counts if it is 18 grey
+     levels below its surroundings.
+   - **Tiles** (texture noise reaches −32): 22 grey levels, plus a dark
+     core, with at least a tenth of the group darker than −35.
+   - Spots within about 25 cm of each other are merged into one.
+   - Dark shadow bands at steps and strips count as steps, so strips get no
+     panels.
+   - The packer packs around everything found, and the page draws each one
+     as an orange box and counts them in the status text.
+   - On tiles it errs towards flagging: shaded tile texture can be flagged
+     too, and the installer checks on site.
+4. **Snapshots use `format=png32`** (the full-colour image) in both routes.
+5. **Results on Google data** (`scripts/roof-design/live-pipeline.ts`,
+   drawn with `live-draw.py`), portrait / landscape:
+   - 1 Frampton St: 60 / 66 (was 82 / 91; manual 60 / 65);
+   - 57 Harry Ave: 24 / 27 (manual 22 / 25);
+   - 66 Frances St: 89 / 102 (manual 89 / 84);
+   - 61 Harry Ave: 33 / 35 (manual 22 / 25).
+   Faces still come from the height model. Reading faces from the image
+   (as in the manual process) needs an AI model: Claude Opus 5.5 in Bedrock
+   (Sydney) needs the model agreement accepted and the tokens-per-minute
+   quota raised from 0.
+
+### 2026-10-28 — 1 Frampton St, Lidcombe (long hip roof, cross strips, lower south wing), and a live-site check
+1. **Live Designs page, same address.**
+   - While the roof loads, the map shows a cyan rectangle (Google's
+     building box, the fallback in `useImperativeRoofOutline`). The page
+     then opens in edit mode with the traced roof selected, in amber.
+   - The old yellow rectangle is gone, but the amber outline had a spike
+     running off its north-east corner.
+   - The live site gave 87 portrait / 92 landscape panels (400 W), with no
+     obstructions, and panels on the north strips.
+2. **Our process gave 60 portrait / 65 landscape** (the north strips are excluded from packing).
+   - The north end meets a neighbour's roof on a party line. The tiles
+     continue past it, so `check-eaves.py` reports "move out" there. It
+     is not an eave: keep the line.
+   - Steps and shadow bands are face edges where the roof does continue
+     beyond them, so "move out" flags on them are expected too.
+   - The photo sits about 1.6 m north of the height model
+     (`google_offset_px` [0, -52]).
+   - Obstructions: a chimney or vent box at the west eave, a dark
+     triangular vent, a white flue, a dark vertical feature at the
+     north-east edge, and a short step by the south notch.
+
+### 2026-10-28 — Revision after owner review: obstructions (66 Frances St, 57 Harry Ave)
+The owner marked what the designs missed on 66 Frances St:
+- circles: antennas or circulating fans;
+- lines: level differences.
+1. **What I had:** the vent on A, the vent on C and the big fan in block D.
+   **What I missed:**
+   - a fan just below block D;
+   - two short level differences in the rear roof's south-west part, which
+     I had called flashings;
+   - the shadow wedge of step A falling onto B.
+   I had also placed one vent 0.7 m from where it really is.
+   Why: I read obstructions by eye, only where they caught my attention.
+   *Added:* `find-obstructions.py`, which lists every dark spot and thin
+   line inside the faces, both new and already covered. It found all of
+   the owner's marks.
+2. **57 Harry Ave, same check.** Two more vents on the WNW face: a white
+   capped pipe near the eave, and a small vent below the one already
+   traced.
+3. **57 Harry Ave eaves were never checked** (step 5 was skipped).
+   *Added:* `check-eaves.py`. It found:
+   - the east wing's south eave 0.45–0.6 m outside the tiles (it sat on
+     the gutter and shadow band);
+   - the south wing's east eave 0.29 m out;
+   - the west and north eaves 0.23 m and 0.11 m inside the tiles.
+   All are fixed. The east wing's south eave was moved in a further
+   200 mm (shaded last row of tiles): check on site.
+4. **Revised results:**
+   - 66 Frances St: 84 landscape (37.0 kW), 89 portrait (39.2 kW); was
+     96 / 95.
+   - 57 Harry Ave: 25 landscape (11.0 kW), 22 portrait (9.7 kW); was
+     26 / 25.
+
+### 2026-10-28 — 66 Frances St, Lidcombe (white low-pitch metal roof, about 320 m²)
+1. **White metal roof: the plain image shows almost no lines.** Raising
+   the contrast just blows the whole roof out to white. *Added:*
+   `local-contrast.py`, which shows the image minus its blur, ×5, on a
+   grid. Section edges and the steps between sections show clearly.
+2. **Steps appear as a thick dark band.** It is the shadow of the higher
+   section, falling on the lower one. Face edges go on each section's own
+   side of the band, so no panel sits in the shadow.
+3. **The sections**, from the image:
+   - A: the front-left block, crossed by a diagonal fold corner to corner,
+     so two faces;
+   - B and C: blocks stepping down to the south-west;
+   - D: a small vent block, treated as one obstruction;
+   - E: the main skillion falling ESE (the height model shows about 1 m of
+     fall), wrapping around F;
+   - F: a framed box with a large dark oval, treated as an obstruction.
+   ~~Thin lines that stop part way across a section are flashings or
+   shadows.~~ **Wrong (owner review):** they are level differences. See
+   the revision below.
+4. **`confirm-google.py` skipped every segment**, because it treats pitches
+   under 5° as flat. *Added:* `flat_roof: true`. Low-pitch segments then
+   count, and position and area are checked, but not facing. Google's
+   83 m² west segment covers A, B and C together. The total was −2.0%.
+5. **Size limits matter here, not roof space.**
+   - At 96 panels (42 kW), the 200% rule needs at least a 21 kW
+     three-phase inverter.
+   - The 133% rule needs 32 kW, which is above 30 kW (10 kW per phase on
+     three phases), so export limiting is needed.
+   - Check the network connection rules for a system this size.
+   - The design should be sized to the customer's use, not to fill the
+     roof.
+
+Result:
+- 96 landscape (42.2 kW): A 3+3, B 7, C 3, E 74, F 6.
+- 95 portrait (41.8 kW).
+Flush mount at 1.7–4.9°.
+
+### 2026-10-28 — 57 Harry Ave, Lidcombe (L-shaped hip roof)
+First roof done with the saved skill (`easylink-roof-design`).
+1. **Faces read from the image.** There are six:
+   - a WNW face;
+   - a long NNE face across the whole north side;
+   - a central ESE face between the wings;
+   - the south wing's SSW face (with a vent);
+   - the east wing's SSW face;
+   - a small ESE hip end.
+   The hip between the NNE and central ESE faces and the valley at the
+   inner corner were both clear lines. The overlay sat on the image first
+   time.
+2. **Four of Google's nine segments are not this tiled roof.** One is on
+   the neighbour's roof (50°), two are grey metal lower roofs (17°) and one
+   is a flat roof. *Added:* `google_excluded` in the roof json, which lists
+   each one with its reason and leaves it out of the total. With those out,
+   the faces were within −4.5% of Google.
+3. **The east wing's south eave runs at about 17° in the image**, not the
+   wall's 28° (an oblique photo again). Google's facing is 190° against the
+   snapped 208°, so it was flagged. Rows stay square to the walls.
+4. **`pack-faces.ts` failed when the roof json had no outline.** The outline
+   is now optional.
+
+Result:
+- 26 landscape (11.4 kW): WNW 5, NNE 8, ESE centre 8, SSW south wing 2, SSW
+  east wing 2, ESE east end 1.
+- 25 portrait (11.0 kW).
+
+### 2026-10-28 — 61 Harry Ave, Lidcombe (hip roof with stepped east end)
+First roof done end to end with the image-first rule.
+1. **Faces from the image.** The roof is a main hip (WNW end, NNE, SSW)
+   with an east hip end split by light strips, the same builder pattern as
+   77 Harry Ave. The east end has:
+   - an upper ESE face and a steeper ESE face;
+   - a lit NNE strip along the north-east eave;
+   - a light strip across the middle;
+   - a lower ESE triangle.
+   The main SE hip is offset by the middle strip: hip, then the strip's
+   edge along the walls, then hip again.
+2. **Using the height model to read the image.** It showed which face is
+   where, as a colour-by-facing overlay, before the lines were read. It
+   never set a line.
+3. **Oblique photo: Google sits about 0.7 m off the image.** The ridge ends
+   in the height model were 18 px east and 15 px south of the image. Google's
+   segment centres need the same shift (`google_offset_px` in
+   `confirm-google.py`), or a correct face reads as "not confirmed".
+4. **The cream strip on the west edge is not roof.** Google reports a 35°
+   WNW segment (9.7 m²) there. It is either the west wall seen at an angle
+   or a lower roof. The face edge follows the tiles. The check measures the
+   colour along each row (pink tiles against cream), which moved one
+   corner 27 px from my first eyeball reading. Check it on site.
+5. **The low grey roof to the north is a separate patio roof** (Google
+   11.6°, 15 m²). It is not included.
+
+Result:
+- 25 landscape (11.0 kW): WNW 3, NNE 8, SSW 11, ESE upper 2, ESE lower 1.
+- 22 portrait (9.7 kW).
+Google confirmed 5 faces, with facing within 4–12°. The image faces total
+123 m² against 134 m² from Google's tiled-roof segments (−9%; the height
+model's blurred edges).
+Design data: `scripts/roof-design/roofs/61-harry-ave.json`.
 
 ### 2026-10-28 — 77 Harry Ave, Lidcombe (multi-wing terracotta hip roof)
 1. **Imagery is now fetched directly.** `maps.googleapis.com` and
@@ -111,10 +337,34 @@ Newest first. Add an entry whenever a design comes out wrong.
    the walls (`complex/skel.py`). This is only correct with a correct
    outline: every notch or noise step creates a false face.
 
-Result: 32 landscape (14.1 kW) or 28 portrait (12.3 kW). 29 of 54 lines
-are confirmed within ±100 mm. The rest are the traced east edge (about
-±0.3 m), a weak south-eave shadow, ridge-cap edges, and the narrow SSW strip
-(no panels). Design data is in `scripts/roof-design/roofs/77-harry-ave.json`.
+8. **The first faces were wrong; the owner redrew them by hand.** The
+   faces came from the height model, line detection and the L∞ skeleton.
+   They merged the light strips into the faces next to them, so panels
+   crossed visible lines. The owner marked 10 faces on the screenshot:
+   - north wing: a WNW hip triangle, an NNE trapezoid and a dark SSW band;
+   - east side: an ESE face under the wing, then a light strip;
+   - main body: a WNW face and an ESE face;
+   - south: an SSW face with a vent, a light NNE strip and a steep ESE
+     triangle.
+   The fix was to read each face from the image, place each corner where
+   the visible lines meet, then check against the line equations. Corners
+   M and N sat on the known hips within 2 px; L, R and F sat on the south
+   and west eaves.
+   Rule: **the image decides the faces; data only confirms them.** Light
+   strips between faces are separate faces. Lines read from the zoomed
+   image beat an affine transfer from another screenshot, which was up to
+   20 px off on the SE wing.
+
+Result (redrawn faces): 29 landscape (12.8 kW) or 26 portrait (11.4 kW).
+Every panel is inside its own face. Panels per face, landscape:
+- north wing: WNW 3, NNE 6;
+- east face: 2;
+- main body: WNW 8, ESE 6;
+- south: SSW 3 (packed around the vent);
+- SE triangle: 1.
+The two light strips and the SSW band take no panels. The east edge is
+traced and seen at an angle, so check it on site. Design data:
+`scripts/roof-design/roofs/77-harry-ave.json` and `77-harry-ave-layout.png`.
 
 ### 2026-10-28 — 85 Bombay St, Lidcombe (dark grey hip roof)
 1. **The colour finder found no roof.** The roof is dark grey with low
@@ -191,6 +441,12 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
   lines, obstructions, scale and notes, plus its screenshot.
 - `check-lines.py roofs/x.json [--refine A,B]`: checks every line against
   the image (step 5); `--refine` moves free points such as the ridge ends.
+- `confirm-google.py roofs/x.json`: confirms image-read faces against Google segments (step 4b).
+- `pack-faces.ts roofs/x.json out.json`: packs image-read faces (any roof json with scale and centre).
+- `find-obstructions.py roofs/x.json crop.png out.png [--thr]`: every dark spot (vent, fan, antenna) and thin line (level difference) inside the faces, for review (step 6).
+- `check-eaves.py roofs/x.json crop.png [--metal]`: where the tiles or sheets end across every eave (step 5).
+- `live-pipeline.ts <lat> <lng> <outDir>` (set GKEY, NODE_USE_ENV_PROXY=1 in the workspace) and `live-draw.py <outDir>`: run and draw the live page's pipeline on Google data.
+- `local-contrast.py x0 y0 x1 y1 scale out.png`: local-contrast gridded view for white or grey metal roofs.
 - `layout.ts`: packs the faces with the live site's packer (all rules,
   obstructions), in portrait and landscape.
 - `draw.py`: draws the result for the customer or installer.

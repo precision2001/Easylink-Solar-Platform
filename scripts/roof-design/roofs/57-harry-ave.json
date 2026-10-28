@@ -1,0 +1,467 @@
+{
+ "pts": {
+  "NW": [
+   251,
+   166
+  ],
+  "NE": [
+   603,
+   349
+  ],
+  "R1": [
+   307,
+   335
+  ],
+  "Wr": [
+   388,
+   321
+  ],
+  "Ee": [
+   505,
+   380
+  ],
+  "SEe": [
+   539,
+   471
+  ],
+  "In": [
+   415,
+   437
+  ],
+  "In2": [
+   413,
+   430
+  ],
+  "SEe2": [
+   542,
+   465
+  ],
+  "SEc": [
+   332,
+   596
+  ],
+  "R2": [
+   269,
+   414
+  ],
+  "SW": [
+   98,
+   478
+  ]
+ },
+ "faces": [
+  {
+   "name": "WNW west",
+   "v": [
+    "NW",
+    "R1",
+    "R2",
+    "SW"
+   ],
+   "ring": [
+    [
+     251,
+     166
+    ],
+    [
+     307,
+     335
+    ],
+    [
+     269,
+     414
+    ],
+    [
+     98,
+     478
+    ]
+   ],
+   "bearing": 298,
+   "pitch": 29.2
+  },
+  {
+   "name": "NNE north",
+   "v": [
+    "NW",
+    "NE",
+    "Ee",
+    "Wr",
+    "R1"
+   ],
+   "ring": [
+    [
+     251,
+     166
+    ],
+    [
+     603,
+     349
+    ],
+    [
+     505,
+     380
+    ],
+    [
+     388,
+     321
+    ],
+    [
+     307,
+     335
+    ]
+   ],
+   "bearing": 28,
+   "pitch": 38.5
+  },
+  {
+   "name": "ESE centre",
+   "v": [
+    "R1",
+    "Wr",
+    "In",
+    "SEc",
+    "R2"
+   ],
+   "ring": [
+    [
+     307,
+     335
+    ],
+    [
+     388,
+     321
+    ],
+    [
+     415,
+     437
+    ],
+    [
+     332,
+     596
+    ],
+    [
+     269,
+     414
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 35.8
+  },
+  {
+   "name": "SSW south wing",
+   "v": [
+    "SW",
+    "R2",
+    "SEc"
+   ],
+   "ring": [
+    [
+     98,
+     478
+    ],
+    [
+     269,
+     414
+    ],
+    [
+     332,
+     596
+    ]
+   ],
+   "bearing": 208,
+   "pitch": 30.2
+  },
+  {
+   "name": "SSW east wing",
+   "v": [
+    "Wr",
+    "Ee",
+    "SEe2",
+    "In2"
+   ],
+   "ring": [
+    [
+     388,
+     321
+    ],
+    [
+     505,
+     380
+    ],
+    [
+     542,
+     465
+    ],
+    [
+     413,
+     430
+    ]
+   ],
+   "bearing": 208,
+   "pitch": 36.9
+  },
+  {
+   "name": "ESE east end",
+   "v": [
+    "Ee",
+    "NE",
+    "SEe2"
+   ],
+   "ring": [
+    [
+     505,
+     380
+    ],
+    [
+     603,
+     349
+    ],
+    [
+     542,
+     465
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 36.0
+  }
+ ],
+ "obstructions": [
+  [
+   [
+    246,
+    515
+   ],
+   [
+    272,
+    515
+   ],
+   [
+    272,
+    550
+   ],
+   [
+    246,
+    550
+   ]
+  ],
+  [
+   [
+    212,
+    287
+   ],
+   [
+    223,
+    287
+   ],
+   [
+    223,
+    298
+   ],
+   [
+    212,
+    298
+   ]
+  ],
+  [
+   [
+    256,
+    320
+   ],
+   [
+    267,
+    320
+   ],
+   [
+    267,
+    331
+   ],
+   [
+    256,
+    331
+   ]
+  ],
+  [
+   [
+    528,
+    298
+   ],
+   [
+    590,
+    316
+   ],
+   [
+    586,
+    340
+   ],
+   [
+    524,
+    322
+   ]
+  ],
+  [
+   [
+    211,
+    247
+   ],
+   [
+    235,
+    247
+   ],
+   [
+    235,
+    278
+   ],
+   [
+    211,
+    278
+   ]
+  ],
+  [
+   [
+    249,
+    356
+   ],
+   [
+    261,
+    356
+   ],
+   [
+    261,
+    369
+   ],
+   [
+    249,
+    369
+   ]
+  ]
+ ],
+ "scale_m_per_px": 0.03099471096939386,
+ "center_latlng": [
+  -33.854957299999995,
+  151.0497939
+ ],
+ "center_px": [
+  310,
+  380
+ ],
+ "axis_deg": -28,
+ "google_segments": [
+  {
+   "pitch": 50.3,
+   "azimuth": 32,
+   "areaM2": 12.3,
+   "px": [
+    310.6,
+    681.3
+   ]
+  },
+  {
+   "pitch": 17.2,
+   "azimuth": 118,
+   "areaM2": 13.4,
+   "px": [
+    419.8,
+    540.9
+   ]
+  },
+  {
+   "pitch": 30.2,
+   "azimuth": 203,
+   "areaM2": 21.7,
+   "px": [
+    236.3,
+    514.7
+   ]
+  },
+  {
+   "pitch": 35.8,
+   "azimuth": 116,
+   "areaM2": 26.1,
+   "px": [
+    360.1,
+    455.4
+   ]
+  },
+  {
+   "pitch": 17.1,
+   "azimuth": 295,
+   "areaM2": 29.0,
+   "px": [
+    143.6,
+    315.4
+   ]
+  },
+  {
+   "pitch": 36.9,
+   "azimuth": 190,
+   "areaM2": 14.3,
+   "px": [
+    489.6,
+    432.1
+   ]
+  },
+  {
+   "pitch": 29.2,
+   "azimuth": 297,
+   "areaM2": 31.6,
+   "px": [
+    233.0,
+    355.9
+   ]
+  },
+  {
+   "pitch": 38.5,
+   "azimuth": 38,
+   "areaM2": 40.9,
+   "px": [
+    430.5,
+    317.5
+   ]
+  },
+  {
+   "pitch": 3.7,
+   "azimuth": 348,
+   "areaM2": 17.3,
+   "px": [
+    253.3,
+    132.9
+   ]
+  }
+ ],
+ "google_offset_px": [
+  0,
+  0
+ ],
+ "google_excluded": {
+  "0": "on the neighbour's roof to the south",
+  "1": "grey metal roof south-east of the house (lower roof, not tiles)",
+  "4": "grey metal roof along the west side (lower roof, not tiles)",
+  "8": "flat grey roof to the north (patio/carport)"
+ },
+ "image": "57-harry-ave.png",
+ "source": "zoom-21 Static Maps 1280px centred on Google building centre, crop offset (330,260); faces read from the image, confirmed with confirm-google.py",
+ "notes": [
+  "Grey metal lower roofs west (17 deg, 29 m2) and south-east (17 deg, 13 m2) and the flat roof north are not included; possible extra space after a structural check.",
+  "Two white objects on the north-east eave (possibly an evaporative cooler or skylights) are treated as obstructions. Check on site.",
+  "Vent on the south wing SSW face; two small dark spots on the WNW face treated as vents.",
+  "2026-10-28 rev 2: obstructions re-checked with find-obstructions.py after owner review; eaves checked with check-eaves.py."
+ ],
+ "result": {
+  "PORTRAIT": {
+   "WNW west": 4,
+   "NNE north": 7,
+   "ESE centre": 6,
+   "SSW south wing": 3,
+   "SSW east wing": 2,
+   "ESE east end": 0
+  },
+  "LANDSCAPE": {
+   "WNW west": 4,
+   "NNE north": 9,
+   "ESE centre": 7,
+   "SSW south wing": 2,
+   "SSW east wing": 2,
+   "ESE east end": 1
+  }
+ }
+}
