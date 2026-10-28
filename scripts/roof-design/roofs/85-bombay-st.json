@@ -1,0 +1,245 @@
+{
+ "address": "85 Bombay St, Lidcombe NSW 2141",
+ "image": "85-bombay-st.png",
+ "pin": {
+  "lat": -33.8539382,
+  "lng": 151.051436,
+  "px": [
+   450,
+   335
+  ]
+ },
+ "metresPerPixel": 0.0252,
+ "points": {
+  "SW": [
+   215.5,
+   424.2
+  ],
+  "SE": [
+   544.7,
+   592.0
+  ],
+  "NE": [
+   726.8,
+   234.4
+  ],
+  "NW": [
+   397.7,
+   66.7
+  ],
+  "R1": [
+   458.3,
+   326.4
+  ],
+  "R2": [
+   466.3,
+   308.5
+  ]
+ },
+ "faces": [
+  {
+   "name": "N (NNE)",
+   "ring": [
+    "NW",
+    "NE",
+    "R2"
+   ],
+   "eave": [
+    "NW",
+    "NE"
+   ],
+   "pitchDeg": 29.7
+  },
+  {
+   "name": "S (SSW)",
+   "ring": [
+    "SW",
+    "SE",
+    "R1"
+   ],
+   "eave": [
+    "SW",
+    "SE"
+   ],
+   "pitchDeg": 30.1
+  },
+  {
+   "name": "W (WNW)",
+   "ring": [
+    "SW",
+    "R1",
+    "R2",
+    "NW"
+   ],
+   "eave": [
+    "SW",
+    "NW"
+   ],
+   "pitchDeg": 31.9
+  },
+  {
+   "name": "E (ESE)",
+   "ring": [
+    "SE",
+    "NE",
+    "R2",
+    "R1"
+   ],
+   "eave": [
+    "SE",
+    "NE"
+   ],
+   "pitchDeg": 34.6
+  }
+ ],
+ "lines": {
+  "eaves": [
+   [
+    "SW",
+    "SE"
+   ],
+   [
+    "SE",
+    "NE"
+   ],
+   [
+    "NE",
+    "NW"
+   ],
+   [
+    "NW",
+    "SW"
+   ]
+  ],
+  "hips": [
+   [
+    "SW",
+    "R1"
+   ],
+   [
+    "SE",
+    "R1"
+   ],
+   [
+    "NW",
+    "R2"
+   ],
+   [
+    "NE",
+    "R2"
+   ],
+   [
+    "R1",
+    "R2"
+   ]
+  ]
+ },
+ "checkOnSite": [
+  [
+   "SE",
+   "NE"
+  ],
+  [
+   "SE",
+   "R1"
+  ]
+ ],
+ "obstructions": [
+  [
+   [
+    495,
+    440
+   ],
+   [
+    496,
+    438
+   ],
+   [
+    599,
+    412
+   ],
+   [
+    603,
+    411
+   ],
+   [
+    608,
+    411
+   ],
+   [
+    653,
+    422
+   ],
+   [
+    657,
+    426
+   ],
+   [
+    658,
+    428
+   ],
+   [
+    659,
+    431
+   ],
+   [
+    658,
+    433
+   ],
+   [
+    657,
+    434
+   ],
+   [
+    655,
+    435
+   ],
+   [
+    635,
+    444
+   ],
+   [
+    632,
+    445
+   ],
+   [
+    628,
+    446
+   ],
+   [
+    542,
+    467
+   ],
+   [
+    533,
+    467
+   ],
+   [
+    530,
+    466
+   ],
+   [
+    526,
+    464
+   ],
+   [
+    498,
+    444
+   ],
+   [
+    496,
+    442
+   ]
+  ]
+ ],
+ "mainAxis": [
+  "SW",
+  "SE"
+ ],
+ "panel": {
+  "heightM": 1.762,
+  "widthM": 1.134,
+  "watts": 440
+ },
+ "notes": "Hip roof ~9.3 x 10.1 m. Eave offsets fitted to image edges: S +17, E +25, N +10, W +2 px. East gutter 0.6 m further out belongs to the lower feature (moving the eave there broke both hips). Ridge ends refined with check-lines.py --refine R1,R2 (hips SW -76 mm, NW +25 mm, NE 0 mm); SE hip has no visible edge."
+}

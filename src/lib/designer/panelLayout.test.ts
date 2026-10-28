@@ -173,3 +173,40 @@ describe("inverterSizingFor", () => {
     expect(inverterSizingFor(50, 400).phasesHybridOrBattery).toBe(1);
   });
 });
+
+describe("obstructions are packed around, not deleted afterwards (85 Bombay St lesson)", () => {
+  const M = 111320;
+  const lat0 = -33.8539;
+  const mLng = M * Math.cos((lat0 * Math.PI) / 180);
+  const ll = (x: number, y: number) => ({ lat: lat0 + y / M, lng: 151.0514 + x / mLng });
+  // A 10 x 4.5 m face with a 2.4 x 1.2 m obstruction in the middle of the lower rows.
+  const face = [ll(0, 0), ll(10, 0), ll(10, 4.5), ll(0, 4.5)];
+  const obstruction = [ll(3.8, 0.4), ll(6.2, 0.4), ll(6.2, 1.6), ll(3.8, 1.6)];
+  const dims = { heightM: 1.762, widthM: 1.134 };
+
+  const corners = (p: { center: { lat: number; lng: number } }, orientation: "PORTRAIT" | "LANDSCAPE") => {
+    const x = (p.center.lng - 151.0514) * mLng;
+    const y = (p.center.lat - lat0) * M;
+    const w = orientation === "PORTRAIT" ? 1.134 : 1.762;
+    const h = orientation === "PORTRAIT" ? 1.762 : 1.134;
+    return { x0: x - w / 2, x1: x + w / 2, y0: y - h / 2, y1: y + h / 2 };
+  };
+
+  for (const orientation of ["PORTRAIT", "LANDSCAPE"] as const) {
+    it(`${orientation.toLowerCase()}: keeps 100 mm clear and beats packing-then-deleting`, () => {
+      const around = generatePanelsForRoofPolygon(face, dims, 0, { orientation, rowAngleDeg: 0, obstructions: [obstruction] });
+      const clear = generatePanelsForRoofPolygon(face, dims, 0, { orientation, rowAngleDeg: 0 });
+      const deletedAfter = clear.filter((p) => {
+        const c = corners(p, orientation);
+        return c.x1 <= 3.8 - 0.1 + 1e-6 || c.x0 >= 6.2 + 0.1 - 1e-6 || c.y1 <= 0.4 - 0.1 + 1e-6 || c.y0 >= 1.6 + 0.1 - 1e-6;
+      });
+      for (const p of around) {
+        const c = corners(p, orientation);
+        const clearOf = c.x1 <= 3.7 + 1e-6 || c.x0 >= 6.3 - 1e-6 || c.y1 <= 0.3 + 1e-6 || c.y0 >= 1.7 - 1e-6;
+        expect(clearOf).toBe(true);
+      }
+      expect(around.length).toBeGreaterThanOrEqual(deletedAfter.length);
+      expect(around.length).toBeGreaterThan(0);
+    });
+  }
+});
