@@ -2,6 +2,10 @@
  * EasyLink design rules — the defaults every roof layout and system size on
  * the Designs page follows. Kept in one place so the installer and master
  * tools can adopt the same numbers later.
+ *
+ * The full process (outline, faces, line checks, obstructions, packing) and
+ * the lessons log of what went wrong on real roofs and why is in
+ * docs/ROOF_DESIGN_PROCESS.md — add to it whenever a design comes out wrong.
  */
 
 export type PanelOrientation = "PORTRAIT" | "LANDSCAPE";

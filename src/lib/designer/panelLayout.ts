@@ -31,6 +31,23 @@ export type PanelLayoutOptions = {
    * alignment rule.
    */
   rowAngleDeg?: number;
+  /**
+   * Obstructions on the roof (vents, skylights, hot-water units, a lower roof
+   * or awning breaking into the face): outlines in lat/lng. Panels keep the
+   * setback clear of them as well as of the roof lines.
+   *
+   * They are packed AROUND, not removed afterwards. Why: on 85 Bombay St
+   * (Oct 2026) the east face was first packed as if it were clear and every
+   * panel touching the obstruction was then deleted — only 1 panel was left,
+   * although 3 fit. Rows packed for an empty face line up badly with the gap
+   * an obstruction leaves; each row has to know about it while it is filled,
+   * so the row-offset search can pick rows that fit beside it.
+   *
+   * Use the obstruction's traced shape, not a box square to the image: the
+   * same face lost 2 more panels to a box drawn square to the screen around
+   * an obstruction lying at an angle.
+   */
+  obstructions?: LatLng[][];
 };
 
 const METRES_PER_DEG_LAT = 111320;
@@ -124,6 +141,7 @@ export function generatePanelsForRoofPolygon(
     gapM = DESIGN_RULES.panelGapM,
     pitchDeg = 0,
     rowAngleDeg: rowAngleOverride,
+    obstructions = [],
   }: PanelLayoutOptions,
 ): SolarPanel[] {
   if (polygon.length < 3) return [];
@@ -148,6 +166,59 @@ export function generatePanelsForRoofPolygon(
   const rowGap = gapM * cosSlope;
   const s = Math.max(0, setbackM);
 
+  // Obstructions in the same rotated frame as the roof.
+  const rotObstructions = obstructions
+    .filter((o) => o.length >= 3)
+    .map((o) => o.map((p) => rotate(toPlanar(p, avgLat), center, -rowAngle)));
+
+  /** X-ranges a row band [y0, y1] can't use because of obstructions (setback added). */
+  const blockedInBand = (y0: number, y1: number): { left: number; right: number }[] => {
+    const out: { left: number; right: number }[] = [];
+    for (const poly of rotObstructions) {
+      let minX = Infinity;
+      let maxX = -Infinity;
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i];
+        const b = poly[(i + 1) % poly.length];
+        // Every point of edge a–b inside the band (clipped segment ends).
+        const lo = Math.min(a.y, b.y);
+        const hi = Math.max(a.y, b.y);
+        if (hi < y0 || lo > y1) continue;
+        const at = (y: number) => (Math.abs(b.y - a.y) < 1e-12 ? a.x : a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+        const ya = Math.max(lo, y0);
+        const yb = Math.min(hi, y1);
+        for (const x of [at(ya), at(yb)]) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+        }
+      }
+      // A band lying wholly inside the obstruction has no edge in it.
+      if (minX === Infinity) {
+        const mid = (y0 + y1) / 2;
+        const spans = xSpansAtY(poly, mid);
+        for (const sp of spans) out.push({ left: sp.left - s, right: sp.right + s });
+        continue;
+      }
+      out.push({ left: minX - s, right: maxX + s });
+    }
+    return out;
+  };
+
+  /** Cut blocked ranges out of a usable span. */
+  const subtract = (left: number, right: number, blocked: { left: number; right: number }[]) => {
+    let parts = [{ left, right }];
+    for (const b of blocked) {
+      parts = parts.flatMap((p) => {
+        if (b.right <= p.left || b.left >= p.right) return [p];
+        const keep: { left: number; right: number }[] = [];
+        if (b.left > p.left) keep.push({ left: p.left, right: b.left });
+        if (b.right < p.right) keep.push({ left: b.right, right: p.right });
+        return keep;
+      });
+    }
+    return parts;
+  };
+
   const toPanel = (x: number, y: number): SolarPanel => ({
     center: planarToLatLng(rotate({ x, y }, center, rowAngle), avgLat),
     orientation,
@@ -168,13 +239,16 @@ export function generatePanelsForRoofPolygon(
     const topSpans = xSpansAtY(rotPoly, y + reach);
     const botSpans = xSpansAtY(rotPoly, y - reach);
     const panels: SolarPanel[] = [];
+    const blocked = rotObstructions.length > 0 ? blockedInBand(y - reach, y + reach) : [];
     for (const top of topSpans) {
       for (const bot of botSpans) {
         const left = Math.max(top.left, bot.left) + s;
         const right = Math.min(top.right, bot.right) - s;
-        if (right - left < pw) continue;
-        for (let x = left + pw / 2; x + pw / 2 <= right + 1e-6; x += pw + gapM) {
-          panels.push(toPanel(x, y));
+        for (const part of subtract(left, right, blocked)) {
+          if (part.right - part.left < pw) continue;
+          for (let x = part.left + pw / 2; x + pw / 2 <= part.right + 1e-6; x += pw + gapM) {
+            panels.push(toPanel(x, y));
+          }
         }
       }
     }
