@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "next build --webpack",
-    "start": "next start",
+    "build": "node node_modules/next/dist/bin/next build --webpack",
+    "start": "node node_modules/next/dist/bin/next start",
     "lint": "eslint",
     "test": "vitest run",
     "generate:customer-import-template": "node scripts/generate-customer-import-template.mjs",
