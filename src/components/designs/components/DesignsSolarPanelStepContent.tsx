@@ -30,11 +30,11 @@ import {
   type RoofOutline,
 } from "@/utils/roofMaskContour";
 import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
-import { generatePanelsForFaces } from "@/lib/designer/panelLayout";
+import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
-import { correctInteriorLines } from "@/lib/designer/roofLineCorrect";
+import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
 import {
   DESIGN_RULES,
@@ -1186,6 +1186,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
           pitchDeg: f.pitchDeg,
           azimuthDeg: f.azimuthDeg,
         }));
+        // The height model is coarse (0.5 m) and leaves gaps: fill the faces
+        // out to the roof outline on the zoomed image's 3 cm grid, each with
+        // rows along its own eave.
+        const snap = roofSnapshot.analysis;
+        if (snap) faces = fillFacesOnRoofs(faces, paths, snap.mask, snap.metresPerPixel);
       } else {
         faces = splitRoofsIntoFaces(paths).map((f) => ({ ring: f.ring, eaveDeg: f.eaveDeg }));
       }
@@ -1194,7 +1199,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
       const corrected = correctInteriorLines(faces, paths, lineLuma);
       return { source, faces: corrected.faces, interiorChecks: corrected.checks, moved: corrected.moved };
     },
-    [dsmRaster, lineLuma, maskRaster],
+    [dsmRaster, lineLuma, maskRaster, roofSnapshot.analysis],
   );
 
   const savedFaceSet = useMemo(() => facesFor(savedRoofs), [facesFor, savedRoofs]);
@@ -1232,11 +1237,19 @@ export const DesignsSolarPanelStepContent = forwardRef<
       // Face rule: find each roof's faces (height model, else hip split) and
       // pack them one at a time, so no panel crosses a hip, valley or ridge.
       const { faces } = facesFor(paths);
+      // Alignment rule: rows parallel to the main walls — the longest edge of
+      // the largest roof outline, not whichever face happens to come first.
+      const largest = paths.reduce<google.maps.LatLngLiteral[] | null>(
+        (best, p) => (p.length >= 3 && (!best || ringAreaM2(p) > ringAreaM2(best)) ? p : best),
+        null,
+      );
       return dedupeSolarPanels(
-        generatePanelsForFaces(faces, data.panelDimensions, {
-          orientation,
-          pitchDeg: roofPitchDeg,
-        }),
+        generatePanelsForFaces(
+          faces,
+          data.panelDimensions,
+          { orientation, pitchDeg: roofPitchDeg },
+          largest ? longestEdgeAngleDegrees(largest) : undefined,
+        ),
       );
     },
     [data?.panelDimensions, facesFor, roofPitchDeg],

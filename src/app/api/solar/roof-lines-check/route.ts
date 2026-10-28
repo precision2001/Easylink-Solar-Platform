@@ -5,8 +5,8 @@ import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
 import { fitEavesToMask } from "@/lib/designer/roofLineCheck";
 import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
-import { correctInteriorLines } from "@/lib/designer/roofLineCorrect";
-import { generatePanelsForFaces } from "@/lib/designer/panelLayout";
+import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
+import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 
 /**
  * Server-side run of the Designs page roof-line pipeline for one pin — for
@@ -81,10 +81,12 @@ export async function GET(request: Request) {
           return detected.map((f, i) => ({ ring: rings[i], eaveDeg: f.eaveDeg, pitchDeg: f.pitchDeg, azimuthDeg: f.azimuthDeg, areaM2: f.areaM2 }));
         })()
       : splitRoofsIntoFaces(outline).map((f) => ({ ring: f.ring, eaveDeg: f.eaveDeg }));
-    const corrected = correctInteriorLines(faces, outline, snap.luma);
+    const filled = detected ? fillFacesOnRoofs(faces, outline, snap.mask, snap.metresPerPixel) : faces;
+    const corrected = correctInteriorLines(filled, outline, snap.luma);
+    const axisDeg = longestEdgeAngleDegrees(outline[0]);
     const dims = { heightM: 1.762, widthM: 1.134 };
-    const portrait = generatePanelsForFaces(corrected.faces, dims, { orientation: "PORTRAIT", pitchDeg: 22.5 });
-    const landscape = generatePanelsForFaces(corrected.faces, dims, { orientation: "LANDSCAPE", pitchDeg: 22.5 });
+    const portrait = generatePanelsForFaces(corrected.faces, dims, { orientation: "PORTRAIT", pitchDeg: 22.5 }, axisDeg);
+    const landscape = generatePanelsForFaces(corrected.faces, dims, { orientation: "LANDSCAPE", pitchDeg: 22.5 }, axisDeg);
     return NextResponse.json({
       ...log,
       faceSource: detected ? "height-model" : "assumed-hip",
