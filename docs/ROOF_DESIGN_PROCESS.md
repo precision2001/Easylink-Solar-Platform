@@ -71,10 +71,26 @@ write down what happened, why, and what changed in the code.
      dashed orange: check on site.
    - A correction is undone if it would fold a face or make faces overlap
      (`facesValid`).
-6. **Obstructions.** Trace each obstruction's real shape (vents,
-   skylights, solar hot water, a lower roof breaking into a face). Pass it
-   to the packer as `obstructions`. The packer keeps 100 mm clear and packs
-   around it. Never delete panels afterwards (see lesson 4).
+   - **Always run `check-eaves.py roofs/x.json crop.png`** (add `--metal`
+     for sheet roofs). It measures where the tiles end across every eave.
+     A dark band along an eave is gutter plus shadow, not roof. Tiles are
+     tested by red minus green, because cream walls and gutters also pass a
+     red-minus-blue test. On 57 Harry Ave, two eaves were 0.3 m and 0.6 m
+     outside the tiles, so panels would have overhung the gutter.
+6. **Obstructions.** **Always run `find-obstructions.py roofs/x.json
+   crop.png out.png`, and review every NEW candidate on a close-up.**
+   - Spots are vents, whirlybirds (circulating fans), antennas and flues.
+   - Lines are level differences (steps), which often end part way across
+     a section. Never dismiss a line as a flashing.
+   - The dark wedge where a higher section shades a lower one is an
+     obstruction too.
+   - On tiles the finder is noisy (tile gaps, hip shadows). Raise `--thr`
+     to 22 and review by eye.
+   Trace each real one at its true shape and pass it to the packer as
+   `obstructions` (with a name in `obstruction_names`). Steps that end
+   part way across a section are thin obstruction strips. The packer keeps
+   100 mm clear and packs around them. Never delete panels afterwards (see
+   lesson 4).
 7. **Pack.** For each face, pack rows along its eave with its own pitch
    (the panel's depth up the slope is shortened by cos(pitch) in plan). Do
    this for portrait and for landscape, and offer both totals.
@@ -85,6 +101,38 @@ write down what happened, why, and what changed in the code.
 ## Lessons log
 
 Newest first. Add an entry whenever a design comes out wrong.
+
+### 2026-10-28 — Revision after owner review: obstructions (66 Frances St, 57 Harry Ave)
+The owner marked what the designs missed on 66 Frances St:
+- circles: antennas or circulating fans;
+- lines: level differences.
+1. **What I had:** the vent on A, the vent on C and the big fan in block D.
+   **What I missed:**
+   - a fan just below block D;
+   - two short level differences in the rear roof's south-west part, which
+     I had called flashings;
+   - the shadow wedge of step A falling onto B.
+   I had also placed one vent 0.7 m from where it really is.
+   Why: I read obstructions by eye, only where they caught my attention.
+   *Added:* `find-obstructions.py`, which lists every dark spot and thin
+   line inside the faces, both new and already covered. It found all of
+   the owner's marks.
+2. **57 Harry Ave, same check.** Two more vents on the WNW face: a white
+   capped pipe near the eave, and a small vent below the one already
+   traced.
+3. **57 Harry Ave eaves were never checked** (step 5 was skipped).
+   *Added:* `check-eaves.py`. It found:
+   - the east wing's south eave 0.45–0.6 m outside the tiles (it sat on
+     the gutter and shadow band);
+   - the south wing's east eave 0.29 m out;
+   - the west and north eaves 0.23 m and 0.11 m inside the tiles.
+   All are fixed. The east wing's south eave was moved in a further
+   200 mm (shaded last row of tiles): check on site.
+4. **Revised results:**
+   - 66 Frances St: 84 landscape (37.0 kW), 89 portrait (39.2 kW); was
+     96 / 95.
+   - 57 Harry Ave: 25 landscape (11.0 kW), 22 portrait (9.7 kW); was
+     26 / 25.
 
 ### 2026-10-28 — 66 Frances St, Lidcombe (white low-pitch metal roof, about 320 m²)
 1. **White metal roof: the plain image shows almost no lines.** Raising
@@ -102,8 +150,9 @@ Newest first. Add an entry whenever a design comes out wrong.
    - E: the main skillion falling ESE (the height model shows about 1 m of
      fall), wrapping around F;
    - F: a framed box with a large dark oval, treated as an obstruction.
-   Thin lines that stop part-way across a section are flashings or
-   shadows, not section edges.
+   ~~Thin lines that stop part way across a section are flashings or
+   shadows.~~ **Wrong (owner review):** they are level differences. See
+   the revision below.
 4. **`confirm-google.py` skipped every segment**, because it treats pitches
    under 5° as flat. *Added:* `flat_roof: true`. Low-pitch segments then
    count, and position and area are checked, but not facing. Google's
@@ -334,6 +383,8 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
   the image (step 5); `--refine` moves free points such as the ridge ends.
 - `confirm-google.py roofs/x.json`: confirms image-read faces against Google segments (step 4b).
 - `pack-faces.ts roofs/x.json out.json`: packs image-read faces (any roof json with scale and centre).
+- `find-obstructions.py roofs/x.json crop.png out.png [--thr]`: every dark spot (vent, fan, antenna) and thin line (level difference) inside the faces, for review (step 6).
+- `check-eaves.py roofs/x.json crop.png [--metal]`: where the tiles or sheets end across every eave (step 5).
 - `local-contrast.py x0 y0 x1 y1 scale out.png`: local-contrast gridded view for white or grey metal roofs.
 - `layout.ts`: packs the faces with the live site's packer (all rules,
   obstructions), in portrait and landscape.

@@ -229,19 +229,19 @@
   [
    [
     240,
-    141
+    138
    ],
    [
-    253,
-    141
+    258,
+    138
    ],
    [
-    253,
-    154
+    258,
+    157
    ],
    [
     240,
-    154
+    157
    ]
   ],
   [
@@ -264,38 +264,154 @@
   ],
   [
    [
-    106,
-    400
+    97,
+    386
    ],
    [
-    124,
-    400
+    126,
+    386
    ],
    [
-    124,
-    420
+    126,
+    422
    ],
    [
-    106,
-    420
+    97,
+    422
    ]
   ],
   [
    [
-    378,
-    478
+    400,
+    480
    ],
    [
-    391,
-    478
+    412,
+    480
    ],
    [
-    391,
-    491
+    412,
+    493
    ],
    [
-    378,
-    491
+    400,
+    493
+   ]
+  ],
+  [
+   [
+    327,
+    361
+   ],
+   [
+    349,
+    361
+   ],
+   [
+    349,
+    394
+   ],
+   [
+    327,
+    394
+   ]
+  ],
+  [
+   [
+    169,
+    198
+   ],
+   [
+    324,
+    272
+   ],
+   [
+    322,
+    282
+   ],
+   [
+    173,
+    242
+   ]
+  ],
+  [
+   [
+    238,
+    397
+   ],
+   [
+    273,
+    401
+   ],
+   [
+    301,
+    440
+   ],
+   [
+    296,
+    449
+   ],
+   [
+    266,
+    429
+   ],
+   [
+    238,
+    426
+   ]
+  ],
+  [
+   [
+    199,
+    475
+   ],
+   [
+    305,
+    527
+   ],
+   [
+    300,
+    538
+   ],
+   [
+    195,
+    487
+   ]
+  ],
+  [
+   [
+    417,
+    159
+   ],
+   [
+    438,
+    159
+   ],
+   [
+    438,
+    177
+   ],
+   [
+    417,
+    177
+   ]
+  ],
+  [
+   [
+    464,
+    181
+   ],
+   [
+    481,
+    181
+   ],
+   [
+    481,
+    199
+   ],
+   [
+    464,
+    199
    ]
   ]
  ],
@@ -370,29 +486,45 @@
   0
  ],
  "flat_roof": true,
+ "obstruction_names": [
+  "vent block D (fan + vents)",
+  "dark oval on box F",
+  "antenna, rear roof",
+  "vent/antenna A",
+  "vent B/C",
+  "vent/antenna C",
+  "vent, rear roof (moved to the real spot)",
+  "fan below block D (missed by eye)",
+  "step shadow A onto B",
+  "level difference + step corner, rear roof SW",
+  "level difference, rear roof SW",
+  "edge shadow at notch",
+  "edge shadow at notch"
+ ],
  "image": "66-frances-st.png",
  "source": "zoom-21 Static Maps 1280px centred on Google building centre, crop offset (150,200); white low-pitch metal roof, section edges read on a local-contrast image; confirmed with confirm-google.py (flat_roof)",
+ "notes": [
+  "Section A has a diagonal fold corner to corner; treated as two faces. If it is only a flashing joint, A takes more panels.",
+  "Block D (vents) treated as one obstruction. Dark oval on box F treated as an obstruction (stain, damage or an object). Antenna on the east part.",
+  "Pitches 1.7-4.9 deg: flush mount assumed. Panel makers often recommend at least 10 deg tilt for self-cleaning; tilt frames need row spacing and give fewer panels.",
+  "2026-10-28 rev 2: obstructions re-checked with find-obstructions.py after owner review; eaves checked with check-eaves.py."
+ ],
  "result": {
   "PORTRAIT": {
    "A west (fold)": 2,
    "A north (fold)": 4,
-   "B": 6,
+   "B": 4,
    "C": 4,
-   "E main skillion": 72,
+   "E main skillion": 68,
    "F box": 7
   },
   "LANDSCAPE": {
-   "A west (fold)": 3,
+   "A west (fold)": 2,
    "A north (fold)": 3,
-   "B": 7,
-   "C": 3,
-   "E main skillion": 74,
+   "B": 5,
+   "C": 2,
+   "E main skillion": 66,
    "F box": 6
   }
- },
- "notes": [
-  "Section A has a diagonal fold corner to corner; treated as two faces. If it is only a flashing joint, A takes more panels.",
-  "Block D (vents) treated as one obstruction. Dark oval on box F treated as an obstruction (stain, damage or an object). Antenna on the east part.",
-  "Pitches 1.7-4.9 deg: flush mount assumed. Panel makers often recommend at least 10 deg tilt for self-cleaning; tilt frames need row spacing and give fewer panels."
- ]
+ }
 }

@@ -1,12 +1,12 @@
 {
  "pts": {
   "NW": [
-   256,
-   173
+   251,
+   166
   ],
   "NE": [
-   601,
-   352
+   603,
+   349
   ],
   "R1": [
    307,
@@ -21,24 +21,32 @@
    380
   ],
   "SEe": [
-   532,
-   484
+   539,
+   471
   ],
   "In": [
-   418,
-   452
+   415,
+   437
+  ],
+  "In2": [
+   413,
+   430
+  ],
+  "SEe2": [
+   542,
+   465
   ],
   "SEc": [
-   340,
-   600
+   332,
+   596
   ],
   "R2": [
    269,
    414
   ],
   "SW": [
-   105,
-   481
+   98,
+   478
   ]
  },
  "faces": [
@@ -52,8 +60,8 @@
    ],
    "ring": [
     [
-     256,
-     173
+     251,
+     166
     ],
     [
      307,
@@ -64,8 +72,8 @@
      414
     ],
     [
-     105,
-     481
+     98,
+     478
     ]
    ],
    "bearing": 298,
@@ -82,12 +90,12 @@
    ],
    "ring": [
     [
-     256,
-     173
+     251,
+     166
     ],
     [
-     601,
-     352
+     603,
+     349
     ],
     [
      505,
@@ -124,12 +132,12 @@
      321
     ],
     [
-     418,
-     452
+     415,
+     437
     ],
     [
-     340,
-     600
+     332,
+     596
     ],
     [
      269,
@@ -148,16 +156,16 @@
    ],
    "ring": [
     [
-     105,
-     481
+     98,
+     478
     ],
     [
      269,
      414
     ],
     [
-     340,
-     600
+     332,
+     596
     ]
    ],
    "bearing": 208,
@@ -168,8 +176,8 @@
    "v": [
     "Wr",
     "Ee",
-    "SEe",
-    "In"
+    "SEe2",
+    "In2"
    ],
    "ring": [
     [
@@ -181,12 +189,12 @@
      380
     ],
     [
-     532,
-     484
+     542,
+     465
     ],
     [
-     418,
-     452
+     413,
+     430
     ]
    ],
    "bearing": 208,
@@ -197,7 +205,7 @@
    "v": [
     "Ee",
     "NE",
-    "SEe"
+    "SEe2"
    ],
    "ring": [
     [
@@ -205,12 +213,12 @@
      380
     ],
     [
-     601,
-     352
+     603,
+     349
     ],
     [
-     532,
-     484
+     542,
+     465
     ]
    ],
    "bearing": 118,
@@ -288,6 +296,42 @@
    [
     524,
     322
+   ]
+  ],
+  [
+   [
+    211,
+    247
+   ],
+   [
+    235,
+    247
+   ],
+   [
+    235,
+    278
+   ],
+   [
+    211,
+    278
+   ]
+  ],
+  [
+   [
+    249,
+    356
+   ],
+   [
+    261,
+    356
+   ],
+   [
+    261,
+    369
+   ],
+   [
+    249,
+    369
    ]
   ]
  ],
@@ -396,27 +440,28 @@
  },
  "image": "57-harry-ave.png",
  "source": "zoom-21 Static Maps 1280px centred on Google building centre, crop offset (330,260); faces read from the image, confirmed with confirm-google.py",
+ "notes": [
+  "Grey metal lower roofs west (17 deg, 29 m2) and south-east (17 deg, 13 m2) and the flat roof north are not included; possible extra space after a structural check.",
+  "Two white objects on the north-east eave (possibly an evaporative cooler or skylights) are treated as obstructions. Check on site.",
+  "Vent on the south wing SSW face; two small dark spots on the WNW face treated as vents.",
+  "2026-10-28 rev 2: obstructions re-checked with find-obstructions.py after owner review; eaves checked with check-eaves.py."
+ ],
  "result": {
   "PORTRAIT": {
-   "WNW west": 5,
+   "WNW west": 4,
    "NNE north": 7,
-   "ESE centre": 8,
+   "ESE centre": 6,
    "SSW south wing": 3,
    "SSW east wing": 2,
    "ESE east end": 0
   },
   "LANDSCAPE": {
-   "WNW west": 5,
-   "NNE north": 8,
-   "ESE centre": 8,
+   "WNW west": 4,
+   "NNE north": 9,
+   "ESE centre": 7,
    "SSW south wing": 2,
    "SSW east wing": 2,
    "ESE east end": 1
   }
- },
- "notes": [
-  "Grey metal lower roofs west (17 deg, 29 m2) and south-east (17 deg, 13 m2) and the flat roof north are not included; possible extra space after a structural check.",
-  "Two white objects on the north-east eave (possibly an evaporative cooler or skylights) are treated as obstructions. Check on site.",
-  "Vent on the south wing SSW face; two small dark spots on the WNW face treated as vents."
- ]
+ }
 }
