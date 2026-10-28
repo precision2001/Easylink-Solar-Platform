@@ -16,7 +16,7 @@ cd /home/ubuntu/easylink-solar/web
 
 BUILD_OK=0
 rm -rf .next-new
-if NEXT_DIST_DIR=.next-new NODE_OPTIONS="--max-old-space-size=1536" npm run build \
+if SKIP_TYPECHECK=1 NEXT_DIST_DIR=.next-new NODE_OPTIONS="--max-old-space-size=1536" npm run build \
   && [ -f .next-new/BUILD_ID ]; then
   rm -rf .next-old
   if [ -d .next ]; then mv .next .next-old; fi

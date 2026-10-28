@@ -10,6 +10,13 @@ const nextConfig: NextConfig = {
   /** Hide the bottom-right “Compiling / Rendering” dev badge; compile status stays in the terminal. */
   devIndicators: false,
   /**
+   * The server (t3.small, 2 GB) ran out of memory in the build's type check
+   * and the build was killed (deploy 28 Oct 2026). Types are checked before
+   * every push (npx tsc --noEmit), so scripts/start.sh skips them on the
+   * server with SKIP_TYPECHECK=1. Local and CI builds still check.
+   */
+  typescript: { ignoreBuildErrors: process.env.SKIP_TYPECHECK === "1" },
+  /**
    * Off: React's dev-only double-mount/double-effect was doubling every
    * client-side effect (solar API calls, imperative Google Maps setup, etc.)
    * on every dev page load. Doesn't affect production — StrictMode's extra
