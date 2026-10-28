@@ -55,8 +55,10 @@ export const DEFAULT_FINANCIAL_PROJECTION_ASSUMPTIONS: FinancialProjectionAssump
     startYear: new Date().getFullYear(),
     utilityEscalationAnnual: 0.03,
     solarDegradationAnnual: 0.004,
-    gridEffectivePricePerKwh: 0.393,
-    solarYieldKwhPerKwYear1: 3435,
+    // AER DMO 2026-27, Ausgrid flat rate: about 38 c/kWh.
+    gridEffectivePricePerKwh: 0.38,
+    // CER zone 3 (Sydney) rating: 1.382 MWh per kW a year. Was 3435, about 2.5x too high.
+    solarYieldKwhPerKwYear1: 1382,
   };
 
 function parseMoneyToNumber(raw: string): number | null {
