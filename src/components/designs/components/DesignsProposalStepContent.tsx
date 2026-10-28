@@ -42,6 +42,13 @@ import {
   DEFAULT_FINANCIAL_PROJECTION_ASSUMPTIONS,
   buildFinancialProjectionFromProposal,
 } from "@/lib/proposal/financialProjection";
+import { estimateSavings, priceProposal } from "@/lib/proposal/proposalPricing";
+
+/** Usable kWh from a battery option label ("14.6kWh" → 14.6; "None" → 0). */
+function batteryKwhOf(id: string): number {
+  const n = Number.parseFloat(findBatteryCapacity(id).label);
+  return Number.isFinite(n) ? n : 0;
+}
 
 /**
  * The installer save endpoint (PATCH /designs/:id) doesn't accept a
@@ -175,9 +182,12 @@ function ProposalSubMetric({
 function PanelTierSelector({
   selectedId,
   onSelect,
+  deltas,
 }: {
   selectedId: string;
   onSelect: (id: string) => void;
+  /** Price difference vs Standard for this design, from the quote engine. */
+  deltas: Record<string, number>;
 }) {
   return (
     <div className="w-full rounded-[20px] border-[1.5px] border-solid border-white/10 bg-[rgba(255,255,255,0.04)] p-[16px]">
@@ -225,9 +235,9 @@ function PanelTierSelector({
                 </span>
               </div>
               <span className="shrink-0 font-source-sans text-[14px] font-semibold text-white/80">
-                {tier.priceDelta === 0
+                {(deltas[tier.id] ?? 0) === 0
                   ? "Included"
-                  : `+${formatAud(tier.priceDelta)}`}
+                  : `${deltas[tier.id] > 0 ? "+" : "−"}${formatAud(Math.abs(deltas[tier.id]))}`}
               </span>
             </button>
           );
@@ -240,9 +250,12 @@ function PanelTierSelector({
 function BatterySelector({
   selectedId,
   onSelect,
+  prices,
 }: {
   selectedId: string;
   onSelect: (id: string) => void;
+  /** Added cost of each battery for this design (after battery STCs), from the quote engine. */
+  prices: Record<string, number>;
 }) {
   const selected = findBatteryCapacity(selectedId);
   return (
@@ -270,6 +283,11 @@ function BatterySelector({
               }`}
             >
               {battery.label}
+              {battery.id !== "none" && prices[battery.id] ? (
+                <span className={`block text-[11px] font-normal ${isSelected ? "text-black/60" : "text-white/50"}`}>
+                  +{formatAud(prices[battery.id])}
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -428,35 +446,39 @@ export const DesignsProposalStepContent = forwardRef<
     proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID;
 
   /**
-   * The proposal arrives from upstream steps with a `totalSystemPrice` that
-   * doesn't know about panel tier / battery add-ons. We capture it once as
-   * `equipmentBasePrice` so re-selecting a tier/battery adjusts off a fixed
-   * base instead of compounding on the previous total.
+   * Pricing engine: the design's panels, tier and battery priced with the
+   * quote engine (supply, install, margin, GST, less solar and battery STCs;
+   * inverter sized under the 200% / 133% rules), and savings estimated from
+   * the design's generation against the customer's bill. Replaces the fixed
+   * $11,200 and the fixed 26% saving the page used to show.
    */
-  useEffect(() => {
-    if (proposal.pricing.equipmentBasePrice !== undefined) return;
-    dispatch(
-      mergeProposalData({
-        pricing: { equipmentBasePrice: proposal.pricing.totalSystemPrice },
-        equipment: {
-          panelTierId: proposal.equipment.panelTierId ?? DEFAULT_PANEL_TIER_ID,
-          batteryCapacityId:
-            proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID,
-        },
-      }),
-    );
-    // Runs once to seed the base price; subsequent selections are handled below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const basePrice = parseMoneyToNumber(
-    proposal.pricing.equipmentBasePrice ?? proposal.pricing.totalSystemPrice,
+  const panelCount =
+    Number.parseInt(proposal.equipment.numberOfPanels || proposal.summary.totalPanels || "0", 10) || 0;
+  const monthlyBill = parseMoneyToNumber(proposal.pricing.currentBill);
+  const batteryKwh = batteryKwhOf(batteryCapacityId);
+  const pricing = useMemo(
+    () => priceProposal({ panelCount, panelTierId, batteryKwh }),
+    [panelCount, panelTierId, batteryKwh],
   );
-  const tierDelta = findPanelTier(panelTierId).priceDelta;
-  const batteryPrice = findBatteryCapacity(batteryCapacityId).price;
-  const computedTotalPrice = basePrice + tierDelta + batteryPrice;
+  const savings = useMemo(
+    () => estimateSavings(monthlyBill, pricing.quote.arrayKw, batteryKwh),
+    [monthlyBill, pricing.quote.arrayKw, batteryKwh],
+  );
+  const tierDeltas = useMemo(() => {
+    const base = priceProposal({ panelCount, panelTierId: "standard", batteryKwh }).total;
+    return Object.fromEntries(
+      PANEL_TIER_OPTIONS.map((t) => [t.id, priceProposal({ panelCount, panelTierId: t.id, batteryKwh }).total - base]),
+    ) as Record<string, number>;
+  }, [panelCount, batteryKwh]);
+  const batteryPrices = useMemo(() => {
+    const none = priceProposal({ panelCount, panelTierId, batteryKwh: 0 }).total;
+    return Object.fromEntries(
+      BATTERY_CAPACITY_OPTIONS.map((b) => [b.id, Math.max(0, priceProposal({ panelCount, panelTierId, batteryKwh: batteryKwhOf(b.id) }).total - none)]),
+    ) as Record<string, number>;
+  }, [panelCount, panelTierId]);
 
-  const yearlySavingsNum = parseMoneyToNumber(proposal.pricing.monthlySavings) * 12;
+  const computedTotalPrice = pricing.total;
+  const yearlySavingsNum = savings.yearlySavings;
   const computedPayback =
     yearlySavingsNum > 0
       ? `${(computedTotalPrice / yearlySavingsNum).toFixed(1)} yrs`
@@ -485,28 +507,38 @@ export const DesignsProposalStepContent = forwardRef<
   }
 
   /**
-   * Keeps `pricing.totalSystemPrice` / `summary.payback` in sync with the
-   * selected tier + battery so downstream reads (PDF, save-to-account) see
-   * the adjusted price without re-deriving it themselves.
+   * Keeps the stored price, savings and payback in sync with the engine so
+   * downstream reads (PDF, save-to-account) see the same numbers.
    */
   useEffect(() => {
-    if (proposal.pricing.equipmentBasePrice === undefined) return;
-    const nextTotal = formatAud(computedTotalPrice);
-    const nextPayback = computedPayback;
+    const next = {
+      totalSystemPrice: formatAud(computedTotalPrice),
+      monthlySavings: formatAud(savings.monthlySavings),
+      newBill: formatAud(savings.newBill),
+      yearlySavings: formatAud(savings.yearlySavings),
+      payback: computedPayback,
+    };
     if (
-      proposal.pricing.totalSystemPrice === nextTotal &&
-      proposal.summary.payback === nextPayback
+      proposal.pricing.totalSystemPrice === next.totalSystemPrice &&
+      proposal.pricing.monthlySavings === next.monthlySavings &&
+      proposal.pricing.newBill === next.newBill &&
+      proposal.summary.yearlySavings === next.yearlySavings &&
+      proposal.summary.payback === next.payback
     ) {
       return;
     }
     dispatch(
       mergeProposalData({
-        pricing: { totalSystemPrice: nextTotal },
-        summary: { payback: nextPayback },
+        pricing: {
+          totalSystemPrice: next.totalSystemPrice,
+          monthlySavings: next.monthlySavings,
+          newBill: next.newBill,
+        },
+        summary: { yearlySavings: next.yearlySavings, payback: next.payback },
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computedTotalPrice, computedPayback, proposal.pricing.equipmentBasePrice]);
+  }, [computedTotalPrice, computedPayback, savings]);
 
   return (
     <div className="flex w-full flex-1 items-start self-start overflow-y-auto">
@@ -543,12 +575,14 @@ export const DesignsProposalStepContent = forwardRef<
                 <PanelTierSelector
                   selectedId={panelTierId}
                   onSelect={handleSelectPanelTier}
+                  deltas={tierDeltas}
                 />
               </div>
               <div className="w-full flex-1">
                 <BatterySelector
                   selectedId={batteryCapacityId}
                   onSelect={handleSelectBattery}
+                  prices={batteryPrices}
                 />
               </div>
             </div>
@@ -615,7 +649,7 @@ export const DesignsProposalStepContent = forwardRef<
                   </span>
                 </p>
                 <p className="mt-1 text-center font-source-sans text-[11px] font-normal leading-[16px] text-white/40">
-                  *Price includes installation and GST
+                  *Includes installation and GST, after {pricing.quote.stcCount} STCs ({formatAud(pricing.quote.stcValue)}). {pricing.quote.inverter?.model ?? ""}{pricing.phase === 3 ? ", three-phase supply" : ""}.
                 </p>
                 <div className="mt-2 flex gap-[8px]">
                   <ProposalSubMetric
