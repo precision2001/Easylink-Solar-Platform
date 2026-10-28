@@ -22,6 +22,7 @@ import { useSolarEstimate } from "@/hooks/useSolarEstimate";
 import { useSolarLayers, type SolarLayerType } from "@/hooks/useSolarLayers";
 import { useBuildingFootprint } from "@/hooks/useBuildingFootprint";
 import { useCadastralParcel } from "@/hooks/useCadastralParcel";
+import { useRoofSnapshot } from "@/hooks/useRoofSnapshot";
 import type { GeoTiffOverlay } from "@/utils/geotiff";
 import {
   extractRoofOutlinesFromMask,
@@ -33,12 +34,8 @@ import { generatePanelsForFaces } from "@/lib/designer/panelLayout";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
-import {
-  checkInteriorLine,
-  fitEavesToMask,
-  interiorEdges,
-  type LineCheck,
-} from "@/lib/designer/roofLineCheck";
+import { correctInteriorLines } from "@/lib/designer/roofLineCorrect";
+import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
 import {
   DESIGN_RULES,
   inverterSizingFor,
@@ -698,6 +695,26 @@ export const DesignsSolarPanelStepContent = forwardRef<
   const maskRaster = maskOverlay?.raster ?? null;
 
   /**
+   * Zoom-in roof analysis — the starting point for every roof: Google's
+   * satellite image at zoom 21 (~3 cm pixels) around the pin, with the roof
+   * found by its colour and traced (see roofSnapshot.ts). Its mask fits the
+   * eaves and its brightness finds the hips, ridges and valleys.
+   */
+  const roofSnapshot = useRoofSnapshot(selectedLocation ?? null, maskRaster, layersLoading);
+  const snapshotOutlines = useMemo((): LatLngRing[] | null => {
+    const found = roofSnapshot.analysis?.outlines;
+    if (!found || found.length === 0) return null;
+    // Roof-line rule: straight lines along / square to the main walls (and
+    // 45° hips), shared corners; then eaves fitted to the zoomed roof edge.
+    const straight = regularizeRoofOutlines(found.map((o) => o.ring));
+    const mask = roofSnapshot.analysis!.mask;
+    return regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, mask).ring));
+  }, [roofSnapshot.analysis]);
+  /** Roof edge and brightness to check lines against — the zoomed image when found, else Google Solar's layers. */
+  const lineMask = roofSnapshot.analysis?.mask ?? maskRaster;
+  const lineLuma = roofSnapshot.analysis?.luma ?? rgbOverlay?.luma ?? null;
+
+  /**
    * Every roof section traced from the mask, largest first — a large
    * commercial/industrial roof commonly comes back as several disconnected
    * blobs (ridge lines, rooftop plant, vents), so this is a list rather than
@@ -817,10 +834,12 @@ export const DesignsSolarPanelStepContent = forwardRef<
     : footprintOutline;
 
   /** True when the starting shape is a real trace of the roof, not a footprint or rectangle guess. */
-  const initialRoofIsTraced = Boolean(!trustedFootprintOutline && maskIsGood);
+  const initialRoofIsTraced = Boolean(snapshotOutlines || (!trustedFootprintOutline && maskIsGood));
 
   /** Best roof outline available right now — null while still waiting on a source that could still beat the next fallback. */
   const bestAvailableOutlines = useMemo((): LatLngRing[] | null => {
+    // Zoom and image analysis first: the roof as it looks in the image.
+    if (snapshotOutlines) return snapshotOutlines;
     if (trustedFootprintOutline) return [trustedFootprintOutline];
     if (maskIsGood) return roofMaskOutlines as LatLngRing[];
     // Google's real match disagreed with the footprint and the mask trace
@@ -838,6 +857,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     footprintOutline,
     maskIsGood,
     roofMaskOutlines,
+    snapshotOutlines,
     trustedFootprintOutline,
   ]);
 
@@ -852,6 +872,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
     // runs once per address, locked in wrong permanently even after the
     // slower data arrives and would have corrected it.
     if (footprint.loading || cadastralParcel.loading || loading) return null;
+    // Wait for the zoom-in analysis before falling back to a footprint or box.
+    if (roofSnapshot.loading) return null;
     if (bestAvailableOutlines) return bestAvailableOutlines;
     if (boundingBoxNearPin) return [boundingBoxToPolygon(boundingBoxNearPin)];
     if (layersLoading) return null;
@@ -863,6 +885,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     footprint.loading,
     layersLoading,
     loading,
+    roofSnapshot.loading,
     selectedLocation,
   ]);
 
@@ -1153,29 +1176,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
   const facesFor = useCallback(
     (paths: google.maps.LatLngLiteral[][]) => {
       const detected = detectRoofFaces(dsmRaster, paths, maskRaster);
+      const source = detected && detected.length > 0 ? ("height-model" as const) : ("assumed-hip" as const);
+      let faces: { ring: google.maps.LatLngLiteral[]; eaveDeg: number; pitchDeg?: number; azimuthDeg?: number }[];
       if (detected && detected.length > 0) {
         const rings = regularizeRoofOutlines(detected.map((f) => f.ring));
-        return {
-          source: "height-model" as const,
-          faces: detected.map((f, i) => ({
-            ring: rings[i],
-            eaveDeg: f.eaveDeg,
-            pitchDeg: f.pitchDeg,
-            azimuthDeg: f.azimuthDeg as number | undefined,
-          })),
-        };
-      }
-      return {
-        source: "assumed-hip" as const,
-        faces: splitRoofsIntoFaces(paths).map((f) => ({
-          ring: f.ring,
+        faces = detected.map((f, i) => ({
+          ring: rings[i],
           eaveDeg: f.eaveDeg,
-          pitchDeg: undefined as number | undefined,
-          azimuthDeg: undefined as number | undefined,
-        })),
-      };
+          pitchDeg: f.pitchDeg,
+          azimuthDeg: f.azimuthDeg,
+        }));
+      } else {
+        faces = splitRoofsIntoFaces(paths).map((f) => ({ ring: f.ring, eaveDeg: f.eaveDeg }));
+      }
+      // Correct the lines against the zoomed image: faces meet the eaves
+      // exactly, and hips / ridges / valleys move onto the edges seen in it.
+      const corrected = correctInteriorLines(faces, paths, lineLuma);
+      return { source, faces: corrected.faces, interiorChecks: corrected.checks, moved: corrected.moved };
     },
-    [dsmRaster, maskRaster],
+    [dsmRaster, lineLuma, maskRaster],
   );
 
   const savedFaceSet = useMemo(() => facesFor(savedRoofs), [facesFor, savedRoofs]);
@@ -1187,14 +1206,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
    */
   const lineChecks = useMemo((): LineCheck[] => {
     if (savedRoofs.length === 0) return [];
-    const eaves = savedRoofs.flatMap((ring) => fitEavesToMask(ring, maskRaster).checks);
-    // Faces traced from the height model run up to ~0.5 m inside the outline.
-    const tol = savedFaceSet.source === "height-model" ? 0.5 : 0.05;
-    const inner = interiorEdges(savedFaces, savedRoofs, tol).map(([a, b]) =>
-      checkInteriorLine(a, b, rgbOverlay?.luma ?? null),
-    );
-    return [...eaves, ...inner];
-  }, [maskRaster, rgbOverlay, savedFaceSet.source, savedFaces, savedRoofs]);
+    const eaves = savedRoofs.flatMap((ring) => fitEavesToMask(ring, lineMask).checks);
+    return [...eaves, ...savedFaceSet.interiorChecks];
+  }, [lineMask, savedFaceSet.interiorChecks, savedRoofs]);
 
   const lineCheckSummary = useMemo(() => {
     const checked = lineChecks.filter((c) => c.status !== "no-data");
@@ -1337,9 +1351,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
     );
     // Roof-line check: fit each eave onto Google's roof mask (moved when the
     // real edge is more than 100 mm away), then straighten again.
-    const validPaths = maskRaster
+    const validPaths = lineMask
       ? regularizeRoofOutlines(
-          straightened.map((ring) => fitEavesToMask(ring, maskRaster).ring),
+          straightened.map((ring) => fitEavesToMask(ring, lineMask).ring),
         )
       : straightened;
     setSavedRoofs(validPaths);
@@ -1397,7 +1411,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     dispatch,
     getCurrentEditingPaths,
     layoutPanels,
-    maskRaster,
+    lineMask,
     panelOrientation,
     persistSolarDesign,
     selectedLocation,
@@ -1627,9 +1641,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
 
             {!isEditing && lineCheckSummary.total > 0 && (
               <p className="w-full rounded-[10px] bg-white/80 px-4 py-2 text-center font-inter text-[12px] font-medium text-ink">
+                {roofSnapshot.analysis ? "Roof found by zooming into Google's satellite image. " : ""}
                 {savedFaceSet.source === "height-model"
                   ? `${savedFaces.length} roof faces found from Google's height data. `
                   : "Roof faces assumed (no usable height data) — check on site. "}
+                {savedFaceSet.moved > 0 ? `${savedFaceSet.moved} roof lines moved onto the edges in the image. ` : ""}
                 {lineCheckSummary.checked === 0
                   ? "Roof lines not checked — Google imagery isn't available for this roof. Confirm on site."
                   : `${lineCheckSummary.ok} of ${lineCheckSummary.total} roof lines confirmed against Google imagery (±${Math.round(
@@ -1653,13 +1669,15 @@ export const DesignsSolarPanelStepContent = forwardRef<
               </p>
             )}
 
-            {(loading || layersLoading || isGeneratingPanels) && (
+            {(loading || layersLoading || roofSnapshot.loading || isGeneratingPanels) && (
               <p className="animate-pulse font-inter text-[14px] font-medium text-white/80">
                 {isGeneratingPanels
                   ? "Saving roof and generating solar panels..."
                   : layersLoading
                     ? "Loading roof imagery..."
-                    : "Analysing solar potential..."}
+                    : roofSnapshot.loading
+                      ? "Zooming in and finding the roof lines..."
+                      : "Analysing solar potential..."}
               </p>
             )}
           </div>

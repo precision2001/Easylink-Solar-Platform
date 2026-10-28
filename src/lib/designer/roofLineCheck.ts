@@ -1,5 +1,5 @@
 import { DESIGN_RULES } from "@/lib/designer/designRules";
-import type { GeoTiffRaster } from "@/utils/geotiff";
+import { rasterPixelOf, rasterPixelSizeM, type GeoTiffRaster } from "@/utils/geotiff";
 
 /**
  * Roof-line check: yellow lines must follow real roof lines.
@@ -53,21 +53,15 @@ function plausibleBounds(r: GeoTiffRaster): boolean {
   );
 }
 
+/** Pixel coordinates measured from pixel centres (UTM-aware). */
 function pixelOf(r: GeoTiffRaster, p: LatLng) {
-  const { north, south, east, west } = r.bounds;
-  return {
-    col: ((p.lng - west) / (east - west)) * r.width - 0.5,
-    row: ((north - p.lat) / (north - south)) * r.height - 0.5,
-  };
+  const { col, row } = rasterPixelOf(r, p.lat, p.lng);
+  return { col: col - 0.5, row: row - 0.5 };
 }
 
 /** Pixel size in metres (the larger of the two axes). */
 export function rasterPixelM(r: GeoTiffRaster): number {
-  const { north, south, east, west } = r.bounds;
-  const lat = (north + south) / 2;
-  const dx = (Math.abs(east - west) / r.width) * M_PER_LAT * Math.cos((lat * Math.PI) / 180);
-  const dy = (Math.abs(north - south) / r.height) * M_PER_LAT;
-  return Math.max(dx, dy);
+  return rasterPixelSizeM(r);
 }
 
 function maskAt(r: GeoTiffRaster, p: LatLng): boolean | null {

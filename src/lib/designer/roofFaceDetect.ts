@@ -1,4 +1,4 @@
-import type { GeoTiffRaster } from "@/utils/geotiff";
+import { rasterLatLngOf, rasterPixelOf, type GeoTiffRaster } from "@/utils/geotiff";
 import { extractRoofOutlinesFromMask } from "@/utils/roofMaskContour";
 
 /**
@@ -76,12 +76,27 @@ export function detectRoofFaces(
 ): DetectedFace[] | null {
   if (!plausible(dsm) || outlines.every((r) => r.length < 3)) return null;
   const { width: W, height: H, bounds } = dsm;
-  const lat0 = (bounds.north + bounds.south) / 2;
-  const pxW = (Math.abs(bounds.east - bounds.west) / W) * M_PER_LAT * Math.cos((lat0 * Math.PI) / 180);
-  const pxH = (Math.abs(bounds.north - bounds.south) / H) * M_PER_LAT;
+  let pxW: number;
+  let pxH: number;
+  if (dsm.utm) {
+    pxW = Math.abs(dsm.utm.resX);
+    pxH = Math.abs(dsm.utm.resY);
+  } else {
+    const lat0 = (bounds.north + bounds.south) / 2;
+    pxW = (Math.abs(bounds.east - bounds.west) / W) * M_PER_LAT * Math.cos((lat0 * Math.PI) / 180);
+    pxH = (Math.abs(bounds.north - bounds.south) / H) * M_PER_LAT;
+  }
   const pxArea = pxW * pxH;
-  const latOf = (row: number) => bounds.north + ((row + 0.5) / H) * (bounds.south - bounds.north);
-  const lngOf = (col: number) => bounds.west + ((col + 0.5) / W) * (bounds.east - bounds.west);
+  // Pixel-centre lat/lng for every pixel (exact for UTM rasters).
+  const cLat = new Float64Array(W * H);
+  const cLng = new Float64Array(W * H);
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const p = rasterLatLngOf(dsm, c + 0.5, r + 0.5);
+      cLat[r * W + c] = p.lat;
+      cLng[r * W + c] = p.lng;
+    }
+  }
   const z = (c: number, r: number) => dsm.data[r * W + c];
   const valid = (v: number) => Number.isFinite(v) && (dsm.noDataValue === null || v !== dsm.noDataValue);
 
@@ -94,8 +109,10 @@ export function detectRoofFaces(
 
   const maskAt = (row: number, col: number): boolean => {
     if (!plausible(mask)) return true;
-    const mc = Math.floor(((lngOf(col) - mask.bounds.west) / (mask.bounds.east - mask.bounds.west)) * mask.width);
-    const mr = Math.floor(((mask.bounds.north - latOf(row)) / (mask.bounds.north - mask.bounds.south)) * mask.height);
+    const i = row * W + col;
+    const px = rasterPixelOf(mask, cLat[i], cLng[i]);
+    const mc = Math.floor(px.col);
+    const mr = Math.floor(px.row);
     if (mc < 0 || mr < 0 || mc >= mask.width || mr >= mask.height) return false;
     return mask.data[mr * mask.width + mc] > 0;
   };
@@ -106,9 +123,10 @@ export function detectRoofFaces(
   const pitch = new Float32Array(W * H).fill(NaN);
   let outlinePx = 0;
   for (let r = 1; r < H - 1; r++) {
-    const lat = latOf(r);
     for (let c = 1; c < W - 1; c++) {
-      if (!outlines.some((ring) => ring.length >= 3 && pointInRing(lat, lngOf(c), ring))) continue;
+      const lat = cLat[r * W + c];
+      const lng = cLng[r * W + c];
+      if (!outlines.some((ring) => ring.length >= 3 && pointInRing(lat, lng, ring))) continue;
       inside[r * W + c] = 1;
       outlinePx++;
       const zc = z(c, r);
@@ -182,10 +200,9 @@ export function detectRoofFaces(
       // 4. Plane fit over the face's pixels: z = a·x + b·y + c (x east, y north, metres).
       let n = 0, sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
       for (let r = 0; r < H; r++) {
-        const lat = latOf(r);
         for (let c = 0; c < W; c++) {
           const i = r * W + c;
-          if (bin[i] !== 1 || !pointInRing(lat, lngOf(c), o.ring)) continue;
+          if (bin[i] !== 1 || !pointInRing(cLat[i], cLng[i], o.ring)) continue;
           const x = c * pxW;
           const y = -r * pxH;
           const zz = dsm.data[i];

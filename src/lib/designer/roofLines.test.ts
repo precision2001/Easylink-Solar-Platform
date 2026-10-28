@@ -57,3 +57,19 @@ describe("roof-line rule", () => {
     expect(edgeAngles(out)).toContain(22);
   });
 });
+
+describe("roof lines from a high-resolution trace", () => {
+  it("fits one straight line per wall and drops small trace steps", () => {
+    const M = 111320;
+    const lat0 = -33.85;
+    const mLng = M * Math.cos((lat0 * Math.PI) / 180);
+    const ll = (x: number, y: number) => ({ lat: lat0 + y / M, lng: 151 + x / mLng });
+    // A 12 x 8 m roof whose traced south eave wobbles in 0.15 m steps.
+    const ring = [
+      ll(0, 0), ll(3, 0), ll(3, 0.15), ll(6, 0.15), ll(6, 0), ll(9, 0), ll(9, -0.1), ll(12, -0.1),
+      ll(12, 8), ll(0, 8),
+    ];
+    const [out] = regularizeRoofOutlines([ring]);
+    expect(out.length).toBe(4);
+  });
+});

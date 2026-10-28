@@ -15,7 +15,8 @@ import { longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
  *    kept off the junction rather than allowed across it.
  *  - Other convex outlines: each eave gets the part of the roof closer to its
  *    line than to any other eave — exactly where the hips fall.
- *  - Anything else is left as one face.
+ *  - Anything else (angled corners, steps) is split on a grid into
+ *    rectangles whose hip faces are clipped to the outline.
  */
 
 type LatLng = { lat: number; lng: number };
@@ -106,16 +107,20 @@ function pointInRing(p: XY, r: XY[]): boolean {
 }
 
 /** Split a square-cornered ring (in the axis frame) into rectangles, largest first. */
-function rectangles(ring: XY[]): [number, number, number, number][] | null {
-  for (let i = 0; i < ring.length; i++) {
+function rectangles(ring: XY[], loose = false): [number, number, number, number][] | null {
+  for (let i = 0; i < ring.length && !loose; i++) {
     const a = ring[i];
     const b = ring[(i + 1) % ring.length];
     if (Math.abs(a.x - b.x) > AXIS_TOL_M && Math.abs(a.y - b.y) > AXIS_TOL_M) return null;
   }
   const uniq = (v: number[]) =>
     v.sort((p, q) => p - q).filter((x, i, arr) => i === 0 || x - arr[i - 1] > AXIS_TOL_M);
-  const xs = uniq(ring.map((p) => p.x));
-  const ys = uniq(ring.map((p) => p.y));
+  // Loose grids (outlines with angled corners) ignore steps under 0.4 m.
+  const gap = loose ? 0.4 : AXIS_TOL_M;
+  const uniqL = (v: number[]) =>
+    v.sort((p, q) => p - q).filter((x, i, arr) => i === 0 || x - arr[i - 1] > gap);
+  const xs = loose ? uniqL(ring.map((p) => p.x)) : uniq(ring.map((p) => p.x));
+  const ys = loose ? uniqL(ring.map((p) => p.y)) : uniq(ring.map((p) => p.y));
   const nx = xs.length - 1;
   const ny = ys.length - 1;
   if (nx < 1 || ny < 1 || nx * ny > 400) return null;
@@ -227,7 +232,38 @@ export function splitRoofIntoFaces(
     return faces.length > 0 ? faces : whole;
   }
 
+  // Any other shape (angled corners and steps): split the outline on a grid
+  // into rectangles, give each its hip faces, and clip them to the outline —
+  // never one face across the whole roof.
+  const loose = rects ?? rectangles(r, true);
+  if (loose && loose.length > 0) {
+    const faces: RoofFace[] = [];
+    for (const [x0, y0, x1, y1] of loose) {
+      if (Math.min(x1 - x0, y1 - y0) < 0.8) continue;
+      for (const f of hipFaces(x0, y0, x1, y1)) {
+        const clipped = clipToConvex(r, f.ring);
+        if (clipped.length >= 3 && Math.abs(area(clipped)) > 0.5) {
+          faces.push({ ring: clipped.map(fromAxis), eaveDeg: axisDeg + f.eave, roofIndex });
+        }
+      }
+    }
+    if (faces.length > 0) return faces;
+  }
+
   return whole;
+}
+
+/** The part of `ring` inside the convex polygon `convex`. */
+function clipToConvex(ring: XY[], convex: XY[]): XY[] {
+  const c = area(convex) > 0 ? convex : [...convex].reverse();
+  let out = ring;
+  for (let i = 0; i < c.length && out.length >= 3; i++) {
+    const p = c[i];
+    const q = c[(i + 1) % c.length];
+    // Keep the left side of p→q.
+    out = clipHalfPlane(out, q.y - p.y, -(q.x - p.x), (q.y - p.y) * p.x - (q.x - p.x) * p.y);
+  }
+  return out;
 }
 
 /** Faces for every drawn roof, all sharing the largest roof's main-wall direction. */

@@ -81,14 +81,43 @@ function dropDuplicates(r: XY[]): XY[] {
   return out;
 }
 
-function straighten(ring: XY[], axisRad: number, snapRad: number): XY[] {
+type Run = { a: number; c: number; len: number };
+
+/** Signed offset of point p from the line through the origin with direction a. */
+const offsetOf = (a: number, p: XY) => Math.cos(a) * p.y - Math.sin(a) * p.x;
+
+function sameDir(a: number, b: number) {
+  return Math.cos(a - b) > 0.999;
+}
+
+function joinRuns(p: Run, q: Run): Run {
+  const len = p.len + q.len;
+  return { a: p.a, c: (p.c * p.len + q.c * q.len) / len, len };
+}
+
+/**
+ * Straighten one ring: each edge snaps onto the main axis, 90° to it, or
+ * 45° (within the snap angle); consecutive edges running the same way are
+ * fitted as one line (length-weighted); short steps between two lines of
+ * the same direction and nearly the same position — trace noise on one
+ * wall — are dropped and the two lines joined; corners are rebuilt where
+ * neighbouring lines meet.
+ */
+function straighten(
+  ring: XY[],
+  axisRad: number,
+  snapRad: number,
+  { minRunM = 0.6, maxJogM = 0.45 }: { minRunM?: number; maxJogM?: number } = {},
+): XY[] {
   const n = ring.length;
   if (n < 3) return ring;
-  const lines: { p: XY; a: number }[] = [];
+  let runs: Run[] = [];
   for (let i = 0; i < n; i++) {
-    const a = ring[i];
-    const b = ring[(i + 1) % n];
-    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    const p = ring[i];
+    const q = ring[(i + 1) % n];
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    if (len < 1e-6) continue;
+    const ang = Math.atan2(q.y - p.y, q.x - p.x);
     let best = ang;
     let bestDiff = Infinity;
     for (let k = -8; k <= 8; k++) {
@@ -99,29 +128,62 @@ function straighten(ring: XY[], axisRad: number, snapRad: number): XY[] {
         best = cand;
       }
     }
-    lines.push({ p: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, a: bestDiff <= snapRad ? best : ang });
+    const a = bestDiff <= snapRad ? best : ang;
+    runs.push({ a, c: offsetOf(a, { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }), len });
   }
-  // Consecutive edges that are now parallel are one straight run.
-  const merged: typeof lines = [];
-  for (const l of lines) {
-    const prev = merged[merged.length - 1];
-    if (prev && Math.abs(Math.sin(l.a - prev.a)) < 1e-9) continue;
-    merged.push(l);
+
+  const mergeNeighbours = (rs: Run[]): Run[] => {
+    const out: Run[] = [];
+    for (const r of rs) {
+      const prev = out[out.length - 1];
+      if (prev && sameDir(prev.a, r.a)) out[out.length - 1] = joinRuns(prev, { ...r, c: offsetOf(prev.a, pointOn(r)) });
+      else out.push(r);
+    }
+    while (out.length > 1 && sameDir(out[0].a, out[out.length - 1].a)) {
+      const last = out.pop()!;
+      out[0] = joinRuns(out[0], { ...last, c: offsetOf(out[0].a, pointOn(last)) });
+    }
+    return out;
+  };
+  runs = mergeNeighbours(runs);
+
+  // Drop trace noise: the shortest run first, while any is too short.
+  for (let guard = 0; guard < 500 && runs.length > 3; guard++) {
+    let k = -1;
+    for (let i = 0; i < runs.length; i++) if (runs[i].len < minRunM && (k < 0 || runs[i].len < runs[k].len)) k = i;
+    if (k < 0) break;
+    const m = runs.length;
+    const prev = runs[(k - 1 + m) % m];
+    const next = runs[(k + 1) % m];
+    if (sameDir(prev.a, next.a)) {
+      // A step between two runs of one wall: only noise if they nearly line up.
+      if (Math.abs(prev.c - next.c) > maxJogM && runs[k].len >= maxJogM) {
+        runs[k] = { ...runs[k], len: minRunM }; // a real step — keep it
+        continue;
+      }
+    }
+    runs.splice(k, 1);
+    runs = mergeNeighbours(runs);
   }
-  if (merged.length > 1 && Math.abs(Math.sin(merged[0].a - merged[merged.length - 1].a)) < 1e-9) merged.pop();
-  if (merged.length < 3) return ring;
+  if (runs.length < 3) return ring;
+
   const out: XY[] = [];
-  for (let i = 0; i < merged.length; i++) {
-    const l1 = merged[(i - 1 + merged.length) % merged.length];
-    const l2 = merged[i];
-    const d1 = { x: Math.cos(l1.a), y: Math.sin(l1.a) };
-    const d2 = { x: Math.cos(l2.a), y: Math.sin(l2.a) };
-    const den = d1.x * d2.y - d1.y * d2.x;
-    if (Math.abs(den) < 1e-9) return ring;
-    const t = ((l2.p.x - l1.p.x) * d2.y - (l2.p.y - l1.p.y) * d2.x) / den;
-    out.push({ x: l1.p.x + t * d1.x, y: l1.p.y + t * d1.y });
+  for (let i = 0; i < runs.length; i++) {
+    const l1 = runs[(i - 1 + runs.length) % runs.length];
+    const l2 = runs[i];
+    // Solve cos(a)·y − sin(a)·x = c for both lines.
+    const a1 = -Math.sin(l1.a), b1 = Math.cos(l1.a);
+    const a2 = -Math.sin(l2.a), b2 = Math.cos(l2.a);
+    const den = a1 * b2 - a2 * b1;
+    if (Math.abs(den) < 1e-6) return ring;
+    out.push({ x: (l1.c * b2 - l2.c * b1) / den, y: (a1 * l2.c - a2 * l1.c) / den });
   }
   return out;
+}
+
+/** A point on a run's line (the foot of the perpendicular from the origin). */
+function pointOn(r: Run): XY {
+  return { x: -Math.sin(r.a) * r.c, y: Math.cos(r.a) * r.c };
 }
 
 export function regularizeRoofOutlines(
