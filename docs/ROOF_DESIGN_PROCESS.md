@@ -111,7 +111,7 @@ Newest first. Add an entry whenever a design comes out wrong.
      running off its north-east corner.
    - The live site gave 87 portrait / 92 landscape panels (400 W), with no
      obstructions, and panels on the north strips.
-2. **Our process gave 60 portrait / 66 landscape.**
+2. **Our process gave 60 portrait / 65 landscape** (the north strips are excluded from packing).
    - The north end meets a neighbour's roof on a party line. The tiles
      continue past it, so `check-eaves.py` reports "move out" there. It
      is not an eave: keep the line.
