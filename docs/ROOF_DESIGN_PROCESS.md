@@ -31,7 +31,13 @@ write down what happened, why, and what changed in the code.
 3. **Main walls.** The wall direction comes from the longest straight eaves,
    and from straight-edged neighbours (a carport, a patio) where the roof
    edge is faint. Hips run at 45° to the walls in plan.
-4. **Faces.** Read the faces from Google's data together with the image:
+4. **Faces — read each face from the image first.** Look at the zoomed
+   image and mark every face as its own tiled surface: each colour/shade
+   region bounded by the visible eaves, hips, ridges and valleys, including
+   narrow strips and small triangles. Every corner sits where two visible
+   lines meet. Then confirm the corners against the line equations (walls,
+   45° hips) and Google's segments. Never let the height model or line
+   detection decide the faces (lesson 77 Harry Ave #8). Supporting data:
    - Google building insights gives each face's pitch, facing direction and
      area. It tells you which faces exist and how big they are.
    - The height model (DSM, 0.5 m) shows where each face sits. It is coarse
@@ -111,10 +117,34 @@ Newest first. Add an entry whenever a design comes out wrong.
    the walls (`complex/skel.py`). This is only correct with a correct
    outline: every notch or noise step creates a false face.
 
-Result: 32 landscape (14.1 kW) or 28 portrait (12.3 kW). 29 of 54 lines
-are confirmed within ±100 mm. The rest are the traced east edge (about
-±0.3 m), a weak south-eave shadow, ridge-cap edges, and the narrow SSW strip
-(no panels). Design data is in `scripts/roof-design/roofs/77-harry-ave.json`.
+8. **The first faces were wrong; the owner redrew them by hand.** The
+   faces came from the height model, line detection and the L∞ skeleton.
+   They merged the light strips into the faces next to them, so panels
+   crossed visible lines. The owner marked 10 faces on the screenshot:
+   - north wing: a WNW hip triangle, an NNE trapezoid and a dark SSW band;
+   - east side: an ESE face under the wing, then a light strip;
+   - main body: a WNW face and an ESE face;
+   - south: an SSW face with a vent, a light NNE strip and a steep ESE
+     triangle.
+   The fix was to read each face from the image, place each corner where
+   the visible lines meet, then check against the line equations. Corners
+   M and N sat on the known hips within 2 px; L, R and F sat on the south
+   and west eaves.
+   Rule: **the image decides the faces; data only confirms them.** Light
+   strips between faces are separate faces. Lines read from the zoomed
+   image beat an affine transfer from another screenshot, which was up to
+   20 px off on the SE wing.
+
+Result (redrawn faces): 29 landscape (12.8 kW) or 26 portrait (11.4 kW).
+Every panel is inside its own face. Panels per face, landscape:
+- north wing: WNW 3, NNE 6;
+- east face: 2;
+- main body: WNW 8, ESE 6;
+- south: SSW 3 (packed around the vent);
+- SE triangle: 1.
+The two light strips and the SSW band take no panels. The east edge is
+traced and seen at an angle, so check it on site. Design data:
+`scripts/roof-design/roofs/77-harry-ave.json` and `77-harry-ave-layout.png`.
 
 ### 2026-10-28 — 85 Bombay St, Lidcombe (dark grey hip roof)
 1. **The colour finder found no roof.** The roof is dark grey with low
