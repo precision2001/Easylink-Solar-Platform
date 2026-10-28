@@ -93,18 +93,24 @@ export function IncomingTransfers({ enabled, onAccepted }: { enabled: boolean; o
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    const load = () =>
+    // Every 8 s, and not while the tab is hidden: a handed-over call rings for
+    // 30 s, so this still catches it in time without eating the API's limit.
+    const load = () => {
+      if (document.visibilityState === "hidden") return;
       cc("admin")
         .pendingTransfers()
         .then((p) => !cancelled && setPending(p))
         .catch(() => undefined);
+    };
     void load();
-    const poll = window.setInterval(load, 3000);
+    const poll = window.setInterval(load, 8000);
+    document.addEventListener("visibilitychange", load);
     const clock = window.setInterval(() => setTick((n) => n + 1), 1000);
     return () => {
       cancelled = true;
       window.clearInterval(poll);
       window.clearInterval(clock);
+      document.removeEventListener("visibilitychange", load);
     };
   }, [enabled]);
 
