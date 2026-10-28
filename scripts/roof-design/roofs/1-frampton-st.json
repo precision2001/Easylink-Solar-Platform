@@ -1,0 +1,634 @@
+{
+ "pts": {
+  "TL": [
+   412,
+   50
+  ],
+  "H0": [
+   464,
+   76
+  ],
+  "NEh": [
+   645,
+   112
+  ],
+  "NE": [
+   695,
+   126
+  ],
+  "A": [
+   502,
+   208
+  ],
+  "Ed": [
+   697,
+   206
+  ],
+  "Es": [
+   682,
+   262
+  ],
+  "R3": [
+   477,
+   283
+  ],
+  "B": [
+   400,
+   505
+  ],
+  "SE": [
+   455,
+   727
+  ],
+  "SWm": [
+   190,
+   577
+  ],
+  "Pw": [
+   151,
+   560
+  ],
+  "Sd": [
+   300,
+   635
+  ],
+  "SWw": [
+   50,
+   757
+  ],
+  "Wr": [
+   185,
+   680
+  ],
+  "Wn": [
+   320,
+   665
+  ],
+  "We": [
+   432,
+   789
+  ],
+  "SEw": [
+   391,
+   876
+  ],
+  "N3": [
+   223,
+   794
+  ],
+  "SWw2": [
+   54,
+   758
+  ],
+  "Pw2": [
+   155,
+   562
+  ],
+  "N2": [
+   190,
+   825
+  ],
+  "N1": [
+   160,
+   795
+  ],
+  "He": [
+   352,
+   758
+  ]
+ },
+ "faces": [
+  {
+   "name": "Main WNW",
+   "v": [
+    "TL",
+    "H0",
+    "A",
+    "B",
+    "SWm",
+    "Pw"
+   ],
+   "ring": [
+    [
+     412,
+     50
+    ],
+    [
+     464,
+     76
+    ],
+    [
+     502,
+     208
+    ],
+    [
+     400,
+     505
+    ],
+    [
+     190,
+     577
+    ],
+    [
+     151,
+     560
+    ]
+   ],
+   "bearing": 298,
+   "pitch": 35.9
+  },
+  {
+   "name": "North NNE",
+   "v": [
+    "H0",
+    "NEh",
+    "A"
+   ],
+   "ring": [
+    [
+     464,
+     76
+    ],
+    [
+     645,
+     112
+    ],
+    [
+     502,
+     208
+    ]
+   ],
+   "bearing": 28,
+   "pitch": 23.8
+  },
+  {
+   "name": "North-east ESE",
+   "v": [
+    "NEh",
+    "NE",
+    "Ed",
+    "A"
+   ],
+   "ring": [
+    [
+     645,
+     112
+    ],
+    [
+     695,
+     126
+    ],
+    [
+     697,
+     206
+    ],
+    [
+     502,
+     208
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 26.6
+  },
+  {
+   "name": "North strips",
+   "v": [
+    "A",
+    "Ed",
+    "Es",
+    "R3"
+   ],
+   "ring": [
+    [
+     502,
+     208
+    ],
+    [
+     697,
+     206
+    ],
+    [
+     682,
+     262
+    ],
+    [
+     477,
+     283
+    ]
+   ],
+   "bearing": 28,
+   "pitch": 25
+  },
+  {
+   "name": "Main ESE",
+   "v": [
+    "R3",
+    "Es",
+    "SE",
+    "B"
+   ],
+   "ring": [
+    [
+     477,
+     283
+    ],
+    [
+     682,
+     262
+    ],
+    [
+     455,
+     727
+    ],
+    [
+     400,
+     505
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 26.6
+  },
+  {
+   "name": "Main SSW hip end",
+   "v": [
+    "SWm",
+    "B",
+    "SE",
+    "Sd"
+   ],
+   "ring": [
+    [
+     190,
+     577
+    ],
+    [
+     400,
+     505
+    ],
+    [
+     455,
+     727
+    ],
+    [
+     300,
+     635
+    ]
+   ],
+   "bearing": 208,
+   "pitch": 29.3
+  },
+  {
+   "name": "Wing WNW",
+   "v": [
+    "Pw2",
+    "SWm",
+    "Wr",
+    "SWw2"
+   ],
+   "ring": [
+    [
+     155,
+     562
+    ],
+    [
+     190,
+     577
+    ],
+    [
+     185,
+     680
+    ],
+    [
+     54,
+     758
+    ]
+   ],
+   "bearing": 298,
+   "pitch": 34.7
+  },
+  {
+   "name": "Wing SSW",
+   "v": [
+    "SWw2",
+    "Wr",
+    "Wn",
+    "He",
+    "SEw",
+    "N3",
+    "N2",
+    "N1"
+   ],
+   "ring": [
+    [
+     54,
+     758
+    ],
+    [
+     185,
+     680
+    ],
+    [
+     320,
+     665
+    ],
+    [
+     352,
+     758
+    ],
+    [
+     391,
+     876
+    ],
+    [
+     223,
+     794
+    ],
+    [
+     190,
+     825
+    ],
+    [
+     160,
+     795
+    ]
+   ],
+   "bearing": 208,
+   "pitch": 24.2
+  },
+  {
+   "name": "Wing ESE end",
+   "v": [
+    "He",
+    "Wn",
+    "We",
+    "SEw"
+   ],
+   "ring": [
+    [
+     352,
+     758
+    ],
+    [
+     320,
+     665
+    ],
+    [
+     432,
+     789
+    ],
+    [
+     391,
+     876
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 24.7
+  }
+ ],
+ "obstructions": [
+  [
+   [
+    222,
+    365
+   ],
+   [
+    293,
+    365
+   ],
+   [
+    293,
+    443
+   ],
+   [
+    222,
+    443
+   ]
+  ],
+  [
+   [
+    267,
+    344
+   ],
+   [
+    296,
+    344
+   ],
+   [
+    296,
+    369
+   ],
+   [
+    267,
+    369
+   ]
+  ],
+  [
+   [
+    329,
+    291
+   ],
+   [
+    371,
+    291
+   ],
+   [
+    371,
+    331
+   ],
+   [
+    329,
+    331
+   ]
+  ],
+  [
+   [
+    367,
+    403
+   ],
+   [
+    413,
+    403
+   ],
+   [
+    413,
+    441
+   ],
+   [
+    367,
+    441
+   ]
+  ],
+  [
+   [
+    669,
+    139
+   ],
+   [
+    694,
+    139
+   ],
+   [
+    694,
+    203
+   ],
+   [
+    669,
+    203
+   ]
+  ],
+  [
+   [
+    110,
+    766
+   ],
+   [
+    142,
+    768
+   ],
+   [
+    142,
+    786
+   ],
+   [
+    110,
+    784
+   ]
+  ]
+ ],
+ "obstruction_names": [
+  "chimney/vent box at the west eave",
+  "dark spot beside it",
+  "dark triangular vent, main WNW",
+  "white flue/vent, main WNW",
+  "dark vertical feature at the north-east edge",
+  "step beside the south notch, wing"
+ ],
+ "scale_m_per_px": 0.03099564810881009,
+ "center_latlng": [
+  -33.8523748,
+  151.0478024
+ ],
+ "center_px": [
+  410,
+  510
+ ],
+ "axis_deg": -28,
+ "google_segments": [
+  {
+   "pitch": 24.7,
+   "azimuth": 146,
+   "areaM2": 12.3,
+   "px": [
+    394.5,
+    811.0
+   ]
+  },
+  {
+   "pitch": 24.2,
+   "azimuth": 194,
+   "areaM2": 28.9,
+   "px": [
+    275.8,
+    783.0
+   ]
+  },
+  {
+   "pitch": 38.3,
+   "azimuth": 193,
+   "areaM2": 10.5,
+   "px": [
+    146.9,
+    790.1
+   ]
+  },
+  {
+   "pitch": 14.7,
+   "azimuth": 290,
+   "areaM2": 0.7,
+   "px": [
+    80.7,
+    711.1
+   ]
+  },
+  {
+   "pitch": 34.7,
+   "azimuth": 294,
+   "areaM2": 20.1,
+   "px": [
+    168.7,
+    654.4
+   ]
+  },
+  {
+   "pitch": 29.3,
+   "azimuth": 201,
+   "areaM2": 29.1,
+   "px": [
+    333.0,
+    654.4
+   ]
+  },
+  {
+   "pitch": 26.6,
+   "azimuth": 111,
+   "areaM2": 82.3,
+   "px": [
+    533.2,
+    467.3
+   ]
+  },
+  {
+   "pitch": 35.9,
+   "azimuth": 297,
+   "areaM2": 85.2,
+   "px": [
+    373.9,
+    373.5
+   ]
+  },
+  {
+   "pitch": 23.8,
+   "azimuth": 6,
+   "areaM2": 28.0,
+   "px": [
+    567.5,
+    199.0
+   ]
+  }
+ ],
+ "google_offset_px": [
+  0,
+  -52
+ ],
+ "image": "1-frampton-st.png",
+ "source": "zoom-21 Static Maps 1280px centred on Google building centre, crop offset (230,130); faces read from the image with the height model shifted (0,-52) as a guide",
+ "result": {
+  "PORTRAIT": {
+   "Main WNW": 23,
+   "North NNE": 1,
+   "North-east ESE": 1,
+   "North strips": 0,
+   "Main ESE": 20,
+   "Main SSW hip end": 6,
+   "Wing WNW": 2,
+   "Wing SSW": 7,
+   "Wing ESE end": 0
+  },
+  "LANDSCAPE": {
+   "Main WNW": 24,
+   "North NNE": 2,
+   "North-east ESE": 1,
+   "North strips": 1,
+   "Main ESE": 21,
+   "Main SSW hip end": 6,
+   "Wing WNW": 2,
+   "Wing SSW": 9,
+   "Wing ESE end": 0
+  }
+ },
+ "notes": [
+  "North boundary is a party line with the neighbour roof (tiles continue): not an eave.",
+  "North strips (dark band and light strip) take no panels.",
+  "Live site 2026-10-28 for this address: 87 portrait / 92 landscape (400 W), outline had a spike to the north-east, no obstructions."
+ ]
+}

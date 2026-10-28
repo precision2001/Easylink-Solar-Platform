@@ -102,6 +102,27 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-28 — 1 Frampton St, Lidcombe (long hip roof, cross strips, lower south wing), and a live-site check
+1. **Live Designs page, same address.**
+   - While the roof loads, the map shows a cyan rectangle (Google's
+     building box, the fallback in `useImperativeRoofOutline`). The page
+     then opens in edit mode with the traced roof selected, in amber.
+   - The old yellow rectangle is gone, but the amber outline had a spike
+     running off its north-east corner.
+   - The live site gave 87 portrait / 92 landscape panels (400 W), with no
+     obstructions, and panels on the north strips.
+2. **Our process gave 60 portrait / 66 landscape.**
+   - The north end meets a neighbour's roof on a party line. The tiles
+     continue past it, so `check-eaves.py` reports "move out" there. It
+     is not an eave: keep the line.
+   - Steps and shadow bands are face edges where the roof does continue
+     beyond them, so "move out" flags on them are expected too.
+   - The photo sits about 1.6 m north of the height model
+     (`google_offset_px` [0, -52]).
+   - Obstructions: a chimney or vent box at the west eave, a dark
+     triangular vent, a white flue, a dark vertical feature at the
+     north-east edge, and a short step by the south notch.
+
 ### 2026-10-28 — Revision after owner review: obstructions (66 Frances St, 57 Harry Ave)
 The owner marked what the designs missed on 66 Frances St:
 - circles: antennas or circulating fans;
