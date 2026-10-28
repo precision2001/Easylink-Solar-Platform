@@ -64,12 +64,17 @@ export function rasterPixelSizeM(r: GeoTiffRaster): number {
  */
 function georef(image: GeoTIFFImage, width: number, height: number) {
   const [originX, originY] = image.getOrigin();
-  const [resX, resY] = image.getResolution();
+  const [resX, rawResY] = image.getResolution();
+  let resY = rawResY;
   const keys = (image.getGeoKeys?.() ?? {}) as { ProjectedCSTypeGeoKey?: number };
   const zone = utmZoneFromEpsg(keys.ProjectedCSTypeGeoKey);
   if (!zone) {
     return { bounds: computeBounds(originX, originY, width, height, resX, resY), utm: undefined };
   }
+  // Google Solar layers are north-up: rows run south from the origin. Their
+  // pixel scale is stored with a negative y, which geotiff.js negates again,
+  // so the sign it reports can't be trusted — force rows to run south.
+  resY = -Math.abs(resY);
   const corners = [
     utmToLatLng(originX, originY, zone),
     utmToLatLng(originX + width * resX, originY, zone),

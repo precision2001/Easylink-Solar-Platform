@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-# Remove previous Next.js output before the Copy phase so stale chunk files cannot block deploy.
-# Runs as root (no runas); matches destination owner fix in AfterInstall.
+# Runs as root (no runas). The running site's build (.next) is kept — it keeps
+# serving until start.sh swaps in the new one. Only leftovers of an
+# interrupted build are removed. (The deploy bundle never contains .next, so
+# stale chunks can't collide with it.)
 TARGET="/home/ubuntu/easylink-solar/web"
-if [[ -d "$TARGET/.next" ]]; then
-  rm -rf "$TARGET/.next"
-fi
+rm -rf "$TARGET/.next-new" "$TARGET/.next-old"

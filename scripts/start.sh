@@ -1,5 +1,6 @@
 #!/bin/bash
-# CodeDeploy ApplicationStart: rebuild with the server's .env, then (re)start.
+# CodeDeploy ApplicationStart: rebuild with the server's .env, then restart.
+# The old build keeps serving while this runs (application-stop.sh is a no-op).
 #
 # The build goes into a separate folder (.next-new) and is only swapped in
 # once it has finished — a failed or killed build (e.g. out of memory on the
@@ -33,8 +34,12 @@ if [ ! -f .next/BUILD_ID ]; then
   exit 1
 fi
 
-pm2 delete easylink-solar || true
-pm2 start npm --name "easylink-solar" -- start
+# Restart onto the new build (a few seconds); start it if it isn't running.
+if pm2 describe easylink-solar > /dev/null 2>&1; then
+  pm2 restart easylink-solar --update-env
+else
+  pm2 start npm --name "easylink-solar" -- start
+fi
 pm2 save
 
 if [ "$BUILD_OK" -ne 1 ]; then

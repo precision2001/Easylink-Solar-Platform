@@ -24,8 +24,9 @@ async function get(url: string): Promise<ArrayBuffer> {
 export async function GET(request: Request) {
   const host = request.headers.get("host") ?? "";
   if (
+    // nginx sends the public Host and X-Real-IP; Next adds its own
+    // x-forwarded-for even locally, so that one can't be used.
     !/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) ||
-    request.headers.get("x-forwarded-for") ||
     request.headers.get("x-real-ip")
   ) {
     return NextResponse.json({ message: "Not found" }, { status: 404 });
