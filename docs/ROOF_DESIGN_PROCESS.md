@@ -48,6 +48,19 @@ write down what happened, why, and what changed in the code.
    On the site, faces from the height model are filled out to the outline
    on the 3 cm grid (`fillFacesOnRoofs`), with each face's rows following its
    own eave.
+   **4b. Confirm with Google (never decide with it).** Run
+   `confirm-google.py roofs/x.json`:
+   - Each Google segment centre must fall inside one image face, with its
+     facing within 15°.
+   - The total sloped area must be within 10% of Google's.
+   - A face with no segment is fine when it is a narrow strip Google has
+     merged into a neighbour.
+   - A segment outside every face, or a facing or area mismatch, means
+     look at the image again. Lines are never moved to match Google.
+   77 Harry Ave: 6 of 7 faces confirmed, and the total was −0.8%. The east
+   face was flagged (23°): its east edge is seen at an angle and runs at
+   about 100° in the image, within 5° of Google. Rows stay square to the
+   walls (alignment rule).
 5. **Check every line against the image.** For each eave, hip, valley and
    ridge, look for the strongest brightness edge within ±40 px across it
    (`checkInteriorLine`, or the `fit.py` check used manually).
@@ -221,6 +234,7 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
   lines, obstructions, scale and notes, plus its screenshot.
 - `check-lines.py roofs/x.json [--refine A,B]`: checks every line against
   the image (step 5); `--refine` moves free points such as the ridge ends.
+- `confirm-google.py roofs/x.json`: confirms image-read faces against Google segments (step 4b).
 - `layout.ts`: packs the faces with the live site's packer (all rules,
   obstructions), in portrait and landscape.
 - `draw.py`: draws the result for the customer or installer.
