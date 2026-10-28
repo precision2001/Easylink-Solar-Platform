@@ -9,7 +9,7 @@ const MPP: number = R.scale_m_per_px, lat0: number = R.center_latlng[0], lng0: n
 const M = 111320, mL = M * Math.cos((lat0 * Math.PI) / 180);
 const ll = (p: number[]) => ({ lat: lat0 - ((p[1] - PIN[1]) * MPP) / M, lng: lng0 + ((p[0] - PIN[0]) * MPP) / mL });
 const px = (q: { lat: number; lng: number }) => [PIN[0] + ((q.lng - lng0) * mL) / MPP, PIN[1] - ((q.lat - lat0) * M) / MPP];
-const outline = R.outline.map(ll);
+const outline = (R.outline ?? []).map(ll);
 const axis: number = R.axis_deg ?? -28;
 const obstructions = (R.obstructions ?? []).map((o: number[][]) => o.map(ll));
 const res: any = {};

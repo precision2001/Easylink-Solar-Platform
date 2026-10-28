@@ -86,6 +86,34 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-28 — 57 Harry Ave, Lidcombe (L-shaped hip roof)
+First roof done with the saved skill (`easylink-roof-design`).
+1. **Faces read from the image.** There are six:
+   - a WNW face;
+   - a long NNE face across the whole north side;
+   - a central ESE face between the wings;
+   - the south wing's SSW face (with a vent);
+   - the east wing's SSW face;
+   - a small ESE hip end.
+   The hip between the NNE and central ESE faces and the valley at the
+   inner corner were both clear lines. The overlay sat on the image first
+   time.
+2. **Four of Google's nine segments are not this tiled roof.** One is on
+   the neighbour's roof (50°), two are grey metal lower roofs (17°) and one
+   is a flat roof. *Added:* `google_excluded` in the roof json, which lists
+   each one with its reason and leaves it out of the total. With those out,
+   the faces were within −4.5% of Google.
+3. **The east wing's south eave runs at about 17° in the image**, not the
+   wall's 28° (an oblique photo again). Google's facing is 190° against the
+   snapped 208°, so it was flagged. Rows stay square to the walls.
+4. **`pack-faces.ts` failed when the roof json had no outline.** The outline
+   is now optional.
+
+Result:
+- 26 landscape (11.4 kW): WNW 5, NNE 8, ESE centre 8, SSW south wing 2, SSW
+  east wing 2, ESE east end 1.
+- 25 portrait (11.0 kW).
+
 ### 2026-10-28 — 61 Harry Ave, Lidcombe (hip roof with stepped east end)
 First roof done end to end with the image-first rule.
 1. **Faces from the image.** The roof is a main hip (WNW end, NNE, SSW)

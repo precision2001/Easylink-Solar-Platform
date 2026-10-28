@@ -14,7 +14,9 @@ Needs in the json: faces[{name, ring(px), bearing, pitch}], scale_m_per_px,
 google_segments[{pitch, azimuth, areaM2, px}] (centres in the same image px),
 optional google_offset_px [dx, dy]: shift Google centres onto the image when the
 photo is oblique (measure it by matching height-model face junctions to the
-image, e.g. the ridge ends; 61 Harry Ave: [-18, -15], about 0.7 m).
+image, e.g. the ridge ends; 61 Harry Ave: [-18, -15], about 0.7 m),
+optional google_excluded {index: reason}: segments that are not this roof
+(a neighbour, a metal patio roof); listed with the reason, left out of the total.
 """
 import json, math, sys
 
@@ -39,7 +41,11 @@ faces = R["faces"]
 odx, ody = R.get("google_offset_px", [0, 0])
 hit = {f["name"]: [] for f in faces}
 problems, gtot = [], 0.0
-for s in R.get("google_segments", []):
+excl = {int(k): v for k, v in R.get("google_excluded", {}).items()}
+for i, s in enumerate(R.get("google_segments", [])):
+    if i in excl:
+        print(f"Google segment {i} ({s['azimuth']} deg, {s['pitch']} pitch, {s['areaM2']} m2): left out - {excl[i]}")
+        continue
     if s["pitch"] < 5:
         print(f"Google flat segment {s['areaM2']} m2 at {s['px']}: skipped (flat / other roof)")
         continue
