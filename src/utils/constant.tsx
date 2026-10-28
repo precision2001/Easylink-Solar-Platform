@@ -5,6 +5,7 @@ export const LANDING_NAV_ITEMS = [
   { label: "Customers", link: "/customers" },
   { label: "Installers", link: "/installers/landing" },
   { label: "Design Platform", link: "/designs" },
+  { label: "Ready Deals", link: "/ready-deals" },
   { label: "Services", link: "/services" },
   { label: "About Us", link: "/about-us" },
 ] as const;
@@ -2333,6 +2334,9 @@ export const LANDING_FOOTER_COLUMNS: LandingFooterColumn[] = [
   {
     title: "Support",
     items: [
+      { label: "How it works", href: "/how-it-works" },
+      { label: "Ready Deals", href: "/ready-deals" },
+      { label: "Ready Sites (installers)", href: "/ready-sites" },
       { label: "FAQs", href: "/faqs" },
       { label: "Warranty", href: "/warranty" },
       { label: "Contact Us", href: "/contact-us" },
@@ -3476,6 +3480,7 @@ export const FAQS_PAGE = {
 /** Customer portal — shared nav & page copy (Figma Final Designs 1725:*) */
 export type CustomerPortalNavKey =
   | "dashboard"
+  | "project"
   | "designs"
   | "maintenance"
   | "messages"
@@ -3487,6 +3492,7 @@ export const CUSTOMER_PORTAL = {
   title: "My Solar Portal",
   nav: [
     { href: "/customers/dashboard", label: "Dashboard", key: "dashboard" as const },
+    { href: "/customers/project", label: "My Project", key: "project" as const },
     { href: "/customers/design", label: "My Design", key: "designs" as const },
     {
       href: "/customers/solar-maintenance",

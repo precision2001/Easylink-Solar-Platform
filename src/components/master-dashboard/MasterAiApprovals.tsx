@@ -1,336 +1,413 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ai,
+  AGENT_NAMES,
+  AiNotConnectedError,
+  LABEL_NAMES,
+  timeAgo,
+  type AiInboxItem,
+} from "@/lib/ai-platform/client";
 
 /**
- * Matches the Easylink Designer "AI approvals" mock (AIApprovals.dc.html):
- * the queue filters, the waiting list, and the approval card showing exactly
- * what an agent wants to run before a person lets it.
- *
- * Sample data — this app has no agent platform, approvals queue, policy
- * register or decision records, so nothing here approves or runs anything.
- * The behaviour is the mock's own: filtering by queue, picking an item, and
- * approving/rejecting (which removes it from the list and leaves the card
- * showing what happened).
+ * AI approvals: the human inbox (spec 8.6). Every proposal an agent could not
+ * make on its own lands here with the agent's reasoning. Approving runs the
+ * exact action through the same policy checks; editing first teaches the
+ * agent (the edit is recorded); rejecting with a reason is a correction.
  */
-
-/** [background, foreground] for how close the due time is. */
-const URGENT: [string, string] = ["#FEE2E2", "#991B1B"];
-const SOON: [string, string] = ["#FEF3C7", "#92400E"];
-const LATER: [string, string] = ["#E2E8F0", "#334155"];
-
-type Approval = {
-  id: string;
-  q: string;
-  agent: string;
-  title: string;
-  due: string;
-  d: [string, string];
-  journey: string;
-  action: string;
-  why: string;
-  evidence: string;
-  rule: string;
+const KIND_LABEL: Record<AiInboxItem["kind"], string> = {
+  proposal: "Needs approval",
+  question: "Question",
+  review: "Check",
+  exception: "Exception",
+  alert: "Alert",
 };
 
-const ALL: Approval[] = [
-  {
-    id: "APR-2207",
-    q: "sales",
-    agent: "Sales",
-    title: "6% discount for S. Patel, Castle Hill",
-    due: "in 38 min",
-    d: URGENT,
-    journey: "JRN-41120",
-    action:
-      "create_quote(design: DES-20502, discount_pct: 6.0,\n  new_total: A$10,443 (was A$11,110), expires: 2026-11-07)\nsend_message(template: quote_revised, channel: email)",
-    why: "Customer uploaded a competitor quote at A$10,300 for a comparable Sigenergy system. 6% keeps the package above its margin floor. Quote viewed 5 times in 3 days.",
-    evidence: "Competitor quote PDF, chat transcript, margin check",
-    rule: "POL-DISC-02 v3 · 5 to 10% needs sales lead",
-  },
-  {
-    id: "APR-2206",
-    q: "money",
-    agent: "Support",
-    title: "Refund A$650 deposit, BLUETTI order",
-    due: "in 52 min",
-    d: URGENT,
-    journey: "JRN-40988",
-    action:
-      "issue_refund(payment: PAY-77812, amount: A$650.00,\n  reason: cancelled_before_dispatch)",
-    why: "Customer cancelled 2 hours after ordering; the warehouse has not picked it. Amount is above the A$500 automatic limit.",
-    evidence: "Order timeline, warehouse status, customer email",
-    rule: "POL-REF-01 v2 · refunds over A$500",
-  },
-  {
-    id: "APR-2204",
-    q: "ops",
-    agent: "Matching",
-    title: "Battery job in 2563 has only one eligible installer",
-    due: "in 3 h",
-    d: SOON,
-    journey: "JRN-41102",
-    action: "dispatch_offer(job: JOB-5540, to: [Solarman], respond_within: 24h)",
-    why: "No other linked installer covering 2563 holds a current battery endorsement. The customer gets one offer instead of three.",
-    evidence: "Service areas, SAA register, capacity",
-    rule: "POL-MATCH-03 v1 · fewer than 2 eligible installers",
-  },
-  {
-    id: "APR-2203",
-    q: "ops",
-    agent: "Delivery",
-    title: "Lodge network application with Endeavour Energy",
-    due: "in 5 h",
-    d: SOON,
-    journey: "JRN-40871",
-    action: "submit_dnsp_application(job: JOB-5530, dnsp: Endeavour, export_kw: 5.0)",
-    why: "All documents are present and match the design. Lodging cannot be undone, and this action is still at Recommends.",
-    evidence: "Single-line diagram, design, site photos",
-    rule: "POL-DEL-01 v2 · irreversible submissions",
-  },
-  {
-    id: "APR-2202",
-    q: "care",
-    agent: "Concierge",
-    title: "Customer mentions life-support equipment at home",
-    due: "today",
-    d: LATER,
-    journey: "JRN-41131",
-    action:
-      "flag_customer(vulnerable: true)\npause_automation(journey: JRN-41131)\nroute_to_person(queue: manager)",
-    why: "Customer asked whether a battery keeps an oxygen concentrator running in a blackout. Medical equipment needs a person and a life-support check with their retailer.",
-    evidence: "Chat transcript",
-    rule: "POL-CARE-01 v1 · vulnerability signals",
-  },
-  {
-    id: "APR-2201",
-    q: "ops",
-    agent: "Drone ops",
-    title: "Flight plan 1.9 km from a hospital helipad",
-    due: "before flight",
-    d: LATER,
-    journey: "JRN-39540",
-    action: "schedule_flight(job: JOB-5412, drone: DR-01, window: 13 Nov 10:00–10:40)",
-    why: "Airspace check shows uncontrolled airspace, but a helipad is within 2 km. The plan keeps the drone under 30 m over the roof.",
-    evidence: "Airspace check, site map",
-    rule: "POL-DRONE-04 v1 · helipad within 3 km",
-  },
-  {
-    id: "APR-2200",
-    q: "ops",
-    agent: "VPP",
-    title: "Pause VPP dispatch to SITE-2291 after 3 missed events",
-    due: "today",
-    d: LATER,
-    journey: "JRN-35002",
-    action: "update_vpp_enrolment(site: SITE-2291, status: paused, reason: control_check)",
-    why: "The battery ignored the last three commands while its cloud link looked healthy, so a local setting may have changed.",
-    evidence: "Dispatch log, telemetry, vendor cloud status",
-    rule: "POL-VPP-05 v1 · pausing a site",
-  },
-];
-
-const QUEUES: [string, string][] = [
-  ["all", "All"],
-  ["sales", "Sales"],
-  ["money", "Refunds & payouts"],
-  ["ops", "Operations & safety"],
-  ["care", "Vulnerable & complaints"],
-];
-
-const LABEL =
-  "text-[12px] font-bold uppercase tracking-[0.06em] text-[#475569]";
+const RECORD_HREF: Record<string, (id: string) => string> = {
+  lead: () => "/master/quotes-leads",
+  customer: () => "/master/quotes-leads",
+};
 
 export function MasterAiApprovals() {
-  const [queue, setQueue] = useState("all");
-  const [selectedId, setSelectedId] = useState("APR-2207");
-  /** id → 'ok' | 'no'; a resolved item leaves the queue but stays on the card. */
-  const [resolved, setResolved] = useState<Record<string, "ok" | "no">>({});
+  const [items, setItems] = useState<AiInboxItem[]>([]);
+  const [state, setState] = useState<"loading" | "ready" | "offline" | "error">("loading");
+  const [message, setMessage] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | AiInboxItem["kind"]>("all");
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const open = ALL.filter((i) => !resolved[i.id]);
-  const shown = open.filter((i) => queue === "all" || i.q === queue);
-  const sel = ALL.find((i) => i.id === selectedId) ?? ALL[0]!;
-  const outcome = resolved[sel.id];
+  const [now, setNow] = useState(() => Date.now());
+
+  const load = useCallback(
+    () =>
+      ai
+        .inbox("open")
+        .then((list) => {
+          setItems(list);
+          setState("ready");
+          setNow(Date.now());
+        })
+        .catch((e: unknown) => {
+          if (e instanceof AiNotConnectedError) setState("offline");
+          else {
+            setState("error");
+            setMessage(e instanceof Error ? e.message : "Could not load approvals");
+          }
+        }),
+    [],
+  );
+
+  useEffect(() => {
+    const first = setTimeout(() => void load(), 0);
+    const t = setInterval(() => void load(), 30_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
+  }, [load]);
+
+  const shown = useMemo(() => items.filter((i) => filter === "all" || i.kind === filter), [items, filter]);
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: items.length };
+    for (const i of items) c[i.kind] = (c[i.kind] ?? 0) + 1;
+    return c;
+  }, [items]);
+  const overdue = items.filter((i) => new Date(i.dueAt).getTime() < now).length;
+
+  const run = async (id: string, fn: () => Promise<unknown>, done: string) => {
+    setBusy(id);
+    setMessage(null);
+    try {
+      const r = (await fn()) as { status?: string; message?: string } | undefined;
+      if (r && typeof r === "object" && "status" in r && r.status && r.status !== "executed") {
+        setMessage(`Not done: ${r.message ?? r.status}`);
+      } else setMessage(done);
+      await load();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "That didn't work");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
-    <div className="flex min-h-full flex-col text-[#0F172A]">
+    <div className="flex min-h-full flex-col">
       <header className="flex flex-wrap items-center gap-3 border-b border-[#E3E8EF] bg-white px-8 py-3.5">
         <nav aria-label="Breadcrumb" className="flex-grow text-[13px] text-[#5B6B80]">
-          AI operations <span aria-hidden="true">/</span>{" "}
-          <span className="font-semibold text-[#0F172A]">Approvals</span>
+          AI operations <span aria-hidden="true">/</span> <span className="font-semibold text-[#0F172A]">AI approvals</span>
         </nav>
-        <span className="rounded-full bg-[#DBEAFE] px-2.5 py-[3px] text-[12px] font-bold text-[#1E40AF]">
-          Sample data
-        </span>
-        <span className="text-[12px] text-[#5B6B80]">Also sent to Slack and the mobile app</span>
+        <Link href="/master/ai-control" className="text-[13px] font-semibold text-[#0B4A7A] hover:underline">
+          AI control centre
+        </Link>
       </header>
 
-      <div className="flex w-full max-w-[1400px] flex-col gap-[18px] px-8 py-6 pb-14">
+      <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-4 px-8 py-6 pb-14">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="flex-grow">
-            <h1 className="m-0 font-source-sans text-[28px] font-bold text-[#0F172A]">
-              {open.length} AI actions need a person
-            </h1>
-            <p className="mb-0 mt-1 text-[13px] text-[#5B6B80]">
-              Nothing here runs until someone approves it. If the due time passes, nothing runs and
-              the customer is told a person will follow up.
-            </p>
+          <div className="flex flex-grow flex-col gap-1">
+            <h1 className="m-0 font-source-sans text-[28px] font-bold text-[#0F172A]">Waiting for a person</h1>
+            <span className="text-[14px] text-[#475569]">
+              {state === "ready"
+                ? `${items.length} open${overdue ? ` · ${overdue} overdue` : ""}. Approve, edit, or reject with a reason; agents learn from every decision.`
+                : "Proposals, questions and checks from the AI agents."}
+            </span>
           </div>
-          <div role="tablist" aria-label="Queue" className="flex flex-wrap gap-1.5">
-            {QUEUES.map(([id, name]) => {
-              const on = queue === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={on}
-                  onClick={() => setQueue(id)}
-                  className="h-9 rounded-full border px-3 text-[13px] font-semibold"
-                  style={{
-                    background: on ? "#0B1A2E" : "#FFFFFF",
-                    color: on ? "#FFFFFF" : "#0F172A",
-                    borderColor: on ? "#0B1A2E" : "#CBD5E1",
-                  }}
-                >
-                  {name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-start gap-4">
-          <section
-            aria-label="Queue"
-            className="flex min-w-0 flex-[1_1_340px] flex-col overflow-hidden rounded-[14px] border border-[#E3E8EF] bg-white"
-          >
-            {shown.map((i) => (
+          <div role="tablist" aria-label="Filter" className="flex flex-wrap gap-1.5">
+            {(["all", "proposal", "question", "review"] as const).map((f) => (
               <button
-                key={i.id}
-                type="button"
-                onClick={() => setSelectedId(i.id)}
-                className="flex flex-col gap-1 border-b border-[#EEF2F6] px-4 py-3.5 text-left"
-                style={{ background: i.id === sel.id ? "#FFF7E6" : "#FFFFFF" }}
+                key={f}
+                role="tab"
+                aria-selected={filter === f}
+                onClick={() => setFilter(f)}
+                className="h-8 rounded-full border px-3 text-[12px] font-bold"
+                style={{
+                  background: filter === f ? "#0B4A7A" : "#FFFFFF",
+                  color: filter === f ? "#FFFFFF" : "#0B2540",
+                  borderColor: filter === f ? "#0B4A7A" : "#CBD5E1",
+                }}
               >
-                <span className="flex items-center gap-2">
-                  <span className="flex-grow text-[12px] font-semibold text-[#475569]">
-                    {i.agent} agent · {i.q}
-                  </span>
-                  <span
-                    className="rounded-full px-2 py-0.5 text-[12px] font-bold"
-                    style={{ background: i.d[0], color: i.d[1] }}
-                  >
-                    {i.due}
-                  </span>
-                </span>
-                <strong className="text-[14px] text-[#0F172A]">{i.title}</strong>
+                {f === "all" ? "All" : KIND_LABEL[f]} {counts[f] ? `(${counts[f]})` : ""}
               </button>
             ))}
-            {!shown.length ? (
-              <p className="m-0 p-[18px] text-[14px] text-[#5B6B80]">
-                Nothing waiting in this queue.
-              </p>
-            ) : null}
-          </section>
-
-          <section
-            aria-label="Approval card"
-            className="flex min-w-0 flex-[2_1_520px] flex-col gap-4 rounded-[14px] border border-[#E3E8EF] bg-white p-5"
-          >
-            <div className="flex flex-wrap items-start gap-2">
-              <div className="flex flex-grow flex-col gap-1">
-                <span className="font-mono text-[12px] text-[#5B6B80]">
-                  {sel.id} · {sel.agent} agent · {sel.journey}
-                </span>
-                <h2 className="m-0 text-[22px] font-bold text-[#0F172A]">{sel.title}</h2>
-              </div>
-              <span
-                className="rounded-full px-2.5 py-[3px] text-[12px] font-bold"
-                style={{ background: sel.d[0], color: sel.d[1] }}
-              >
-                Due {sel.due}
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL}>Exactly what will run</span>
-              <pre className="m-0 overflow-x-auto whitespace-pre-wrap rounded-[12px] bg-[#0B1A2E] px-4 py-3.5 font-mono text-[13px] leading-[1.5] text-[#E6EDF6]">
-                {sel.action}
-              </pre>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL}>Why the agent proposes it</span>
-              <p className="m-0 text-[15px] leading-[1.55] text-[#0F172A]">{sel.why}</p>
-            </div>
-
-            <div className="flex flex-wrap gap-4 text-[14px]">
-              <div className="flex flex-[1_1_220px] flex-col gap-1">
-                <span className={LABEL}>Evidence</span>
-                <span className="text-[#0F172A]">{sel.evidence}</span>
-                <Link href="/master/decision-records" className="font-semibold text-[#1565C0]">
-                  Open decision record
-                </Link>
-              </div>
-              <div className="flex flex-[1_1_220px] flex-col gap-1">
-                <span className={LABEL}>Escalated by</span>
-                <span className="font-mono text-[13px] text-[#0F172A]">{sel.rule}</span>
-                <Link href="/master/policies" className="font-semibold text-[#5B6B80]">
-                  View policy
-                </Link>
-              </div>
-            </div>
-
-            {outcome ? (
-              <p
-                role="status"
-                className="m-0 rounded-[10px] px-3.5 py-3 text-[14px] font-semibold"
-                style={
-                  outcome === "ok"
-                    ? { background: "#DCFCE7", color: "#166534" }
-                    : { background: "#FEE2E2", color: "#991B1B" }
-                }
-              >
-                {outcome === "ok"
-                  ? "Approved. It ran and was logged against your name."
-                  : "Rejected. Nothing ran; your reason goes to the agent owner's weekly review."}
-              </p>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2.5 border-t border-[#EEF2F6] pt-4">
-                <button
-                  type="button"
-                  onClick={() => setResolved((r) => ({ ...r, [sel.id]: "ok" }))}
-                  className="h-[46px] rounded-[10px] bg-[#F68A0A] px-5 text-[14px] font-bold text-[#3B1D00]"
-                >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setResolved((r) => ({ ...r, [sel.id]: "ok" }))}
-                  className="h-[46px] rounded-[10px] border border-[#CBD5E1] bg-white px-4 text-[14px] font-semibold text-[#0F172A]"
-                >
-                  Edit, then approve
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setResolved((r) => ({ ...r, [sel.id]: "no" }))}
-                  className="h-[46px] rounded-[10px] border border-[#991B1B] bg-white px-4 text-[14px] font-semibold text-[#991B1B]"
-                >
-                  Reject with reason
-                </button>
-                <Link
-                  href="/master/live-journeys"
-                  className="inline-flex h-[46px] items-center rounded-[10px] border border-[#CBD5E1] px-4 text-[14px] font-semibold text-[#0F172A]"
-                >
-                  Take over the journey
-                </Link>
-              </div>
-            )}
-          </section>
+          </div>
         </div>
+
+        {message && (
+          <div role="status" className="rounded-[12px] border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-2.5 text-[13px] text-[#1E3A8A]">
+            {message}
+          </div>
+        )}
+
+        {state === "loading" && <p className="text-[14px] text-[#475569]">Loading…</p>}
+        {state === "offline" && (
+          <div className="rounded-[14px] border border-[#E3E8EF] bg-white p-6 text-[14px] text-[#334155]">
+            <strong className="block text-[16px] text-[#0F172A]">AI platform not connected</strong>
+            Set <code>AI_PLATFORM_URL</code> and <code>AI_EVENT_INGEST_KEY</code> on the web server to see live approvals here.
+          </div>
+        )}
+        {state === "ready" && shown.length === 0 && (
+          <div className="rounded-[14px] border border-[#E3E8EF] bg-white p-8 text-center text-[14px] text-[#475569]">
+            Nothing waiting. Agents are working within their limits.
+          </div>
+        )}
+
+        {shown.map((item) => (
+          <InboxCard
+            key={item.id}
+            item={item}
+            now={now}
+            busy={busy === item.id}
+            onApprove={(input) => run(item.id, () => ai.approve(item.id, input), input ? "Approved with your edits." : "Approved and done.")}
+            onReject={(reason) => run(item.id, () => ai.reject(item.id, reason), "Rejected. The agent will learn from your reason.")}
+            onResolve={(body) => run(item.id, () => ai.resolve(item.id, body), "Thanks, recorded.")}
+          />
+        ))}
       </div>
+    </div>
+  );
+}
+
+function InboxCard({
+  item,
+  now,
+  busy,
+  onApprove,
+  onReject,
+  onResolve,
+}: {
+  item: AiInboxItem;
+  now: number;
+  busy: boolean;
+  onApprove: (input?: Record<string, unknown>) => void;
+  onReject: (reason: string) => void;
+  onResolve: (body: { note?: string; label?: string }) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<Record<string, unknown>>(item.input ?? {});
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [answer, setAnswer] = useState("");
+  const overdue = new Date(item.dueAt).getTime() < now;
+  const subjectHref = item.subject && RECORD_HREF[item.subject.type]?.(item.subject.id);
+
+  const fields = (draft.fields as Record<string, unknown> | undefined) ?? undefined;
+
+  return (
+    <article className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]" aria-label={item.title}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-[#9CCFF3] bg-[#EEF7FE] px-2 py-0.5 text-[12px] font-bold text-[#0B2540]">
+          {KIND_LABEL[item.kind]}
+        </span>
+        {item.agentId && <span className="text-[12px] font-semibold text-[#475569]">{AGENT_NAMES[item.agentId] ?? item.agentId} agent</span>}
+        <span className="flex-grow" />
+        <span className="text-[12px] font-semibold" style={{ color: overdue ? "#991B1B" : "#475569" }}>
+          {overdue ? `Overdue ${timeAgo(item.dueAt).replace(" ago", "")}` : `Due ${timeAgo(item.dueAt)}`} · raised {timeAgo(item.createdAt)}
+        </span>
+      </div>
+
+      <h2 className="m-0 text-[17px] font-bold text-[#0F172A]">{item.title}</h2>
+      {item.subject && (
+        <span className="text-[13px] text-[#475569]">
+          About {item.subject.type}{" "}
+          {subjectHref ? (
+            <Link href={subjectHref} className="font-semibold text-[#0B4A7A] hover:underline">
+              {item.subject.id}
+            </Link>
+          ) : (
+            <strong>{item.subject.id}</strong>
+          )}
+        </span>
+      )}
+      {item.reasoning && (
+        <p className="m-0 rounded-[10px] bg-[#F8FAFC] px-3 py-2 text-[13px] text-[#334155]">
+          <span className="font-semibold text-[#0F172A]">Why: </span>
+          {item.reasoning}
+        </p>
+      )}
+
+      {item.kind === "proposal" && item.action === "send_message" && <MessagePreview input={draft} editing={editing} onChange={setDraft} />}
+      {item.kind === "proposal" && fields && (
+        <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+          {Object.entries(fields).map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="font-semibold text-[#475569]">{k}</dt>
+              <dd className="m-0 text-[#0F172A]">
+                {editing ? (
+                  <input
+                    aria-label={k}
+                    value={String(v ?? "")}
+                    onChange={(e) => setDraft({ ...draft, fields: { ...fields, [k]: e.target.value } })}
+                    className="h-8 w-full rounded-[8px] border border-[#CBD5E1] px-2"
+                  />
+                ) : (
+                  String(v)
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {item.kind === "proposal" && item.action && item.action !== "send_message" && !fields && (
+        <pre className="m-0 max-h-48 overflow-auto rounded-[10px] bg-[#F8FAFC] p-3 text-[12px] text-[#334155]">{JSON.stringify(item.input, null, 2)}</pre>
+      )}
+
+      {item.kind === "review" && Array.isArray(item.input?.labels) && (
+        <div className="flex flex-col gap-2">
+          <span className="text-[13px] text-[#334155]">Pick the right label. The AI uses your answer for this file and learns from it.</span>
+          <div className="flex flex-wrap gap-1.5">
+            {[...(item.input!.labels as { label: string; confidence: number }[]).map((l) => l.label), ...Object.keys(LABEL_NAMES)]
+              .filter((v, i, a) => a.indexOf(v) === i)
+              .slice(0, 10)
+              .map((l) => {
+                const c = (item.input!.labels as { label: string; confidence: number }[]).find((x) => x.label === l)?.confidence;
+                return (
+                  <button
+                    key={l}
+                    disabled={busy}
+                    onClick={() => onResolve({ label: l })}
+                    className="h-8 rounded-full border border-[#CBD5E1] bg-white px-3 text-[12px] font-semibold text-[#0F172A] hover:border-[#0B4A7A]"
+                  >
+                    {LABEL_NAMES[l] ?? l}
+                    {c != null ? ` · ${Math.round(c * 100)}%` : ""}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {item.kind === "question" && (
+        <div className="flex flex-col gap-2">
+          <label htmlFor={`ans-${item.id}`} className="text-[13px] font-semibold text-[#0F172A]">
+            Your answer
+          </label>
+          <textarea
+            id={`ans-${item.id}`}
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            rows={2}
+            className="rounded-[10px] border border-[#CBD5E1] p-2 text-[13px]"
+          />
+          <div>
+            <button
+              disabled={busy || answer.trim().length < 2}
+              onClick={() => onResolve({ note: answer.trim() })}
+              className="h-9 rounded-[10px] bg-[#0B4A7A] px-4 text-[13px] font-bold text-white disabled:opacity-50"
+            >
+              Send answer
+            </button>
+          </div>
+        </div>
+      )}
+
+      {item.kind === "proposal" && (
+        <div className="flex flex-wrap items-center gap-2">
+          {!rejecting && (
+            <>
+              <button
+                disabled={busy}
+                onClick={() => onApprove(editing ? draft : undefined)}
+                className="h-9 rounded-[10px] bg-[#166534] px-4 text-[13px] font-bold text-white disabled:opacity-50"
+              >
+                {editing ? "Approve with edits" : "Approve"}
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => setEditing((e) => !e)}
+                className="h-9 rounded-[10px] border border-[#CBD5E1] bg-white px-4 text-[13px] font-bold text-[#0F172A]"
+              >
+                {editing ? "Cancel edit" : "Edit"}
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => setRejecting(true)}
+                className="h-9 rounded-[10px] border border-[#991B1B] bg-white px-4 text-[13px] font-bold text-[#991B1B]"
+              >
+                Reject
+              </button>
+            </>
+          )}
+          {rejecting && (
+            <form
+              className="flex w-full flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (reason.trim().length >= 2) onReject(reason.trim());
+              }}
+            >
+              <label htmlFor={`rej-${item.id}`} className="sr-only">
+                Reason
+              </label>
+              <input
+                id={`rej-${item.id}`}
+                autoFocus
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Why not? e.g. wrong customer, needs a call first"
+                className="h-9 min-w-[260px] flex-grow rounded-[10px] border border-[#CBD5E1] px-3 text-[13px]"
+              />
+              <button type="submit" disabled={busy || reason.trim().length < 2} className="h-9 rounded-[10px] bg-[#991B1B] px-4 text-[13px] font-bold text-white disabled:opacity-50">
+                Reject
+              </button>
+              <button type="button" onClick={() => setRejecting(false)} className="h-9 px-2 text-[13px] font-semibold text-[#475569]">
+                Cancel
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+      {item.kind === "review" && !Array.isArray(item.input?.labels) && (
+        <div>
+          <button disabled={busy} onClick={() => onResolve({ note: "confirmed" })} className="h-9 rounded-[10px] bg-[#166534] px-4 text-[13px] font-bold text-white">
+            Confirm
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function MessagePreview({ input, editing, onChange }: { input: Record<string, unknown>; editing: boolean; onChange: (v: Record<string, unknown>) => void }) {
+  const to = (input.to as { record?: { type: string; id: string } } | undefined)?.record;
+  const channels = (input.channel as string[] | undefined) ?? [];
+  const files = (input.files as { id: string }[] | undefined) ?? [];
+  return (
+    <div className="flex flex-col gap-2 rounded-[12px] border border-[#E3E8EF] p-3 text-[13px]">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[#475569]">
+        <span>
+          To <strong className="text-[#0F172A]">{to ? `${to.type} ${to.id}` : "—"}</strong> (contact details on file)
+        </span>
+        <span>
+          By <strong className="text-[#0F172A]">{channels.join(" + ").toUpperCase()}</strong>
+        </span>
+        {files.length > 0 && (
+          <span>
+            <strong className="text-[#0F172A]">{files.length}</strong> file link{files.length > 1 ? "s" : ""} (expire in 7 days)
+          </span>
+        )}
+      </div>
+      {typeof input.subject === "string" &&
+        (editing ? (
+          <input
+            aria-label="Subject"
+            value={String(input.subject)}
+            onChange={(e) => onChange({ ...input, subject: e.target.value })}
+            className="h-9 rounded-[8px] border border-[#CBD5E1] px-2 font-semibold"
+          />
+        ) : (
+          <strong className="text-[#0F172A]">{String(input.subject)}</strong>
+        ))}
+      {editing ? (
+        <textarea
+          aria-label="Message"
+          value={String(input.body ?? "")}
+          onChange={(e) => onChange({ ...input, body: e.target.value })}
+          rows={4}
+          className="rounded-[8px] border border-[#CBD5E1] p-2"
+        />
+      ) : (
+        <p className="m-0 whitespace-pre-wrap text-[#0F172A]">{String(input.body ?? "")}</p>
+      )}
     </div>
   );
 }

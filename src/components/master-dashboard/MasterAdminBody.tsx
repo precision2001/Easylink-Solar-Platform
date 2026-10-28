@@ -558,8 +558,8 @@ const ROUTE: Record<string, string | null> = {
   customers: "/master/admin/customers",
   approvals: "/master/admin/approvals",
   plans: "/master/admin/plans",
-  // No artboard for the audit log or the gradient builder in this batch.
-  audit: null,
+  audit: "/master/admin/audit",
+  // The gradient builder has no artboard in this batch.
   theme: null,
 };
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Inter, Outfit, Source_Sans_3 } from "next/font/google";
 import { EasylinkAiChatbot } from "@/components/ai-chat/EasylinkAiChatbot";
+import { AiEventCapture } from "@/components/ai/AiEventCapture";
 import { ClarityAnalytics } from "@/components/analytics/ClarityAnalytics";
 import { ReduxProvider } from "@/components/providers/ReduxProvider";
 import { ToastProvider } from "@/components/providers/ToastProvider";
@@ -56,6 +57,7 @@ export default function RootLayout({
           <TopProgressBar />
           {children}
           <EasylinkAiChatbot />
+          <AiEventCapture />
           <ToastProvider />
         </ReduxProvider>
         <ClarityAnalytics />

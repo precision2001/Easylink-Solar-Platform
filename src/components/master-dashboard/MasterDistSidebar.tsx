@@ -89,6 +89,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { key: "dispatch", label: "Dispatch", icon: "send", href: "/master/dispatch", badge: "2" },
       { key: "jobs", label: "Jobs & Installs", icon: "box", href: "/master/jobs" },
+      { key: "journeys", label: "Job journeys", icon: "route", href: "/master/job-journeys" },
       {
         key: "handover",
         label: "Handover review",
@@ -109,7 +110,8 @@ const GROUPS: NavGroup[] = [
     title: "EasyLink Marketplace",
     tag: "new",
     items: [
-      { key: "ready", label: "Ready Sites", icon: "pin", href: "/master/ready-sites", badge: "4" },
+      { key: "ready", label: "Ready Sites", icon: "pin", href: "/master/ready-sites" },
+      { key: "readyDeals", label: "Ready Deals", icon: "tag", href: "/master/ready-deals" },
     ],
   },
   {
@@ -118,8 +120,9 @@ const GROUPS: NavGroup[] = [
     items: [
       { key: "aiControl", label: "AI control centre", icon: "spark", href: "/master/ai-control" },
       { key: "aiJourneys", label: "Live journeys", icon: "route", href: "/master/live-journeys", badge: "41" },
-      { key: "aiApprovals", label: "AI approvals", icon: "check", href: "/master/ai-approvals", badge: "7" },
-      { key: "aiDecisions", label: "Decision records", icon: "file", href: "/master/decision-records" },
+      { key: "aiApprovals", label: "AI approvals", icon: "check", href: "/master/ai-approvals" },
+      { key: "aiDecisions", label: "Decision records", icon: "file", href: "/master/ai-decisions" },
+      { key: "aiScreens", label: "Build a screen", icon: "layers", href: "/master/ai-screens" },
       { key: "aiPolicies", label: "Policies", icon: "shield", href: "/master/policies" },
       {
         key: "aiQuality",
@@ -180,6 +183,7 @@ const GROUPS: NavGroup[] = [
       { key: "cc", label: "Contact Centre", icon: "headset", href: "/master/contact-centre" },
       { key: "dialer", label: "Agent Dialer", icon: "phone", href: "/master/dialer" },
       { key: "calls", label: "Calls", icon: "phone", href: "/master/calls" },
+      { key: "campaigns", label: "Campaigns", icon: "send", href: "/master/campaigns" },
       { key: "lists", label: "Contact lists", icon: "upload", href: "/master/contact-lists" },
       { key: "inbox", label: "Inbox", icon: "chat", badge: "6", href: "/master/inbox" },
     ],
@@ -189,14 +193,14 @@ const GROUPS: NavGroup[] = [
     tag: "admin",
     items: [
       { key: "admin", label: "Admin home", icon: "shield", href: "/master/admin" },
-      { key: "aInstallers", label: "Installers", icon: "tool", href: "/master/admin/installers" },
-      { key: "aCustomers", label: "Customers", icon: "users", href: "/master/admin/customers" },
+      { key: "aInstallers", label: "Installer accounts", icon: "tool", href: "/master/installer-accounts" },
+      { key: "aCustomers", label: "Customers", icon: "users", href: "/master/projects" },
       { key: "aPartners", label: "Partners & suppliers", icon: "truck", href: "/master/admin/partners" },
       { key: "aApprovals", label: "Approvals", icon: "check", badge: "3", href: "/master/admin/approvals" },
       { key: "aPlans", label: "Memberships & plans", icon: "crown", href: "/master/admin/plans" },
-      { key: "aStaff", label: "Staff & roles", icon: "key" },
-      { key: "aAudit", label: "Audit log", icon: "list" },
-      { key: "aSettings", label: "Platform settings", icon: "gear" },
+      { key: "aStaff", label: "Staff & roles", icon: "key", href: "/master/admin/staff" },
+      { key: "aAudit", label: "Audit log", icon: "list", href: "/master/admin/audit" },
+      { key: "aSettings", label: "Platform settings", icon: "gear", href: "/master/admin/settings" },
       { key: "theme", label: "Theme · gradient builder", icon: "palette" },
     ],
   },

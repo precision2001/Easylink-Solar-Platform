@@ -12,6 +12,7 @@ import {
   uploadInstallerCustomerDocument,
   type InstallerCustomerDocument,
 } from "@/lib/installers/customer-documents";
+import { AiLabelChip, AiRecordPanel, useAiFileLabels } from "@/components/ai/AiRecordPanel";
 import {
   INSTALLER_CUSTOMER_TYPES,
   updateInstallerCustomerHomeProfile,
@@ -469,6 +470,13 @@ export function InstallerHomeCustomerProfileStrip({
   const selectedCustomerId =
     customerId && !customerId.startsWith("fallback-") ? customerId : null;
 
+  // AI labels for each file (meter, switchboard…), set at upload: no checkboxes.
+  const aiRecord = useMemo(
+    () => (selectedCustomerId ? { type: "customer", id: selectedCustomerId } : null),
+    [selectedCustomerId],
+  );
+  const aiLabels = useAiFileLabels("installer", aiRecord, documents.length);
+
   const profile = useMemo(
     () => buildProfileDisplay(customer, design),
     [customer, design],
@@ -686,6 +694,7 @@ export function InstallerHomeCustomerProfileStrip({
                       </a>
                       <p className="font-dm-sans text-[11px] text-warm-black/60">
                         {formatDocumentSize(doc.sizeBytes)}
+                        <AiLabelChip label={aiLabels.get(doc.id)} />
                       </p>
                     </div>
                     <button
@@ -703,6 +712,11 @@ export function InstallerHomeCustomerProfileStrip({
             )}
           </div>
         )}
+        {selectedCustomerId ? (
+          <div className="mt-4">
+            <AiRecordPanel key={`${selectedCustomerId}:${documents.length}`} record={{ type: "customer", id: selectedCustomerId }} portal="installer" />
+          </div>
+        ) : null}
       </section>
 
       <ProfileEditModal

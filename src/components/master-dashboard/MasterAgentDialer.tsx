@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
 import { useRecordingPlayback } from "@/hooks/useRecordingPlayback";
@@ -20,6 +20,10 @@ import {
   transcriptSettled,
   type CallTranscript,
 } from "@/lib/calls/transcript";
+import { CallListPanel } from "@/components/call-lists/CallListPanel";
+import { AiCallAssist, ScreenPop } from "@/components/contact-centre/DiallerPanels";
+import { CustomerAiSummary, IncomingTransfers, LiveAssistPanel, LiveTranscriptPanel, PresenceToggle, useLiveTranscript } from "@/components/contact-centre/LiveCalls";
+import { cc, type AcceptedTransfer, type Campaign } from "@/components/contact-centre/api";
 
 /**
  * "Agent Dialer" from the Easylink Designer mock — the real call mechanics
@@ -84,21 +88,8 @@ type WrapUp = {
 };
 
 
-const TIMELINE = [
-  { title: "AI qualification call · 2 min", meta: "Voxa Sales Qualifier · Tue 7 Oct · marked “hot”", color: "#F68A0A" },
-  { title: "SMS: quote link sent", meta: "Mon 6 Oct · delivered", color: "#1976D2" },
-  { title: "Solar design created", meta: "Mon 6 Oct · 10 kW + 13 kWh option", color: "#15803D" },
-  { title: "Web chat", meta: "Sun 5 Oct · Voxa Chat · asked about rebates", color: "#1976D2" },
-  { title: "Lead created", meta: "Sun 5 Oct · website quote form", color: "#64748B" },
-] as const;
-
 const SCRIPT_QUOTE =
   "“Under the federal Cheaper Home Batteries Program you could get a discount on a battery added to your existing solar. Can I check a few details about your system?”";
-
-const SUGGESTED_REPLY =
-  "Offer a free on-site assessment: “With a 6.6 kW system and evening use that high, a 10–13 kWh battery is usually the sweet spot. Could our assessor visit Thursday or Friday?”";
-
-const DETECTED_TAGS = ["Detected: battery interest", "Bill ~$680/qtr", "Objection: upfront cost"] as const;
 
 const OUTCOME_OPTIONS = [
   "Site visit booked",
@@ -252,14 +243,6 @@ function TranscriptBadge({ transcript }: { transcript: CallTranscript | null }) 
   );
 }
 
-function SampleTag() {
-  return (
-    <span className="rounded-full bg-[#DBEAFE] px-2 py-0.5 text-[10px] font-bold text-[#1E40AF]">
-      Sample
-    </span>
-  );
-}
-
 export function MasterAgentDialer() {
   const [input, setInput] = useState("");
 
@@ -270,6 +253,8 @@ export function MasterAgentDialer() {
    */
   const searchParams = useSearchParams();
   const handedNumber = searchParams.get("number");
+  /** `?campaign=` turns on campaign mode: its script, its calls tagged, power dialling. */
+  const campaignId = searchParams.get("campaign");
   useEffect(() => {
     if (handedNumber) setInput(handedNumber);
   }, [handedNumber]);
@@ -281,6 +266,9 @@ export function MasterAgentDialer() {
     muted,
     durationSec,
     recording,
+    room,
+    transferId,
+    join,
     dial,
     hangUp,
     toggleMute,
@@ -291,6 +279,85 @@ export function MasterAgentDialer() {
   const [queue, setQueue] = useState<QueueEntry[] | null>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [customer, setCustomer] = useState<CustomerLookup>({ status: "idle" });
+  // Bumped when a call ends so call lists and the screen pop reload.
+  const [listRefresh, setListRefresh] = useState(0);
+  const nextRef = useRef<(() => void) | null>(null);
+  // "Save & dial next" on a call list: the list picks the next person, then this dials them.
+  const dialAfterPick = useRef(false);
+  const [prevState, setPrevState] = useState(state);
+  if (prevState !== state) {
+    setPrevState(state);
+    if (state === "ended") setListRefresh((n) => n + 1);
+  }
+  // A call EasyLink AI handed over: who, and what the AI already found out.
+  const [handover, setHandover] = useState<AcceptedTransfer | null>(null);
+  const live = useLiveTranscript(room, state === "connected");
+  const takeCall = (t: AcceptedTransfer) => {
+    setHandover(t);
+    void join(t);
+  };
+  // ---------- campaign mode ----------
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [campaignNote, setCampaignNote] = useState<string | null>(null);
+  const [power, setPower] = useState(true);
+  /** Seconds until power dialling rings the next person; null when not counting. */
+  const [countdown, setCountdown] = useState<number | null>(null);
+  useEffect(() => {
+    if (!campaignId) return;
+    let cancelled = false;
+    cc("admin")
+      .campaign(campaignId)
+      .then((c) => !cancelled && setCampaign(c))
+      .catch((e) => !cancelled && setCampaignNote(e instanceof Error ? e.message : "Couldn't load the campaign"));
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, listRefresh]);
+  const running = campaign?.status === "ACTIVE";
+  /** Every dial while a campaign runs is counted towards it. */
+  const dialNumber = (phone: string) => dial(phone, running && campaign ? { campaignId: campaign.id } : undefined);
+
+  const callNextInCampaign = async () => {
+    if (!campaign) return;
+    setCountdown(null);
+    try {
+      const next = await cc("admin").campaignNext(campaign.id);
+      if (!next?.phone) {
+        setCampaignNote("Nobody left to call in this campaign right now.");
+        return;
+      }
+      setCampaignNote(`Calling ${next.name}`);
+      setInput(next.phone);
+      void dialNumber(next.phone);
+    } catch (e) {
+      setCampaignNote(e instanceof Error ? e.message : "Couldn't get the next person");
+    }
+  };
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (callActive) {
+      setCountdown(null);
+      return;
+    }
+    if (countdown <= 0) {
+      void callNextInCampaign();
+      return;
+    }
+    const t = window.setTimeout(() => setCountdown((c) => (c === null ? null : c - 1)), 1000);
+    return () => window.clearTimeout(t);
+    // callNextInCampaign reads the latest campaign when the count reaches zero.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown, callActive]);
+
+  const pick = (phone: string) => {
+    if (callActive) return;
+    setInput(phone);
+    if (dialAfterPick.current) {
+      dialAfterPick.current = false;
+      void dialNumber(phone);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -519,11 +586,21 @@ export function MasterAgentDialer() {
       }
 
       setWrapSave({ status: "saved" });
-      if (thenDialNext) {
+      setListRefresh((n) => n + 1);
+      if (thenDialNext && running && power) {
+        // Power dialling: a short pause to breathe, then the next person in the campaign.
+        setCountdown(campaign!.wrapSeconds);
+      } else if (thenDialNext && running) {
+        void callNextInCampaign();
+      } else if (thenDialNext && nextRef.current) {
+        // A call list is open: it picks the next person, and `pick` dials them.
+        dialAfterPick.current = true;
+        nextRef.current();
+      } else if (thenDialNext) {
         const next = queue?.find((q) => q.phone);
         if (next?.phone) {
           setInput(next.phone);
-          void dial(next.phone);
+          void dialNumber(next.phone);
         }
       }
     } catch (err) {
@@ -658,49 +735,21 @@ export function MasterAgentDialer() {
           Communication <span aria-hidden="true">/</span>{" "}
           <span className="font-semibold text-[#0F172A]">Agent Dialer</span>
         </nav>
+        <PresenceToggle onCall={callActive} />
       </header>
 
       <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 items-start gap-4 px-8 py-6 pb-14 lg:grid-cols-[260px_1fr_320px]">
-        {/* Up next queue — real leads with an upcoming follow-up */}
+        {/* Up next: follow-ups due, state lists and uploaded call lists */}
+        <div className="flex flex-col gap-4">
+        <CallListPanel
+          followUps={queue}
+          followUpsError={queueError}
+          disabled={callActive}
+          refreshKey={listRefresh}
+          nextRef={nextRef}
+          onPick={(phone) => pick(phone)}
+        />
         <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
-          <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Up next</h2>
-          <p className="m-0 text-[12px] leading-[17px] text-[#5B6B80]">
-            {queueError
-              ? queueError
-              : queue === null
-                ? "Loading…"
-                : `${queue.length} lead${queue.length === 1 ? "" : "s"} with an upcoming follow-up`}
-          </p>
-          <div className="flex flex-col divide-y divide-[#EEF2F6] border-t border-[#EEF2F6]">
-            {queue?.length === 0 ? (
-              <p className="py-3 text-[13px] text-[#5B6B80]">Nothing scheduled.</p>
-            ) : null}
-            {(queue ?? []).map((q) => (
-              <button
-                key={q.id}
-                type="button"
-                onClick={() => {
-                  if (!callActive && q.phone) setInput(q.phone);
-                }}
-                disabled={callActive || !q.phone}
-                className="flex items-start justify-between gap-2 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-[14px] font-bold text-[#0F172A]">{q.name}</span>
-                  <span className="text-[12px] text-[#5B6B80]">
-                    {q.suburb} · {q.note}
-                  </span>
-                </span>
-                <span className="shrink-0 text-[12px] text-[#5B6B80]">
-                  {new Date(q.followUpDate).toLocaleDateString("en-AU", {
-                    day: "numeric",
-                    month: "short",
-                  })}
-                </span>
-              </button>
-            ))}
-          </div>
-
           <div className="flex flex-col gap-1.5 border-t border-[#EEF2F6] pt-3">
             <span className="text-[13px] font-bold text-[#0F172A]">Manual dial</span>
             <div className="flex items-center gap-2">
@@ -709,7 +758,7 @@ export function MasterAgentDialer() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !callActive && input.trim()) {
-                    void dial(input);
+                    void dialNumber(input);
                   }
                 }}
                 disabled={callActive}
@@ -720,7 +769,7 @@ export function MasterAgentDialer() {
               />
               <button
                 type="button"
-                onClick={() => void dial(input)}
+                onClick={() => void dialNumber(input)}
                 disabled={!input.trim() || callActive}
                 aria-label="Call"
                 className="flex size-11 shrink-0 items-center justify-center rounded-[10px] bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -742,9 +791,51 @@ export function MasterAgentDialer() {
             </div>
           </div>
         </section>
+        </div>
 
         {/* Live dialer — the real thing */}
         <section className="flex flex-col gap-4">
+          {campaignId && (
+            <section className="flex flex-col gap-2 rounded-[14px] border-2 border-[#F68A0A] bg-[#FFF7E6] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-col">
+                  <span className="text-[12px] font-bold uppercase tracking-[0.6px] text-[#92400E]">Campaign</span>
+                  <span className="text-[16px] font-bold text-[#3B1D00]">{campaign?.name ?? "Loading…"}</span>
+                  {campaign && (
+                    <span className="text-[12.5px] text-[#78350F]">
+                      {campaign.list.name} · {campaign.list.callable} left to call · {campaign.stats.calls} calls so far
+                      {campaign.goal ? ` · Goal: ${campaign.goal}` : ""}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-[13px] font-semibold text-[#3B1D00]" htmlFor="power-dial">
+                    <input id="power-dial" type="checkbox" checked={power} onChange={(e) => {
+                      setPower(e.target.checked);
+                      if (!e.target.checked) setCountdown(null);
+                    }} />
+                    Power dialling
+                  </label>
+                  {running && !callActive && countdown === null && (
+                    <button type="button" onClick={() => void callNextInCampaign()} className="rounded-[10px] bg-[#F68A0A] px-3 py-1.5 text-[13px] font-bold text-[#3B1D00]">
+                      Call next
+                    </button>
+                  )}
+                  {!running && campaign && <span className="text-[12.5px] font-semibold text-[#92400E]">This campaign isn&apos;t running. Start it on the Campaigns page.</span>}
+                </div>
+              </div>
+              {countdown !== null && (
+                <div className="flex items-center justify-between gap-2 rounded-[10px] bg-white px-3 py-2">
+                  <span className="text-[14px] font-semibold text-[#3B1D00]">Next call in {countdown}s</span>
+                  <button type="button" onClick={() => setCountdown(null)} className="text-[13px] font-semibold text-[#0B4A7A] hover:underline">
+                    Pause
+                  </button>
+                </div>
+              )}
+              {campaignNote && <span className="text-[12.5px] text-[#78350F]">{campaignNote}</span>}
+            </section>
+          )}
+          <IncomingTransfers enabled={!callActive && countdown === null} onAccepted={takeCall} />
           {callActive ? (
             // In-call: real number, real timer, real mute/hang-up. No "Recording ·
             // consent announced" line like the mock's — we don't record calls or
@@ -769,7 +860,7 @@ export function MasterAgentDialer() {
                 </span>
                 <div className="flex flex-col">
                   <span className="text-[16px] font-bold">{activeNumber}</span>
-                  <span className="text-[12px] text-[#9FB0C8]">Outbound call</span>
+                  <span className="text-[12px] text-[#9FB0C8]">{transferId ? "Handed over by EasyLink AI" : "Outbound call"}</span>
                 </div>
               </div>
 
@@ -803,7 +894,7 @@ export function MasterAgentDialer() {
                 >
                   {muted ? "Unmute" : "Mute"}
                 </button>
-                {["Hold", "Transfer", "Conference", "Keypad", "Pause rec", "Hand to AI"].map((label) => (
+                {["Hold", "Transfer", "Conference"].map((label) => (
                   <span
                     key={label}
                     title="Not built yet"
@@ -839,7 +930,7 @@ export function MasterAgentDialer() {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && input.trim()) {
-                        void dial(input);
+                        void dialNumber(input);
                       }
                     }}
                     inputMode="tel"
@@ -867,7 +958,7 @@ export function MasterAgentDialer() {
 
                 <button
                   type="button"
-                  onClick={() => void dial(input)}
+                  onClick={() => void dialNumber(input)}
                   disabled={!input.trim() || state === "dialling"}
                   className="flex h-11 w-full items-center justify-center rounded-[10px] bg-emerald-600 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -886,6 +977,23 @@ export function MasterAgentDialer() {
             </div>
           )}
 
+          {(callActive || live.lines.length > 0) && (
+            <LiveTranscriptPanel
+              lines={live.lines}
+              status={live.status}
+              note={live.note}
+              callerName={customer.status === "found" ? customer.lead.name : (handover?.callerName ?? null)}
+              handover={transferId ? (handover?.summary ?? null) : null}
+            />
+          )}
+          {(callActive || live.lines.length > 0) && (
+            <LiveAssistPanel
+              lines={live.lines}
+              active={state === "connected"}
+              leadId={customer.status === "found" ? customer.lead.id : (handover?.leadId ?? null)}
+            />
+          )}
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <section className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
               <div className="flex items-center justify-between">
@@ -895,7 +1003,7 @@ export function MasterAgentDialer() {
                 <span className="shrink-0 text-[12px] text-[#5B6B80]">Step 3 of 6</span>
               </div>
               <p className="m-0 rounded-[10px] bg-[#FFF7E6] p-3 text-[13px] leading-[19px] text-[#3B1D00]">
-                {SCRIPT_QUOTE}
+                {campaign?.script ?? SCRIPT_QUOTE}
               </p>
               <div className="flex flex-col gap-2.5">
                 {FIELDS.map((f) => (
@@ -1083,28 +1191,12 @@ export function MasterAgentDialer() {
                   </p>
                 )}
               </div>
-              <div className="flex flex-col gap-1 rounded-[10px] bg-[#EFF6FF] p-3">
-                <span className="flex items-center gap-2 text-[13px] font-bold text-[#1D4ED8]">
-                  Suggested reply <SampleTag />
-                </span>
-                <p className="m-0 text-[13px] leading-[19px] text-[#1E3A5F]">{SUGGESTED_REPLY}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <SampleTag />
-                {DETECTED_TAGS.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-[#F1F5F9] px-2.5 py-1 text-[12px] text-[#475569]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
             </section>
           </div>
 
           <section className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
             <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Wrap-up &amp; disposition</h2>
+            <AiCallAssist key={callRecordId ?? "none"} callId={callActive ? null : callRecordId} />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1 text-[13px] text-[#334155]">
                 Outcome
@@ -1311,27 +1403,15 @@ export function MasterAgentDialer() {
             )}
           </section>
 
-          {/* Activity timeline — sample */}
-          <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="m-0 text-[14px] font-bold text-[#0F172A]">Timeline</h2>
-              <SampleTag />
-            </div>
-            <div className="flex flex-col gap-3">
-              {TIMELINE.map((t, i) => (
-                <div key={i} className="flex gap-2.5">
-                  <span
-                    className="mt-1 size-2 shrink-0 rounded-full"
-                    style={{ background: t.color }}
-                  />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-[12px] font-semibold text-[#0F172A]">{t.title}</span>
-                    <span className="text-[11px] text-[#5B6B80]">{t.meta}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
+          {customer.status === "found" && (
+            <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4">
+              <h2 className="m-0 text-[14px] font-bold text-[#0F172A]">Their record</h2>
+              <ScreenPop leadId={customer.lead.id} refreshKey={listRefresh} />
+            </section>
+          )}
+          {customer.status === "found" && (
+            <CustomerAiSummary key={customer.lead.id} portal="admin" leadId={customer.lead.id} compact />
+          )}
         </div>
       </div>
     </div>

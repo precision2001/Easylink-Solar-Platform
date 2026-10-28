@@ -21,6 +21,31 @@ const NAV = [
     key: "pipeline",
   },
   {
+    href: "/installers/dashboard/jobs",
+    label: "Jobs",
+    key: "jobs",
+  },
+  {
+    href: "/installers/dashboard/ready-sites",
+    label: "Ready Sites",
+    key: "readySites",
+  },
+  {
+    href: "/installers/dashboard/ready-deals",
+    label: "Ready Deals",
+    key: "readyDeals",
+  },
+  {
+    href: "/installers/dashboard/projects",
+    label: "Customer files",
+    key: "projects",
+  },
+  {
+    href: "/installers/dashboard/account",
+    label: "My account",
+    key: "account",
+  },
+  {
     href: "/installers/dashboard/equipment",
     label: "Equipment",
     key: "equipment",
@@ -50,6 +75,11 @@ function resolveActiveNav(
   if (!pathname) return "home";
   if (pathname.startsWith("/installers/dashboard/overview")) return "overview";
   if (pathname.startsWith("/installers/dashboard/pipeline")) return "pipeline";
+  if (pathname.startsWith("/installers/dashboard/account")) return "account";
+  if (pathname.startsWith("/installers/dashboard/jobs")) return "jobs";
+  if (pathname.startsWith("/installers/dashboard/ready-sites")) return "readySites";
+  if (pathname.startsWith("/installers/dashboard/ready-deals")) return "readyDeals";
+  if (pathname.startsWith("/installers/dashboard/projects")) return "projects";
   if (pathname.startsWith("/installers/dashboard/equipment")) return "equipment";
   if (pathname.startsWith("/installers/dashboard/messages")) return "messages";
   if (pathname.startsWith("/installers/dashboard/schedule")) return "home";
