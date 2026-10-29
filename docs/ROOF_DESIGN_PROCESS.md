@@ -126,6 +126,30 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-29 — Terraces on the live page: Side walls tool, Street View facing the house
+1. **Automatic party-wall detection was tried and dropped.** The method:
+   a brightness profile across the row, with the band around the pin taken
+   as the house.
+   - On 24 Derwent St it found the band at −4.5 / +0.2 m, against the
+     owner's −4.2 / +0.5 m.
+   - On detached houses it took ridges and hip lines for party walls:
+     134 Old Canterbury Rd went from 54 panels to 23, and 61 Harry Ave was
+     cut in half.
+   - A height-model "not a ridge" test also rejected the real 24 Derwent
+     wall, because the gap beside it dips 2 m.
+   Not shipped.
+2. **Vision AI was tested on the same task and failed.** Grok 4.20 and
+   Opus 4.6 both got the wall direction wrong; Opus also gave a 7.5 m
+   frontage, against the real 4.7 m.
+3. **Shipped instead:**
+   - **Side walls** button (view mode, next to Beautify): click two points
+     along one party wall, then one point on the other. The roof is cut to
+     the strip between them and the panels are laid out again. "Remove side
+     walls" undoes it; editing and saving the roof clears it.
+   - **Street View faces the house.** The route reads the camera position
+     from the metadata and sets the heading towards the pin. Before, the
+     default heading followed the road and showed the neighbours' fences.
+
 ### 2026-10-29 — 24 Derwent St, Glebe (attached row houses)
 1. **The live page put panels on two neighbouring houses.** Terraces share
    one continuous metal roof, and the NSW lot (Lot 72 DP246732, 433 m²)

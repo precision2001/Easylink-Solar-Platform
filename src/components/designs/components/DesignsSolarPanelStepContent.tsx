@@ -684,6 +684,18 @@ export const DesignsSolarPanelStepContent = forwardRef<
   );
   /** Beautify Design: panels in aligned, symmetric blocks instead of the most that fit. */
   const [beautified, setBeautified] = useState(false);
+  /**
+   * Side walls of an attached (terrace) house: the roof is cut to the strip
+   * between its two party walls. Terraces share one roof and one land lot
+   * can hold several houses (24 Derwent St, Glebe), so the walls are marked
+   * by hand: two clicks along one wall, one click on the other.
+   */
+  const [wallClicks, setWallClicks] = useState<google.maps.LatLngLiteral[] | null>(null);
+  const [sideWalls, setSideWalls] = useState<{
+    lines: [google.maps.LatLngLiteral, google.maps.LatLngLiteral][];
+    widthM: number;
+    roofsBefore: google.maps.LatLngLiteral[][];
+  } | null>(null);
 
   const { data, loading, error, retry } = useSolarEstimate(selectedLocation);
   const {
@@ -933,6 +945,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
     setEditingRoofs([]);
     setSelectedRoofId(null);
     setHasInitializedRoof(false);
+    setSideWalls(null);
+    setWallClicks(null);
   }
 
   useEffect(() => {
@@ -1134,6 +1148,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     if (!selectedLocation) return;
     setIsEditing(true);
     setBeautified(false);
+    setWallClicks(null);
     if (savedRoofs.length > 0) {
       // Already-saved shapes — the installer confirmed these (or drew them)
       // before, so there's nothing new to flag.
@@ -1403,6 +1418,75 @@ export const DesignsSolarPanelStepContent = forwardRef<
     persistSolarDesign(savedRoofs, panels, polygonTotalAreaM2 ?? 0, panelOrientation);
   }, [beautified, isEditing, layoutPanels, panelOrientation, persistSolarDesign, polygonTotalAreaM2, savedRoofs]);
 
+  /** Re-lays panels on new saved roofs (after the side walls cut them). */
+  const applyRoofs = useCallback(
+    (roofs: google.maps.LatLngLiteral[][]) => {
+      setSavedRoofs(roofs);
+      let area = 0;
+      for (const r of roofs) area += ringAreaM2(r);
+      setPolygonTotalAreaM2(area);
+      const panels = layoutPanels(roofs, panelOrientation, beautified);
+      setGeneratedPanels(panels);
+      setPanelCountInput("");
+      persistSolarDesign(roofs, panels, area, panelOrientation);
+    },
+    [beautified, layoutPanels, panelOrientation, persistSolarDesign],
+  );
+
+  const handleSideWallsButton = useCallback(() => {
+    if (sideWalls) {
+      // Remove the walls: back to the roof as it was.
+      const before = sideWalls.roofsBefore;
+      setSideWalls(null);
+      setWallClicks(null);
+      applyRoofs(before);
+      return;
+    }
+    setWallClicks((c) => (c ? null : []));
+  }, [applyRoofs, sideWalls]);
+
+  const handleMapClick = useCallback(
+    (e: google.maps.MapMouseEvent) => {
+      if (!wallClicks || !e.latLng) return;
+      const pts = [...wallClicks, { lat: e.latLng.lat(), lng: e.latLng.lng() }];
+      if (pts.length < 3) {
+        setWallClicks(pts);
+        return;
+      }
+      setWallClicks(null);
+      // Wall 1 through the first two clicks; wall 2 parallel through the third.
+      const ref = pts[0];
+      const mL = 111320 * Math.cos((ref.lat * Math.PI) / 180);
+      const xy = (p: google.maps.LatLngLiteral) => ({ x: (p.lng - ref.lng) * mL, y: (p.lat - ref.lat) * 111320 });
+      const ll = (p: { x: number; y: number }) => ({ lat: ref.lat + p.y / 111320, lng: ref.lng + p.x / mL });
+      const a = xy(pts[0]), b = xy(pts[1]), c = xy(pts[2]);
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 0.5) return;
+      const u = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+      const n = { x: -u.y, y: u.x };
+      const w = (c.x - a.x) * n.x + (c.y - a.y) * n.y;
+      if (Math.abs(w) < 1) return;
+      const far = 80;
+      const p = (t: number, s: number) => ll({ x: a.x + n.x * t + u.x * s, y: a.y + n.y * t + u.y * s });
+      const strip: google.maps.LatLngLiteral[] = [p(0, -far), p(0, far), p(w, far), p(w, -far)];
+      const before = sideWalls?.roofsBefore ?? savedRoofs;
+      const clipped = before
+        .map((r) => clipRingToConvexPolygon(r, strip))
+        .filter((r) => r.length >= 3 && ringAreaM2(r) >= 2);
+      if (clipped.length === 0) return;
+      setSideWalls({
+        lines: [
+          [p(0, -far), p(0, far)],
+          [p(w, -far), p(w, far)],
+        ],
+        widthM: Math.abs(w),
+        roofsBefore: before,
+      });
+      applyRoofs(clipped);
+    },
+    [applyRoofs, savedRoofs, sideWalls, wallClicks],
+  );
+
   const handleSave = useCallback(() => {
     /* Read final paths from imperative polygon refs (user may have dragged vertices),
        then apply the roof-line rule: straight edges at 0/45/90° to the main
@@ -1457,6 +1541,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
     setIsGeneratingPanels(true);
     try {
       setBeautified(false);
+      // New roofs drawn: the side-wall cut (if any) is part of them now.
+      setSideWalls(null);
+      setWallClicks(null);
       panelsToPersist = layoutPanels(validPaths, panelOrientation);
       setGeneratedPanels(panelsToPersist);
     } finally {
@@ -1711,6 +1798,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   ? `${savedFaces.length} roof faces found from Google's height data. `
                   : "Roof faces assumed (no usable height data) — check on site. "}
                 {savedFaceSet.moved > 0 ? `${savedFaceSet.moved} roof lines moved onto the edges in the image. ` : ""}
+                {sideWalls ? `Attached house: roof limited to its side walls (${sideWalls.widthM.toFixed(1)} m wide). ` : ""}
                 {savedFaceSet.obstructions.length > 0
                   ? `${savedFaceSet.obstructions.filter((o) => o.kind === "spot").length} possible vents, fans or antennas and ${
                       savedFaceSet.obstructions.filter((o) => o.kind === "step").length
@@ -1769,7 +1857,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
                     center={mapCenter}
                     zoom={mapZoom}
                     onLoad={onMapLoad}
+                    onClick={handleMapClick}
                     options={{
+                      draggableCursor: wallClicks ? "crosshair" : undefined,
                       disableDefaultUI: true,
                       zoomControl: false,
                       mapTypeId: "satellite",
@@ -1879,6 +1969,33 @@ export const DesignsSolarPanelStepContent = forwardRef<
                         );
                       })}
 
+                    {/* Side walls of an attached house (marked by hand) */}
+                    {!!mapReady &&
+                      sideWalls?.lines.map((line, idx) => (
+                        <Polyline
+                          key={`wall-${idx}`}
+                          path={line}
+                          options={{ strokeColor: "#EF4444", strokeOpacity: 1, strokeWeight: 3, clickable: false, zIndex: 9 }}
+                        />
+                      ))}
+                    {!!mapReady &&
+                      wallClicks?.map((pt, idx) => (
+                        <Polygon
+                          key={`wallpt-${idx}`}
+                          paths={[0, 1, 2, 3].map((k) => ({
+                            lat: pt.lat + 0.000004 * Math.sin((k * Math.PI) / 2),
+                            lng: pt.lng + 0.000005 * Math.cos((k * Math.PI) / 2),
+                          }))}
+                          options={{ fillColor: "#EF4444", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 1, clickable: false, zIndex: 11 }}
+                        />
+                      ))}
+                    {!!mapReady && wallClicks && wallClicks.length === 2 ? (
+                      <Polyline
+                        path={wallClicks}
+                        options={{ strokeColor: "#EF4444", strokeOpacity: 1, strokeWeight: 3, clickable: false, zIndex: 9 }}
+                      />
+                    ) : null}
+
                     {/* Obstructions and steps found on the zoomed image (view mode) */}
                     {!!mapReady &&
                       !isEditing &&
@@ -1986,6 +2103,18 @@ export const DesignsSolarPanelStepContent = forwardRef<
                 <>
                 <button
                   type="button"
+                  onClick={handleSideWallsButton}
+                  disabled={savedRoofs.length === 0}
+                  aria-pressed={Boolean(wallClicks) || Boolean(sideWalls)}
+                  title="Attached (terrace) house: mark its two side walls so panels stay on this house"
+                  className={`h-[33px] rounded-[6px] px-[12px] font-inter text-[13px] font-semibold tracking-[-0.1504px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                    wallClicks ? "bg-[#EF4444] text-white" : "bg-white/90 text-[#DC2626] hover:bg-white"
+                  }`}
+                >
+                  {sideWalls ? "Remove side walls" : wallClicks ? "Cancel walls" : "Side walls"}
+                </button>
+                <button
+                  type="button"
                   onClick={handleBeautifyToggle}
                   disabled={!(generatedPanels && generatedPanels.length > 0)}
                   aria-pressed={beautified}
@@ -2013,6 +2142,16 @@ export const DesignsSolarPanelStepContent = forwardRef<
                 </>
               )}
             </div>
+
+            {wallClicks ? (
+              <div className="pointer-events-none absolute bottom-[14px] left-1/2 z-10 -translate-x-1/2">
+                <p className="whitespace-nowrap rounded-[8px] bg-black/70 px-4 py-2 font-inter text-[12px] font-medium text-white backdrop-blur-sm">
+                  {wallClicks.length < 2
+                    ? `Click ${wallClicks.length === 0 ? "two points" : "a second point"} along one side wall (use Street View: front fence line)`
+                    : "Now click one point on the other side wall"}
+                </p>
+              </div>
+            ) : null}
 
             {/* Edit mode instruction hint — excluded from screenshot */}
             {isEditing && (

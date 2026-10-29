@@ -29,15 +29,27 @@ export async function GET(request: Request) {
     if (meta?.status !== "OK") {
       return NextResponse.json({ message: "No Street View here." }, { status: 404 });
     }
+    // Turn the camera to face the house: Street View's own default heading
+    // follows the road, which on a terrace shows the neighbours' fences
+    // instead of this house's (process step 1: read the front fences).
     const params = new URLSearchParams({
       size: "640x400",
-      location,
       source: "outdoor",
-      radius: "60",
-      fov: "80",
+      fov: "75",
       pitch: "12",
       key,
     });
+    const cam = meta.location as { lat?: number; lng?: number } | undefined;
+    if (meta.pano_id && cam && Number.isFinite(cam.lat) && Number.isFinite(cam.lng)) {
+      const dy = (lat - cam.lat!) * 111320;
+      const dx = (lng - cam.lng!) * 111320 * Math.cos((cam.lat! * Math.PI) / 180);
+      const heading = ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
+      params.set("pano", String(meta.pano_id));
+      params.set("heading", heading.toFixed(1));
+    } else {
+      params.set("location", location);
+      params.set("radius", "60");
+    }
     const res = await fetch(`${BASE}?${params.toString()}`, { cache: "no-store", headers });
     const type = res.headers.get("content-type") ?? "";
     if (!res.ok || !type.startsWith("image/")) {
