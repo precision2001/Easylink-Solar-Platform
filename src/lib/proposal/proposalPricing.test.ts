@@ -1,25 +1,25 @@
-import { describe, expect, it } from "vitest";
-import { estimateSavings, priceProposal } from "./proposalPricing";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { estimateSavings, fetchProposalPricing } from "./proposalPricing";
 
-describe("priceProposal", () => {
-  it("prices a 22.8 kW design (57 × 440 W) on three phase after STCs, not the old $11,200 default", () => {
-    const p = priceProposal({ panelCount: 57, panelTierId: "standard", installDate: "2026-11-27" });
-    expect(p.quote.blocks).toEqual([]);
-    expect(p.phase).toBe(3);
-    expect(p.quote.stcCount).toBeGreaterThan(150);
-    expect(p.total).toBeGreaterThan(9000);
-    expect(p.total).toBeLessThan(16000);
+// Pricing itself now runs in the backend (solar_panel_backend
+// src/tests/pricing-engine-v2.test.ts covers the 57-panel three-phase,
+// hybrid-at-200% and battery cases). Here: the request/response contract.
+describe("fetchProposalPricing", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("posts the design to the public pricing proxy and unwraps the data", async () => {
+    const data = { selected: { net: 9876 }, tierTotals: {}, tierInfo: {}, batteryTotals: {}, installDate: "2026-11-27", zone: 3 };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await fetchProposalPricing({ panelCount: 19, batteryKwh: 14.6 });
+    expect(res.selected.net).toBe(9876);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/pricing/proposal");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ panelCount: 19, batteryKwh: 14.6 });
   });
-  it("uses a hybrid inverter at 200% when a string inverter at 133% can't carry the array", () => {
-    const p = priceProposal({ panelCount: 57, panelTierId: "premium", installDate: "2026-11-27" });
-    expect(p.quote.blocks).toEqual([]);
-    expect(p.quote.inverter?.model).toMatch(/Hybrid/);
-  });
-  it("adds the battery and its STCs", () => {
-    const a = priceProposal({ panelCount: 15, installDate: "2026-11-27" });
-    const b = priceProposal({ panelCount: 15, batteryKwh: 9.2, installDate: "2026-11-27" });
-    expect(b.total).toBeGreaterThan(a.total);
-    expect(b.quote.stcCount).toBeGreaterThan(a.quote.stcCount);
+
+  it("throws the backend's message when pricing fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: "Too many pricing requests" }), { status: 429 })));
+    await expect(fetchProposalPricing({ panelCount: 19 })).rejects.toThrow("Too many pricing requests");
   });
 });
 
