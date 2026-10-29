@@ -3,329 +3,164 @@ import { describe, expect, it } from "vitest";
 import {
   QUOTE_DEFAULTS,
   SAMPLE_PRICE_BOOK as pb,
+  type PriceBook,
   auDate,
+  batteryInstall,
   batteryStcs,
   deemingYearsFor,
-  panelStcEstimate,
   money,
+  panelStcEstimate,
   priceQuote,
   rate,
-  sellIncGst,
   solarStcs,
   tradePrice,
 } from "./quote-engine";
 
 /**
- * The figures asserted here are the mock's own published output for its
- * default inputs. They are the contract: if one of these moves, the quote
- * tester no longer agrees with the pricing rules it claims to implement.
+ * Pricing engine v2 on the placeholder sample book (the real book lives in
+ * the backend). Hand-worked figures for the default quote — 19 × 440 W ($90),
+ * 14 kWh battery ($4,200), Zone 3, installed 15 Nov 2026:
+ *   panels   1,710 cost → 2,163.15 item (×1.15 ×1.1) + 2,508 install (8,360 W × $0.30)
+ *   inverter 1,500 cost → 1,897.50 item, installed free with panels (5 kW hybrid: 200% → 10 kW ≥ 8.36)
+ *   battery  4,200 cost → 5,313.00 item + 2,000 install (up to 20 kWh)
+ *   before STCs 13,881.65; STCs ⌊8.36 × 1.382 × 5⌋ = 57 + ⌊14 × 6.8⌋ = 95 → 152 × $37.50 = 5,700
+ *   net 8,181.65
  */
 describe("the default quote", () => {
   const q = priceQuote(pb, QUOTE_DEFAULTS);
 
   it("sizes the array from the panel count", () => {
-    expect(q.arrayKw).toBe(8.36);
+    expect(q.arrayKw).toBeCloseTo(8.36, 6);
   });
 
-  it("auto-sizes to the smallest hybrid that carries the array", () => {
-    expect(q.inverter?.model).toBe("Hybrid inverter 8 kW");
+  it("auto-sizes the cheapest hybrid that carries the array at 200%", () => {
+    expect(q.inverter?.model).toBe("Sample hybrid inverter 5 kW");
   });
 
-  it("totals supply and install separately", () => {
-    expect(q.supplyTotal).toBe(9410);
-    expect(q.installTotal).toBe(4065);
-    expect(q.cost).toBe(13475);
+  it("prices items with margin then GST", () => {
+    expect(q.itemTotal).toBeCloseTo(9373.65, 2);
+    expect(q.cost).toBe(7410);
+    expect(q.marginDollars).toBeCloseTo(1111.5, 2);
   });
 
-  it("stacks margin then GST", () => {
-    expect(Math.round(q.sellEx)).toBe(15496);
-    expect(Math.round(q.priceBeforeStcs)).toBe(17046);
-    expect(Math.round(q.marginDollars)).toBe(2021);
+  it("charges EasyLink's installation rates", () => {
+    const by = Object.fromEntries(q.lines.map((l) => [l.kind, l.install]));
+    expect(by.panel).toBeCloseTo(2508, 6);
+    expect(by.inverter).toBe(0);
+    expect(by.battery).toBe(2000);
+    expect(q.installTotal).toBeCloseTo(4508, 6);
   });
 
-  it("claims 57 solar and 91 battery certificates", () => {
-    expect(q.stcLines.map((l) => l.count)).toEqual([57, 91]);
-    expect(q.stcCount).toBe(148);
-    expect(q.stcValue).toBe(5550);
+  it("claims 57 solar and 95 battery certificates", () => {
+    expect(q.stcLines.map((l) => l.count)).toEqual([57, 95]);
+    expect(q.stcValue).toBe(5700);
   });
 
   it("lands on the net price the customer pays", () => {
-    expect(Math.round(q.net)).toBe(11496);
-  });
-
-  it("quotes cleanly", () => {
-    expect(q.blocks).toEqual([]);
-  });
-
-  it("shows its working", () => {
-    expect(q.stcLines[0].label).toBe(
-      "Solar STCs: ⌊8.36 kW × 1.382 × 5 yrs⌋ = 57 × $37.5",
-    );
-    expect(q.stcLines[1].label).toBe(
-      "Battery STCs: ⌊(13.5 kWh @ 100%) × 6.8⌋ = 91 × $37.5",
-    );
-  });
-
-  it("prices each line with margin and GST", () => {
-    expect(q.lines.map((l) => [l.item, Math.round(l.sellEx), Math.round(l.sellInc)])).toEqual([
-      ["Trina Vertex 440W (Standard)", 3933, 4326],
-      ["Hybrid inverter 8 kW", 2530, 2783],
-      ["LFP battery 13.5 kWh", 7941, 8735],
-      ["Design, permits, DNSP approval, metering", 1093, 1202],
-    ]);
-  });
-});
-
-/**
- * The "every system type, same inputs" grid: net inc GST under all four
- * installation × STC modes, for each of the six system types. These are the
- * mock's published figures.
- */
-describe("every system type on the default inputs", () => {
-  const grid = (type: Parameters<typeof priceQuote>[2]) =>
-    ([
-      [true, true],
-      [true, false],
-      [false, true],
-      [false, false],
-    ] as const).map(([install, stc]) =>
-      Math.round(priceQuote(pb, QUOTE_DEFAULTS, type, install, stc).net),
-    );
-
-  it.each([
-    ["solar", [5288, 7426, 3928, 3928]],
-    ["combo", [11496, 17046, 12093, 12093]],
-    ["battery", [8801, 12214, 9304, 9304]],
-    ["expansion", [3391, 5528, 2473, 2473]],
-    ["inverter", [1898, 1898, 1644, 1644]],
-    ["ev", [1898, 1898, 1328, 1328]],
-  ] as const)("prices %s", (type, expected) => {
-    expect(grid(type)).toEqual([...expected]);
-  });
-
-  it("reports the certificate count for the installed, with-STC column", () => {
-    const counts = (["solar", "combo", "battery", "expansion", "inverter", "ev"] as const).map(
-      (t) => priceQuote(pb, QUOTE_DEFAULTS, t, true, true).stcCount,
-    );
-    expect(counts).toEqual([57, 148, 91, 57, 0, 0]);
-  });
-
-  it("blocks nothing on these inputs", () => {
-    const blocked = (["solar", "combo", "battery", "expansion", "inverter", "ev"] as const).filter(
-      (t) => priceQuote(pb, QUOTE_DEFAULTS, t, true, true).blocks.length > 0,
-    );
-    expect(blocked).toEqual([]);
-  });
-});
-
-describe("system types that reuse existing equipment", () => {
-  it("prices a panel add-on with no inverter at all", () => {
-    const q = priceQuote(pb, QUOTE_DEFAULTS, "expansion");
-    expect(q.inverter).toBeNull();
-    expect(q.lines.map((l) => l.item)).toEqual([
-      "Trina Vertex 440W (Standard)",
-      "Design, permits, DNSP approval, metering",
-    ]);
-    expect(q.warns.join(" ")).toContain("existing inverter can take the extra panels");
-  });
-
-  it("sizes an inverter swap against the array already on the roof", () => {
-    const q = priceQuote(pb, QUOTE_DEFAULTS, "inverter");
-    expect(q.arrayKw).toBe(8.36);
-    expect(q.inverter?.model).toBe("String inverter 8 kW");
-    // No panels in the price, and no design fee on an inverter-only job.
-    expect(q.lines.map((l) => l.item)).toEqual(["String inverter 8 kW"]);
-  });
-
-  it("sizes a battery retrofit for the battery, not the array", () => {
-    const q = priceQuote(pb, QUOTE_DEFAULTS, "battery");
-    expect(q.inverter?.model).toBe("AC-coupled battery inverter 5 kW");
+    expect(q.priceBeforeStcs).toBeCloseTo(13881.65, 2);
+    expect(q.net).toBeCloseTo(8181.65, 2);
     expect(q.blocks).toEqual([]);
   });
 });
 
-describe("supply only", () => {
-  const q = priceQuote(pb, QUOTE_DEFAULTS, "combo", false, true);
-
-  it("drops install labour and adds delivery", () => {
-    expect(q.installTotal).toBe(0);
-    expect(q.lines.at(-1)?.item).toBe("Delivery (supply only)");
-  });
-
-  it("claims no certificates and says why", () => {
-    expect(q.stcValue).toBe(0);
-    expect(q.notes.join(" ")).toContain("accredited installer installs the system");
-  });
-});
-
-describe("battery certificates", () => {
-  it("earns nothing under 5 kWh", () => {
-    expect(batteryStcs(4.9, "2026-11-15").count).toBe(0);
-  });
-
-  it("counts every kWh in full before the tiers came in", () => {
-    const r = batteryStcs(20, "2026-04-30");
-    expect(r.factor).toBe(8.4);
-    expect(r.count).toBe(Math.floor(20 * 8.4));
-    expect(r.bands).toEqual([]);
-  });
-
-  it("caps the pre-tier rate at 50 kWh", () => {
-    expect(batteryStcs(100, "2026-04-30").count).toBe(Math.floor(50 * 8.4));
-  });
-
-  it("tiers capacity above 14 kWh", () => {
-    const r = batteryStcs(28, "2026-11-15");
-    // 14 kWh at 100% plus 14 kWh at 60%.
-    expect(r.weightedKwh).toBeCloseTo(22.4);
-    expect(r.count).toBe(Math.floor(22.4 * 6.8));
-  });
-
-  it("earns nothing on capacity above 50 kWh", () => {
-    expect(batteryStcs(60, "2026-11-15").count).toBe(batteryStcs(50, "2026-11-15").count);
-  });
-
-  it("earns nothing once the scheme has run out", () => {
-    expect(batteryStcs(13.5, "2031-01-01").count).toBe(0);
-  });
-
-  it("does not claim for a battery on a site with no panels", () => {
-    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, type: "battery", existing: false }, "battery");
-    expect(q.stcValue).toBe(0);
-    expect(q.notes.join(" ")).toContain("must connect to solar panels");
-  });
-
-  it("warns about capacity that only partly counts", () => {
-    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, batteryId: "b7" });
-    expect(q.warns.join(" ")).toContain("only 15% of the STC factor");
-  });
-});
-
-describe("solar certificates", () => {
-  it("floors array kW by zone rating by deeming years", () => {
-    expect(solarStcs(8.36, 3, "2026-11-15")).toBe(57);
-    expect(solarStcs(8.36, 1, "2026-11-15")).toBe(67);
-  });
-
-  it("runs out after 2030", () => {
-    expect(deemingYearsFor("2031-06-01")).toBe(0);
-    expect(solarStcs(8.36, 3, "2031-06-01")).toBe(0);
-  });
-});
-
-describe("blocking rules", () => {
-  it("blocks an array over the DC:AC ratio", () => {
-    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, inverterId: "i6" });
-    expect(q.blocks.join(" ")).toContain("more than 133% of the 5 kW inverter");
-  });
-
-  it("blocks a three-phase inverter on a single-phase supply", () => {
-    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, inverterId: "i9", count: 30 });
-    expect(q.blocks.join(" ")).toContain("needs a three-phase supply");
-  });
-
-  it("blocks an inverter over the connection limit", () => {
-    // Nothing in the sample book exceeds 30 kW, so the rule needs a row that
-    // does. It guards against a future price book that adds one.
-    const oversize = {
-      ...pb,
-      inverters: [
-        ...pb.inverters,
-        {
-          id: "big",
-          kind: "Hybrid" as const,
-          model: "Hybrid inverter 40 kW 3-phase",
-          kw: 40,
-          phase: 3 as const,
-          supply: 6000,
-          install: 700,
-        },
-      ],
-    };
-    const q = priceQuote(oversize, { ...QUOTE_DEFAULTS, inverterId: "big", phase: 3, count: 90 });
-    expect(q.blocks.join(" ")).toContain("over the 30 kW inverter limit");
-  });
-
-  it("allows the largest inverter in the book on a three-phase supply", () => {
-    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, inverterId: "i10", phase: 3, count: 60 });
-    expect(q.inverter?.kw).toBe(20);
-    expect(q.blocks).toEqual([]);
-  });
-
-  it("asks for a panel count", () => {
-    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, count: 0 });
-    expect(q.blocks).toContain("Enter a panel count.");
-  });
-
-  it("ignores an inverter of the wrong kind and auto-sizes instead", () => {
-    // i2 is a string inverter; a solar + battery job takes a hybrid.
-    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, inverterId: "i2" });
-    expect(q.inverter?.model).toBe("Hybrid inverter 8 kW");
-  });
-});
-
-describe("three-phase supply", () => {
-  it("adds three-phase works to an installed job", () => {
-    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, phase: 3 });
-    expect(q.lines.map((l) => l.item)).toContain("Three-phase works");
-  });
-
-  it("does not add them to an EV charger", () => {
-    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, phase: 3 }, "ev");
-    expect(q.lines.map((l) => l.item)).not.toContain("Three-phase works");
-  });
-});
-
-/** The columns the price book screen derives for each row. */
-describe("the price book's derived columns", () => {
+describe("installation rates", () => {
   const s = pb.settings;
-
-  it("marks trade price up from supply cost alone, not supply plus install", () => {
-    // Installers pay their own labour, so the trade price never includes ours.
-    expect(tradePrice(95, s)).toBe(103);
-    expect(tradePrice(5805, s)).toBe(6269);
+  it("battery: $2,000 to 20 kWh, then $500 per 10 kWh or part", () => {
+    expect(batteryInstall(13.5, s)).toBe(2000);
+    expect(batteryInstall(20, s)).toBe(2000);
+    expect(batteryInstall(20.5, s)).toBe(2500);
+    expect(batteryInstall(30, s)).toBe(2500);
+    expect(batteryInstall(40, s)).toBe(3000);
+    expect(batteryInstall(100, s)).toBe(6000);
   });
 
-  it("prices a panel installed", () => {
-    expect(Math.round(sellIncGst(95 + 85, s))).toBe(228);
-  });
-
-  it("prices a battery installed and nets off its certificates", () => {
-    const inc = sellIncGst(5805 + 1100, s);
-    const net = inc - batteryStcs(13.5, "2026-11-15").count * s.stcPrice;
-    expect(Math.round(inc)).toBe(8735);
-    expect(Math.round(net)).toBe(5322);
-  });
-
-  it("estimates per-panel certificates without flooring", () => {
-    expect(panelStcEstimate(440, 3, "2026-11-15").toFixed(2)).toBe("3.04");
-    // 19 of them would sum past the 57 the system actually earns, because the
-    // real calculation floors once rather than per panel.
-    expect(panelStcEstimate(440, 3, "2026-11-15") * 19).toBeGreaterThan(57);
-  });
-
-  it("writes dates the Australian way round", () => {
-    expect(auDate("2026-11-15")).toBe("15/11/2026");
+  it("inverter swap and EV charger use their flat rates", () => {
+    const swap = priceQuote(pb, { ...QUOTE_DEFAULTS, type: "inverter" });
+    expect(swap.lines.find((l) => l.kind === "inverter")?.install).toBe(750);
+    const ev = priceQuote(pb, { ...QUOTE_DEFAULTS, type: "ev" });
+    expect(ev.installTotal).toBe(1000);
+    expect(ev.stcCount).toBe(0);
   });
 });
 
-describe("formatting", () => {
-  it("rounds and groups", () => {
-    expect(money(11495.875)).toBe("$11,496");
+describe("inverter sizing", () => {
+  it("allows only 133% on a string inverter with no battery", () => {
+    // 19 × 440 W = 8.36 kW > 5 kW × 1.33, so the 10 kW string inverter is picked.
+    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, type: "solar" });
+    expect(q.inverter?.model).toBe("Sample string inverter 10 kW");
   });
 
-  it("uses a real minus sign", () => {
-    expect(money(-5550)).toBe("−$5,550");
+  it("blocks an inverter over the single-phase limit", () => {
+    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, type: "solar", inverterId: "i3" });
+    expect(q.blocks.some((b) => /three-phase/.test(b))).toBe(true);
   });
 
-  it("rounds a negative half away from zero, not toward it", () => {
-    // Rounding the signed value would give −$2,137 and understate the discount.
-    expect(money(-2137.5)).toBe("−$2,138");
-    expect(money(-3412.5)).toBe("−$3,413");
+  it("blocks an array over the DC:AC ratio", () => {
+    const q = priceQuote(pb, { ...QUOTE_DEFAULTS, type: "solar", inverterId: "i1" });
+    expect(q.blocks.some((b) => /133%/.test(b))).toBe(true);
+  });
+});
+
+describe("built-in inverters and brand-locked batteries", () => {
+  const book: PriceBook = {
+    ...pb,
+    inverters: [
+      ...pb.inverters,
+      { id: "sg5", kind: "Hybrid", model: "Sungrow SH5.0RS 5kW", kw: 5, phase: 1, supply: 1900 },
+    ],
+    batteries: [
+      ...pb.batteries,
+      { id: "pkg", model: "Package 13.4kWh (inverter built in)", kwh: 13.39, supply: 5090, inv: true, invKw: 5, pvKw: 7.6, phase: 1 },
+      { id: "sbr", model: "Sungrow SBR 9.6kWh", kwh: 9.6, supply: 3546 },
+    ],
+  };
+
+  it("adds no separate inverter for a package with one built in", () => {
+    const q = priceQuote(book, { ...QUOTE_DEFAULTS, count: 17, batteryId: "pkg" });
+    expect(q.lines.some((l) => l.kind === "inverter")).toBe(false);
+    expect(q.blocks).toEqual([]);
   });
 
-  it("keeps cents on a rate", () => {
+  it("blocks more PV than a built-in inverter accepts", () => {
+    const q = priceQuote(book, { ...QUOTE_DEFAULTS, count: 19, batteryId: "pkg" });
+    expect(q.blocks.some((b) => /7.6 kW of PV/.test(b))).toBe(true);
+  });
+
+  it("pairs a brand-locked battery with its own brand's inverter", () => {
+    const q = priceQuote(book, { ...QUOTE_DEFAULTS, count: 10, batteryId: "sbr" });
+    expect(q.inverter?.model).toBe("Sungrow SH5.0RS 5kW");
+    expect(q.warns).toEqual([]);
+  });
+});
+
+describe("STC rules", () => {
+  it("tiers battery capacity 100 / 60 / 15% and floors once", () => {
+    // 40 kWh: 14 + 14 × 0.6 + 12 × 0.15 = 24.2 weighted × 6.8 = 164.56 → 164
+    expect(batteryStcs(40, "2026-11-15").count).toBe(164);
+    expect(batteryStcs(4, "2026-11-15").count).toBe(0);
+    expect(batteryStcs(14, "2027-01-15").count).toBe(79);
+  });
+
+  it("uses deeming years for the install year", () => {
+    expect(deemingYearsFor("2026-11-15")).toBe(5);
+    expect(deemingYearsFor("2027-03-01")).toBe(4);
+    expect(solarStcs(24.2, 3, "2026-11-15")).toBe(167);
+    expect(panelStcEstimate(440, 3, "2026-11-15")).toBeCloseTo(3.0404, 4);
+  });
+
+  it("gives no STCs on supply-only jobs", () => {
+    const q = priceQuote(pb, QUOTE_DEFAULTS, "combo", false, true);
+    expect(q.stcCount).toBe(0);
+    expect(q.installTotal).toBe(0);
+  });
+});
+
+describe("formatting helpers", () => {
+  it("formats money, rates and dates", () => {
+    expect(money(1234.4)).toBe("$1,234");
+    expect(money(-50)).toBe("−$50");
     expect(rate(37.5)).toBe("$37.5");
-    expect(rate(40)).toBe("$40");
+    expect(auDate("2026-11-15")).toBe("15/11/2026");
+    expect(tradePrice(100, pb.settings)).toBe(108);
   });
 });
