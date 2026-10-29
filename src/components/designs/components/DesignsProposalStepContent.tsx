@@ -195,11 +195,17 @@ function PanelTierSelector({
   info?: Record<string, { model: string; w: number }>;
 }) {
   return (
-    <div className="w-full rounded-[20px] border-[1.5px] border-solid border-design-accent-cyan bg-[linear-gradient(135deg,#E8F6FF_0%,#BFE6FF_100%)] p-[16px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]">
-      <p className="font-source-sans text-[13px] font-bold uppercase tracking-[1px] text-[#0B2A4A]/80">
+    <div
+      className="flex h-full w-full flex-col rounded-[20px] border-[1.5px] border-solid border-white/40 p-[16px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]"
+      style={{
+        // Same gradient as the Solar Design button (SolarDesignCtaButton).
+        backgroundImage: "linear-gradient(158.907deg, rgb(84, 116, 235) 16.143%, rgb(255, 60, 60) 99.619%)",
+      }}
+    >
+      <p className="font-source-sans text-[13px] font-bold uppercase tracking-[1px] text-white">
         Panel Tier
       </p>
-      <div className="mt-3 flex flex-col gap-[10px]">
+      <div className="mt-3 flex flex-1 flex-col justify-evenly gap-[10px]">
         {PANEL_TIER_OPTIONS.map((tier) => {
           const selected = tier.id === selectedId;
           return (
@@ -272,7 +278,7 @@ function BatterySelector({
       ? { ...option, label: `${Math.round(sizeKwh * 10) / 10}kWh` }
       : option;
   return (
-    <div className="w-full rounded-[20px] border-[1.5px] border-solid border-design-accent-cyan bg-linear-to-r from-yellow-lemon to-orange-amber p-[16px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]">
+    <div className="flex h-full w-full flex-col rounded-[20px] border-[1.5px] border-solid border-design-accent-cyan bg-linear-to-r from-yellow-lemon to-orange-amber p-[16px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]">
       <div className="flex items-center justify-between">
         <p className="font-source-sans text-[13px] font-bold uppercase tracking-[1px] text-black/75">
           Battery
@@ -281,7 +287,7 @@ function BatterySelector({
           {selected.label}
         </p>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-[8px]">
+      <div className="mt-3 grid flex-1 grid-cols-2 gap-[8px]">
         {BATTERY_CAPACITY_OPTIONS.map((battery) => {
           const isSelected = battery.id === selectedId;
           return (
@@ -629,7 +635,7 @@ export const DesignsProposalStepContent = forwardRef<
 
           <div className="flex flex-col gap-[16px]">
             <div className="flex flex-col items-stretch gap-[16px] lg:flex-row">
-              <div className="w-full lg:max-w-[550.735px] lg:shrink-0">
+              <div className="flex w-full lg:max-w-[550.735px] lg:shrink-0">
                 <PanelTierSelector
                   selectedId={panelTierId}
                   onSelect={handleSelectPanelTier}
@@ -637,7 +643,7 @@ export const DesignsProposalStepContent = forwardRef<
                   info={priced?.tierInfo}
                 />
               </div>
-              <div className="w-full flex-1">
+              <div className="flex w-full flex-1">
                 <BatterySelector
                   selectedId={batteryCapacityId}
                   onSelect={handleSelectBattery}
