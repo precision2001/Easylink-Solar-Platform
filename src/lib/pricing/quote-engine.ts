@@ -50,6 +50,12 @@ export type Battery = Sourced & {
   pvKw?: number;
   phase?: 1 | 3;
   nominal?: number;
+  /**
+   * Inverter families this battery runs with, as text found in the inverter's
+   * model (e.g. ["Smile M5"], ["SH15T", "SH20T"]). Narrower than the brand lock:
+   * same-brand inverters outside these are skipped when auto-sizing and warned on.
+   */
+  pairsWith?: string[];
 };
 export type EvCharger = Sourced & { id: string; model: string; kw: number; phase: 1 | 3; supply: number };
 export type Extra = Sourced & {
@@ -135,6 +141,9 @@ export const LOCKED_BRANDS = [
   'Sigenergy', 'AlphaESS', 'ESY', 'Sungrow', 'FOX', 'GoodWe', 'SolarEdge', 'Fronius', 'Anker', 'SAJ', 'Kstar', 'SOL',
 ];
 export const brandOf = (model: string) => (model || '').split(' ')[0];
+/** True when the battery has no family list, or the inverter is in it. */
+export const pairsWith = (battery: Battery, inverter: Inverter) =>
+  !battery.pairsWith?.length || battery.pairsWith.some((f) => inverter.model.includes(f));
 
 export function deemingYearsFor(date: string): number {
   return DEEMING_YEARS[Number(date.slice(0, 4))] ?? 0;
@@ -223,12 +232,17 @@ export function autoInverter(
   arrayKw: number,
   phase: 1 | 3,
   withBattery: boolean,
-  batteryBrand?: string,
+  battery?: Battery | null,
 ): Inverter | null {
   let pool = pb.inverters.filter((i) => !i.builtin && kinds.includes(i.kind) && (phase === 3 || i.phase === 1));
+  const batteryBrand = battery ? brandOf(battery.model) : undefined;
   if (batteryBrand && LOCKED_BRANDS.includes(batteryBrand)) {
     const same = pool.filter((i) => brandOf(i.model) === batteryBrand);
     if (same.length) pool = same;
+  }
+  if (battery?.pairsWith?.length) {
+    // Only this battery's own inverter family; none on this supply = no inverter.
+    pool = pool.filter((i) => pairsWith(battery, i));
   }
   if (!pool.length) return null;
   const limit = phase === 3 ? pb.settings.threeMax : pb.settings.singleMax;
@@ -361,7 +375,7 @@ export function priceQuote(
     const picked = q.inverterId && q.inverterId !== 'auto'
       ? pb.inverters.find((i) => i.id === q.inverterId && kinds.includes(i.kind) && !i.builtin)
       : undefined;
-    inverter = picked ?? autoInverter(pb, kinds, type === 'battery' ? 0 : arrayKw, q.phase, !!battery, battery ? brandOf(battery.model) : undefined);
+    inverter = picked ?? autoInverter(pb, kinds, type === 'battery' ? 0 : arrayKw, q.phase, !!battery, battery);
     if (inverter) {
       const amt = type === 'inverter' ? s.invSwap : s.invWithPanels;
       const note = type === 'inverter' ? 'Inverter swap rate' : type === 'battery' ? 'Included in battery rate' : s.invWithPanels ? 'Inverter install' : 'Free with panel installation';
@@ -375,6 +389,9 @@ export function priceQuote(
       if (inverter.kw > limit) blocks.push(`${inverter.kw} kW is over the ${limit} kW inverter limit for this supply.`);
       if (battery && LOCKED_BRANDS.includes(brandOf(battery.model)) && brandOf(inverter.model) !== brandOf(battery.model)) {
         warns.push(`${battery.model} normally needs a ${brandOf(battery.model)} inverter, but ${inverter.model} is selected.`);
+      }
+      if (battery && !pairsWith(battery, inverter)) {
+        warns.push(`${battery.model} runs with ${battery.pairsWith!.join(" / ")} inverters, but ${inverter.model} is selected.`);
       }
     } else {
       blocks.push('No inverter in the price book fits this system type.');
