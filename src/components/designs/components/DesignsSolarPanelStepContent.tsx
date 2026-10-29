@@ -34,6 +34,7 @@ import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { hipFacesForSquareRoof } from "@/lib/designer/squareRoof";
+import { keepPanelsClear } from "@/lib/designer/panelClearance";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
@@ -1312,10 +1313,14 @@ export const DesignsSolarPanelStepContent = forwardRef<
       );
       const axis = largest ? longestEdgeAngleDegrees(largest) : undefined;
       const layoutOptions = { orientation, pitchDeg: roofPitchDeg, obstructions: obstructions.map((o) => o.ring) };
-      if (beautify) {
-        return dedupeSolarPanels(beautifyPanelsForFaces(faces, data.panelDimensions, layoutOptions, axis));
-      }
-      return dedupeSolarPanels(generatePanelsForFaces(faces, data.panelDimensions, layoutOptions, axis));
+      const packed = beautify
+        ? beautifyPanelsForFaces(faces, data.panelDimensions, layoutOptions, axis)
+        : generatePanelsForFaces(faces, data.panelDimensions, layoutOptions, axis);
+      // Basic rule, checked last whatever packed them: every panel inside one
+      // face and the roof outline, 100 mm clear of every roof line.
+      return dedupeSolarPanels(
+        keepPanelsClear(packed, faces.map((f) => f.ring), paths, data.panelDimensions, { clearM: DESIGN_RULES.edgeSetbackM }),
+      );
     },
     [data?.panelDimensions, facesFor, roofPitchDeg],
   );
@@ -1510,7 +1515,12 @@ export const DesignsSolarPanelStepContent = forwardRef<
     );
     // Roof-line check: fit each eave onto Google's roof mask (moved when the
     // real edge is more than 100 mm away), then straighten again.
-    const validPaths = lineMask
+    // A square-walled hip roof confirmed by Google keeps the border drawn
+    // along its walls: fitting it to the rough roof trace pushed the east
+    // eave of 25 Gilbert St out onto the patio.
+    const squareConfirmed =
+      straightened.length === 1 && !data?.estimated && Boolean(hipFacesForSquareRoof(straightened[0], data?.roofSegments));
+    const validPaths = lineMask && !squareConfirmed
       ? regularizeRoofOutlines(
           straightened.map((ring) => fitEavesToMask(ring, lineMask).ring),
         )
@@ -1571,6 +1581,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
 
     persistSolarDesign(validPaths, panelsToPersist, totalArea, panelOrientation);
   }, [
+    data?.estimated,
+    data?.roofSegments,
     dispatch,
     getCurrentEditingPaths,
     layoutPanels,
@@ -2027,6 +2039,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
                             strokeWeight: 1.5,
                             clickable: false,
                             zIndex: 8,
+                          }}
+                        />
+                      ))}
+
+                    {/* Every roof face with its own border (view mode): eaves,
+                        hips, valleys and ridges; panels keep 100 mm inside. */}
+                    {!!mapReady &&
+                      !isEditing &&
+                      savedFaces.map((face, idx) => (
+                        <Polygon
+                          key={`face-${idx}`}
+                          paths={face.ring}
+                          options={{
+                            fillOpacity: 0,
+                            strokeColor: "#FBBF24",
+                            strokeOpacity: 0.95,
+                            strokeWeight: 1.6,
+                            clickable: false,
+                            zIndex: 7,
                           }}
                         />
                       ))}

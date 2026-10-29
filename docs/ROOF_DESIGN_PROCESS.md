@@ -6,6 +6,20 @@ St, Lidcombe (Oct 2026). Code lives in `src/lib/designer/`. **Keep the
 lessons log at the bottom up to date**: every time a roof comes out wrong,
 write down what happened, why, and what changed in the code.
 
+## Top priority — never missed (owner's rule, 30 Oct 2026)
+
+Every design, by hand or on the live page, whatever found the roof:
+
+1. **Identify the faces.** Every face of the roof is found; none are left
+   out, and none are merged across a hip, valley or ridge.
+2. **Draw the border of each face.** Every face is drawn with its own border
+   (eaves, hips, valleys, ridges), inside the roof outline. On the live
+   page each face is drawn on the map (`savedFaces`, amber lines).
+3. **Never place a panel on a roof line.** Every panel sits inside one face,
+   100 mm clear of every line of that face and of the outline. The live page
+   checks this last, after any packer or Beautify (`keepPanelsClear` in
+   `panelClearance.ts`), and removes any panel that fails.
+
 ## Rules (always)
 
 | Rule | Value | Code |
