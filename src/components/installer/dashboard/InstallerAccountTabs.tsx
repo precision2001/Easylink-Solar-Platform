@@ -13,7 +13,11 @@ const TABS: { key: string; label: string; href?: string }[] = [
   { key: "overview", label: "Overview", href: "/installers/dashboard/overview" },
   { key: "offers", label: "Job offers", href: "/installers/dashboard/job-offers" },
   { key: "jobs", label: "My jobs" },
-  { key: "handover", label: "Handover packs" },
+  {
+    key: "handover",
+    label: "Handover packs",
+    href: "/installers/dashboard/handover-packs",
+  },
   { key: "payouts", label: "Payouts & RCTIs" },
   { key: "areas", label: "Service areas" },
   { key: "crew", label: "Crew & accreditations" },
