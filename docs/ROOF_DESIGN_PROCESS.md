@@ -112,6 +112,32 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-29 — UTS Block A, Haymarket (large flat commercial roof)
+1. **The live page treats one big building as one roof.** Its outline took
+   in the courtyard trees, rooftop plant and lower sections. A building
+   about 100 m across also doesn't fit the zoom-21 frame, so this design
+   used a zoom-20 mosaic of six Static Maps tiles (0.062 m/px).
+2. **Sections by material and step line.** A material map separated white
+   sheet roof, tan deck, plant and shadows. Every dark line darker than its
+   surroundings was cut out, plus five step lines drawn by hand where they
+   were faint. Each remaining area became one section: 7 sheet sections
+   and 1 deck section, about 4,050 m² of usable roof. Plant, skylights and
+   vents inside a section are obstructions. The height model confirmed one
+   main level, about 20–22 m.
+3. **Rows run along each section's longest edge** (the building is not
+   square, so there's no single wall direction).
+4. **Result:** 1,511 landscape (665 kW) or 1,480 portrait (651 kW) under
+   the residential rules. Not yet allowed for:
+   - wind edge and corner zones;
+   - maintenance walkways;
+   - access to plant.
+   A real layout will be lower. The packer starts each row at the section
+   edge, so rows are staggered on irregular sections; align them into
+   columns for the final design.
+5. **Above 100 kW the system is large-scale:** LGCs, not STCs. Network
+   connection is negotiated with Ausgrid. The residential pricing engine
+   doesn't apply.
+
 ### 2026-10-29 — Live Designs page: lot boundary and Street View (134 Old Canterbury Rd)
 1. **The live page traced three houses as one roof.** Neighbouring houses
    have similar tiled roofs with only a shaded side passage between them.
