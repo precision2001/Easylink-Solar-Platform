@@ -1045,6 +1045,17 @@ export const DesignsSolarPanelStepContent = forwardRef<
       return;
     }
     if (didHydrateFromReduxRef.current) return;
+    // A stored design with no roof and no panels (an empty save, or a draft
+    // from before the roof was traced) has nothing to restore. Restoring it
+    // left the page out of edit mode with no roof, so the green Save Roof
+    // button never showed (134 Old Canterbury Rd, 29 Oct 2026); start the
+    // editor with the roof found instead.
+    if (
+      solarDesignFromStore.savedRoofs.length === 0 &&
+      (solarDesignFromStore.generatedPanels?.length ?? 0) === 0
+    ) {
+      return;
+    }
     didHydrateFromReduxRef.current = true;
     setSavedRoofs(solarDesignFromStore.savedRoofs);
     setGeneratedPanels(solarDesignFromStore.generatedPanels);
