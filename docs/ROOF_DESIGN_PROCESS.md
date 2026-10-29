@@ -107,6 +107,20 @@ write down what happened, why, and what changed in the code.
 8. **Scale (screenshots only).** Fit the image's face centres to Google's
    face centres (lat/lng) to get metres per pixel. This came out at
    0.0242–0.0252 m/px for the Bombay St screenshots.
+9. **Beautify Design (optional).** `beautify.py sections.json out.json`
+   lays each section out for looks and access after the normal packer has
+   shown the most the roof holds:
+   - one shared grid per section, so columns line up;
+   - strips of 2 rows, with an access gap every 20 columns and a 0.8 m
+     walkway between strips;
+   - only full rectangles kept (ragged ends trimmed), blocks under 8
+     panels dropped, the grid centred for even margins;
+   - neighbouring sections use the same row direction where their edges
+     allow, so strips run parallel across the roof.
+   The 100 mm setback, one orientation and one-section rules still apply.
+   On UTS Block A: 908 panels in strips (400 kW) against 1,511 packed
+   (665 kW). The walkways also give access for maintenance and the wind
+   edge zones that commercial roofs need.
 
 ## Lessons log
 
@@ -517,6 +531,7 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
 - `find-obstructions.py roofs/x.json crop.png out.png [--thr]`: every dark spot (vent, fan, antenna) and thin line (level difference) inside the faces, for review (step 6).
 - `check-eaves.py roofs/x.json crop.png [--metal]`: where the tiles or sheets end across every eave (step 5).
 - `live-pipeline.ts <lat> <lng> <outDir>` (set GKEY, NODE_USE_ENV_PROXY=1 in the workspace) and `live-draw.py <outDir>`: run and draw the live page's pipeline on Google data.
+- `beautify.py sections.json out.json [--rows --cols --walk --orient --min-block]`: Beautify Design (step 9).
 - `local-contrast.py x0 y0 x1 y1 scale out.png`: local-contrast gridded view for white or grey metal roofs.
 - `layout.ts`: packs the faces with the live site's packer (all rules,
   obstructions), in portrait and landscape.
