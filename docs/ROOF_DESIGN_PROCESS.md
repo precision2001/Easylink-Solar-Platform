@@ -48,6 +48,16 @@ write down what happened, why, and what changed in the code.
    On the site, faces from the height model are filled out to the outline
    on the 3 cm grid (`fillFacesOnRoofs`), with each face's rows following its
    own eave.
+   **4a. Street View (every design).** Fetch the street-side view: the
+   Street View Static API with `location=<address>&source=outdoor`
+   (metadata call free; image about 1c). It confirms what the satellite
+   view can't show:
+   - gables versus hips;
+   - tile versus metal, and lower roofs (bays, verandahs, awnings);
+   - steepness;
+   - antennas and chimneys.
+   It only shows the street side and can be years old, so it confirms;
+   the satellite image still decides the faces.
    **4b. Confirm with Google (never decide with it).** Run
    `confirm-google.py roofs/x.json`:
    - Each Google segment centre must fall inside one image face, with its
@@ -101,6 +111,21 @@ write down what happened, why, and what changed in the code.
 ## Lessons log
 
 Newest first. Add an entry whenever a design comes out wrong.
+
+### 2026-10-29 — 134 Old Canterbury Rd, Summer Hill (dark-tile hip roof) and Street View
+1. **Street View is now part of every design (step 4a).** On 8 Temple St,
+   Stanmore, it showed what the satellite view hid: a front gable over a
+   bay window with a green metal roof, and a metal verandah. Those were
+   the dashed lines the live page had packed panels across. On 134 Old
+   Canterbury Rd it confirmed a hip end to the street and no lower roofs.
+2. **The eave check failed on dark brown tiles.** These tiles score about
+   +30 on red minus green, below the default threshold of 35 (set for
+   terracotta), so every eave read 0.3–0.6 m "inside". Fix: measure a row
+   across the eave first, then use `--rg 12` for dark tiles. With that,
+   all four eaves were confirmed within 50 mm.
+3. **Four faces** (N and S hip ends, E and W faces), confirmed by Google
+   within 3° and 0.1% of area. Result: 56 landscape (24.6 kW) or 48
+   portrait (21.1 kW), three-phase.
 
 ### 2026-10-28 — Live Designs page: obstruction finder, spike fix, no loading rectangle
 1. **Loading rectangle.** Google's building box was drawn as a cyan
