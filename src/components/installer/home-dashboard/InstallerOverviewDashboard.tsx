@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { InstallerAccountTabs } from "@/components/installer/dashboard/InstallerAccountTabs";
 import { useAppSelector } from "@/lib/store/hooks";
 
 /**
@@ -131,6 +132,8 @@ export function InstallerOverviewDashboard() {
           Review 3 job offers
         </span>
       </div>
+
+      <InstallerAccountTabs active="overview" />
 
       <div className="rounded-[16px] bg-gradient-to-br from-[#FFE866] to-[#F68A0A] p-0.5">
         <div className="flex flex-wrap items-center gap-3.5 rounded-[14px] bg-[#0B1A2E] px-[18px] py-3.5 text-white">

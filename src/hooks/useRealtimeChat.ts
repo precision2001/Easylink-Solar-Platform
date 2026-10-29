@@ -389,11 +389,17 @@ export function useRealtimeChat(
 
   const contacts = useMemo(
     () =>
-      peers.map((p) => ({
-        id: p.id,
-        displayName: peerLabel(p),
-      })),
-    [peers],
+      peers.map((p) => {
+        const row = conversations.find((c) =>
+          role === "CUSTOMER" ? c.installerId === p.id : c.customerId === p.id,
+        );
+        return {
+          id: p.id,
+          displayName: peerLabel(p),
+          lastMessage: row?.lastMessage ?? null,
+        };
+      }),
+    [conversations, peers, role],
   );
 
   const activeContactName = useMemo(() => {

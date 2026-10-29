@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { ConversationSwitcher } from "@/components/customer/messages/ConversationSwitcher";
 import { ChatThreadHeader } from "@/components/customer/messages/ChatThreadHeader";
 import { MessageRichComposer } from "@/components/customer/messages/MessageRichComposer";
@@ -35,6 +35,12 @@ type Props = {
     init?: RequestInit,
   ) => Promise<Response>;
   user: CustomerUser | null;
+  /**
+   * Told which peer is active, so a page rendering context alongside the
+   * thread doesn't have to open a second `useRealtimeChat` — that would mean
+   * a duplicate WebSocket and a second LiveKit signaling path.
+   */
+  onActiveContactChange?: (contact: { id: string; name: string } | null) => void;
 };
 
 function displayName(u: CustomerUser | null) {
@@ -49,10 +55,20 @@ export function PortalRealtimeMessagesPanel({
   portal,
   sessionFetch,
   user,
+  onActiveContactChange,
 }: Props) {
   const chat = useRealtimeChat(portal, sessionFetch, user);
 
   const userDisplayName = useMemo(() => displayName(user), [user]);
+
+  const activeContactId = chat.activePeerId ?? chat.contacts[0]?.id ?? null;
+  const activeContactLabel = chat.activeContactName;
+
+  useEffect(() => {
+    onActiveContactChange?.(
+      activeContactId ? { id: activeContactId, name: activeContactLabel } : null,
+    );
+  }, [activeContactId, activeContactLabel, onActiveContactChange]);
 
   const threadHeading = useMemo(
     () =>

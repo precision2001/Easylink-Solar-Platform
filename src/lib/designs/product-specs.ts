@@ -122,3 +122,46 @@ export function systemSizeKwFrom(
 
   return (count * wattage) / 1000;
 }
+
+/** STC rules stop crediting a system once panel DC exceeds this much of inverter AC. */
+export const STC_PANEL_INVERTER_LIMIT_PCT = 133;
+
+export type PanelInverterRatio = {
+  pct: number;
+  overLimit: boolean;
+  /** Largest panel count that still sits inside the limit. */
+  maxPanels: number;
+  message: string;
+};
+
+/**
+ * Panel-to-inverter ratio against the STC limit. Oversizing panels past it
+ * costs the customer their rebate, so the design card warns before a quote
+ * goes out. Returns undefined when either side is unknown — an assumed
+ * wattage or inverter rating would give a confidently wrong verdict.
+ */
+export function panelInverterRatio(
+  panelItem: SpecLineItem,
+  inverterItem: SpecLineItem,
+  panelCount: number | null | undefined,
+): PanelInverterRatio | undefined {
+  const panelKw = systemSizeKwFrom(panelItem, panelCount);
+  const inverterKw = inverterRatedKw(inverterItem);
+  const wattage = panelItem?.product?.wattage;
+  if (!panelKw || !inverterKw || !wattage) return undefined;
+
+  const pct = Math.round((panelKw / inverterKw) * 100);
+  const overLimit = pct > STC_PANEL_INVERTER_LIMIT_PCT;
+  const maxPanels = Math.floor(
+    (inverterKw * (STC_PANEL_INVERTER_LIMIT_PCT / 100) * 1000) / wattage,
+  );
+
+  return {
+    pct,
+    overLimit,
+    maxPanels,
+    message: overLimit
+      ? `Panels are ${pct}% of inverter size. STC rules allow up to ${STC_PANEL_INVERTER_LIMIT_PCT}%, so reduce to ${maxPanels} panels or use a larger inverter.`
+      : `Panel-to-inverter ratio is within the ${STC_PANEL_INVERTER_LIMIT_PCT}% STC limit.`,
+  };
+}

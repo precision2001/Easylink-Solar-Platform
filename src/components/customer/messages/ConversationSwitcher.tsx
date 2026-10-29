@@ -34,6 +34,11 @@ export function ConversationSwitcher({
               key={c.id}
               type="button"
               onClick={() => onSelect(c.id)}
+              title={
+                c.lastMessage
+                  ? `${c.displayName}: ${c.lastMessage.body}`
+                  : c.displayName
+              }
               className={`flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors sm:flex-initial sm:px-3 ${
                 active
                   ? "customer-chip-active"

@@ -50,6 +50,7 @@ export function MasterAiSuggestCard({
   primary = "Approve",
   mode = "approve",
   dec,
+  decisionsHref = "/master/decision-records",
 }: {
   agent: string;
   title: string;
@@ -59,6 +60,8 @@ export function MasterAiSuggestCard({
   primary?: string;
   mode?: AiSuggestMode;
   dec: string;
+  /** Where "Why? / Decision <id>" links — the portal's own decision log. */
+  decisionsHref?: string;
 }) {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
@@ -140,10 +143,7 @@ export function MasterAiSuggestCard({
           >
             Undo
           </button>
-          <Link
-            href="/master/decision-records"
-            className="text-[12px] font-semibold text-current"
-          >
+          <Link href={decisionsHref} className="text-[12px] font-semibold text-current">
             Decision {dec}
           </Link>
         </div>
@@ -173,7 +173,7 @@ export function MasterAiSuggestCard({
             {mode === "info" ? "Dismiss" : "Reject"}
           </button>
           <Link
-            href="/master/decision-records"
+            href={decisionsHref}
             className="ml-auto text-[13px] font-semibold text-[#1565C0]"
           >
             Why? {dec}

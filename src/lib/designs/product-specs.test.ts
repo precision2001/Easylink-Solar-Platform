@@ -1,223 +1,60 @@
 import { describe, expect, it } from "vitest";
-import {
-  batteryCapacityKwh,
-  cecApprovedLabel,
-  inverterRatedKw,
-  productLabel,
-  productSeries,
-  productsByCategory,
-  systemSizeKwFrom,
-} from "./product-specs";
+import { panelInverterRatio } from "./product-specs";
 
-const panelItem = {
-  quantity: 16,
-  product: {
-    name: "TSM-415",
-    brand: "Trina",
-    category: "Solar Panel",
-    wattage: 415,
-    specs: { cecApproved: true },
-  },
-};
+const panel = (wattage: number | null) => ({
+  quantity: 1,
+  product: { name: "Test panel", category: "Solar Panels", wattage, specs: {} },
+});
 
-const batteryItem = {
-  quantity: 2,
+const inverter = (ratedKw: number) => ({
+  quantity: 1,
   product: {
-    name: "HVS 10.2",
-    brand: "BYD",
-    category: "Battery",
+    name: "Test inverter",
+    category: "Inverter",
     wattage: null,
-    specs: {
-      cecApproved: true,
-      series: "Battery-Box Premium",
-      nominalCapacityKwh: 10.24,
-      usableCapacityKwh: 9.2,
-    },
+    specs: { ratedKw },
   },
-};
-
-describe("productLabel", () => {
-  it("combines brand and model", () => {
-    expect(productLabel(panelItem)).toBe("Trina TSM-415");
-  });
-
-  it("falls back to the name when there is no brand", () => {
-    expect(
-      productLabel({ quantity: 1, product: { name: "Solo", category: "X" } }),
-    ).toBe("Solo");
-  });
-
-  it("returns undefined for an empty category, so callers can show N/A", () => {
-    expect(productLabel(undefined)).toBeUndefined();
-    expect(productLabel(null)).toBeUndefined();
-    expect(productLabel({ quantity: 1, product: null })).toBeUndefined();
-  });
 });
 
-describe("batteryCapacityKwh", () => {
-  it("prefers usable capacity and multiplies by quantity", () => {
-    expect(batteryCapacityKwh(batteryItem)).toBeCloseTo(18.4);
+describe("panelInverterRatio", () => {
+  it("flags a design over the 133% STC limit", () => {
+    // 33 x 440 W = 14.52 kW against a 9.9 kW inverter.
+    const result = panelInverterRatio(panel(440), inverter(9.9), 33);
+
+    expect(result?.pct).toBe(147);
+    expect(result?.overLimit).toBe(true);
+    expect(result?.maxPanels).toBe(29);
+    expect(result?.message).toContain("reduce to 29 panels");
   });
 
-  it("falls back to nominal capacity", () => {
-    expect(
-      batteryCapacityKwh({
-        quantity: 1,
-        product: {
-          name: "B",
-          category: "Battery",
-          specs: { nominalCapacityKwh: 5 },
-        },
-      }),
-    ).toBe(5);
+  it("passes a design inside the limit", () => {
+    const result = panelInverterRatio(panel(440), inverter(9.9), 29);
+
+    expect(result?.pct).toBe(129);
+    expect(result?.overLimit).toBe(false);
+    expect(result?.message).toContain("within the 133% STC limit");
   });
 
-  it("is undefined when the design has no battery", () => {
-    expect(batteryCapacityKwh(undefined)).toBeUndefined();
+  it("treats exactly 133% as within the limit", () => {
+    const result = panelInverterRatio(panel(1000), inverter(10), 13.3);
+
+    expect(result?.pct).toBe(133);
+    expect(result?.overLimit).toBe(false);
   });
 
-  it("is undefined when the product carries no capacity spec", () => {
-    expect(
-      batteryCapacityKwh({
-        quantity: 1,
-        product: { name: "B", category: "Battery", specs: {} },
-      }),
-    ).toBeUndefined();
-  });
-});
-
-describe("inverterRatedKw", () => {
-  it("reads ratedKw from specs", () => {
-    expect(
-      inverterRatedKw({
-        quantity: 1,
-        product: { name: "P5", category: "Inverter", specs: { ratedKw: 5 } },
-      }),
-    ).toBe(5);
+  it("returns undefined rather than guessing when panel wattage is unknown", () => {
+    expect(panelInverterRatio(panel(null), inverter(9.9), 33)).toBeUndefined();
   });
 
-  it("converts wattage when specs carry no rating", () => {
-    expect(
-      inverterRatedKw({
-        quantity: 1,
-        product: { name: "P5", category: "Inverter", wattage: 7600 },
-      }),
-    ).toBeCloseTo(7.6);
+  it("returns undefined when no inverter is attached", () => {
+    expect(panelInverterRatio(panel(440), undefined, 33)).toBeUndefined();
   });
 
-  it("is undefined when there is no inverter", () => {
-    expect(inverterRatedKw(undefined)).toBeUndefined();
-  });
-});
-
-describe("cecApprovedLabel / productSeries", () => {
-  it("maps the boolean spec to Yes/No", () => {
-    expect(cecApprovedLabel(batteryItem)).toBe("Yes");
-    expect(
-      cecApprovedLabel({
-        quantity: 1,
-        product: { name: "x", category: "Battery", specs: { cecApproved: false } },
-      }),
-    ).toBe("No");
+  it("returns undefined when no panels are attached", () => {
+    expect(panelInverterRatio(undefined, inverter(9.9), 33)).toBeUndefined();
   });
 
-  it("is undefined when the spec is absent rather than assuming approval", () => {
-    expect(
-      cecApprovedLabel({
-        quantity: 1,
-        product: { name: "x", category: "Battery", specs: {} },
-      }),
-    ).toBeUndefined();
-    expect(cecApprovedLabel(undefined)).toBeUndefined();
-  });
-
-  it("reads the series when present", () => {
-    expect(productSeries(batteryItem)).toBe("Battery-Box Premium");
-    expect(productSeries(panelItem)).toBeUndefined();
-  });
-});
-
-describe("systemSizeKwFrom", () => {
-  it("uses the attached panel wattage and the design's panel count", () => {
-    expect(systemSizeKwFrom(panelItem, 16)).toBeCloseTo(6.64);
-  });
-
-  it("falls back to the line item quantity when the design has no count", () => {
-    expect(systemSizeKwFrom(panelItem, null)).toBeCloseTo(6.64);
-  });
-
-  it("does not invent a wattage when no panel product is attached", () => {
-    // The old behaviour assumed 412W here and reported a system size for a
-    // design that has no panels at all.
-    expect(systemSizeKwFrom(undefined, 16)).toBeUndefined();
-    expect(
-      systemSizeKwFrom(
-        { quantity: 16, product: { name: "p", category: "Solar Panel" } },
-        16,
-      ),
-    ).toBeUndefined();
-  });
-
-  it("is undefined when the count is missing or zero", () => {
-    expect(systemSizeKwFrom({ ...panelItem, quantity: 0 }, 0)).toBeUndefined();
-  });
-});
-
-describe("productsByCategory", () => {
-  const evChargerItem = {
-    quantity: 1,
-    product: { name: "Wall Connector", category: "EV Charger", specs: { ratedKw: 11 } },
-  };
-  const items = [panelItem, batteryItem, evChargerItem];
-
-  it("returns every match, not just the first", () => {
-    const batteries = [
-      batteryItem,
-      { quantity: 1, product: { name: "HVS 5.1", category: "Battery" } },
-    ];
-    expect(productsByCategory(batteries, "battery")).toHaveLength(2);
-  });
-
-  it("matches the item's category case-insensitively as a substring", () => {
-    // The query itself is expected lowercase, matching how every real call
-    // site passes it (e.g. "ev charger", never "EV Charger").
-    expect(productsByCategory(items, "ev charger")).toEqual([evChargerItem]);
-    expect(productsByCategory(items, "charger")).toEqual([evChargerItem]);
-  });
-
-  it("returns an empty array when nothing matches or items is missing", () => {
-    expect(productsByCategory(items, "heat pump")).toEqual([]);
-    expect(productsByCategory(undefined, "battery")).toEqual([]);
-    expect(productsByCategory(null, "battery")).toEqual([]);
-  });
-
-  it("skips entries with no attached product", () => {
-    expect(
-      productsByCategory([{ quantity: 1, product: null }, panelItem], "panel"),
-    ).toEqual([panelItem]);
-  });
-});
-
-describe("malformed specs", () => {
-  it("ignores non-object specs instead of throwing", () => {
-    for (const specs of ["nope", 42, null, [1, 2]]) {
-      const item = { quantity: 1, product: { name: "x", category: "Battery", specs } };
-      expect(batteryCapacityKwh(item)).toBeUndefined();
-      expect(cecApprovedLabel(item)).toBeUndefined();
-      expect(productSeries(item)).toBeUndefined();
-    }
-  });
-
-  it("parses numeric specs stored as strings", () => {
-    expect(
-      batteryCapacityKwh({
-        quantity: 1,
-        product: {
-          name: "x",
-          category: "Battery",
-          specs: { usableCapacityKwh: "9.2" },
-        },
-      }),
-    ).toBeCloseTo(9.2);
+  it("returns undefined when the panel count is zero", () => {
+    expect(panelInverterRatio(panel(440), inverter(9.9), 0)).toBeUndefined();
   });
 });

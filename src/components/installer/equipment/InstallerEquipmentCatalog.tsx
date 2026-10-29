@@ -132,6 +132,90 @@ function getCecDates(product: InstallerProductSummary): {
   return { approved, expires };
 }
 
+/** The headline spec for a product, in the units its category is measured in. */
+function keySpecLabel(product: InstallerProductSummary): string {
+  const category = product.category as CategoryKey;
+  if (category === "Solar Panel" && product.wattage) return `${product.wattage} W`;
+  if (category === "Inverter" || category === "EV Charger") {
+    const kw = getRatedKw(product);
+    return kw ? `${kw} kW` : "—";
+  }
+  if (category === "Battery") {
+    const kwh = getCapacityKwh(product);
+    return kwh ? `${kwh} kWh` : "—";
+  }
+  if (category === "Heat Pump") {
+    const litres = getCapacityL(product);
+    return litres ? `${litres} L` : "—";
+  }
+  return "—";
+}
+
+/**
+ * Table view of the same catalogue, matching the Easylink Designer
+ * "Equipment & datasheets" artboard. The artboard also lists SKU, stock and a
+ * datasheet link per row; the products API carries none of those, so those
+ * columns are left out rather than filled with placeholders.
+ */
+function ProductTable({ products }: { products: InstallerProductSummary[] }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-warm-border bg-white">
+      <table className="w-full min-w-[720px] border-collapse font-inter text-[13px]">
+        <thead>
+          <tr className="text-left text-warm-gray">
+            <th className="border-b border-warm-border p-2.5 font-semibold">Type</th>
+            <th className="border-b border-warm-border p-2.5 font-semibold">Model</th>
+            <th className="border-b border-warm-border p-2.5 font-semibold">Brand</th>
+            <th className="border-b border-warm-border p-2.5 font-semibold">Key spec</th>
+            <th className="border-b border-warm-border p-2.5 font-semibold">CEC</th>
+            <th className="border-b border-warm-border p-2.5 text-right font-semibold">
+              Indicative price
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {products.map((product) => {
+            const { approved } = getCecDates(product);
+            const meta =
+              CATEGORY_TABS.find((t) => t.key === product.category) ??
+              CATEGORY_TABS[0];
+            return (
+              <tr key={product.id}>
+                <td className="border-b border-cream-150 p-2.5">
+                  <span className="rounded-full bg-cream-50 px-2 py-0.5 text-[12px] font-semibold text-warm-ink">
+                    {meta.label}
+                  </span>
+                </td>
+                <td className="border-b border-cream-150 p-2.5 font-semibold text-warm-ink">
+                  {product.name}
+                </td>
+                <td className="border-b border-cream-150 p-2.5 text-warm-gray">
+                  {product.brand || "—"}
+                </td>
+                <td className="border-b border-cream-150 p-2.5 text-warm-ink">
+                  {keySpecLabel(product)}
+                </td>
+                <td className="border-b border-cream-150 p-2.5">
+                  {approved ? (
+                    <span className="rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[12px] font-bold text-[#166534]">
+                      Approved
+                    </span>
+                  ) : (
+                    <span className="text-warm-gray">—</span>
+                  )}
+                </td>
+                <td className="border-b border-cream-150 p-2.5 text-right font-semibold text-warm-ink">
+                  {formatCurrency(product.basePrice)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ProductCard({ product }: { product: InstallerProductSummary }) {
   const category = product.category as CategoryKey;
   const meta = CATEGORY_TABS.find((t) => t.key === category) ?? CATEGORY_TABS[0];
@@ -218,6 +302,7 @@ export function InstallerEquipmentCatalog() {
   const [brandInput, setBrandInput] = useState("");
   const [page, setPage] = useState(1);
   const [activeOnly, setActiveOnly] = useState(true);
+  const [view, setView] = useState<"cards" | "table">("cards");
 
   const debouncedSearch = useDebouncedValue(searchInput.trim(), 300);
   const debouncedBrand = useDebouncedValue(brandInput.trim(), 300);
@@ -358,6 +443,28 @@ export function InstallerEquipmentCatalog() {
           />
           Active only
         </label>
+        <div
+          role="group"
+          aria-label="View"
+          className="flex shrink-0 gap-1 rounded-lg border border-warm-border bg-cream-50 p-1"
+        >
+          {(["cards", "table"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={view === v}
+              onClick={() => setView(v)}
+              className={classNames(
+                "rounded-md px-2.5 py-1 font-inter text-[12px] font-semibold",
+                view === v
+                  ? "bg-warm-ink text-white"
+                  : "text-warm-gray hover:text-warm-ink",
+              )}
+            >
+              {v === "cards" ? "Cards" : "Table"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {filterChips.length ? (
@@ -422,6 +529,8 @@ export function InstallerEquipmentCatalog() {
             Try a different category or clear the filters.
           </p>
         </div>
+      ) : view === "table" ? (
+        <ProductTable products={products} />
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {products.map((product) => (
