@@ -126,6 +126,22 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-29 — 24 Derwent St, Glebe (attached row houses)
+1. **The live page put panels on two neighbouring houses.** Terraces share
+   one continuous metal roof, and the NSW lot (Lot 72 DP246732, 433 m²)
+   covers several houses, so the lot boundary cannot separate them.
+2. **Party walls decide the house.** The owner marked the walls between the
+   houses; they line up with the front fences in Street View and the
+   side-wall shadows on the roof. The house is the 4.7 m strip between two
+   walls, with the pin in it. The strip was straightened to read the faces:
+   - front main roof facing the street (NE);
+   - a small back slope, too small for panels;
+   - the rear wing facing NW.
+   These match Google's segments in the strip.
+   Obstructions: the vent and the two skylights.
+3. **Result:** 27 landscape (11.9 kW) or 23 portrait (10.1 kW), all inside
+   the house's own walls.
+
 ### 2026-10-29 — UTS Block A, Haymarket (large flat commercial roof)
 1. **The live page treats one big building as one roof.** Its outline took
    in the courtyard trees, rooftop plant and lower sections. A building
