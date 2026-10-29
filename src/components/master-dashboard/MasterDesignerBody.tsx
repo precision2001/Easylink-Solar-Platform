@@ -13,7 +13,6 @@ import {
   type BatteryMode,
   type Period,
   type Role,
-  STC_PRICE,
   STEP_NAMES,
   TIERS,
   defaultsFor,
@@ -22,13 +21,17 @@ import {
   importCurve,
   lifetimeSavings,
   money,
-  priceSystem,
   profileFor,
   recommendedBattery,
   simulate,
   yearlyConsumption,
 } from "@/lib/designer/simulation";
 import { dcAcLimitLabel, dcAcLimitPercent } from "@/lib/designer/designRules";
+import { useProposalPricing } from "@/lib/proposal/useProposalPricing";
+
+/** Designer panel tiers → proposal tiers in the price book. */
+const DESIGNER_TIER: Record<string, string> = { std: "standard", prem: "premium", black: "allBlack" };
+const DESIGNER_TIER_IDS = Object.values(DESIGNER_TIER);
 
 /**
  * Matches the Easylink Designer "Solar designer" mock (DesignerBody.dc.html)
@@ -188,8 +191,15 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const expC = exportIncome * f;
   const billCost = supplyC + gridC - expC;
 
-  const pricing = priceSystem({ arrayKw, panels, battery, tier, ratioPercent: ratio, limitPercent: limitPct });
-  const payback = yearly > 0 ? pricing.total / yearly : 0;
+  // Prices from the pricing engine v2 (backend price book), as on the website.
+  const priced = useProposalPricing(panels, DESIGNER_TIER[tier] ?? "standard", battery, [], DESIGNER_TIER_IDS);
+  const quote = priced.data?.selected ?? null;
+  const pricing = {
+    total: quote ? quote.net : 0,
+    solarStcs: quote?.stcLines.filter((l) => l.label.startsWith("Solar")).reduce((t, l) => t + l.count, 0) ?? 0,
+    batteryStcs: quote?.stcLines.filter((l) => l.label.startsWith("Battery")).reduce((t, l) => t + l.count, 0) ?? 0,
+  };
+  const payback = yearly > 0 && quote ? pricing.total / yearly : 0;
   const save25 = lifetimeSavings(yearly) - pricing.total;
 
   const blocked = ratio > limitPct || panels > p.roofMax;
@@ -326,15 +336,13 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
 
   /* ---------------- step 8 ---------------- */
 
-  const priceLines: [string, string][] = [
-    [`Solar · ${kwdc} kW installed`, money(pricing.solarGross)],
-    [`Battery · ${battery} kWh installed`, money(pricing.batteryGross)],
-    [`Solar STC discount · ${pricing.solarStcs} STCs`, `−${money(pricing.solarStcs * STC_PRICE)}`],
-    [
-      `Battery STC discount · ${pricing.batteryStcs} STCs${battery > 50 ? " (first 50 kWh)" : ""}`,
-      `−${money(pricing.batteryStcs * STC_PRICE)}`,
-    ],
-  ];
+  const priceLines: [string, string][] = quote
+    ? [
+        [`Equipment · ${quote.items.map((i) => (i.qty > 1 ? `${i.qty} × ${i.item}` : i.item)).join(", ")}`, money(quote.itemTotal)],
+        [`Installation · ${quote.arrayKw.toFixed(2)} kW${quote.battery ? ` + ${quote.battery.kwh} kWh` : ""}`, money(quote.installTotal)],
+        ...quote.stcLines.map((l): [string, string] => [`${l.label.split(":")[0]} discount · ${l.count} STCs`, `−${money(l.value)}`]),
+      ]
+    : [[priced.error ? "Pricing is unavailable just now" : "Working out the price…", priced.error ? "Price on request" : "…"]];
   if (ev || heatPump) {
     priceLines.push([
       `${ev ? "EV charger" : ""}${ev && heatPump ? " and " : ""}${heatPump ? "heat pump" : ""} · quoted by your installer`,
@@ -346,20 +354,21 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const newMonth = curMonth - yearly / 12;
 
   const details: [string, string, string][] = [
+    ["Panels", `${quote?.panel ? quote.items[0]?.qty ?? panels : panels} × ${quote?.panel?.model ?? `${TIERS[tier].n} panel`}`, quote?.panel ? `${quote.panel.w} W` : ""],
     [
-      "Panels",
-      `${panels} × ${tier === "prem" ? "AXITEC AC-440TGB/108BBA" : `${TIERS[tier].n} 440 W [model]`}`,
-      tier === "prem" ? "PNL-AX440" : "add to price list",
+      "Inverter",
+      quote?.battery?.inverterBuiltIn
+        ? `Built into ${quote.battery.model}`
+        : (quote?.inverter?.model ?? inverter.name),
+      quote?.inverter ? `${quote.inverter.kw} kW · ${quote.inverter.phase}-phase` : "",
     ],
-    ["Inverter", inverter.name, inverter.sku],
     [
       "Battery",
       battery > 0
-        ? BATTERIES[batterySel] && BATTERIES[batterySel].kwh === battery
-          ? BATTERIES[batterySel].name
-          : `${battery} kWh · pick a model`
+        ? (quote?.battery?.model ??
+          (BATTERIES[batterySel] && BATTERIES[batterySel].kwh === battery ? BATTERIES[batterySel].name : `${battery} kWh · pick a model`))
         : "None",
-      battery > 0 && BATTERIES[batterySel] ? BATTERIES[batterySel].sku : "",
+      quote?.battery ? `${quote.battery.kwh} kWh usable` : "",
     ],
   ];
   if (ev) details.push(["EV charger", "myenergi zappi v2 · 7 kW", "EVC-ZAP7"]);
@@ -1419,7 +1428,11 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
                 <div role="radiogroup" aria-label="Panel tier" className="grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
                   {Object.entries(TIERS).map(([k, t]) => {
                     const on = k === tier;
-                    const delta = t.per * panels;
+                    const totals = priced.data?.tierTotals ?? {};
+                    const mine = totals[DESIGNER_TIER[k]];
+                    const current = totals[DESIGNER_TIER[tier]];
+                    const delta = mine != null && current != null ? Math.round(mine - current) : 0;
+                    const info = priced.data?.tierInfo?.[DESIGNER_TIER[k]];
                     return (
                       <button
                         key={k}
@@ -1440,11 +1453,13 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
                           </span>
                         </span>
                         <span className="text-[12px]" style={{ color: SLATE }}>
-                          {t.d}
+                          {info ? `${info.w} W · ${info.model}` : t.d}
                         </span>
                         <strong className="text-[13px]">
-                          {delta === 0
-                            ? "Included"
+                          {on
+                            ? "Selected"
+                            : delta === 0
+                            ? "Same price"
                             : `${delta > 0 ? "+" : "−"}$${Math.abs(delta).toLocaleString("en-AU")}`}
                         </strong>
                       </button>
