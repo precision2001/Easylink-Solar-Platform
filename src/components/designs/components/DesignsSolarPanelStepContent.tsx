@@ -38,6 +38,7 @@ import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineC
 import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
 import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
 import { StreetViewThumb } from "./StreetViewThumb";
+import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
 import {
   DESIGN_RULES,
   inverterSizingFor,
@@ -681,6 +682,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
   const [panelOrientation, setPanelOrientation] = useState<PanelOrientation>(
     DESIGN_RULES.defaultOrientation,
   );
+  /** Beautify Design: panels in aligned, symmetric blocks instead of the most that fit. */
+  const [beautified, setBeautified] = useState(false);
 
   const { data, loading, error, retry } = useSolarEstimate(selectedLocation);
   const {
@@ -1130,6 +1133,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
   const handleEditClick = useCallback(() => {
     if (!selectedLocation) return;
     setIsEditing(true);
+    setBeautified(false);
     if (savedRoofs.length > 0) {
       // Already-saved shapes — the installer confirmed these (or drew them)
       // before, so there's nothing new to flag.
@@ -1265,6 +1269,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     (
       paths: google.maps.LatLngLiteral[][],
       orientation: PanelOrientation,
+      beautify = false,
     ): SolarPanel[] | null => {
       if (!data?.panelDimensions) return null;
       // Face rule: find each roof's faces (height model, else hip split) and
@@ -1276,14 +1281,12 @@ export const DesignsSolarPanelStepContent = forwardRef<
         (best, p) => (p.length >= 3 && (!best || ringAreaM2(p) > ringAreaM2(best)) ? p : best),
         null,
       );
-      return dedupeSolarPanels(
-        generatePanelsForFaces(
-          faces,
-          data.panelDimensions,
-          { orientation, pitchDeg: roofPitchDeg, obstructions: obstructions.map((o) => o.ring) },
-          largest ? longestEdgeAngleDegrees(largest) : undefined,
-        ),
-      );
+      const axis = largest ? longestEdgeAngleDegrees(largest) : undefined;
+      const layoutOptions = { orientation, pitchDeg: roofPitchDeg, obstructions: obstructions.map((o) => o.ring) };
+      if (beautify) {
+        return dedupeSolarPanels(beautifyPanelsForFaces(faces, data.panelDimensions, layoutOptions, axis));
+      }
+      return dedupeSolarPanels(generatePanelsForFaces(faces, data.panelDimensions, layoutOptions, axis));
     },
     [data?.panelDimensions, facesFor, roofPitchDeg],
   );
@@ -1374,11 +1377,12 @@ export const DesignsSolarPanelStepContent = forwardRef<
       if (next === panelOrientation) return;
       setPanelOrientation(next);
       if (isEditing || savedRoofs.length === 0) return;
-      const panels = layoutPanels(savedRoofs, next);
+      const panels = layoutPanels(savedRoofs, next, beautified);
       setGeneratedPanels(panels);
       persistSolarDesign(savedRoofs, panels, polygonTotalAreaM2 ?? 0, next);
     },
     [
+      beautified,
       isEditing,
       layoutPanels,
       panelOrientation,
@@ -1387,6 +1391,17 @@ export const DesignsSolarPanelStepContent = forwardRef<
       savedRoofs,
     ],
   );
+
+  /** Beautify on/off: re-lays the saved roofs in aligned blocks, or back to the most that fit. */
+  const handleBeautifyToggle = useCallback(() => {
+    if (isEditing || savedRoofs.length === 0) return;
+    const next = !beautified;
+    const panels = layoutPanels(savedRoofs, panelOrientation, next);
+    setBeautified(next);
+    setGeneratedPanels(panels);
+    setPanelCountInput("");
+    persistSolarDesign(savedRoofs, panels, polygonTotalAreaM2 ?? 0, panelOrientation);
+  }, [beautified, isEditing, layoutPanels, panelOrientation, persistSolarDesign, polygonTotalAreaM2, savedRoofs]);
 
   const handleSave = useCallback(() => {
     /* Read final paths from imperative polygon refs (user may have dragged vertices),
@@ -1441,6 +1456,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     let panelsToPersist: SolarPanel[] | null = null;
     setIsGeneratingPanels(true);
     try {
+      setBeautified(false);
       panelsToPersist = layoutPanels(validPaths, panelOrientation);
       setGeneratedPanels(panelsToPersist);
     } finally {
@@ -1967,6 +1983,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   </button>
                 </>
               ) : (
+                <>
+                <button
+                  type="button"
+                  onClick={handleBeautifyToggle}
+                  disabled={!(generatedPanels && generatedPanels.length > 0)}
+                  aria-pressed={beautified}
+                  title={
+                    generatedPanels && generatedPanels.length > 0
+                      ? beautified
+                        ? "Back to the most panels that fit"
+                        : "Arrange the panels in neat, aligned blocks"
+                      : "Place panels on the roof first"
+                  }
+                  className={`beautify-btn h-[33px] rounded-[6px] px-[16px] font-inter text-[13px] font-extrabold tracking-[0.2px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    beautified ? "bg-black/80 ring-2 ring-[#F5C542]" : "bg-black/60 hover:bg-black/75"
+                  }`}
+                >
+                  <span className="beautify-glitter">✦ Beautify</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleEditClick}
@@ -1975,6 +2010,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
                 >
                   {DESIGNS_SOLAR_PANEL_STEP.mapActions.primary}
                 </button>
+                </>
               )}
             </div>
 

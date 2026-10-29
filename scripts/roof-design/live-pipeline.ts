@@ -14,6 +14,7 @@ import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { findRoofObstructions } from "@/lib/designer/roofObstructions";
+import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
 
 const [lat, lng] = [Number(process.argv[2]), Number(process.argv[3])];
 const out = process.argv[4]; mkdirSync(out, { recursive: true });
@@ -45,8 +46,9 @@ async function get(url: string) { const r = await fetch(url); if (!r.ok) throw n
         const axis = longestEdgeAngleDegrees(outline[0]);
         const obs = process.env.NO_OBS ? [] : findRoofObstructions(snap.luma, corrected.faces.map((f: any) => f.ring));
         const obstructions = obs.map((o) => o.ring);
-        const P = generatePanelsForFaces(corrected.faces, dims, { orientation: "PORTRAIT", pitchDeg: 25, obstructions }, axis);
-        const L = generatePanelsForFaces(corrected.faces, dims, { orientation: "LANDSCAPE", pitchDeg: 25, obstructions }, axis);
+        const pack = process.env.BEAUTIFY ? beautifyPanelsForFaces : generatePanelsForFaces;
+        const P = pack(corrected.faces, dims, { orientation: "PORTRAIT", pitchDeg: 25, obstructions }, axis);
+        const L = pack(corrected.faces, dims, { orientation: "LANDSCAPE", pitchDeg: 25, obstructions }, axis);
         return { rawOutlines: snap.outlines.map((o) => o.ring), outline, faces: corrected.faces.map((f: any) => f.ring), obstructions, obsKinds: obs.map((o) => o.kind), panels: { PORTRAIT: P, LANDSCAPE: L } };
       })();
   const b = snapshotBounds(geo);
