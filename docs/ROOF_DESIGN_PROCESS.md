@@ -126,6 +126,35 @@ write down what happened, why, and what changed in the code.
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-30 — 25 Gilbert St, Colyton (dark-tile T/L hip roof): hand method put on the live page
+1. **Hand design:** the walls are square (14.8°), so the outline was drawn as
+   rectangles in the wall frame. Faces were then *computed*, not read: on a
+   square-walled, equal-pitch hip roof, a point belongs to the wall it is
+   nearest in the L-infinity sense, and ties at an inside corner go to the
+   wall whose own line is that far, which gives the 45° valley. All 8 faces
+   matched Google's 8 segments to within about 2.5 m² each. Result: 49 landscape.
+2. **Live finder, before the fix:** the colour trace leaked onto the NE
+   patio and the north lawn, the eaves were wavy, and the faces from the
+   2018 height model crossed the hips seen in the image.
+3. **Fix (`src/lib/designer/squareRoof.ts`):**
+   - The roof edge is found on 25 cm cells laid along the walls. A cell's
+     average colour allows a strict test.
+   - Parts the test drops are given back when only slightly off-colour (a
+     face in sun or shade), except where they stick out.
+   - Steps under 1 m, and small corner steps, are moved to the inner line.
+   - Hips are computed from the walls.
+   - The result is used only when Google's segments confirm it: the share
+     of roof facing each way must agree within 0.1, and the area must reach
+     at least 85% of Google's. Otherwise the old path runs, so gable roofs,
+     row houses and flat roofs are unchanged.
+4. **Checked on the earlier roofs:**
+   - Gilbert: 8 corners, 8 faces, 49 landscape, the same as by hand.
+   - 134 Old Canterbury Rd: square outline and hips matching the hand design.
+   - Frampton, Derwent, 57 Harry, 61 Harry and Frances: no change (not
+     confirmed, so the old path runs).
+5. **Street View** for Gilbert: the house is hidden by a street tree. The
+   hips were confirmed by Google's segments, which face 4 ways.
+
 ### 2026-10-29 — Terraces on the live page: Side walls tool, Street View facing the house
 1. **Automatic party-wall detection was tried and dropped.** The method:
    a brightness profile across the row, with the band around the pin taken

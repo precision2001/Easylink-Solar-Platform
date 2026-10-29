@@ -1,4 +1,5 @@
 import { rasterPixelOf, type GeoTiffBounds, type GeoTiffRaster } from "@/utils/geotiff";
+import { squareRoofOutline, type SquaredOutline } from "@/lib/designer/squareRoof";
 import { extractRoofOutlinesFromMask, type RoofOutline } from "@/utils/roofMaskContour";
 
 /**
@@ -65,6 +66,8 @@ export type RoofSnapshotAnalysis = {
   outlines: RoofOutline[];
   metresPerPixel: number;
   areaM2: number;
+  /** Square-walled outline drawn along the walls (see squareRoof.ts), when the roof is square-walled. */
+  squared?: SquaredOutline | null;
 };
 
 export type SnapshotOptions = {
@@ -476,6 +479,14 @@ export function analyseRoofSnapshot(
     outlines,
     metresPerPixel: mpp,
     areaM2,
+    squared: (() => {
+      try {
+        return squareRoofOutline(rgba, W, H, bounds, roof);
+      } catch (e) {
+        if (typeof process !== "undefined" && process.env?.SQ_DEBUG) console.error(e);
+        return null;
+      }
+    })(),
   };
 }
 

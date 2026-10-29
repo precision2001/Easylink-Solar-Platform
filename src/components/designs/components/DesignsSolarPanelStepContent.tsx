@@ -33,6 +33,7 @@ import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
+import { hipFacesForSquareRoof } from "@/lib/designer/squareRoof";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
@@ -731,10 +732,14 @@ export const DesignsSolarPanelStepContent = forwardRef<
     if (!found || found.length === 0) return null;
     // Roof-line rule: straight lines along / square to the main walls (and
     // 45° hips), shared corners; then eaves fitted to the zoomed roof edge.
+    // Square-walled hip roof, confirmed by Google's roof segments: the outline
+    // drawn along the walls (as by hand — 25 Gilbert St, Colyton).
+    const squared = roofSnapshot.analysis?.squared;
+    if (squared && !data?.estimated && hipFacesForSquareRoof(squared.ring, data?.roofSegments)) return [squared.ring];
     const straight = regularizeRoofOutlines(found.map((o) => o.ring));
     const mask = roofSnapshot.analysis!.mask;
     return regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, mask).ring));
-  }, [roofSnapshot.analysis]);
+  }, [roofSnapshot.analysis, data?.estimated, data?.roofSegments]);
   /** Roof edge and brightness to check lines against — the zoomed image when found, else Google Solar's layers. */
   const lineMask = roofSnapshot.analysis?.mask ?? maskRaster;
   const lineLuma = roofSnapshot.analysis?.luma ?? rgbOverlay?.luma ?? null;
@@ -1221,6 +1226,15 @@ export const DesignsSolarPanelStepContent = forwardRef<
    */
   const facesFor = useCallback(
     (paths: google.maps.LatLngLiteral[][]) => {
+      // Square-walled hip roof confirmed by Google's segments: hips and valleys
+      // computed from the walls, exactly — no correcting needed.
+      const square = paths.length === 1 && !data?.estimated ? hipFacesForSquareRoof(paths[0], data?.roofSegments) : null;
+      if (square) {
+        const obstructions: RoofObstruction[] = roofSnapshot.analysis
+          ? findRoofObstructions(roofSnapshot.analysis.luma, square.map((f) => f.ring))
+          : [];
+        return { source: "square-hip" as const, faces: square, interiorChecks: [] as LineCheck[], moved: 0, obstructions };
+      }
       const detected = detectRoofFaces(dsmRaster, paths, maskRaster);
       const source = detected && detected.length > 0 ? ("height-model" as const) : ("assumed-hip" as const);
       let faces: { ring: google.maps.LatLngLiteral[]; eaveDeg: number; pitchDeg?: number; azimuthDeg?: number }[];
@@ -1251,7 +1265,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
         : [];
       return { source, faces: corrected.faces, interiorChecks: corrected.checks, moved: corrected.moved, obstructions };
     },
-    [dsmRaster, lineLuma, maskRaster, roofSnapshot.analysis],
+    [dsmRaster, lineLuma, maskRaster, roofSnapshot.analysis, data?.estimated, data?.roofSegments],
   );
 
   const savedFaceSet = useMemo(() => facesFor(savedRoofs), [facesFor, savedRoofs]);
@@ -1794,9 +1808,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
             {!isEditing && lineCheckSummary.total > 0 && (
               <p className="w-full rounded-[10px] bg-white/80 px-4 py-2 text-center font-inter text-[12px] font-medium text-ink">
                 {roofSnapshot.analysis ? "Roof found by zooming into Google's satellite image. " : ""}
-                {savedFaceSet.source === "height-model"
-                  ? `${savedFaces.length} roof faces found from Google's height data. `
-                  : "Roof faces assumed (no usable height data) — check on site. "}
+                {savedFaceSet.source === "square-hip"
+                  ? `${savedFaces.length} roof faces drawn from the walls (hip roof, confirmed by Google's roof data). `
+                  : savedFaceSet.source === "height-model"
+                    ? `${savedFaces.length} roof faces found from Google's height data. `
+                    : "Roof faces assumed (no usable height data) — check on site. "}
                 {savedFaceSet.moved > 0 ? `${savedFaceSet.moved} roof lines moved onto the edges in the image. ` : ""}
                 {sideWalls ? `Attached house: roof limited to its side walls (${sideWalls.widthM.toFixed(1)} m wide). ` : ""}
                 {savedFaceSet.obstructions.length > 0

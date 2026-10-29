@@ -14,6 +14,7 @@ import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { findRoofObstructions } from "@/lib/designer/roofObstructions";
+import { hipFacesForSquareRoof } from "@/lib/designer/squareRoof";
 import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
 
 const [lat, lng] = [Number(process.argv[2]), Number(process.argv[3])];
@@ -29,6 +30,8 @@ async function get(url: string) { const r = await fetch(url); if (!r.ok) throw n
   const { data, info } = await sharp(Buffer.from(png)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const geo: SnapshotGeo = { centerLat: lat, centerLng: lng, zoom: ROOF_SNAPSHOT.zoom, scale: ROOF_SNAPSHOT.scale, widthPx: info.width, heightPx: info.height };
   const rgba = new Uint8Array(data);
+  if (process.env.SQ_DEBUG) (globalThis as any).__sqDebug = (name: string, g: Uint8Array, w: number, h: number) => writeFileSync(`${out}/sq_${name}.json`, JSON.stringify({ w, h, d: Array.from(g) }));
+  if (process.env.SQ_DEBUG) (globalThis as any).__sqWhy = (w: number) => console.log('square', JSON.stringify(w));
   const parcel = process.env.PARCEL ? JSON.parse(process.env.PARCEL) : null;
   const snap = analyseRoofSnapshot(rgba, geo, { pin: { lat, lng }, hint: mask, dsm, parcel });
   if (!snap) { console.log("no snapshot roof"); return; }
@@ -36,13 +39,16 @@ async function get(url: string) { const r = await fetch(url); if (!r.ok) throw n
   void rgba;
   const res = (() => {
         const straight = regularizeRoofOutlines(snap.outlines.map((o) => o.ring));
-        const outline = regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, snap.mask).ring));
-        const detected = detectRoofFaces(dsm, outline, mask);
-        let faces: any[] = detected
+        const segs = process.env.SEGS ? JSON.parse(process.env.SEGS) : null;
+        const hip = !process.env.NO_SQUARE && snap.squared ? hipFacesForSquareRoof(snap.squared.ring, segs) : null;
+        const outline = hip ? [snap.squared!.ring] : regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, snap.mask).ring));
+        console.log("squared", !!snap.squared, snap.squared?.axisDeg, snap.squared?.areaM2, "hip faces", hip?.length ?? null);
+        const detected = hip ? null : detectRoofFaces(dsm, outline, mask);
+        let faces: any[] = hip ? hip : detected
           ? (() => { const rings = regularizeRoofOutlines(detected.map((f) => f.ring)); return detected.map((f, i) => ({ ring: rings[i], eaveDeg: f.eaveDeg, pitchDeg: f.pitchDeg, azimuthDeg: f.azimuthDeg })); })()
           : splitRoofsIntoFaces(outline).map((f) => ({ ring: f.ring, eaveDeg: f.eaveDeg }));
         if (detected) faces = fillFacesOnRoofs(faces, outline, snap.mask, snap.metresPerPixel);
-        const corrected = correctInteriorLines(faces, outline, snap.luma);
+        const corrected = hip ? { faces: hip } : correctInteriorLines(faces, outline, snap.luma);
         const axis = longestEdgeAngleDegrees(outline[0]);
         const obs = process.env.NO_OBS ? [] : findRoofObstructions(snap.luma, corrected.faces.map((f: any) => f.ring));
         const obstructions = obs.map((o) => o.ring);
