@@ -22,7 +22,7 @@ const out = process.argv[4]; mkdirSync(out, { recursive: true });
 const key = process.env.GKEY!;
 async function get(url: string) { const r = await fetch(url); if (!r.ok) throw new Error(url.split("?")[0] + " " + r.status); return r.arrayBuffer(); }
 (async () => {
-  const dl = await (await fetch(`https://solar.googleapis.com/v1/dataLayers:get?location.latitude=${lat}&location.longitude=${lng}&radiusMeters=35&view=FULL_LAYERS&requiredQuality=LOW&pixelSizeMeters=0.5&key=${key}`)).json();
+  const dl = await (await fetch(`https://solar.googleapis.com/v1/dataLayers:get?location.latitude=${lat}&location.longitude=${lng}&radiusMeters=${process.env.RADIUS ?? 35}&view=FULL_LAYERS&requiredQuality=LOW&pixelSizeMeters=0.5&key=${key}`)).json();
   const mask: GeoTiffRaster | null = dl.maskUrl ? await parseGeoTiffDsm(await get(`${dl.maskUrl}&key=${key}`)) : null;
   const dsm: GeoTiffRaster | null = dl.dsmUrl ? await parseGeoTiffDsm(await get(`${dl.dsmUrl}&key=${key}`)) : null;
   const png = await get(`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${ROOF_SNAPSHOT.zoom}&size=640x640&scale=2&maptype=satellite&format=png32&key=${key}`);
@@ -67,7 +67,7 @@ async function get(url: string) { const r = await fetch(url); if (!r.ok) throw n
   const panelPx = (pn: any) => pn.corners ? pn.corners.map(toPx) : null;
   const j = {
     areaM2: snap.areaM2, mpp: snap.metresPerPixel, bounds: b,
-    rawOutlines: res.rawOutlines.map(ring), outline: res.outline.map(ring), faces: res.faces.map(ring),
+    rawOutlines: res.rawOutlines.map(ring), squared: snap.squared ? ring(snap.squared.ring) : null, outline: res.outline.map(ring), faces: res.faces.map(ring),
     obstructions: (res.obstructions ?? []).map(ring),
     counts: { PORTRAIT: res.panels.PORTRAIT.length, LANDSCAPE: res.panels.LANDSCAPE.length },
     panels: Object.fromEntries(Object.entries(res.panels).map(([o, ps]: any) => [o, ps.map((pn: any) => ({ c: toPx(pn.center), rot: pn.rotationDegrees, slope: pn.slopeDegrees, orientation: pn.orientation }))])),

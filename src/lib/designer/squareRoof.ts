@@ -296,25 +296,33 @@ export function squareRoofOutline(
       if (on >= 5) g[y * GW + x] = 1;
     }
   g = openG(closeG(g, GW, GH, closeR), GW, GH, openR);
-  // Parts of the trace the colour test dropped: given back when only a little
-  // off the roof's colour — a face in shade or sun (134 Old Canterbury Rd's
-  // south hip) — but not paving or lawn (25 Gilbert St's patio), judged on
-  // each part's average.
+  // Cells of the trace the colour test dropped: given back when only a little
+  // off the roof's colour (most of the 3×3 around) — a face in shade or sun
+  // (134 Old Canterbury Rd's south hip, 25 Gilbert St's east hip) — but not
+  // paving or lawn, which are further off.
   const trace = openG(closeG(inm, GW, GH, closeR), GW, GH, openR);
-  const dropped = new Uint8Array(GW * GH);
-  for (let k = 0; k < g.length; k++) if (trace[k] && !g[k]) dropped[k] = 1;
-  const dp = components(dropped, GW, GH);
-  const dSum = new Float64Array(dp.sizes.length);
-  for (let k = 0; k < g.length; k++) if (dropped[k]) dSum[dp.lab[k]] += Math.min(dist[k], 12);
   const back = new Uint8Array(GW * GH);
-  for (let k = 0; k < g.length; k++) if (dropped[k] && dSum[dp.lab[k]] / dp.sizes[dp.lab[k]] <= giveBackDist) { g[k] = 1; back[k] = 1; }
+  for (let y = 0; y < GH; y++)
+    for (let x = 0; x < GW; x++) {
+      const k = y * GW + x;
+      if (!trace[k] || g[k]) continue;
+      let near = 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < GW && yy < GH && dist[yy * GW + xx] <= giveBackDist) near++;
+        }
+      if (near >= 5) back[k] = 1;
+    }
+  for (let k = 0; k < g.length; k++) if (back[k]) g[k] = 1;
   // …but not a part that sticks out (a patio corner beside a wing): one a
   // wider opening would mostly remove again.
   {
+    const bp = components(back, GW, GH);
     const wide0 = openG(g, GW, GH, bumpR);
-    const out = new Float64Array(dp.sizes.length);
-    for (let k = 0; k < g.length; k++) if (back[k] && !wide0[k]) out[dp.lab[k]]++;
-    for (let k = 0; k < g.length; k++) if (back[k] && out[dp.lab[k]] > 0.5 * dp.sizes[dp.lab[k]]) g[k] = 0;
+    const out = new Float64Array(bp.sizes.length);
+    for (let k = 0; k < g.length; k++) if (back[k] && !wide0[k]) out[bp.lab[k]]++;
+    for (let k = 0; k < g.length; k++) if (back[k] && out[bp.lab[k]] > 0.5 * bp.sizes[bp.lab[k]]) g[k] = 0;
   }
   g = openG(closeG(g, GW, GH, closeR), GW, GH, openR);
   dbg?.("open", g, GW, GH);
@@ -346,7 +354,7 @@ export function squareRoofOutline(
   // Each eave onto the traced roof edge, when that is close (the 25 cm cells
   // sit a little inside a roof edged by a dark gap — 134 Old Canterbury Rd).
   const maskRaster: GeoTiffRaster = { data: roofMask as GeoTiffRaster["data"], width: W, height: H, bounds, noDataValue: null };
-  const fitted = fitEavesToMask(jogFree, maskRaster, { maxShiftM: 0.3 }).ring;
+  const fitted = fitEavesToMask(jogFree, maskRaster, { maxShiftM: 0.5 }).ring;
   const straight = dropJogs(fitted.map(F.toXY).map(wf.toUV)).map((p) => F.toLL(wf.toXY(p.u, p.v)));
   if (straight.length < 4) return fail(8);
   // Every edge along or square to the walls.
