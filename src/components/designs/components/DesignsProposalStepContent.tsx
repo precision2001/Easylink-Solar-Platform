@@ -256,13 +256,21 @@ function BatterySelector({
   selectedId,
   onSelect,
   prices,
+  sizeKwh,
 }: {
   selectedId: string;
   onSelect: (id: string) => void;
   /** Added cost of each battery for this design (after battery STCs), from the quote engine. */
   prices: Record<string, number>;
+  /** The design's battery size; shown when it isn't one of the buttons (e.g. 13 kWh from the Energy step). */
+  sizeKwh: number;
 }) {
-  const selected = findBatteryCapacity(selectedId);
+  const option = findBatteryCapacity(selectedId);
+  const optionKwh = Number.parseFloat(option.label);
+  const selected =
+    sizeKwh > 0 && !(Number.isFinite(optionKwh) && Math.abs(optionKwh - sizeKwh) < 0.05)
+      ? { ...option, label: `${Math.round(sizeKwh * 10) / 10}kWh` }
+      : option;
   return (
     <div className="w-full rounded-[20px] border-[1.5px] border-solid border-design-accent-gold/40 bg-[linear-gradient(156.24deg,rgba(247,141,0,0.18)_0%,rgba(253,224,71,0.1)_100%)] p-[16px]">
       <div className="flex items-center justify-between">
@@ -447,8 +455,33 @@ export const DesignsProposalStepContent = forwardRef<
   }, [displayCustomerName]);
 
   const panelTierId = proposal.equipment.panelTierId ?? DEFAULT_PANEL_TIER_ID;
-  const batteryCapacityId =
-    proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID;
+  /**
+   * One battery size for the whole design, so the proposal follows the
+   * system the customer built: the Energy step's battery size (kWh) first,
+   * then a battery picked in the equipment step, then this step's own pick.
+   * Before, this step only read its own pick (default None), so a 20 kWh
+   * battery set on the Energy step was neither priced nor selected here.
+   */
+  const itemsBatteryKwh = useMemo(() => {
+    const items = proposal.equipment.items.battery ?? [];
+    const total = items.reduce((sum, it) => {
+      const kwh = Number.parseFloat(it.ratingLabel);
+      return Number.isFinite(kwh) && /kwh/i.test(it.ratingLabel) ? sum + kwh * Math.max(1, it.quantity) : sum;
+    }, 0);
+    return total > 0 ? total : undefined;
+  }, [proposal.equipment.items.battery]);
+  const designBatteryKwh =
+    proposal.equipment.batteryCapacityKwh ??
+    itemsBatteryKwh ??
+    batteryKwhOf(proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID);
+  /** The battery button that matches the design's size (the nearest one). */
+  const batteryCapacityId = useMemo(() => {
+    let best = BATTERY_CAPACITY_OPTIONS[0];
+    for (const b of BATTERY_CAPACITY_OPTIONS) {
+      if (Math.abs(batteryKwhOf(b.id) - designBatteryKwh) < Math.abs(batteryKwhOf(best.id) - designBatteryKwh)) best = b;
+    }
+    return best.id;
+  }, [designBatteryKwh]);
 
   /**
    * Pricing engine: the design's panels, tier and battery priced with the
@@ -460,7 +493,8 @@ export const DesignsProposalStepContent = forwardRef<
   const panelCount =
     Number.parseInt(proposal.equipment.numberOfPanels || proposal.summary.totalPanels || "0", 10) || 0;
   const monthlyBill = parseMoneyToNumber(proposal.pricing.currentBill);
-  const batteryKwh = batteryKwhOf(batteryCapacityId);
+  // Priced at the design's exact size (the Energy step can set e.g. 13 kWh).
+  const batteryKwh = designBatteryKwh;
   const batteryOptionsKwh = useMemo(
     () => BATTERY_CAPACITY_OPTIONS.map((b) => batteryKwhOf(b.id)),
     [],
@@ -524,7 +558,8 @@ export const DesignsProposalStepContent = forwardRef<
   }
 
   function handleSelectBattery(id: string) {
-    dispatch(mergeProposalData({ equipment: { batteryCapacityId: id } }));
+    // Written to the shared size too, so the Energy step shows the same battery.
+    dispatch(mergeProposalData({ equipment: { batteryCapacityId: id, batteryCapacityKwh: batteryKwhOf(id) } }));
   }
 
   /**
@@ -607,6 +642,7 @@ export const DesignsProposalStepContent = forwardRef<
                   selectedId={batteryCapacityId}
                   onSelect={handleSelectBattery}
                   prices={batteryPrices}
+                  sizeKwh={batteryKwh}
                 />
               </div>
             </div>
@@ -648,6 +684,9 @@ export const DesignsProposalStepContent = forwardRef<
                       />
                     );
                   })}
+                  {batteryKwh > 0 && !(proposal.equipment.items.battery?.length) ? (
+                    <ProposalDetailRow label="Battery" value={`${Math.round(batteryKwh * 10) / 10} kWh`} />
+                  ) : null}
                   <ProposalDetailRow
                     label="Number of Panels"
                     value={proposal.summary.totalPanels}
