@@ -164,3 +164,23 @@ describe("formatting helpers", () => {
     expect(tradePrice(100, pb.settings)).toBe(108);
   });
 });
+
+describe("battery inverter families", () => {
+  const book: PriceBook = {
+    ...pb,
+    batteries: [...pb.batteries, { id: "fam", model: "Family battery 10 kWh", kwh: 10, supply: 3000, pairsWith: ["hybrid inverter 15 kW"] }],
+  };
+
+  it("only auto-picks an inverter from the battery's family", () => {
+    const single = priceQuote(book, { ...QUOTE_DEFAULTS, batteryId: "fam", phase: 1 });
+    expect(single.inverter).toBeNull();
+    expect(single.blocks.some((b) => /No inverter/.test(b))).toBe(true);
+    const three = priceQuote(book, { ...QUOTE_DEFAULTS, batteryId: "fam", phase: 3 });
+    expect(three.inverter?.model).toBe("Sample hybrid inverter 15 kW 3-phase");
+  });
+
+  it("warns when an inverter outside the family is chosen by hand", () => {
+    const q = priceQuote(book, { ...QUOTE_DEFAULTS, batteryId: "fam", inverterId: "i5" });
+    expect(q.warns.some((w) => /runs with/.test(w))).toBe(true);
+  });
+});
