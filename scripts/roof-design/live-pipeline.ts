@@ -28,7 +28,8 @@ async function get(url: string) { const r = await fetch(url); if (!r.ok) throw n
   const { data, info } = await sharp(Buffer.from(png)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const geo: SnapshotGeo = { centerLat: lat, centerLng: lng, zoom: ROOF_SNAPSHOT.zoom, scale: ROOF_SNAPSHOT.scale, widthPx: info.width, heightPx: info.height };
   const rgba = new Uint8Array(data);
-  const snap = analyseRoofSnapshot(rgba, geo, { pin: { lat, lng }, hint: mask, dsm });
+  const parcel = process.env.PARCEL ? JSON.parse(process.env.PARCEL) : null;
+  const snap = analyseRoofSnapshot(rgba, geo, { pin: { lat, lng }, hint: mask, dsm, parcel });
   if (!snap) { console.log("no snapshot roof"); return; }
   const dims = { heightM: 1.762, widthM: 1.134 };
   void rgba;

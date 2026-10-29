@@ -48,6 +48,16 @@ write down what happened, why, and what changed in the code.
    On the site, faces from the height model are filled out to the outline
    on the 3 cm grid (`fillFacesOnRoofs`), with each face's rows following its
    own eave.
+   **4a. Street View (every design).** Fetch the street-side view: the
+   Street View Static API with `location=<address>&source=outdoor`
+   (metadata call free; image about 1c). It confirms what the satellite
+   view can't show:
+   - gables versus hips;
+   - tile versus metal, and lower roofs (bays, verandahs, awnings);
+   - steepness;
+   - antennas and chimneys.
+   It only shows the street side and can be years old, so it confirms;
+   the satellite image still decides the faces.
    **4b. Confirm with Google (never decide with it).** Run
    `confirm-google.py roofs/x.json`:
    - Each Google segment centre must fall inside one image face, with its
@@ -101,6 +111,41 @@ write down what happened, why, and what changed in the code.
 ## Lessons log
 
 Newest first. Add an entry whenever a design comes out wrong.
+
+### 2026-10-29 — Live Designs page: lot boundary and Street View (134 Old Canterbury Rd)
+1. **The live page traced three houses as one roof.** Neighbouring houses
+   have similar tiled roofs with only a shaded side passage between them.
+   The colour growth crossed those gaps, the joined roof (430 m²) ran off
+   the image, and the page fell back to Google's mask, which also joins
+   them. *Fixed in `roofSnapshot.ts`:* the property's land lot from the NSW
+   cadastre (already loaded by the page) limits the roof, with 0.15 m of
+   allowance. 0.5 m reached the neighbour's tiles, because the lot line runs
+   down the middle of the side passage. Google's mask fallback is clipped
+   to the lot too.
+2. **One straightened outline corner landed 24 m away**, where two nearly
+   parallel lines met, and drew a line across the neighbours. *Fixed in
+   `roofLines.ts`:* if a rebuilt corner falls more than 1 m outside the
+   traced roof, the traced outline is kept.
+   Result: 47 portrait / 54 landscape (by hand: 48 / 56).
+3. **Street View on the Designs page.** `/api/solar/street-view` serves the
+   photo (free metadata check first, then about 1c an image) as a thumbnail
+   in the corner of the map; click to enlarge. It is left out of the
+   proposal screenshot.
+
+### 2026-10-29 — 134 Old Canterbury Rd, Summer Hill (dark-tile hip roof) and Street View
+1. **Street View is now part of every design (step 4a).** On 8 Temple St,
+   Stanmore, it showed what the satellite view hid: a front gable over a
+   bay window with a green metal roof, and a metal verandah. Those were
+   the dashed lines the live page had packed panels across. On 134 Old
+   Canterbury Rd it confirmed a hip end to the street and no lower roofs.
+2. **The eave check failed on dark brown tiles.** These tiles score about
+   +30 on red minus green, below the default threshold of 35 (set for
+   terracotta), so every eave read 0.3–0.6 m "inside". Fix: measure a row
+   across the eave first, then use `--rg 12` for dark tiles. With that,
+   all four eaves were confirmed within 50 mm.
+3. **Four faces** (N and S hip ends, E and W faces), confirmed by Google
+   within 3° and 0.1% of area. Result: 56 landscape (24.6 kW) or 48
+   portrait (21.1 kW), three-phase.
 
 ### 2026-10-28 — Live Designs page: obstruction finder, spike fix, no loading rectangle
 1. **Loading rectangle.** Google's building box was drawn as a cyan

@@ -37,6 +37,7 @@ import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
 import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
+import { StreetViewThumb } from "./StreetViewThumb";
 import {
   DESIGN_RULES,
   inverterSizingFor,
@@ -701,7 +702,15 @@ export const DesignsSolarPanelStepContent = forwardRef<
    * found by its colour and traced (see roofSnapshot.ts). Its mask fits the
    * eaves and its brightness finds the hips, ridges and valleys.
    */
-  const roofSnapshot = useRoofSnapshot(selectedLocation ?? null, maskRaster, layersLoading, dsmRaster);
+  // The land lot keeps the roof finder off the neighbours' roofs; wait for it.
+  const parcelRing = cadastralParcel.data?.ring ?? null;
+  const roofSnapshot = useRoofSnapshot(
+    selectedLocation ?? null,
+    maskRaster,
+    layersLoading || cadastralParcel.loading,
+    dsmRaster,
+    parcelRing,
+  );
   const snapshotOutlines = useMemo((): LatLngRing[] | null => {
     const found = roofSnapshot.analysis?.outlines;
     if (!found || found.length === 0) return null;
@@ -727,10 +736,16 @@ export const DesignsSolarPanelStepContent = forwardRef<
   }, [maskRaster, selectedLocation]);
 
   const roofMaskOutlines = useMemo((): LatLngRing[] | null => {
-    return maskTracedOutlines.length > 0
-      ? maskTracedOutlines.map((o) => o.ring)
-      : null;
-  }, [maskTracedOutlines]);
+    if (maskTracedOutlines.length === 0) return null;
+    const rings = maskTracedOutlines.map((o) => o.ring);
+    // Google's mask joins houses built close together: keep only what lies
+    // on this property's lot (134 Old Canterbury Rd, Summer Hill).
+    if (!parcelRing) return rings;
+    const clipped = rings
+      .map((r) => clipRingToConvexPolygon(r, parcelRing))
+      .filter((r) => r.length >= 3 && ringAreaM2(r) >= 4);
+    return clipped.length > 0 ? clipped : rings;
+  }, [maskTracedOutlines, parcelRing]);
 
   /**
    * True once the mask trace covers enough of Google's own whole-roof figure
@@ -1875,6 +1890,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
                         />
                       ))}
                   </GoogleMap>
+                  {selectedLocation ? (
+                    <StreetViewThumb lat={selectedLocation.lat} lng={selectedLocation.lng} />
+                  ) : null}
                 </>
               ) : (
                 <div className="flex h-full min-h-[280px] items-center justify-center rounded-[25px] bg-[linear-gradient(135deg,rgba(48,54,71,0.98)_0%,rgba(33,36,47,0.98)_100%)]">
