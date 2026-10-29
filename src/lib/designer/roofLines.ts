@@ -178,6 +178,14 @@ function straighten(
     if (Math.abs(den) < 1e-6) return ring;
     out.push({ x: (l1.c * b2 - l2.c * b1) / den, y: (a1 * l2.c - a2 * l1.c) / den });
   }
+  // Two nearly parallel lines meet far away: a corner rebuilt more than 1 m
+  // outside the traced roof is not a corner (134 Old Canterbury Rd: one
+  // landed 24 m off, drawing a line across the neighbours). Keep the trace.
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of ring) {
+    x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+  }
+  if (out.some((p) => p.x < x0 - 1 || p.x > x1 + 1 || p.y < y0 - 1 || p.y > y1 + 1)) return ring;
   return out;
 }
 

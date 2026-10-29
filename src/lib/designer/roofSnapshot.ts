@@ -79,6 +79,21 @@ export type SnapshotOptions = {
    * courtyards the colour of the tiles are left out (77 Harry Ave).
    */
   dsm?: GeoTiffRaster | null;
+  /**
+   * The property's land lot (NSW cadastre). When given, the roof can't
+   * extend more than `parcelMarginM` past it — houses built close together
+   * have similar roofs with only a shaded gap between them, and the colour
+   * growth crossed those gaps into the neighbours (134 Old Canterbury Rd,
+   * Summer Hill: 430 m² over three houses, so the page fell back to
+   * Google's mask, which also joins them).
+   */
+  parcel?: LatLng[] | null;
+  /**
+   * How far (m) the roof may reach past the lot line. Small: the lot line
+   * usually runs down the middle of the side passage, and 0.5 m reached the
+   * neighbour's tiles, so the growth bridged the gap again.
+   */
+  parcelMarginM?: number;
   minHeightM?: number;
 };
 
@@ -238,7 +253,7 @@ function median(v: number[]): number {
 export function analyseRoofSnapshot(
   rgba: Uint8ClampedArray | Uint8Array,
   geo: SnapshotGeo,
-  { pin, hint = null, hintMarginM = 1.5, dsm = null, minHeightM = 2.2 }: SnapshotOptions,
+  { pin, hint = null, hintMarginM = 1.5, dsm = null, minHeightM = 2.2, parcel = null, parcelMarginM = 0.15 }: SnapshotOptions,
 ): RoofSnapshotAnalysis | null {
   const W = geo.widthPx;
   const H = geo.heightPx;
@@ -346,6 +361,31 @@ export function analyseRoofSnapshot(
     }
   }
 
+  // Land lot: pixels inside the property (plus the eave margin).
+  let lot: Uint8Array | null = null;
+  if (parcel && parcel.length >= 3) {
+    const ring = parcel.map((p) => pointInRaster(bounds, W, H, p));
+    const inLot = new Uint8Array(W * H);
+    let any = 0;
+    for (let r = 0; r < H; r++) {
+      const y = r + 0.5;
+      for (let c = 0; c < W; c++) {
+        const x = c + 0.5;
+        let inside = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const a = ring[i];
+          const b = ring[j];
+          if (a.row > y !== b.row > y && x < ((b.col - a.col) * (y - a.row)) / (b.row - a.row) + a.col) inside = !inside;
+        }
+        if (inside) {
+          inLot[r * W + c] = 1;
+          any++;
+        }
+      }
+    }
+    if (any > 0) lot = dilate(inLot, W, H, parcelMarginM / mpp);
+  }
+
   // Seed: a disc around the pin (and Google's roof near it, when known).
   const pp = pointInRaster(bounds, W, H, pin);
   if (pp.col < 0 || pp.row < 0 || pp.col >= W || pp.row >= H) return null;
@@ -387,6 +427,7 @@ export function analyseRoofSnapshot(
     for (let i = 0; i < W * H; i++) {
       if (near && !near[i]) continue;
       if (high && !high[i]) continue;
+      if (lot && !lot[i]) continue;
       if (L[i] < darkest) continue; // gaps, gutters and deep shadow between buildings
       const d = ((L[i] - mL) / tL) ** 2 + ((A[i] - mA) / tA) ** 2 + ((B[i] - mB) / tB) ** 2;
       if (d <= 1) like[i] = 1;
@@ -414,6 +455,9 @@ export function analyseRoofSnapshot(
     for (let i = 0; i < roof.length; i++) if (closed[i] && hintCore[i]) roof[i] = 1;
     roof = fillHoles(roof, W, H);
   }
+
+  // The closings above can reach back across the lot line: trim to the lot.
+  if (lot) for (let i = 0; i < roof.length; i++) if (!lot[i]) roof[i] = 0;
 
   let count = 0;
   for (let i = 0; i < roof.length; i++) count += roof[i];
