@@ -195,8 +195,8 @@ function PanelTierSelector({
   info?: Record<string, { model: string; w: number }>;
 }) {
   return (
-    <div className="w-full rounded-[20px] border-[1.5px] border-solid border-white/10 bg-[rgba(255,255,255,0.04)] p-[16px]">
-      <p className="font-source-sans text-[13px] font-semibold uppercase tracking-[1px] text-white/70">
+    <div className="w-full rounded-[20px] border-[1.5px] border-solid border-design-accent-cyan bg-[linear-gradient(135deg,#E8F6FF_0%,#BFE6FF_100%)] p-[16px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]">
+      <p className="font-source-sans text-[13px] font-bold uppercase tracking-[1px] text-[#0B2A4A]/80">
         Panel Tier
       </p>
       <div className="mt-3 flex flex-col gap-[10px]">
@@ -209,23 +209,23 @@ function PanelTierSelector({
               onClick={() => onSelect(tier.id)}
               className={`flex w-full items-center justify-between gap-3 rounded-[12px] border px-[16px] py-1.5 text-left transition ${
                 selected
-                  ? "border-design-accent-cyan bg-white/10"
-                  : "border-white/10 bg-black/20 hover:bg-white/5"
+                  ? "border-[#0B2A4A] bg-[#0B2A4A] shadow-md"
+                  : "border-white bg-white/85 hover:bg-white"
               }`}
             >
               <div className="flex min-w-0 items-center gap-3">
                 <span
                   className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                    selected ? "border-design-accent-cyan" : "border-white/30"
+                    selected ? "border-yellow-lemon" : "border-[#0B2A4A]/40"
                   }`}
                 >
                   {selected ? (
-                    <span className="h-2 w-2 rounded-full bg-design-accent-cyan" />
+                    <span className="h-2 w-2 rounded-full bg-yellow-lemon" />
                   ) : null}
                 </span>
                 <span className="min-w-0">
                   <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-source-sans text-[15px] font-semibold text-white">
+                    <span className={`font-source-sans text-[15px] font-semibold ${selected ? "text-white" : "text-[#0B2A4A]"}`}>
                       {tier.label}
                     </span>
                     {tier.recommended ? (
@@ -234,12 +234,12 @@ function PanelTierSelector({
                       </span>
                     ) : null}
                   </span>
-                  <span className="block font-inter text-[12px] text-white/50">
+                  <span className={`block font-inter text-[12px] ${selected ? "text-white/70" : "text-[#0B2A4A]/60"}`}>
                     {info?.[tier.id] ? `${info[tier.id].w}W · ${info[tier.id].model.replace(/\s*\d{3}W\b/, "")}` : `${tier.wattageLabel} · ${tier.brandModel}`}
                   </span>
                 </span>
               </div>
-              <span className="shrink-0 font-source-sans text-[14px] font-semibold text-white/80">
+              <span className={`shrink-0 font-source-sans text-[14px] font-semibold ${selected ? "text-yellow-lemon" : "text-[#0B2A4A]"}`}>
                 {(deltas[tier.id] ?? 0) === 0
                   ? "Included"
                   : `${deltas[tier.id] > 0 ? "+" : "−"}${formatAud(Math.abs(deltas[tier.id]))}`}
@@ -272,12 +272,12 @@ function BatterySelector({
       ? { ...option, label: `${Math.round(sizeKwh * 10) / 10}kWh` }
       : option;
   return (
-    <div className="w-full rounded-[20px] border-[1.5px] border-solid border-design-accent-gold/40 bg-[linear-gradient(156.24deg,rgba(247,141,0,0.18)_0%,rgba(253,224,71,0.1)_100%)] p-[16px]">
+    <div className="w-full rounded-[20px] border-[1.5px] border-solid border-design-accent-cyan bg-linear-to-r from-yellow-lemon to-orange-amber p-[16px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]">
       <div className="flex items-center justify-between">
-        <p className="font-source-sans text-[13px] font-semibold uppercase tracking-[1px] text-white/70">
+        <p className="font-source-sans text-[13px] font-bold uppercase tracking-[1px] text-black/75">
           Battery
         </p>
-        <p className="font-source-sans text-[13px] font-semibold text-yellow-lemon">
+        <p className="rounded-full bg-black/80 px-3 py-[2px] font-source-sans text-[13px] font-semibold text-yellow-lemon">
           {selected.label}
         </p>
       </div>
@@ -291,13 +291,13 @@ function BatterySelector({
               onClick={() => onSelect(battery.id)}
               className={`rounded-[10px] px-[10px] py-[10px] text-center font-source-sans text-[13px] font-semibold transition ${
                 isSelected
-                  ? "bg-white text-black"
-                  : "bg-black/30 text-white/80 hover:bg-black/20"
+                  ? "bg-[#0B2A4A] text-white ring-2 ring-white shadow-md"
+                  : "bg-white/85 text-black hover:bg-white"
               }`}
             >
               {battery.label}
               {battery.id !== "none" && prices[battery.id] ? (
-                <span className={`block text-[11px] font-normal ${isSelected ? "text-black/60" : "text-white/50"}`}>
+                <span className={`block text-[11px] font-normal ${isSelected ? "text-yellow-lemon" : "text-black/60"}`}>
                   +{formatAud(prices[battery.id])}
                 </span>
               ) : null}
