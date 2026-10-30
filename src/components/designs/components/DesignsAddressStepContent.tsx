@@ -166,8 +166,10 @@ export const DesignsRegisterStepContent = forwardRef<
               <p className="font-inter text-[12px] leading-[18px] text-white/60">
                 EasyLink Solar uses these details to save your design, email
                 you a link to it, and contact you about your quote. We share
-                them only with the installer who quotes your system. Prices
-                are estimates until a site visit.
+                them with the installer who quotes your system and with the
+                providers that run our website, email and analytics, some of
+                which store data overseas. Prices are estimates until a site
+                visit.
               </p>
             </form>
           </div>

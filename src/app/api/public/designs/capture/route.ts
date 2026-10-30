@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const designId = (payload as { data?: { designId?: unknown } } | null)?.data?.designId;
+  const emailSent = (payload as { data?: { emailSent?: unknown } } | null)?.data?.emailSent !== false;
   const visitorId = (await cookies()).get(VISITOR_COOKIE)?.value;
   after(() =>
     emitAiEvents(
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
         {
           type: "form.submitted",
           subject: { type: "visitor", id: visitorId ?? "anonymous" },
-          data: { form: "design", ...(designId ? { designId: String(designId) } : {}) },
+          data: { form: "design" },
         },
       ],
       visitorId,
@@ -103,6 +103,7 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       message: extractMessage(payload, "Design saved. Check your email for a link to your portal."),
+      emailSent,
     },
     { status: 201 },
   );

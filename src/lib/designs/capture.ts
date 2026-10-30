@@ -1,6 +1,7 @@
 import type { DesignProposalState } from "@/lib/store/designProposalSlice";
 import { proposalToDesignInput } from "@/lib/customers/custom-design";
 import { getAttribution, type DesignAttribution } from "@/lib/designs/attribution";
+import type { CustomerAuthProfile } from "@/lib/customers/profile";
 
 /** Body of POST /api/public/designs/capture (forwarded to the backend). */
 export type DesignCapturePayload = {
@@ -52,9 +53,26 @@ export function buildDesignCapturePayload(
   };
 }
 
+/**
+ * The signed-in customer from the session cookie, or null. Unlike
+ * fetchCustomerProfile this never redirects to sign-in on a 401, because
+ * here "not signed in" just means "save as a visitor".
+ */
+export async function probeSignedInCustomer(): Promise<CustomerAuthProfile | null> {
+  try {
+    const res = await fetch("/api/customers/profile", { credentials: "include", cache: "no-store" });
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as { data?: CustomerAuthProfile } | null;
+    return json?.data?.id ? json.data : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Saves a signed-out visitor's design; the portal link arrives by email. */
 export async function submitDesignCapture(proposal: DesignProposalState): Promise<{
   message: string;
+  emailSent: boolean;
 }> {
   const response = await fetch("/api/public/designs/capture", {
     method: "POST",
@@ -63,9 +81,13 @@ export async function submitDesignCapture(proposal: DesignProposalState): Promis
   });
   const payload = (await response.json().catch(() => null)) as {
     message?: string;
+    emailSent?: boolean;
   } | null;
   if (!response.ok) {
     throw new Error(payload?.message || "We couldn't save your design. Please try again.");
   }
-  return { message: payload?.message || "Design saved. Check your email." };
+  return {
+    message: payload?.message || "Design saved. Check your email.",
+    emailSent: payload?.emailSent !== false,
+  };
 }

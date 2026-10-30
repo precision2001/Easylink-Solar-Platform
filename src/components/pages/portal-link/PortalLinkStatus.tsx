@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { toast } from "react-toastify";
 import Icon from "@/components/ui/Icons";
 import { AuthCard } from "@/components/ui/auth/AuthCard";
 import { navigateWithSessionRefresh } from "@/lib/auth/app-router-navigation";
@@ -50,14 +51,21 @@ export function PortalLinkStatus() {
       user?: CustomerUser;
       accessToken?: string;
     };
-    return { ok: res.ok, json };
+    return { ok: res.ok, status: res.status, json };
   }
 
   async function openPortal() {
     setState({ kind: "opening" });
     try {
-      const { ok, json } = await post({ action: "redeem", token });
+      const { ok, status, json } = await post({ action: "redeem", token });
       if (!ok || !json.user || !json.accessToken) {
+        // Only a 401 means the link itself is spent; anything else (busy,
+        // server down) is worth trying again with the same link.
+        if (status !== 401) {
+          toast.error(json.message || "Couldn't open your portal. Please try again.");
+          setState({ kind: "ready" });
+          return;
+        }
         setState({
           kind: "error",
           message: json.message || "This link has expired or was already used.",
@@ -67,7 +75,8 @@ export function PortalLinkStatus() {
       dispatch(setCustomerSession({ user: json.user, accessToken: json.accessToken }));
       navigateWithSessionRefresh(DESTINATION);
     } catch {
-      setState({ kind: "error", message: "Could not reach the sign-in service. Please try again." });
+      toast.error("Could not reach the sign-in service. Please try again.");
+      setState({ kind: "ready" });
     }
   }
 
@@ -76,7 +85,14 @@ export function PortalLinkStatus() {
     const message = state.kind === "error" ? state.message : "";
     setState({ kind: "error", message, sending: true });
     try {
-      const { json } = await post({ action: "request", email });
+      const { ok, json } = await post({ action: "request", email });
+      if (!ok) {
+        setState({
+          kind: "error",
+          message: json.message || "Couldn't send a link just now. Please try again.",
+        });
+        return;
+      }
       setState({
         kind: "sent",
         message: json.message || "If that email has an Easylink account, a sign-in link is on its way.",

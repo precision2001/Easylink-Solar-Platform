@@ -29,7 +29,7 @@ import {
   type InstallerCustomerDesign,
 } from "@/lib/installers/designs";
 import { clearDesignDraft, saveDesignDraft } from "@/lib/designs/draft-persistence";
-import { submitDesignCapture } from "@/lib/designs/capture";
+import { probeSignedInCustomer, submitDesignCapture } from "@/lib/designs/capture";
 import { DesignsProposalDownloadModal } from "./DesignsProposalDownloadModal";
 import {
   DEFAULT_BATTERY_CAPACITY_ID,
@@ -416,26 +416,30 @@ export const DesignsProposalStepContent = forwardRef<
       // design page, the installer and comms all read it there. Without this
       // write the customer's edit lives only in wizardData and is overwritten
       // by the account values on the next load.
-      if (customerUser) {
-        const update = profileDiff(customerUser, {
-          name: proposal.customer.name,
-          phoneNumber: proposal.customer.phoneNumber,
-        });
-
-        if (Object.keys(update).length > 0) {
-          const saved = await updateCustomerProfile(update);
-          dispatch(setUser({ ...customerUser, ...saved }));
-        }
-      }
+      // Redux auth lives in sessionStorage, so a signed-in customer in a new
+      // tab has no user here even though their cookie is valid. Ask quietly
+      // before treating them as a visitor, or they'd get a duplicate design.
+      const signedInUser = customerUser ?? (await probeSignedInCustomer());
+      if (signedInUser && !customerUser) dispatch(setUser(signedInUser));
 
       // Signed-out visitor: one call saves the design, creates their account
       // and lead, and emails a portal link. No sign-in bounce; the link in
       // their inbox is how they get in.
-      if (!customerUser) {
-        await submitDesignCapture(proposal);
+      if (!signedInUser) {
+        const { emailSent } = await submitDesignCapture(proposal);
         clearDesignDraft();
-        router.push("/designs/saved");
+        router.push(emailSent ? "/designs/saved" : "/designs/saved?email=unsent");
         return;
+      }
+
+      const update = profileDiff(signedInUser, {
+        name: proposal.customer.name,
+        phoneNumber: proposal.customer.phoneNumber,
+      });
+
+      if (Object.keys(update).length > 0) {
+        const saved = await updateCustomerProfile(update);
+        dispatch(setUser({ ...signedInUser, ...saved }));
       }
 
       // Kept for a signed-in session that expires mid-save: the 401 bounces
