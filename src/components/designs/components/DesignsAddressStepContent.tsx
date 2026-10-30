@@ -9,6 +9,8 @@ type RegisterFormState = {
   name: string;
   email: string;
   phone: string;
+  /** Unticked by default: marketing reminders need opt-in under the Spam Act. */
+  marketingConsent: boolean;
 };
 
 export type DesignsRegisterStepValue = RegisterFormState;
@@ -39,9 +41,12 @@ export const DesignsRegisterStepContent = forwardRef<
   const [name, setName] = useState<string>(stored.name || "");
   const [email, setEmail] = useState<string>(stored.email || "");
   const [phone, setPhone] = useState<string>(stored.phoneNumber || "");
+  const [marketingConsent, setMarketingConsent] = useState<boolean>(
+    stored.marketingConsent === true,
+  );
 
   useImperativeHandle(ref, () => ({
-    getValues: () => ({ name, email, phone }),
+    getValues: () => ({ name, email, phone, marketingConsent }),
   }));
 
   return (
@@ -142,6 +147,28 @@ export const DesignsRegisterStepContent = forwardRef<
                   inputProps={{ "data-clarity-mask": "true" }}
                 />
               </label>
+
+              <label className="flex items-start gap-3 text-left">
+                <input
+                  type="checkbox"
+                  checked={marketingConsent}
+                  onChange={(event) => setMarketingConsent(event.target.checked)}
+                  className="mt-[3px] size-[18px] shrink-0 accent-yellow-lemon"
+                />
+                <span className="font-inter text-[14px] leading-[20px] text-white/85">
+                  Send me tips, rebate updates and offers about my design by
+                  email and SMS. You can unsubscribe at any time.
+                </span>
+              </label>
+
+              {/* Privacy Act collection notice (APP 5). Link the full privacy
+                  policy here once that page exists. */}
+              <p className="font-inter text-[12px] leading-[18px] text-white/60">
+                EasyLink Solar uses these details to save your design, email
+                you a link to it, and contact you about your quote. We share
+                them only with the installer who quotes your system. Prices
+                are estimates until a site visit.
+              </p>
             </form>
           </div>
         </div>

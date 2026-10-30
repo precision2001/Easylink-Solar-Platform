@@ -29,6 +29,7 @@ import {
   type InstallerCustomerDesign,
 } from "@/lib/installers/designs";
 import { clearDesignDraft, saveDesignDraft } from "@/lib/designs/draft-persistence";
+import { submitDesignCapture } from "@/lib/designs/capture";
 import { DesignsProposalDownloadModal } from "./DesignsProposalDownloadModal";
 import {
   DEFAULT_BATTERY_CAPACITY_ID,
@@ -427,12 +428,20 @@ export const DesignsProposalStepContent = forwardRef<
         }
       }
 
-      // A signed-out visitor's save 401s and gets bounced to sign-in/sign-up
-      // (fetchWithCustomerSession's own redirect, with `?from=` pointing back
-      // here) — a fresh mount of this page with no designId/customerId then
-      // resets the wizard's Redux state, so without this snapshot the design
-      // they just finished building would be gone when they came back signed
-      // in. Cleared the moment a save actually succeeds.
+      // Signed-out visitor: one call saves the design, creates their account
+      // and lead, and emails a portal link. No sign-in bounce; the link in
+      // their inbox is how they get in.
+      if (!customerUser) {
+        await submitDesignCapture(proposal);
+        clearDesignDraft();
+        router.push("/designs/saved");
+        return;
+      }
+
+      // Kept for a signed-in session that expires mid-save: the 401 bounces
+      // to sign-in (fetchWithCustomerSession's redirect, `?from=` pointing
+      // back here) and a fresh mount would otherwise reset the wizard. Cleared
+      // the moment a save actually succeeds.
       saveDesignDraft(proposal);
 
       if (editingDesignId) {
