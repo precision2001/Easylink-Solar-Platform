@@ -107,19 +107,26 @@ function ProposalStatCard({
   value: string;
   variant: "cyan" | "gold";
 }) {
-  const bg =
+  // Same blue/cyan and gold/orange as before, brighter, as frosted glass:
+  // translucent gradient, background blur, a light edge and a soft glow.
+  const glass =
     variant === "cyan"
-      ? "bg-[linear-gradient(156.24deg,rgba(32,148,243,0.24)_0%,rgba(23,207,207,0.24)_100%)]"
-      : "bg-[linear-gradient(156.24deg,rgba(253,224,71,0.24)_0%,rgba(247,141,0,0.24)_100%)]";
+      ? "bg-[linear-gradient(156.24deg,rgba(32,148,243,0.55)_0%,rgba(23,207,207,0.45)_100%)] border-[rgba(125,211,252,0.55)] shadow-[0_8px_32px_rgba(23,207,207,0.28),inset_0_1px_0_rgba(255,255,255,0.35)]"
+      : "bg-[linear-gradient(156.24deg,rgba(253,224,71,0.55)_0%,rgba(247,141,0,0.5)_100%)] border-[rgba(253,230,138,0.6)] shadow-[0_8px_32px_rgba(247,141,0,0.28),inset_0_1px_0_rgba(255,255,255,0.4)]";
 
   return (
     <div
-      className={`flex min-w-0 flex-1 flex-col rounded-[16.471px] p-1 ${bg}`}
+      className={`relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[16.471px] border p-1 backdrop-blur-md backdrop-saturate-150 ${glass}`}
     >
-      <p className="text-center font-source-sans text-[12px] font-normal uppercase leading-[21.618px] tracking-[0.7206px] text-white/70">
+      {/* Glass sheen across the top half */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-[linear-gradient(180deg,rgba(255,255,255,0.22)_0%,rgba(255,255,255,0)_100%)]"
+      />
+      <p className="relative text-center font-source-sans text-[12px] font-semibold uppercase leading-[21.618px] tracking-[0.7206px] text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
         {label}
       </p>
-      <p className="text-center font-source-sans text-[16px] font-normal text-white">
+      <p className="relative text-center font-source-sans text-[16px] font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
         {value}
       </p>
     </div>
