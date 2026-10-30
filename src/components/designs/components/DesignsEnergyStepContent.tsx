@@ -350,35 +350,32 @@ function ValuePanel({
   dollarClassName?: string;
   breakdown?: string[];
 }) {
-  const hasBreakdown = Boolean(breakdown && breakdown.length > 0);
+  // Compact tile, one row of four, the height of the Grid-free / Export
+  // income / Avoided cost tiles above: label, amount, kWh. The workings
+  // (bill and net breakdown) show on hover or tap, not in the tile.
+  const tip = breakdown && breakdown.length > 0 ? breakdown.join("\n") : undefined;
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col rounded-[10px] border border-white/10 bg-white/[0.06] px-2.5 py-2">
-      <div className="flex items-center gap-1.5">
-        <span className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] ${iconClassName}`}>
-          <Icon name={icon} className="size-2.5 text-white" />
+    <div
+      tabIndex={tip ? 0 : undefined}
+      className="group relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[10px] border border-white/10 bg-white/[0.06] px-2 py-2.5 outline-none focus-visible:ring-1 focus-visible:ring-orange-amber"
+    >
+      <div className="flex max-w-full items-center gap-1">
+        <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-[4px] ${iconClassName}`}>
+          <Icon name={icon} className="size-2 text-white" />
         </span>
-        <p className="truncate font-inter text-[11px] font-semibold uppercase tracking-[0.4px] text-white">
+        <p className="truncate font-source-sans text-[9px] font-semibold uppercase tracking-[0.5px] text-white/80">
           {label}
         </p>
+        {tip ? <span aria-hidden className="font-source-sans text-[9px] text-white/50">ⓘ</span> : null}
       </div>
-      {kwh ? (
-        <p className="mt-1 font-inter text-[13px] text-white">{kwh}</p>
-      ) : null}
-      <div className="flex items-center justify-center m-auto">
-        <p
-          className={`font-source-sans font-bold ${
-            hasBreakdown
-              ? "mt-1 text-[20px]"
-              : "mt-1 flex flex-1 items-center text-[28px]"
-          } ${dollarClassName ?? "text-white"}`}
-        >
-          {dollar}
-        </p>
-      </div>
-      {breakdown && breakdown.length > 0 ? (
-        <div className="mt-1 flex flex-1 flex-col justify-end gap-0.5 border-t border-white/10 pt-1 font-inter text-[10px] leading-3.5 text-white">
-          {breakdown.map((line, i) => (
+      <p className={`font-source-sans text-[19px] font-bold leading-tight ${dollarClassName ?? "text-white"}`}>
+        {dollar}
+      </p>
+      {kwh ? <p className="font-source-sans text-[9px] text-white/60">{kwh}</p> : null}
+      {tip ? (
+        <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 hidden w-max max-w-[220px] -translate-x-1/2 flex-col gap-0.5 rounded-[8px] bg-[#152238] px-2 py-1.5 font-inter text-[10px] leading-3.5 text-white shadow-lg group-hover:flex group-focus:flex">
+          {breakdown!.map((line, i) => (
             <span key={i}>{line}</span>
           ))}
         </div>
@@ -959,7 +956,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   ))}
                 </div>
 
-                <div className="mt-1 grid flex-1 grid-cols-2 gap-1">
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                   <ValuePanel
                     icon="home"
                     iconClassName="bg-[linear-gradient(126deg,#2094F3_0%,#17CFCF_100%)]"
