@@ -23,6 +23,7 @@ import {
 } from "@/lib/designs/draft-persistence";
 import { fetchCustomerProfile } from "@/lib/customers/profile";
 import { setUser } from "@/lib/store/customerAuthSlice";
+import { captureAttribution } from "@/lib/designs/attribution";
 import { DesignTopBar } from "../modules/DesignTopBar";
 import {
   DesignsRegisterStepContent,
@@ -100,6 +101,12 @@ export function DesignsHeroSection({
   //
   // `initialDraft` is the one exception: restored instead of wiped, then
   // cleared so it can't leak into a later, unrelated visit.
+  // Which ad, referral or partner link brought this visitor, sent with the
+  // saved design so the lead carries its source.
+  useEffect(() => {
+    captureAttribution();
+  }, []);
+
   const freshVisitResetRef = useRef(false);
   useEffect(() => {
     if (freshVisitResetRef.current) return;
@@ -306,6 +313,7 @@ export function DesignsHeroSection({
             name,
             email,
             phoneNumber: register?.phone ?? "",
+            marketingConsent: register?.marketingConsent === true,
           },
         }),
       );

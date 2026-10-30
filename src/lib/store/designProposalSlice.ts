@@ -27,6 +27,11 @@ export type DesignProposalCustomer = {
   name: string;
   email: string;
   phoneNumber: string;
+  /**
+   * The register step's unticked-by-default marketing box (reminder emails
+   * and texts under the Spam Act). Undefined until the step is submitted.
+   */
+  marketingConsent?: boolean;
   address: string;
   property: string;
   /** Pin from the location step map (decimal degrees). Used by the solar-panel step map. */

@@ -324,6 +324,13 @@ function SignInForm({ onSwitchMode }: { onSwitchMode: () => void }) {
             type="submit"
           />
 
+          <Link
+            href="/portal-link"
+            className="text-center font-source-sans text-[14px] font-medium leading-[20px] text-(--color-auth-subtle-60) underline"
+          >
+            No password? Email me a sign-in link
+          </Link>
+
           <AuthDivider label="or" />
 
           <div className="flex justify-center">
