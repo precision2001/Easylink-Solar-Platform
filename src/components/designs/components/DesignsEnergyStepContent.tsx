@@ -322,7 +322,7 @@ function StatTile({
   label: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[10px] bg-white px-2 py-2.5">
+    <div className="flex min-h-[87px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[10px] bg-white px-2 py-2.5">
       <p className="font-source-sans text-[19px] font-bold leading-tight text-[#152238]">
         {value}
       </p>
@@ -358,7 +358,7 @@ function ValuePanel({
   return (
     <div
       tabIndex={tip ? 0 : undefined}
-      className="group relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[10px] border border-white/10 bg-white/[0.06] px-2 py-2.5 outline-none focus-visible:ring-1 focus-visible:ring-orange-amber"
+      className="group relative flex min-h-[112px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[10px] border border-white/10 bg-white/[0.06] px-2 py-2.5 outline-none focus-visible:ring-1 focus-visible:ring-orange-amber"
     >
       <div className="flex max-w-full items-center gap-1">
         <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-[4px] ${iconClassName}`}>
