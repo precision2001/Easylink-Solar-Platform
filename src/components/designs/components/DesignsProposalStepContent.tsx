@@ -173,10 +173,10 @@ function ProposalDetailRow({
   mask?: boolean;
 }) {
   return (
-    <p className="flex items-baseline gap-x-1.5 text-[clamp(11px,1.6vh,13px)] leading-[1.35]">
-      <span className="shrink-0 font-source-sans font-semibold text-white/70">{label}</span>
+    <p className="flex min-w-0 items-baseline gap-x-1.5 text-[clamp(11px,1.7vh,14px)] leading-[1.35]">
+      <span className="shrink-0 font-source-sans font-bold text-[#152238]">{label}:</span>
       <span
-        className="min-w-0 truncate text-right font-inter font-medium text-white ml-auto"
+        className="min-w-0 truncate font-inter font-medium text-[#152238]/85"
         title={value}
         {...(mask ? { "data-clarity-mask": "true" } : {})}
       >
@@ -304,7 +304,7 @@ function BatterySelector({
       >
         Battery
       </CardTitle>
-      <div className="relative mt-2 grid min-h-0 flex-1 grid-cols-2 gap-1.5">
+      <div className="relative mt-2 grid min-h-0 flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4">
         {BATTERY_CAPACITY_OPTIONS.map((battery) => {
           const isSelected = battery.id === selectedId;
           return (
@@ -634,12 +634,28 @@ export const DesignsProposalStepContent = forwardRef<
           <ProposalStatCard label="Payback" value={proposal.summary.payback} variant="gold" />
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-[clamp(6px,1vw,12px)] md:grid-cols-2 lg:grid-cols-[1fr_1.15fr_1fr_1.15fr]">
-          {/* System details */}
-          <div className={`${GLASS} ${TINT.neutral} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+        {/* Row 1: panel tier and battery side by side (the placement the owner chose). */}
+        <div className="grid min-h-0 flex-[1.05] grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:grid-cols-[1fr_1.33fr]">
+          <PanelTierSelector
+            selectedId={panelTierId}
+            onSelect={handleSelectPanelTier}
+            deltas={tierDeltas}
+            info={priced?.tierInfo}
+          />
+          <BatterySelector
+            selectedId={batteryCapacityId}
+            onSelect={handleSelectBattery}
+            prices={batteryPrices}
+            sizeKwh={batteryKwh}
+          />
+        </div>
+
+        {/* Row 2: system details, price, 25-year net savings. */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-[clamp(6px,1vw,12px)] md:grid-cols-3">
+          <div className={`${GLASS} ${TINT.brandGold} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
             <Sheen />
-            <CardTitle>System Details</CardTitle>
-            <div className="relative mt-2 flex min-h-0 flex-1 flex-col justify-evenly gap-0.5 overflow-hidden">
+            <CardTitle dark>System Details</CardTitle>
+            <div className="relative mt-1.5 flex min-h-0 flex-1 flex-col justify-evenly overflow-hidden">
               <ProposalDetailRow label="Customer" value={displayCustomerName} mask />
               <ProposalDetailRow label="Address" value={proposal.customer.address} mask />
               <ProposalDetailRow label="Property" value={proposal.customer.property} />
@@ -654,49 +670,32 @@ export const DesignsProposalStepContent = forwardRef<
               {batteryKwh > 0 && !(proposal.equipment.items.battery?.length) ? (
                 <ProposalDetailRow label="Battery" value={`${Math.round(batteryKwh * 10) / 10} kWh`} />
               ) : null}
-              <ProposalDetailRow label="Panels" value={proposal.summary.totalPanels} />
+              <ProposalDetailRow label="Number of Panels" value={proposal.summary.totalPanels} />
               <ProposalDetailRow label="Panel Tier" value={findPanelTier(panelTierId).label} />
               <ProposalDetailRow label="CO2 Offset" value={proposal.equipment.co2Offset} />
             </div>
           </div>
 
-          <PanelTierSelector
-            selectedId={panelTierId}
-            onSelect={handleSelectPanelTier}
-            deltas={tierDeltas}
-            info={priced?.tierInfo}
-          />
-
-          <BatterySelector
-            selectedId={batteryCapacityId}
-            onSelect={handleSelectBattery}
-            prices={batteryPrices}
-            sizeKwh={batteryKwh}
-          />
-
-          {/* Price, bills, 25-year savings and download */}
-          <div className={`${GLASS} ${TINT.cyan} flex min-h-0 flex-col items-stretch p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.cyan} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
             <Sheen />
-            <div className="relative flex min-h-0 flex-1 flex-col justify-evenly gap-1">
-              <div className="text-center">
-                <p className="font-source-sans text-[11px] font-semibold uppercase tracking-[0.8px] text-white/80">
-                  Total System Price
-                </p>
-                <p className="font-source-sans text-[clamp(26px,5vh,40px)] font-bold leading-[1.05]">
-                  <span className="bg-[linear-gradient(154.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
-                    {computedTotalPrice != null ? formatAud(computedTotalPrice) : pricingError ? "Price on request" : "Pricing…"}
-                  </span>
-                </p>
-                <p className="line-clamp-2 font-source-sans text-[10px] leading-[13px] text-white/65" aria-live="polite">
-                  {selectedQuote
-                    ? `*Includes installation and GST, after ${selectedQuote.stcCount} STCs (${formatAud(selectedQuote.stcValue)}). ${
-                        selectedQuote.battery?.inverterBuiltIn ? `${selectedQuote.battery.model}` : (selectedQuote.inverter?.model ?? "")
-                      }${selectedQuote.phase === 3 ? ", three-phase supply" : ""}.${pricingLoading ? " Updating…" : ""}`
-                    : pricingError
-                      ? "We couldn't price this design just now. Your installer will confirm the price."
-                      : "Working out your price…"}
-                </p>
-              </div>
+            <div className="relative flex min-h-0 flex-1 flex-col justify-evenly gap-1 text-center">
+              <p className="font-source-sans text-[11px] font-semibold uppercase tracking-[0.8px] text-white/85">
+                Total System Price
+              </p>
+              <p className="font-source-sans text-[clamp(26px,5vh,40px)] font-bold leading-[1.05]">
+                <span className="bg-[linear-gradient(154.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
+                  {computedTotalPrice != null ? formatAud(computedTotalPrice) : pricingError ? "Price on request" : "Pricing…"}
+                </span>
+              </p>
+              <p className="line-clamp-2 font-source-sans text-[10px] leading-[13px] text-white/70" aria-live="polite">
+                {selectedQuote
+                  ? `*Includes installation and GST, after ${selectedQuote.stcCount} STCs (${formatAud(selectedQuote.stcValue)}). ${
+                      selectedQuote.battery?.inverterBuiltIn ? `${selectedQuote.battery.model}` : (selectedQuote.inverter?.model ?? "")
+                    }${selectedQuote.phase === 3 ? ", three-phase supply" : ""}.${pricingLoading ? " Updating…" : ""}`
+                  : pricingError
+                    ? "We couldn't price this design just now. Your installer will confirm the price."
+                    : "Working out your price…"}
+              </p>
               <div className="flex gap-1.5">
                 <ProposalSubMetric label="Monthly Savings" value={proposal.pricing.monthlySavings} />
                 <ProposalSubMetric label="Current Bill" value={proposal.pricing.currentBill} />
@@ -706,24 +705,29 @@ export const DesignsProposalStepContent = forwardRef<
                   valueClassName="inline-block bg-[linear-gradient(142.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent"
                 />
               </div>
-              <div className="flex items-center justify-between rounded-[10px] border border-white/15 bg-[#0B2A4A]/45 px-2.5 py-[clamp(2px,0.6vh,6px)]">
-                <p className="font-source-sans text-[11px] font-semibold uppercase tracking-[0.6px] text-white/80">
-                  25-Year Net Savings
-                </p>
-                <p className="font-source-sans text-[clamp(16px,2.6vh,22px)] font-bold text-[#7DF9FF]">
-                  {formatAud(netSavings25yr)}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="w-full rounded-[12px] bg-[linear-gradient(172.76deg,#2094F3_0%,#17CFCF_100%)] py-[clamp(4px,0.9vh,9px)] font-source-sans text-[14px] font-semibold uppercase tracking-[0.8px] text-white shadow-[0px_0px_24px_0px_rgba(32,148,243,0.45)] ring-1 ring-white/40 transition hover:brightness-110"
-                onClick={() => setDownloadModalOpen(true)}
-              >
-                Download your proposal
-              </button>
             </div>
           </div>
+
+          <div className={`${GLASS} ${TINT.neutral} flex min-h-0 flex-col items-center justify-center p-[clamp(8px,1.4vh,14px)]`}>
+            <Sheen />
+            <p className="relative font-source-sans text-[12px] font-semibold uppercase tracking-[0.8px] text-white/80">
+              25-Year Net Savings
+            </p>
+            <p className="relative font-source-sans text-[clamp(26px,5vh,40px)] font-bold leading-[1.1]">
+              <span className="bg-[linear-gradient(154.98deg,#2094F3_0%,#17CFCF_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
+                {formatAud(netSavings25yr)}
+              </span>
+            </p>
+          </div>
         </div>
+
+        <button
+          type="button"
+          className="mx-auto w-full max-w-[478px] shrink-0 rounded-[12px] bg-[linear-gradient(172.76deg,#2094F3_0%,#17CFCF_100%)] py-[clamp(4px,1vh,10px)] font-source-sans text-[clamp(14px,2.2vh,18px)] font-semibold uppercase tracking-[0.9px] text-white shadow-[0px_0px_30px_0px_rgba(32,148,243,0.45)] ring-1 ring-white/40 transition hover:brightness-110"
+          onClick={() => setDownloadModalOpen(true)}
+        >
+          Download your proposal
+        </button>
       </div>
 
       <DesignsProposalDownloadModal
