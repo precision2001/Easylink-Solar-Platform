@@ -108,6 +108,8 @@ const TINT = {
   gold: "border-[rgba(253,230,138,0.55)] bg-[linear-gradient(156deg,rgba(253,224,71,0.42)_0%,rgba(247,141,0,0.38)_100%)]",
   design: "border-[rgba(255,255,255,0.35)] bg-[linear-gradient(159deg,rgba(84,116,235,0.5)_16%,rgba(255,60,60,0.42)_100%)]",
   neutral: "border-white/20 bg-white/[0.07]",
+  /** EasyLink logo yellow → gold, near-solid so the brand colour reads at full strength. */
+  brandGold: "border-[rgba(255,245,170,0.85)] bg-[linear-gradient(133deg,rgba(255,239,98,0.95)_0%,rgba(255,200,40,0.93)_45%,rgba(247,141,0,0.93)_100%)]",
 } as const;
 
 function Sheen() {
@@ -119,10 +121,10 @@ function Sheen() {
   );
 }
 
-function CardTitle({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+function CardTitle({ children, right, dark }: { children: React.ReactNode; right?: React.ReactNode; dark?: boolean }) {
   return (
     <div className="relative flex items-center justify-between gap-2">
-      <p className="font-source-sans text-[12px] font-bold uppercase tracking-[1px] text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
+      <p className={`font-source-sans text-[12px] font-bold uppercase tracking-[1px] ${dark ? "text-[#152238]" : "text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]"}`}>
         {children}
       </p>
       {right}
@@ -290,9 +292,10 @@ function BatterySelector({
       ? { ...option, label: `${Math.round(sizeKwh * 10) / 10}kWh` }
       : option;
   return (
-    <div className={`${GLASS} ${TINT.gold} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
+    <div className={`${GLASS} ${TINT.brandGold} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
       <Sheen />
       <CardTitle
+        dark
         right={
           <span className="rounded-full bg-black/70 px-2.5 py-[1px] font-source-sans text-[12px] font-semibold text-yellow-lemon">
             {selected.label}
@@ -312,7 +315,7 @@ function BatterySelector({
               className={`flex flex-col items-center justify-center rounded-[9px] border px-1 py-[clamp(1px,0.5vh,6px)] font-source-sans text-[12.5px] font-semibold leading-tight transition ${
                 isSelected
                   ? "border-white bg-[#0B2A4A]/90 text-white shadow-md"
-                  : "border-white/40 bg-white/30 text-[#152238] hover:bg-white/45"
+                  : "border-white/70 bg-white/55 text-[#152238] hover:bg-white/75"
               }`}
             >
               {battery.label}
