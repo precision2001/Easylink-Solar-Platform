@@ -148,6 +148,8 @@ export const DesignsRegisterStepContent = forwardRef<
                 />
               </label>
 
+              {/* Wording is versioned: change MARKETING_CONSENT_VERSION in
+                  lib/designs/capture.ts whenever this text changes. */}
               <label className="flex items-start gap-3 text-left">
                 <input
                   type="checkbox"

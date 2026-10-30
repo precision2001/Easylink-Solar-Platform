@@ -87,6 +87,7 @@ describe("capture payload", () => {
       email: "ada@example.com",
       mobile: "+61491570006",
       marketingConsent: false,
+      consentVersion: "design-form-2026-10-31",
       estimatedValue: 9450,
       attribution: { utmSource: "google" },
     });

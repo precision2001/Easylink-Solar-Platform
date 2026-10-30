@@ -3,6 +3,13 @@ import { proposalToDesignInput } from "@/lib/customers/custom-design";
 import { getAttribution, type DesignAttribution } from "@/lib/designs/attribution";
 import type { CustomerAuthProfile } from "@/lib/customers/profile";
 
+/**
+ * Stored on the lead with every consent answer. Change it whenever the
+ * consent wording on the register step (DesignsAddressStepContent) changes;
+ * git history then shows exactly what each version asked.
+ */
+export const MARKETING_CONSENT_VERSION = "design-form-2026-10-31";
+
 /** Body of POST /api/public/designs/capture (forwarded to the backend). */
 export type DesignCapturePayload = {
   firstName: string;
@@ -10,6 +17,7 @@ export type DesignCapturePayload = {
   email: string;
   mobile: string;
   marketingConsent: boolean;
+  consentVersion: string;
   design: ReturnType<typeof proposalToDesignInput>;
   estimatedValue?: number;
   attribution?: DesignAttribution;
@@ -47,6 +55,7 @@ export function buildDesignCapturePayload(
     email: proposal.customer.email.trim(),
     mobile: toE164(proposal.customer.phoneNumber),
     marketingConsent: proposal.customer.marketingConsent === true,
+    consentVersion: MARKETING_CONSENT_VERSION,
     design: proposalToDesignInput(proposal),
     ...(estimatedValue ? { estimatedValue } : {}),
     ...(attribution ? { attribution } : {}),
