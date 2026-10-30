@@ -322,16 +322,25 @@ function StatTile({
   label: string;
 }) {
   return (
-    <div className="flex min-h-[87px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[10px] bg-white px-2 py-2.5">
-      <p className="font-source-sans text-[19px] font-bold leading-tight text-[#152238]">
-        {value}
-      </p>
-      <p className="text-center font-source-sans text-[9px] font-normal uppercase tracking-[0.5px] text-[#6a7282]">
-        {label}
-      </p>
+    <div className={`${TILE_BOX} bg-white`}>
+      <p className={`${TILE_LABEL} text-[#6a7282]`}>{label}</p>
+      <p className={`${TILE_VALUE} text-[#152238]`}>{value}</p>
+      <p className={`${TILE_SUB}`} aria-hidden>&nbsp;</p>
     </div>
   );
 }
+
+/*
+ * Every tile in the performance and value rows shares one box and three
+ * fixed lines — label, amount, kWh (blank when there is none) — so the
+ * seven tiles are the same height and their text lines up across the row.
+ */
+const TILE_BOX =
+  "group relative grid h-[100px] min-w-0 flex-1 grid-rows-[16px_28px_16px] content-center justify-items-center gap-1.5 rounded-[10px] px-2 outline-none";
+const TILE_LABEL =
+  "flex max-w-full items-center gap-1 truncate text-center font-source-sans text-[9px] font-semibold uppercase leading-4 tracking-[0.5px]";
+const TILE_VALUE = "font-source-sans text-[19px] font-bold leading-7 whitespace-nowrap";
+const TILE_SUB = "font-source-sans text-[9px] leading-4 text-white/60";
 
 function ValuePanel({
   icon,
@@ -358,21 +367,17 @@ function ValuePanel({
   return (
     <div
       tabIndex={tip ? 0 : undefined}
-      className="group relative flex min-h-[112px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[10px] border border-white/10 bg-white/[0.06] px-2 py-2.5 outline-none focus-visible:ring-1 focus-visible:ring-orange-amber"
+      className={`${TILE_BOX} border border-white/10 bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-orange-amber`}
     >
-      <div className="flex max-w-full items-center gap-1">
+      <div className={`${TILE_LABEL} text-white/80`}>
         <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-[4px] ${iconClassName}`}>
           <Icon name={icon} className="size-2 text-white" />
         </span>
-        <p className="truncate font-source-sans text-[9px] font-semibold uppercase tracking-[0.5px] text-white/80">
-          {label}
-        </p>
-        {tip ? <span aria-hidden className="font-source-sans text-[9px] text-white/50">ⓘ</span> : null}
+        <span className="truncate">{label}</span>
+        {tip ? <span aria-hidden className="text-white/50">ⓘ</span> : null}
       </div>
-      <p className={`font-source-sans text-[19px] font-bold leading-tight ${dollarClassName ?? "text-white"}`}>
-        {dollar}
-      </p>
-      {kwh ? <p className="font-source-sans text-[9px] text-white/60">{kwh}</p> : null}
+      <p className={`${TILE_VALUE} ${dollarClassName ?? "text-white"}`}>{dollar}</p>
+      <p className={TILE_SUB}>{kwh ?? "\u00a0"}</p>
       {tip ? (
         <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 hidden w-max max-w-[220px] -translate-x-1/2 flex-col gap-0.5 rounded-[8px] bg-[#152238] px-2 py-1.5 font-inter text-[10px] leading-3.5 text-white shadow-lg group-hover:flex group-focus:flex">
           {breakdown!.map((line, i) => (
@@ -922,7 +927,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   title="System performance"
                   subtitle="At the battery size and mode set on the left"
                 />
-                <div className="mt-2 flex flex-col justify-center h-full">
+                <div className="mt-auto pt-2">
                   <div className="flex items-center gap-1.5">
                     <StatTile value={`${independencePct.toFixed(0)}%`} label="Grid-free" />
                     <StatTile value={formatAud(sim.exportIncomeAud)} label="Export income/yr" />
@@ -956,7 +961,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   ))}
                 </div>
 
-                <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                <div className="mt-auto grid grid-cols-2 gap-1.5 pt-2 sm:grid-cols-4">
                   <ValuePanel
                     icon="home"
                     iconClassName="bg-[linear-gradient(126deg,#2094F3_0%,#17CFCF_100%)]"
