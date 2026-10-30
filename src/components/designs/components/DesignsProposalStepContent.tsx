@@ -719,7 +719,7 @@ export const DesignsProposalStepContent = forwardRef<
                 <p className="text-center font-source-sans text-[13px] font-normal uppercase leading-[20px] tracking-[0.6px] text-white/60">
                   Total System Price
                 </p>
-                <p className="mt-1 text-center font-source-sans text-[clamp(20px,3.5vw,20px)] font-normal">
+                <p className="mt-1 text-center font-source-sans text-[40px] font-semibold leading-[1.1]">
                   <span className="bg-[linear-gradient(154.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent">
                     {computedTotalPrice != null ? formatAud(computedTotalPrice) : pricingError ? "Price on request" : "Pricing…"}
                   </span>
