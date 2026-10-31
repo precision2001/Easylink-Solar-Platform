@@ -278,11 +278,14 @@ function BatterySelector({
   onSelect,
   prices,
   sizeKwh,
+  estimated,
 }: {
   selectedId: string;
   onSelect: (id: string) => void;
   /** Added cost of each battery for this design (after battery STCs), from the quote engine. */
   prices: Record<string, number>;
+  /** Options priced by estimate (no single product that size in the price list). */
+  estimated: Set<string>;
   /** The design's battery size; shown when it isn't one of the buttons (e.g. 13 kWh from the Energy step). */
   sizeKwh: number;
 }) {
@@ -323,6 +326,7 @@ function BatterySelector({
               {battery.id !== "none" && prices[battery.id] ? (
                 <span className={`text-[10px] font-normal ${isSelected ? "text-yellow-lemon" : "text-[#152238]/70"}`}>
                   +{formatAud(prices[battery.id])}
+                  {estimated.has(battery.id) ? " est." : ""}
                 </span>
               ) : null}
             </button>
@@ -556,6 +560,11 @@ export const DesignsProposalStepContent = forwardRef<
       PANEL_TIER_OPTIONS.map((t) => [t.id, totals[t.id] != null ? totals[t.id] - base : 0]),
     ) as Record<string, number>;
   }, [priced]);
+  /** Battery buttons priced by estimate (no single product that size in the price list). */
+  const batteryEstimated = useMemo(() => {
+    const info = priced?.batteryInfo ?? {};
+    return new Set(BATTERY_CAPACITY_OPTIONS.filter((b) => info[String(batteryKwhOf(b.id))]?.estimated).map((b) => b.id));
+  }, [priced]);
   const batteryPrices = useMemo(() => {
     const totals = priced?.batteryTotals ?? {};
     const none = totals["0"] ?? 0;
@@ -568,7 +577,9 @@ export const DesignsProposalStepContent = forwardRef<
   }, [priced]);
 
   /** null until the backend has priced this design. */
-  const computedTotalPrice = selectedQuote ? selectedQuote.net : null;
+  /** Why the design can't be priced from the price list (e.g. no battery that size), if so. */
+  const pricingBlock = selectedQuote?.blocks?.length ? selectedQuote.blocks[0] : null;
+  const computedTotalPrice = selectedQuote && !pricingBlock ? selectedQuote.net : null;
   const yearlySavingsNum = savings.yearlySavings;
   const computedPayback =
     computedTotalPrice != null && yearlySavingsNum > 0
@@ -660,6 +671,7 @@ export const DesignsProposalStepContent = forwardRef<
             onSelect={handleSelectBattery}
             prices={batteryPrices}
             sizeKwh={batteryKwh}
+            estimated={batteryEstimated}
           />
         </div>
 
@@ -697,12 +709,18 @@ export const DesignsProposalStepContent = forwardRef<
               </p>
               <p className="font-source-sans text-[clamp(26px,5vh,40px)] font-bold leading-[1.05]">
                 <span className="bg-[linear-gradient(154.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
-                  {computedTotalPrice != null ? formatAud(computedTotalPrice) : pricingError ? "Price on request" : "Pricing…"}
+                  {computedTotalPrice != null
+                    ? formatAud(computedTotalPrice)
+                    : pricingError || pricingBlock
+                      ? "Price on request"
+                      : "Pricing…"}
                 </span>
               </p>
               <p className="line-clamp-2 font-source-sans text-[10px] leading-[13px] text-white/70" aria-live="polite">
-                {selectedQuote
-                  ? `*Includes installation and GST, after ${selectedQuote.stcCount} STCs (${formatAud(selectedQuote.stcValue)}). ${
+                {pricingBlock
+                  ? `${pricingBlock} Pick a battery size from the list, or your installer will quote it.`
+                  : selectedQuote
+                  ? `*${selectedQuote.estimated ? "Estimated battery price (no single battery this size in our price list). " : ""}Includes installation and GST, after ${selectedQuote.stcCount} STCs (${formatAud(selectedQuote.stcValue)}). ${
                       selectedQuote.battery?.inverterBuiltIn ? `${selectedQuote.battery.model}` : (selectedQuote.inverter?.model ?? "")
                     }${selectedQuote.phase === 3 ? ", three-phase supply" : ""}.${pricingLoading ? " Updating…" : ""}`
                   : pricingError

@@ -65,6 +65,8 @@ export type ProposalQuote = {
   battery: { model: string; kwh: number; inverterBuiltIn: boolean } | null;
   blocks: string[];
   notes: string[];
+  /** Battery priced by estimate (no single product that size in the price list). */
+  estimated?: boolean;
 };
 
 export type ProposalPricingResponse = {
@@ -73,8 +75,15 @@ export type ProposalPricingResponse = {
   tierTotals: Record<string, number>;
   /** The panel behind each tier. */
   tierInfo: Record<string, { model: string; w: number }>;
-  /** Net price for each battery option (keyed by kWh), same tier. */
+  /**
+   * Net price for each battery option (keyed by kWh), same tier: a product in
+   * the price list where one fits, else an estimate from the nearest range.
+   */
   batteryTotals: Record<string, number>;
+  /** The product behind each battery option, and whether its price is an estimate. */
+  batteryInfo?: Record<string, { model: string; kwh: number; estimated?: boolean }>;
+  /** Largest home battery in the price list (usable kWh). */
+  largestBatteryKwh?: number;
   installDate: string;
   zone: number;
 };
