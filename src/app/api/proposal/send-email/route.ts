@@ -34,36 +34,61 @@ export async function POST(request: Request) {
     );
   }
 
-  let json: unknown;
-  try {
-    json = await request.json();
-  } catch {
-    return NextResponse.json({ message: "Invalid JSON body." }, { status: 400 });
-  }
+  // Two body formats: multipart with the PDF as a file (what the site sends —
+  // no base64 overhead, so a compressed proposal stays under the web server's
+  // 1 MB request limit), or the older JSON with base64.
+  let to: string;
+  let filename: string;
+  let dearName: string | undefined;
+  let buffer: Buffer;
 
-  const parsed = bodySchema.safeParse(json);
-  if (!parsed.success) {
-    return NextResponse.json(
-      {
-        message: "Invalid request.",
-        fieldErrors: parsed.error.flatten().fieldErrors,
-      },
-      { status: 400 },
-    );
+  const contentType = request.headers.get("content-type") ?? "";
+  if (contentType.includes("multipart/form-data")) {
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return NextResponse.json({ message: "Invalid form body." }, { status: 400 });
+    }
+    const file = form.get("pdf");
+    const parsed = bodySchema.omit({ pdfBase64: true }).safeParse({
+      to: form.get("to"),
+      filename: form.get("filename") ?? undefined,
+      dearName: form.get("dearName") ?? undefined,
+    });
+    if (!parsed.success || !(file instanceof Blob)) {
+      return NextResponse.json({ message: "Invalid request." }, { status: 400 });
+    }
+    ({ to, filename, dearName } = parsed.data);
+    buffer = Buffer.from(await file.arrayBuffer());
+  } else {
+    let json: unknown;
+    try {
+      json = await request.json();
+    } catch {
+      return NextResponse.json({ message: "Invalid JSON body." }, { status: 400 });
+    }
+    const parsed = bodySchema.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          message: "Invalid request.",
+          fieldErrors: parsed.error.flatten().fieldErrors,
+        },
+        { status: 400 },
+      );
+    }
+    ({ to, filename, dearName } = parsed.data);
+    try {
+      buffer = Buffer.from(parsed.data.pdfBase64, "base64");
+    } catch {
+      return NextResponse.json({ message: "Invalid PDF encoding." }, { status: 400 });
+    }
   }
-
-  const { to, pdfBase64, filename, dearName } = parsed.data;
 
   const from =
     process.env.RESEND_FROM_EMAIL?.trim() ||
     "Easylink Solar <onboarding@resend.dev>";
-
-  let buffer: Buffer;
-  try {
-    buffer = Buffer.from(pdfBase64, "base64");
-  } catch {
-    return NextResponse.json({ message: "Invalid PDF encoding." }, { status: 400 });
-  }
 
   if (buffer.length < 100) {
     return NextResponse.json({ message: "PDF file is too small or empty." }, { status: 400 });

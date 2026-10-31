@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 
 import { toast } from "react-toastify";
 
-import { blobToBase64 } from "@/lib/proposal/blobToBase64";
 import { PAGE_H, PAGE_W, ProposalPages } from "@/components/proposal/ProposalPages";
 import { downloadPdfBlob } from "@/lib/proposal/generateProposalPdf";
 import {
@@ -110,21 +109,19 @@ export function DesignsProposalDownloadModal({
           if (!email.fits) {
             console.warn("Proposal email copy is still over the size limit", email.blob.size);
           }
-          // The compressed copy: same pages, squeezed under the email size limit.
-          const pdfBase64 = await blobToBase64(email.blob);
+          // The compressed copy, sent as a file (no base64), so it stays under the
+          // web server's 1 MB request limit.
           const fileSlug =
             proposal.customer.name.replace(/[^\w\d\-]+/g, "-").slice(0, 48) ||
             "Customer";
-          const filename = `Solar-Energy-Proposal-${fileSlug}.pdf`;
+          const form = new FormData();
+          form.append("to", emailTo);
+          form.append("filename", `Solar-Energy-Proposal-${fileSlug}.pdf`);
+          form.append("dearName", dearName);
+          form.append("pdf", email.blob, `Solar-Energy-Proposal-${fileSlug}.pdf`);
           const res = await fetch("/api/proposal/send-email", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: emailTo,
-              pdfBase64,
-              filename,
-              dearName,
-            }),
+            body: form,
           });
           const raw = await res.text();
           let payload: { message?: string } = {};

@@ -4,7 +4,7 @@
  * The proposal's pages are images, so the file size is set by how they are
  * encoded. This tries each step of the ladder — lower JPEG quality first,
  * then fewer pixels — and keeps the first result under the limit. Text
- * stays readable to the last step (about 115 dpi at 0.55 quality).
+ * stays readable to the last step (about 100 dpi at 0.5 quality).
  */
 export type CompressionStep = {
   /** JPEG quality, 0–1. */
@@ -19,10 +19,14 @@ export const EMAIL_COMPRESSION_LADDER: CompressionStep[] = [
   { quality: 0.65, resolution: 0.85 },
   { quality: 0.6, resolution: 0.72 },
   { quality: 0.55, resolution: 0.62 },
+  { quality: 0.5, resolution: 0.55 },
 ];
 
-/** Email providers and the site's request limits are comfortable well under this. */
-export const EMAIL_PDF_MAX_BYTES = 1.5 * 1024 * 1024;
+/**
+ * The live web server (nginx) accepts requests up to 1 MB, and the PDF goes
+ * up as a file inside that request, so the email copy must stay below it.
+ */
+export const EMAIL_PDF_MAX_BYTES = 900 * 1024;
 
 export type CompressionResult = {
   blob: Blob;
