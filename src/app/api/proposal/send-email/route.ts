@@ -4,6 +4,8 @@ import { z } from "zod";
 
 export const runtime = "nodejs";
 
+const MAX_PDF_BYTES = 8 * 1024 * 1024;
+
 const bodySchema = z.object({
   to: z.string().email(),
   /** Base64-encoded PDF bytes (no data: URL prefix). */
@@ -65,6 +67,15 @@ export async function POST(request: Request) {
 
   if (buffer.length < 100) {
     return NextResponse.json({ message: "PDF file is too small or empty." }, { status: 400 });
+  }
+
+  // The browser compresses the email copy to about 1.5 MB; this is a backstop well
+  // under what mail providers accept, so an oversized file fails clearly here.
+  if (buffer.length > MAX_PDF_BYTES) {
+    return NextResponse.json(
+      { message: "The proposal PDF is too large to email. Download it and send it as a link instead." },
+      { status: 413 },
+    );
   }
 
   const salutation = dearName?.trim()

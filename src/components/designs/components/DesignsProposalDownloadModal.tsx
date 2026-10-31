@@ -100,14 +100,18 @@ export function DesignsProposalDownloadModal({
     setDownloading(true);
     try {
       if (!loaded) return;
-      const { renderProposalPdf } = await import("@/lib/proposal/renderProposalPdf");
-      const blob = await renderProposalPdf(loaded);
-      downloadPdfBlob(blob, proposal.customer.name);
+      const { renderProposalPdfs } = await import("@/lib/proposal/renderProposalPdf");
+      const { download, email } = await renderProposalPdfs(loaded);
+      downloadPdfBlob(download, proposal.customer.name);
 
       const emailTo = proposal.customer.email?.trim();
       if (emailTo) {
         try {
-          const pdfBase64 = await blobToBase64(blob);
+          if (!email.fits) {
+            console.warn("Proposal email copy is still over the size limit", email.blob.size);
+          }
+          // The compressed copy: same pages, squeezed under the email size limit.
+          const pdfBase64 = await blobToBase64(email.blob);
           const fileSlug =
             proposal.customer.name.replace(/[^\w\d\-]+/g, "-").slice(0, 48) ||
             "Customer";
