@@ -78,3 +78,16 @@ describe("fitToBox", () => {
     }
   });
 });
+
+describe("orientForBox", () => {
+  it("lays a tall roof wide in a wide frame, walls square to it", async () => {
+    const { orientForBox } = await import("./roofGeometry");
+    // A 6 m × 16 m roof standing north-south, turned 20° off the grid.
+    const t = (20 * Math.PI) / 180;
+    const pt = (x: number, y: number) => at(x * Math.cos(t) - y * Math.sin(t), x * Math.sin(t) + y * Math.cos(t));
+    const d = buildRoofDrawing(design({ savedRoofs: [[pt(-3, -8), pt(3, -8), pt(3, 8), pt(-3, 8)]], generatedPanels: [] }))!;
+    const o = orientForBox(d, 600, 300);
+    expect(o.maxX - o.minX).toBeCloseTo(16, 1);
+    expect(o.maxY - o.minY).toBeCloseTo(6, 1);
+  });
+});

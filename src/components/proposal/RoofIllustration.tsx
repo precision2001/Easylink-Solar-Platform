@@ -4,7 +4,7 @@
  * in the style of the proposal design (navy roof, sun in the north).
  * Vector, so it stays sharp at any size and in the PDF.
  */
-import { fitToBox, type RoofDrawing } from "@/lib/proposal/roofGeometry";
+import { fitToBox, orientForBox, type RoofDrawing } from "@/lib/proposal/roofGeometry";
 
 const mix = (a: number[], b: number[], t: number) =>
   `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
@@ -12,8 +12,11 @@ const mix = (a: number[], b: number[], t: number) =>
 const DARK_FACE = [46, 62, 87];
 const LIGHT_FACE = [92, 113, 150];
 
-export function RoofIllustration({ roof, width, height }: { roof: RoofDrawing; width: number; height: number }) {
-  const { toPx, scale } = fitToBox(roof, width, height, Math.max(28, Math.min(width, height) * 0.08));
+export function RoofIllustration({ roof: drawing, width, height }: { roof: RoofDrawing; width: number; height: number }) {
+  const pad = Math.max(28, Math.min(width, height) * 0.08);
+  // Turned to fill the frame (landscape in a wide frame); the north arrow turns with it.
+  const roof = orientForBox(drawing, width - 2 * pad, height - 2 * pad);
+  const { toPx, scale } = fitToBox(roof, width, height, pad);
   const path = (ring: { x: number; y: number }[]) =>
     ring.map((p, i) => {
       const q = toPx(p);
@@ -74,8 +77,11 @@ export function RoofIllustration({ roof, width, height }: { roof: RoofDrawing; w
       {/* North arrow */}
       <g transform={`translate(${width - 40} ${height - 44})`}>
         <circle r="18" fill="#0B1426" stroke="#9FB2D0" strokeWidth="1" />
-        <path d="M0 -12 L5 3 L0 0 L-5 3 Z" fill="#FFD60A" />
-        <text x="0" y="14" textAnchor="middle" fontSize="9" fill="#FFFFFF" fontFamily="Arial, sans-serif">N</text>
+        {/* Screen y runs down, so a counter-clockwise turn of the roof is a negative SVG rotation. */}
+        <g transform={`rotate(${-roof.rotationDeg})`}>
+          <path d="M0 -13 L5 2 L0 -1 L-5 2 Z" fill="#FFD60A" />
+          <text x="0" y="12" textAnchor="middle" fontSize="8" fill="#FFFFFF" fontFamily="Arial, sans-serif">N</text>
+        </g>
       </g>
     </svg>
   );

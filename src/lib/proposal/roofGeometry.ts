@@ -123,7 +123,62 @@ export function buildRoofDrawing(sd: DesignProposalSolarDesign | null | undefine
   };
 }
 
-/** Fits the drawing into a box (px), north up, keeping its shape; returns a metres→px mapper. */
+function rotate(p: XY, rad: number): XY {
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
+}
+
+/**
+ * Turns the drawing so the roof fills a box as fully as it can: it tries the
+ * direction of every roof wall (and square to it) and keeps the one that
+ * draws the roof largest. A wide box gets the roof lying wide (landscape),
+ * walls square to the frame. `rotationDeg` is how far it turned
+ * (counter-clockwise), so a north arrow can turn with it.
+ */
+export function orientForBox(d: RoofDrawing, width: number, height: number): RoofDrawing & { rotationDeg: number } {
+  const rings = d.faces.map((f) => f.ring);
+  const candidates = new Set<number>([0]);
+  for (const r of rings) {
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i];
+      const b = r[(i + 1) % r.length];
+      if (Math.hypot(b.x - a.x, b.y - a.y) < 0.5) continue;
+      const deg = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+      candidates.add(Math.round(((-deg % 90) + 90) % 90 * 10) / 10);
+      candidates.add(Math.round((((-deg % 90) + 90) % 90 + 90) * 10) / 10);
+    }
+  }
+  const pts = [...rings.flat(), ...d.panels.flat()];
+  let best = { deg: 0, scale: -1 };
+  for (const deg of candidates) {
+    const rad = (deg * Math.PI) / 180;
+    const q = pts.map((p) => rotate(p, rad));
+    const w = Math.max(...q.map((p) => p.x)) - Math.min(...q.map((p) => p.x));
+    const h = Math.max(...q.map((p) => p.y)) - Math.min(...q.map((p) => p.y));
+    const scale = Math.min(width / Math.max(w, 0.1), height / Math.max(h, 0.1));
+    // Prefer the smaller turn when two are as good.
+    if (scale > best.scale * 1.005 || (Math.abs(scale - best.scale) <= best.scale * 0.005 && Math.abs(deg) < Math.abs(best.deg))) {
+      best = { deg, scale };
+    }
+  }
+  const rad = (best.deg * Math.PI) / 180;
+  const faces = d.faces.map((f) => ({ ...f, ring: f.ring.map((p) => rotate(p, rad)) }));
+  const panels = d.panels.map((c) => c.map((p) => rotate(p, rad)));
+  const all = [...faces.flatMap((f) => f.ring), ...panels.flat()];
+  return {
+    ...d,
+    faces,
+    panels,
+    minX: Math.min(...all.map((p) => p.x)),
+    minY: Math.min(...all.map((p) => p.y)),
+    maxX: Math.max(...all.map((p) => p.x)),
+    maxY: Math.max(...all.map((p) => p.y)),
+    rotationDeg: best.deg,
+  };
+}
+
+/** Fits the drawing into a box (px), keeping its shape; returns a metres→px mapper. */
 export function fitToBox(d: RoofDrawing, width: number, height: number, padding: number) {
   const w = Math.max(1, d.maxX - d.minX);
   const h = Math.max(1, d.maxY - d.minY);
