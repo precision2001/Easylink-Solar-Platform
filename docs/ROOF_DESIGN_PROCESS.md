@@ -140,6 +140,44 @@ Every design, by hand or on the live page, whatever found the roof:
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-10-31: 11 Melton St S, Auburn (L-shaped hip roof with a gable street end): rules, not assumptions
+1. **Owner's question:** "on what basis was this assumption?" The square-roof
+   code drew every end as a hip. That was a rule in the code, not a decision
+   made for each roof. Now each end is decided:
+   - **Trigonometry:** every face rises from its eave at its pitch, so the
+     face over a point is the eave with the lowest distance × tan(pitch).
+     Equal pitches put hips and valleys at 45° in plan. A face takes its own
+     pitch only when Google's pitches clearly show it.
+   - **Hip or gable:** each end wall (both corners convex) is tried as a hip
+     and as a gable, up to two gables.
+   - **Google's check:** the share of roof facing each way must agree within
+     0.1.
+   - **Image check:** every computed hip, valley and ridge is checked
+     against the image (a brightness edge or capping line within 0.4 m). At
+     least 35% of their length must be seen, and among readings Google
+     confirms, the one whose lines are seen most wins. Typical results:
+     Gilbert 65% seen, Melton 53%, 134 Old Canterbury 50%. 61 Harry Ave
+     reached only 26%, so it is not used.
+2. **Shaded face dropped:** the trace missed Melton's whole south face, which
+   is in shade and a darker brown. The roof now grows into cells of the
+   roof's hue at any brightness, up to 3 m. Growth is limited to areas above
+   ground in Google's height model and inside the lot, because the driveway
+   is terracotta-coloured too.
+3. **Staircase edges:** a slightly skewed edge traces as a staircase of
+   25 cm steps. Greedy step removal moved every step inward and erased a
+   2 m wing. Steps are now removed on runs: noise first, merged at the
+   length-weighted position, then corner steps. A 1.75 × 2.25 m corner is a
+   patio at Gilbert and a real wing at Melton, so geometry can't decide.
+   Both readings are kept and Google's data and the image pick.
+4. **Relook roof button:** redraws the roof with other settings (cell size,
+   colour limit, step limit, shade growth). It keeps the readings Google
+   confirms and the image shows (with relaxed limits: 0.15 share, 20% seen),
+   and shows the next best on each press. Opus 4.6 was tested on Melton for
+   this (rotated image with a grid) and failed both times: it included the
+   neighbour's building and missed the east wing. No AI is used yet.
+5. **Melton result:** 8-corner outline, gables at the street end and at the
+   east end of the wing, 6 faces, 27 landscape panels. By hand: 38.
+
 ### 2026-10-30 — 25 Gilbert St, Colyton (dark-tile T/L hip roof): hand method put on the live page
 1. **Hand design:** the walls are square (14.8°), so the outline was drawn as
    rectangles in the wall frame. Faces were then *computed*, not read: on a

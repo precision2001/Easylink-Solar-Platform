@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "react-toastify";
 import {
   forwardRef,
   useCallback,
@@ -33,7 +34,7 @@ import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
-import { hipFacesForSquareRoof } from "@/lib/designer/squareRoof";
+import { bestSquareRoof, rankSquareReadings, type SquareReading } from "@/lib/designer/squareRoof";
 import { keepPanelsClear } from "@/lib/designer/panelClearance";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
@@ -693,6 +694,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
    * by hand: two clicks along one wall, one click on the other.
    */
   const [wallClicks, setWallClicks] = useState<google.maps.LatLngLiteral[] | null>(null);
+  /** Relook roof: the confirmed readings of this roof, best first, and which one is shown. */
+  const [relook, setRelook] = useState<{ readings: SquareReading[]; index: number } | null>(null);
   const [sideWalls, setSideWalls] = useState<{
     lines: [google.maps.LatLngLiteral, google.maps.LatLngLiteral][];
     widthM: number;
@@ -736,7 +739,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
     // Square-walled hip roof, confirmed by Google's roof segments: the outline
     // drawn along the walls (as by hand — 25 Gilbert St, Colyton).
     const squared = roofSnapshot.analysis?.squared;
-    if (squared && !data?.estimated && hipFacesForSquareRoof(squared.ring, data?.roofSegments)) return [squared.ring];
+    const sq = !data?.estimated ? bestSquareRoof(squared, data?.roofSegments, roofSnapshot.analysis?.luma ?? null) : null;
+    if (sq) return [sq.ring];
     const straight = regularizeRoofOutlines(found.map((o) => o.ring));
     const mask = roofSnapshot.analysis!.mask;
     return regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, mask).ring));
@@ -953,6 +957,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     setHasInitializedRoof(false);
     setSideWalls(null);
     setWallClicks(null);
+    setRelook(null);
   }
 
   useEffect(() => {
@@ -1229,12 +1234,18 @@ export const DesignsSolarPanelStepContent = forwardRef<
     (paths: google.maps.LatLngLiteral[][]) => {
       // Square-walled hip roof confirmed by Google's segments: hips and valleys
       // computed from the walls, exactly — no correcting needed.
-      const square = paths.length === 1 && !data?.estimated ? hipFacesForSquareRoof(paths[0], data?.roofSegments) : null;
-      if (square) {
+      // Faces by trigonometry from the walls (hip or gable at each end), kept
+      // only when Google's roof data confirms them; every hip, valley and
+      // ridge is then checked against the lines seen in the image.
+      const reading =
+        paths.length === 1 && !data?.estimated
+          ? rankSquareReadings([paths[0]], data?.roofSegments, roofSnapshot.analysis?.luma ?? null, relook ? { maxShareDiff: 0.15, minSeen: 0.2 } : {})[0]
+          : undefined;
+      if (reading) {
         const obstructions: RoofObstruction[] = roofSnapshot.analysis
-          ? findRoofObstructions(roofSnapshot.analysis.luma, square.map((f) => f.ring))
+          ? findRoofObstructions(roofSnapshot.analysis.luma, reading.faces.map((f) => f.ring))
           : [];
-        return { source: "square-hip" as const, faces: square, interiorChecks: [] as LineCheck[], moved: 0, obstructions };
+        return { source: "square-hip" as const, faces: reading.faces, interiorChecks: reading.lines, moved: 0, obstructions, gables: reading.gables.length };
       }
       const detected = detectRoofFaces(dsmRaster, paths, maskRaster);
       const source = detected && detected.length > 0 ? ("height-model" as const) : ("assumed-hip" as const);
@@ -1266,7 +1277,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
         : [];
       return { source, faces: corrected.faces, interiorChecks: corrected.checks, moved: corrected.moved, obstructions };
     },
-    [dsmRaster, lineLuma, maskRaster, roofSnapshot.analysis, data?.estimated, data?.roofSegments],
+    [dsmRaster, lineLuma, maskRaster, roofSnapshot.analysis, data?.estimated, data?.roofSegments, relook],
   );
 
   const savedFaceSet = useMemo(() => facesFor(savedRoofs), [facesFor, savedRoofs]);
@@ -1464,6 +1475,38 @@ export const DesignsSolarPanelStepContent = forwardRef<
     setWallClicks((c) => (c ? null : []));
   }, [applyRoofs, sideWalls]);
 
+  /**
+   * Relook roof: draws the roof again in other readings (other edge and
+   * colour settings, hip or gable at each end), keeps those Google's roof
+   * data confirms, and shows them best first — the reading whose hips,
+   * valleys and ridges the image shows most — one more per press.
+   */
+  const handleRelook = useCallback(() => {
+    const analysis = roofSnapshot.analysis;
+    if (!analysis || data?.estimated) {
+      toast.info("Relook needs the zoomed roof image and Google's roof data, which aren't available here. Use Edit to mark the roof.");
+      return;
+    }
+    let state = relook;
+    if (!state) {
+      const rings = [...(savedRoofs.length === 1 ? [savedRoofs[0]] : []), ...(analysis.relook?.() ?? [])];
+      const readings = rankSquareReadings(rings, data?.roofSegments, analysis.luma, { maxShareDiff: 0.15, minSeen: 0.2 });
+      if (readings.length === 0) {
+        toast.info("No other reading of this roof matches Google's roof data. Use Edit to mark the roof by hand.");
+        return;
+      }
+      state = { readings, index: -1 };
+    }
+    const key = (r: google.maps.LatLngLiteral[]) => r.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join(";");
+    const current = savedRoofs.length === 1 ? key(savedRoofs[0]) : "";
+    let next = (state.index + 1) % state.readings.length;
+    if (state.readings.length > 1 && key(state.readings[next].ring) === current) next = (next + 1) % state.readings.length;
+    setRelook({ readings: state.readings, index: next });
+    setSideWalls(null);
+    setWallClicks(null);
+    applyRoofs([state.readings[next].ring]);
+  }, [applyRoofs, data?.estimated, data?.roofSegments, relook, roofSnapshot.analysis, savedRoofs]);
+
   const handleMapClick = useCallback(
     (e: google.maps.MapMouseEvent) => {
       if (!wallClicks || !e.latLng) return;
@@ -1519,7 +1562,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
     // along its walls: fitting it to the rough roof trace pushed the east
     // eave of 25 Gilbert St out onto the patio.
     const squareConfirmed =
-      straightened.length === 1 && !data?.estimated && Boolean(hipFacesForSquareRoof(straightened[0], data?.roofSegments));
+      straightened.length === 1 &&
+      !data?.estimated &&
+      rankSquareReadings([straightened[0]], data?.roofSegments, roofSnapshot.analysis?.luma ?? null).length > 0;
     const validPaths = lineMask && !squareConfirmed
       ? regularizeRoofOutlines(
           straightened.map((ring) => fitEavesToMask(ring, lineMask).ring),
@@ -1821,7 +1866,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
               <p className="w-full rounded-[10px] bg-white/80 px-4 py-2 text-center font-inter text-[12px] font-medium text-ink">
                 {roofSnapshot.analysis ? "Roof found by zooming into Google's satellite image. " : ""}
                 {savedFaceSet.source === "square-hip"
-                  ? `${savedFaces.length} roof faces drawn from the walls (hip roof, confirmed by Google's roof data). `
+                  ? `${savedFaces.length} roof faces drawn from the walls by trigonometry (${
+                      "gables" in savedFaceSet && savedFaceSet.gables ? `${savedFaceSet.gables} gable end${savedFaceSet.gables > 1 ? "s" : ""}, rest hipped` : "hip roof"
+                    }), confirmed by Google's roof data; ${savedFaceSet.interiorChecks.filter((c) => c.status === "confirmed").length} of ${savedFaceSet.interiorChecks.length} hips, valleys and ridges seen in the image. `
                   : savedFaceSet.source === "height-model"
                     ? `${savedFaces.length} roof faces found from Google's height data. `
                     : "Roof faces assumed (no usable height data) — check on site. "}
@@ -2148,6 +2195,15 @@ export const DesignsSolarPanelStepContent = forwardRef<
                 </>
               ) : (
                 <>
+                <button
+                  type="button"
+                  onClick={handleRelook}
+                  disabled={savedRoofs.length === 0 || !roofSnapshot.analysis}
+                  title="Draw the roof again: other readings of its edges, hips and gables, checked against Google's roof data and the image"
+                  className="h-[33px] rounded-[6px] bg-[linear-gradient(126deg,#FFEF62_0%,#F78D00_100%)] px-[12px] font-inter text-[13px] font-semibold tracking-[-0.1504px] text-[#152238] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {relook ? `Relook roof (${relook.index + 1}/${relook.readings.length})` : "Relook roof"}
+                </button>
                 <button
                   type="button"
                   onClick={handleSideWallsButton}

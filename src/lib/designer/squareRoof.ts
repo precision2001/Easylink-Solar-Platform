@@ -22,7 +22,7 @@
 import { extractRoofOutlinesFromMask } from "@/utils/roofMaskContour";
 import type { GeoTiffBounds, GeoTiffRaster } from "@/utils/geotiff";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
-import { fitEavesToMask } from "@/lib/designer/roofLineCheck";
+import { checkInteriorLine, fitEavesToMask, interiorEdges, type LineCheck } from "@/lib/designer/roofLineCheck";
 
 type LatLng = { lat: number; lng: number };
 type XY = { x: number; y: number };
@@ -185,7 +185,13 @@ const median = (v: number[]) => {
   return s.length ? s[Math.floor(s.length / 2)] : 0;
 };
 
-export type SquaredOutline = { ring: LatLng[]; axisDeg: number; areaM2: number };
+export type SquaredOutline = {
+  ring: LatLng[];
+  axisDeg: number;
+  areaM2: number;
+  /** Other readings of the same roof (e.g. with corner steps kept); Google's data picks between them. */
+  alternatives?: LatLng[][];
+};
 
 /**
  * Square-walled roof outline from the zoom-21 snapshot and its traced roof
@@ -207,7 +213,19 @@ export function squareRoofOutline(
     bumpR = 5,
     bumpMaxM2 = 4,
     minKeep = 0.8,
+    allow = null,
+    jogM = 1.0,
+    grow = true,
+    fitShiftM = 0.5,
   }: {
+    /** Steps shorter than this are trace noise. */
+    jogM?: number;
+    /** Grow into shaded roof of the same hue. */
+    grow?: boolean;
+    /** How far eaves may move onto the traced edge. */
+    fitShiftM?: number;
+    /** Pixels the roof may grow into (above ground in Google's height model, inside the lot); null = anywhere. */
+    allow?: ArrayLike<number> | null;
     cellM?: number;
     maxColourDist?: number;
     giveBackDist?: number;
@@ -230,7 +248,7 @@ export function squareRoofOutline(
   const centre = { lat: latOf((r0 + r1) / 2), lng: lngOf((c0 + c1) / 2) };
   const F = frameFor([centre]);
   const mppX = ((bounds.east - bounds.west) / W) * M_PER_LAT * Math.cos((centre.lat * Math.PI) / 180);
-  const pad = Math.ceil(1 / mppX);
+  const pad = Math.ceil(4 / mppX);
   c0 = Math.max(0, c0 - pad); c1 = Math.min(W - 1, c1 + pad); r0 = Math.max(0, r0 - pad); r1 = Math.min(H - 1, r1 + pad);
 
   // Wall direction from the mask's own boundary pixels (edges between roof and not-roof).
@@ -250,7 +268,7 @@ export function squareRoofOutline(
   const v0 = Math.min(...corners.map((p) => p.v)), v1 = Math.max(...corners.map((p) => p.v));
   const GW = Math.ceil((u1 - u0) / cellM), GH = Math.ceil((v1 - v0) / cellM);
   const sL = new Float32Array(GW * GH), sA = new Float32Array(GW * GH), sB = new Float32Array(GW * GH);
-  const cnt = new Float32Array(GW * GH), inCnt = new Float32Array(GW * GH);
+  const cnt = new Float32Array(GW * GH), inCnt = new Float32Array(GW * GH), okCnt = new Float32Array(GW * GH);
   for (let r = r0; r <= r1; r++)
     for (let c = c0; c <= c1; c++) {
       const p = wf.toUV(F.toXY({ lat: latOf(r + 0.5), lng: lngOf(c + 0.5) }));
@@ -261,6 +279,7 @@ export function squareRoofOutline(
       const [L, A, B] = lab(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
       sL[k] += L; sA[k] += A; sB[k] += B; cnt[k]++;
       if (roofMask[i]) inCnt[k]++;
+      if (!allow || allow[i]) okCnt[k]++;
     }
   const inm = new Uint8Array(GW * GH);
   for (let k = 0; k < inm.length; k++) if (cnt[k] > 0 && inCnt[k] / cnt[k] > 0.5) inm[k] = 1;
@@ -273,12 +292,48 @@ export function squareRoofOutline(
   const tL = Math.max(4, 1.4826 * median(cl.map((x) => Math.abs(x - mL))));
   const tA = Math.max(1.5, 1.4826 * median(ca.map((x) => Math.abs(x - mA))));
   const tB = Math.max(1.5, 1.4826 * median(cb.map((x) => Math.abs(x - mB))));
+  // Shaded faces the trace missed (11 Melton St S: the whole south face, in
+  // shade, a darker brown than the sunny north face the trace grew from).
+  // Grow up to 3 m out from the trace through cells of the roof's colour at
+  // any brightness short of deep shadow; Google's check later rejects a
+  // growth that isn't roof.
+  const grown = new Uint8Array(GW * GH);
+  if (grow) {
+    const grow = new Uint8Array(GW * GH);
+    const reach = Math.round(3 / cellM);
+    const near = boxMax(inm, GW, GH, reach);
+    // Shade darkens and greys a colour but keeps its hue: compare hue, with
+    // some colour left and short of deep shadow.
+    const hueOf = (a: number, b: number) => Math.atan2(b - 128, a - 128);
+    const chromaOf = (a: number, b: number) => Math.hypot(a - 128, b - 128);
+    const mHue = hueOf(mA, mB), mChroma = chromaOf(mA, mB);
+    const ok = (k: number) => {
+      if (!near[k] || cnt[k] === 0 || okCnt[k] / cnt[k] < 0.5) return false;
+      const L = sL[k] / cnt[k], a = sA[k] / cnt[k], b = sB[k] / cnt[k];
+      if (L < 0.35 * mL) return false;
+      if (mChroma < 8) return Math.abs(L - mL) < 6 * tL && chromaOf(a, b) < 8; // grey roofs: stay grey
+      const dh = Math.abs(Math.atan2(Math.sin(hueOf(a, b) - mHue), Math.cos(hueOf(a, b) - mHue)));
+      return dh < (18 * Math.PI) / 180 && chromaOf(a, b) > 0.3 * mChroma;
+    };
+    (globalThis as { __sqDebug?: (name: string, g: ArrayLike<number>, w: number, h: number) => void }).__sqDebug?.("cellLab", Array.from({ length: GW * GH }, (_, k) => (cnt[k] ? [sL[k] / cnt[k], sA[k] / cnt[k], sB[k] / cnt[k]] : [0, 128, 128])).flat(), GW, GH);
+    (globalThis as { __sqDebug?: (name: string, g: ArrayLike<number>, w: number, h: number) => void }).__sqDebug?.("roofLab", [mL, mA, mB, tL, tA, tB], 6, 1);
+    const stack: number[] = [];
+    for (let k = 0; k < inm.length; k++) if (inm[k]) stack.push(k);
+    while (stack.length) {
+      const k = stack.pop()!;
+      const x = k % GW, y = (k / GW) | 0;
+      const nb = [x > 0 ? k - 1 : -1, x < GW - 1 ? k + 1 : -1, y > 0 ? k - GW : -1, y < GH - 1 ? k + GW : -1];
+      for (const j of nb) if (j >= 0 && !inm[j] && !grow[j] && ok(j)) { grow[j] = 1; stack.push(j); }
+    }
+    for (let k = 0; k < inm.length; k++) if (grow[k]) { inm[k] = 1; grown[k] = 1; }
+  }
   // Each cell's colour distance from the roof's.
   const dist = new Float32Array(GW * GH);
   for (let k = 0; k < dist.length; k++)
-    dist[k] = inm[k] ? Math.hypot((sL[k] / cnt[k] - mL) / tL, (sA[k] / cnt[k] - mA) / tA, (sB[k] / cnt[k] - mB) / tB) : 99;
+    dist[k] = grown[k] ? 0 : inm[k] ? Math.hypot((sL[k] / cnt[k] - mL) / tL, (sA[k] / cnt[k] - mA) / tA, (sB[k] / cnt[k] - mB) / tB) : 99;
   const dbg = (globalThis as { __sqDebug?: (name: string, g: ArrayLike<number>, w: number, h: number) => void }).__sqDebug;
   dbg?.("inm", inm, GW, GH);
+  dbg?.("allow", Array.from(okCnt, (v, k) => (cnt[k] ? Math.round((255 * v) / cnt[k]) : 0)), GW, GH);
   dbg?.("dist", Array.from(dist, (d) => Math.min(255, d * 20)), GW, GH);
   // Cells the roof's colour (a majority of the 3×3 around, so speckle —
   // moss, a shadowed tile — doesn't cut the edge), notches closed and thin
@@ -349,13 +404,16 @@ export function squareRoofOutline(
   // dropped.
   const uv = cellOutline(g, GW, GH, u0, v1, cellM);
   if (!uv || uv.length < 4) return fail(5);
-  const jogFree = dropJogs(uv).map((p) => F.toLL(wf.toXY(p.u, p.v)));
+  const jogFree = dropJogs(uv, jogM).map((p) => F.toLL(wf.toXY(p.u, p.v)));
+  const keepSteps = dropJogs(uv, jogM, 0).map((p) => F.toLL(wf.toXY(p.u, p.v)));
   if (jogFree.length < 4) return fail(6);
   // Each eave onto the traced roof edge, when that is close (the 25 cm cells
   // sit a little inside a roof edged by a dark gap — 134 Old Canterbury Rd).
   const maskRaster: GeoTiffRaster = { data: roofMask as GeoTiffRaster["data"], width: W, height: H, bounds, noDataValue: null };
-  const fitted = fitEavesToMask(jogFree, maskRaster, { maxShiftM: 0.5 }).ring;
-  const straight = dropJogs(fitted.map(F.toXY).map(wf.toUV)).map((p) => F.toLL(wf.toXY(p.u, p.v)));
+  const fitted = fitEavesToMask(jogFree, maskRaster, { maxShiftM: fitShiftM }).ring;
+  const altFitted = fitEavesToMask(keepSteps, maskRaster, { maxShiftM: fitShiftM }).ring;
+  const alt = dropJogs(altFitted.map(F.toXY).map(wf.toUV), jogM, 0).map((p) => F.toLL(wf.toXY(p.u, p.v)));
+  const straight = dropJogs(fitted.map(F.toXY).map(wf.toUV), jogM).map((p) => F.toLL(wf.toXY(p.u, p.v)));
   if (straight.length < 4) return fail(8);
   // Every edge along or square to the walls.
   const xy = straight.map(F.toXY);
@@ -365,7 +423,14 @@ export function squareRoofOutline(
     const off = Math.abs(((a % 90) + 135) % 90 - 45);
     if (off > 2) { (globalThis as { __sqWhy?: (w: number) => void }).__sqWhy?.(1000 + Math.round(off * 10) + 100000 * Math.round(Math.hypot(q.x - p.x, q.y - p.y) * 10)); return fail(7); }
   }
-  return { ring: straight, axisDeg, areaM2: Math.abs(ringAreaXY(xy)) };
+  const square = (ring: LatLng[]) =>
+    ring.map(F.toXY).every((p, i, a) => {
+      const q = a[(i + 1) % a.length];
+      const ang = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI - axisDeg;
+      return Math.abs((((ang % 90) + 135) % 90) - 45) <= 2;
+    });
+  const alternatives = alt.length >= 4 && alt.length !== straight.length && square(alt) ? [alt] : [];
+  return { ring: straight, axisDeg, areaM2: Math.abs(ringAreaXY(xy)), alternatives };
 }
 
 /** Outer boundary of a cell grid along the cell edges, in wall-frame metres (largest loop). */
@@ -427,58 +492,93 @@ export function dropJogs(
   maxCornerStepM = 2.0,
   maxCornerStepM2 = 4.5,
 ): { u: number; v: number }[] {
-  let pts = r.map((p) => ({ ...p }));
-  const clean = () => {
-    // Drop repeated points and middle points of straight runs.
-    let changed = true;
-    while (changed && pts.length > 3) {
-      changed = false;
-      for (let i = 0; i < pts.length; i++) {
-        const a = pts[(i - 1 + pts.length) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
-        const same = Math.hypot(b.u - c.u, b.v - c.v) < 1e-6;
-        const straight = Math.abs((b.u - a.u) * (c.v - b.v) - (b.v - a.v) * (c.u - b.u)) < 1e-6;
-        if (same || straight) { pts.splice(i, 1); changed = true; break; }
-      }
+  // Work on runs: alternating lines along u (fixed v) and along v (fixed u);
+  // corners are where consecutive runs meet. Removing a short run merges its
+  // two neighbours (which are parallel) into one line.
+  type Run = { along: "u" | "v"; pos: number };
+  const pts0 = r.filter((p, i) => {
+    const q = r[(i + 1) % r.length];
+    return Math.hypot(q.u - p.u, q.v - p.v) > 1e-9;
+  });
+  if (pts0.length < 4) return r;
+  let runs: Run[] = pts0.map((p, i) => {
+    const q = pts0[(i + 1) % pts0.length];
+    return Math.abs(q.u - p.u) >= Math.abs(q.v - p.v) ? { along: "u", pos: (p.v + q.v) / 2 } : { along: "v", pos: (p.u + q.u) / 2 };
+  });
+  const corners = (rs: Run[]) =>
+    rs.map((run, i) => {
+      const prev = rs[(i - 1 + rs.length) % rs.length];
+      return run.along === "u" ? { u: prev.pos, v: run.pos } : { u: run.pos, v: prev.pos };
+    });
+  const merge = (rs: Run[]) => {
+    // Neighbouring runs along the same direction become one.
+    const out: Run[] = [];
+    for (const run of rs) {
+      const last = out[out.length - 1];
+      if (last && last.along === run.along) continue;
+      out.push(run);
     }
+    while (out.length > 1 && out[0].along === out[out.length - 1].along) out.pop();
+    return out;
   };
-  clean();
-  for (let guard = 0; guard < 50 && pts.length > 4; guard++) {
-    const n = pts.length;
-    let k = -1, kl = Infinity;
+  runs = merge(runs);
+  const lens = (rs: Run[]) => {
+    const c = corners(rs);
+    return c.map((p, i) => {
+      const q = c[(i + 1) % c.length];
+      return Math.hypot(q.u - p.u, q.v - p.v);
+    });
+  };
+  const area = (rs: Run[]) => Math.abs(ringAreaXY(corners(rs).map((p) => ({ x: p.u, y: p.v }))));
+  const removeAt = (rs: Run[], k: number, pos: number): Run[] => {
+    const n = rs.length;
+    const prev = (k - 1 + n) % n, next = (k + 1) % n;
+    const out = rs.map((x) => ({ ...x }));
+    out[prev].pos = pos;
+    // Drop run k and the next one (now on the same line as prev).
+    const drop = new Set([k, next]);
+    return out.filter((_, i) => !drop.has(i));
+  };
+  const isStep = (rs: Run[], k: number) => {
+    // A step: the corners at both ends of run k turn the same way (prev and next runs head the same way).
+    const c = corners(rs);
+    const n = rs.length;
+    const p0 = c[(k - 1 + n) % n], a = c[k], b = c[(k + 1) % n], q = c[(k + 2) % n];
+    const d1 = { u: a.u - p0.u, v: a.v - p0.v }, d2 = { u: q.u - b.u, v: q.v - b.v };
+    return d1.u * d2.u + d1.v * d2.v > 0;
+  };
+  // Pass 1, noise: the shortest step under maxM merges its neighbours at
+  // their length-weighted position (a staircase along a skewed edge settles
+  // on its long runs; 11 Melton St S).
+  for (let guard = 0; guard < 1000 && runs.length > 4; guard++) {
+    const ls = lens(runs);
+    let k = -1;
+    for (let i = 0; i < runs.length; i++) if (ls[i] < maxM && isStep(runs, i) && (k < 0 || ls[i] < ls[k] - 1e-9)) k = i;
+    if (k < 0) break;
+    const n = runs.length;
+    const pi = (k - 1 + n) % n, ni = (k + 1) % n;
+    const lp = ls[pi], ln = ls[ni];
+    const pos = (runs[pi].pos * lp + runs[ni].pos * ln) / Math.max(1e-9, lp + ln);
+    runs = merge(removeAt(runs, k, pos));
+  }
+  // Pass 2, a corner step under maxCornerStepM cutting off a small area
+  // (a patio corner beside a wing, 25 Gilbert St): the inner line.
+  for (let guard = 0; guard < 200 && runs.length > 4; guard++) {
+    const ls = lens(runs);
+    const n = runs.length;
+    let k = -1;
     for (let i = 0; i < n; i++) {
-      const a = pts[i], b = pts[(i + 1) % n];
-      const len = Math.hypot(b.u - a.u, b.v - a.v);
-      if (len >= maxCornerStepM || len >= kl) continue;
-      const p = pts[(i - 1 + n) % n], q = pts[(i + 2) % n];
-      const d1 = { u: a.u - p.u, v: a.v - p.v }, d2 = { u: q.u - b.u, v: q.v - b.v };
-      if (d1.u * d2.u + d1.v * d2.v <= 0) continue; // not a step (a notch or bump end)
-      // A longer step only when what it cuts off is small (a patio corner
-      // beside a wing, 25 Gilbert St: 1.7 m by 2.3 m).
-      const shortRun = Math.min(Math.hypot(d1.u, d1.v), Math.hypot(d2.u, d2.v));
-      if (len >= maxM && shortRun * len > maxCornerStepM2) continue;
-      k = i; kl = len;
+      if (ls[i] >= maxCornerStepM || !isStep(runs, i)) continue;
+      const shortRun = Math.min(ls[(i - 1 + n) % n], ls[(i + 1) % n]);
+      if (shortRun * ls[i] > maxCornerStepM2) continue;
+      if (k < 0 || ls[i] < ls[k]) k = i;
     }
     if (k < 0) break;
-    const a = pts[k], b = pts[(k + 1) % n];
-    const p = pts[(k - 1 + n) % n], q = pts[(k + 2) % n];
-    const prevLen = Math.hypot(a.u - p.u, a.v - p.v), nextLen = Math.hypot(q.u - b.u, q.v - b.v);
-    // The runs either side are square to the jog: put both on one line — the
-    // inner one, so panels never reach over a gutter or paving.
-    void prevLen; void nextLen;
-    const jogAlongV = Math.abs(b.u - a.u) < Math.abs(b.v - a.v);
-    const tryMove = (forward: boolean) => {
-      const c = pts.map((x) => ({ ...x }));
-      const A = c[k], B = c[(k + 1) % n], P = c[(k - 1 + n) % n], Q = c[(k + 2) % n];
-      if (forward) { if (jogAlongV) { B.v = A.v; Q.v = A.v; } else { B.u = A.u; Q.u = A.u; } }
-      else { if (jogAlongV) { A.v = B.v; P.v = B.v; } else { A.u = B.u; P.u = B.u; } }
-      return c;
-    };
-    const areaUV = (c: { u: number; v: number }[]) => Math.abs(ringAreaXY(c.map((x) => ({ x: x.u, y: x.v }))));
-    const f = tryMove(true), bk = tryMove(false);
-    pts = areaUV(f) <= areaUV(bk) ? f : bk;
-    clean();
+    const pi = (k - 1 + n) % n, ni = (k + 1) % n;
+    const a1 = merge(removeAt(runs, k, runs[pi].pos)), a2 = merge(removeAt(runs, k, runs[ni].pos));
+    runs = area(a1) <= area(a2) ? a1 : a2;
   }
-  return pts;
+  return corners(runs);
 }
 
 function axisFromBoundary(pts: XY[]): number {
@@ -531,7 +631,23 @@ const angDiff = (a: number, b: number) => Math.abs((((a - b) % 360) + 540) % 360
 export function hipFacesForSquareRoof(
   ring: LatLng[],
   segments: RoofSegmentLite[] | null | undefined,
-  { cellM = 0.05, maxShareDiff = 0.1, maxUnmatched = 0.15, minAreaRatio = 0.85 }: { cellM?: number; maxShareDiff?: number; maxUnmatched?: number; minAreaRatio?: number } = {},
+  {
+    cellM = 0.05,
+    maxShareDiff = 0.1,
+    maxUnmatched = 0.15,
+    minAreaRatio = 0.85,
+    report,
+    luma = null,
+  }: {
+    cellM?: number;
+    maxShareDiff?: number;
+    maxUnmatched?: number;
+    minAreaRatio?: number;
+    /** Receives how well the faces matched Google (share difference, 0 = exact), which ends are gables, and the image check. */
+    report?: (r: { diff: number; gables: number[]; areaRatio: number; seen: number; lines: LineCheck[] }) => void;
+    /** Image brightness (zoom-21 snapshot): every hip, valley and ridge is checked against the lines seen in it. */
+    luma?: GeoTiffRaster | null;
+  } = {},
 ): SquareFace[] | null {
   if (ring.length < 4 || !segments || segments.length === 0) return null;
   const F = frameFor(ring);
@@ -550,63 +666,102 @@ export function hipFacesForSquareRoof(
   const v0 = Math.min(...uv.map((p) => p.v)), v1 = Math.max(...uv.map((p) => p.v));
   const GW = Math.ceil((u1 - u0) / cellM), GH = Math.ceil((v1 - v0) / cellM);
   if (GW * GH > 4_000_000) return null;
-  const label = new Int16Array(GW * GH).fill(-1);
   const edges = uv.map((a, i) => {
     const b = uv[(i + 1) % n];
     const len = Math.hypot(b.u - a.u, b.v - a.v);
     return { a, tu: (b.u - a.u) / len, tv: (b.v - a.v) / len, len };
   });
-  for (let gy = 0; gy < GH; gy++) {
-    const v = v1 - (gy + 0.5) * cellM;
-    // Crossings of this row with the outline (even-odd).
-    const xs: number[] = [];
-    for (let i = 0, j = n - 1; i < n; j = i++) {
-      const a = uv[i], b = uv[j];
-      if (a.v > v !== b.v > v) xs.push(a.u + ((v - a.v) * (b.u - a.u)) / (b.v - a.v));
-    }
-    xs.sort((p, q) => p - q);
-    for (let k = 0; k + 1 < xs.length; k += 2) {
-      const ga = Math.max(0, Math.ceil((xs[k] - u0) / cellM - 0.5));
-      const gb = Math.min(GW - 1, Math.floor((xs[k + 1] - u0) / cellM - 0.5));
-      for (let gx = ga; gx <= gb; gx++) {
-        const u = u0 + (gx + 0.5) * cellM;
-        let best = Infinity, bi = -1;
-        for (let e = 0; e < n; e++) {
-          const E = edges[e];
-          const ru = u - E.a.u, rv = v - E.a.v;
-          const s = ru * E.tu + rv * E.tv;
-          const perp = Math.abs(-ru * E.tv + rv * E.tu);
-          const over = Math.max(0, -s, s - E.len);
-          const d = Math.max(perp, over) + (over > perp ? 1e-6 : 0);
-          if (d < best) { best = d; bi = e; }
+  // Trigonometry: each face rises from its eave at its own pitch, so the
+  // roof height over a point is min over eaves of (distance × tan pitch) and
+  // the face is the eave giving that minimum. With equal pitches hips run at
+  // 45° in plan; a steeper face takes less of the plan (its hip turns
+  // towards it). Each eave's pitch is Google's nearest segment facing its way.
+  const outward = (e: { tu: number; tv: number }) => {
+    const t = wf.toXY(e.tu, e.tv);
+    return ccw ? { x: t.y, y: -t.x } : { x: -t.y, y: t.x };
+  };
+  const segAll = segments;
+  const edgePitch = edges.map((E) => {
+    const o = outward(E);
+    const az = bearingOf(o.x, o.y);
+    const mid = wf.toXY(E.a.u + (E.tu * E.len) / 2, E.a.v + (E.tv * E.len) / 2);
+    const same = segAll.filter((sg) => angDiff(sg.azimuthDegrees, az) <= 30 && sg.pitchDegrees >= 5);
+    if (same.length === 0) return null;
+    const near = same.reduce((a2, b2) => {
+      const pa = F.toXY(a2.center), pb = F.toXY(b2.center);
+      return Math.hypot(pa.x - mid.x, pa.y - mid.y) <= Math.hypot(pb.x - mid.x, pb.y - mid.y) ? a2 : b2;
+    });
+    return near.pitchDegrees;
+  });
+  const knownPitches = edgePitch.filter((x): x is number => x !== null);
+  const defaultPitch = knownPitches.length ? median(knownPitches) : 22.5;
+  // Google's per-segment pitches come from a coarse 2018 height model and
+  // scatter by 5–20° on one roof (11 Melton St S: 27–48°), so a face takes
+  // its own pitch only when steeper faces are clearly a design (all faces of
+  // that direction agree within 5° and differ from the rest by over 10°);
+  // otherwise equal pitch, which puts every hip and valley at 45° in plan.
+  const slope = edgePitch.map((pt) => {
+    const p0 = pt !== null && Math.abs(pt - defaultPitch) > 10 && knownPitches.filter((q) => Math.abs(q - pt) <= 5).length >= 2 ? pt : defaultPitch;
+    return Math.tan((Math.max(5, p0) * Math.PI) / 180);
+  });
+  /** Faces with the given outline edges as gable walls (all others hipped). */
+  const build = (gables: Set<number>) => {
+    const label = new Int16Array(GW * GH).fill(-1);
+    for (let gy = 0; gy < GH; gy++) {
+      const v = v1 - (gy + 0.5) * cellM;
+      // Crossings of this row with the outline (even-odd).
+      const xs: number[] = [];
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const a = uv[i], b = uv[j];
+        if (a.v > v !== b.v > v) xs.push(a.u + ((v - a.v) * (b.u - a.u)) / (b.v - a.v));
+      }
+      xs.sort((p, q) => p - q);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const ga = Math.max(0, Math.ceil((xs[k] - u0) / cellM - 0.5));
+        const gb = Math.min(GW - 1, Math.floor((xs[k + 1] - u0) / cellM - 0.5));
+        for (let gx = ga; gx <= gb; gx++) {
+          const u = u0 + (gx + 0.5) * cellM;
+          let best = Infinity, bi = -1;
+          for (let e = 0; e < n; e++) {
+            if (gables.has(e)) continue; // a gable wall: no face slopes down to it
+            const E = edges[e];
+            const ru = u - E.a.u, rv = v - E.a.v;
+            const s = ru * E.tu + rv * E.tv;
+            const perp = Math.abs(-ru * E.tv + rv * E.tu);
+            // Next to a gable the face runs out to the gable wall (the ridge meets it).
+            const before = gables.has((e - 1 + n) % n) ? 0 : -s;
+            const after = gables.has((e + 1) % n) ? 0 : s - E.len;
+            const over = Math.max(0, before, after);
+            const d = Math.max(perp, over) * slope[e] + (over > perp ? 1e-6 : 0);
+            if (d < best) { best = d; bi = e; }
+          }
+          label[gy * GW + gx] = bi;
         }
-        label[gy * GW + gx] = bi;
       }
     }
-  }
-  const faces: (SquareFace & { planM2: number })[] = [];
-  for (let e = 0; e < n; e++) {
-    const g = new Uint8Array(GW * GH);
-    let cnt = 0;
-    for (let k = 0; k < g.length; k++) if (label[k] === e) { g[k] = 1; cnt++; }
-    const planM2 = cnt * cellM * cellM;
-    if (planM2 < 0.5) continue;
-    const fr = traceUV(g, GW, GH, u0, v1, cellM, 1.5);
-    if (!fr || fr.length < 3) continue;
-    const E = edges[e];
-    // Downslope: outward from the wall.
-    const t = wf.toXY(E.tu, E.tv); // direction in east/north (rotation only)
-    const tdx = t.x, tdy = t.y;
-    const out = ccw ? { x: tdy, y: -tdx } : { x: -tdy, y: tdx };
-    faces.push({
-      ring: fr.map((p) => F.toLL(wf.toXY(p.u, p.v))),
-      eaveDeg: (Math.atan2(tdy, tdx) * 180) / Math.PI,
-      azimuthDeg: bearingOf(out.x, out.y),
-      planM2,
-    });
-  }
-  if (faces.length < 4) return null;
-
+    const faces: (SquareFace & { planM2: number })[] = [];
+    for (let e = 0; e < n; e++) {
+      const g = new Uint8Array(GW * GH);
+      let cnt = 0;
+      for (let k = 0; k < g.length; k++) if (label[k] === e) { g[k] = 1; cnt++; }
+      const planM2 = cnt * cellM * cellM;
+      if (planM2 < 0.5) continue;
+      const fr = traceUV(g, GW, GH, u0, v1, cellM, 0.2 / cellM);
+      if (!fr || fr.length < 3) continue;
+      const E = edges[e];
+      // Downslope: outward from the wall.
+      const t = wf.toXY(E.tu, E.tv); // direction in east/north (rotation only)
+      const tdx = t.x, tdy = t.y;
+      const out = ccw ? { x: tdy, y: -tdx } : { x: -tdy, y: tdx };
+      faces.push({
+        ring: fr.map((p) => F.toLL(wf.toXY(p.u, p.v))),
+        eaveDeg: (Math.atan2(tdy, tdx) * 180) / Math.PI,
+        azimuthDeg: bearingOf(out.x, out.y),
+        planM2,
+      });
+    }
+    return faces;
+  };
   // Google's confirmation: the share of roof facing each wall direction.
   const dirs = [0, 1, 2, 3].map((k) => (bearingOf(Math.cos((axisDeg * Math.PI) / 180), Math.sin((axisDeg * Math.PI) / 180)) + 90 * k) % 360);
   const bin = (b: number) => {
@@ -633,16 +788,68 @@ export function hipFacesForSquareRoof(
     if (off > 25) unmatched += plan;
     else g[bi] += plan;
   }
-  const f = [0, 0, 0, 0];
-  let fTotal = 0;
-  for (const face of faces) { f[bin(face.azimuthDeg).bi] += face.planM2; fTotal += face.planM2; }
   if (gTotal <= 0 || unmatched / gTotal > maxUnmatched) return null;
-  let diff = 0;
-  for (let k = 0; k < 4; k++) diff += Math.abs(f[k] / fTotal - g[k] / gTotal);
-  (globalThis as { __sqWhy?: (w: unknown) => void }).__sqWhy?.({ diff: +diff.toFixed(3), unmatched: +(unmatched / gTotal).toFixed(3), gTotal: Math.round(gTotal), fTotal: Math.round(fTotal), f: f.map((x) => Math.round(x)), g: g.map((x) => Math.round(x)) });
-  if (diff > maxShareDiff) return null;
+  const score = (fs: { azimuthDeg: number; planM2: number }[]) => {
+    const f = [0, 0, 0, 0];
+    let fTotal = 0;
+    for (const face of fs) { f[bin(face.azimuthDeg).bi] += face.planM2; fTotal += face.planM2; }
+    let diff = 0;
+    for (let k = 0; k < 4; k++) diff += Math.abs(f[k] / fTotal - g[k] / gTotal);
+    return { diff, fTotal, f };
+  };
+
+  // Hip everywhere first; then, when that doesn't match, gable ends: an end
+  // wall (both corners convex) may be a gable (11 Melton St S, Auburn: the
+  // street end of the main block). Up to two gables, whichever matches best.
+  // What the image shows: each hip, valley and ridge of a reading is
+  // checked against the brightness edge or capping line seen along it.
+  const look = (fs: { ring: LatLng[] }[]) => {
+    const lines = interiorEdges(fs, [ring]).map(([a, b]) => checkInteriorLine(a, b, luma));
+    let total = 0, ok = 0;
+    for (const l of lines) {
+      const pa = F.toXY(l.a), pb = F.toXY(l.b);
+      const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+      if (l.status === "no-data") continue;
+      total += len;
+      // Seen: a clear edge or capping line within 0.4 m of the computed line
+      // (the image is ~3 cm a pixel but blurred over ~10 cm; eaves are
+      // themselves fitted to ±0.1 m).
+      if (l.offsetM !== null && Math.abs(l.offsetM) <= 0.4) ok += len;
+    }
+    return { seen: total > 0 ? ok / total : 0, lines };
+  };
+  let faces = build(new Set());
+  let best = { faces, ...score(faces), gables: [] as number[], ...look(faces) };
+  {
+    const convex = (i: number) => {
+      const a = xy[(i - 1 + n) % n], b = xy[i], c = xy[(i + 1) % n];
+      const cr = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+      return ccw ? cr > 0 : cr < 0;
+    };
+    const ends = [...Array(n).keys()].filter((i) => convex(i) && convex((i + 1) % n));
+    const sets: number[][] = ends.map((e) => [e]);
+    for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++) sets.push([ends[i], ends[j]]);
+    // Among readings Google confirms, the one whose lines the image shows
+    // best; otherwise the closest to Google.
+    const better = (a: typeof best, b: typeof best) => {
+      const okA = a.diff <= maxShareDiff, okB = b.diff <= maxShareDiff;
+      if (okA !== okB) return okA;
+      if (okA && Math.abs(a.seen - b.seen) > 0.1) return a.seen > b.seen;
+      return a.diff < b.diff - 1e-6;
+    };
+    for (const set of sets.slice(0, 40)) {
+      const fs = build(new Set(set));
+      const cand = { faces: fs, ...score(fs), gables: set, ...look(fs) };
+      if (better(cand, best)) best = cand;
+    }
+  }
+  faces = best.faces;
+  if (faces.length < 2) return null;
+  (globalThis as { __sqWhy?: (w: unknown) => void }).__sqWhy?.({ diff: +best.diff.toFixed(3), gables: best.gables, unmatched: +(unmatched / gTotal).toFixed(3), gTotal: Math.round(gTotal), fTotal: Math.round(best.fTotal), f: best.f.map((x) => Math.round(x)), g: g.map((x) => Math.round(x)) });
+  report?.({ diff: best.diff, gables: best.gables, areaRatio: best.fTotal / gTotal, seen: best.seen, lines: best.lines });
+  if (best.diff > maxShareDiff) return null;
   // And about as much roof as Google measured (not a part of it).
-  if (fTotal < minAreaRatio * gTotal) return null;
+  if (best.fTotal < minAreaRatio * gTotal) return null;
 
   // Pitch: Google's nearest segment facing the same way.
   const pitches = segs.map((s) => s.pitchDegrees);
@@ -661,4 +868,62 @@ export function hipFacesForSquareRoof(
     }
     return { ring: shaped[i], eaveDeg: fc.eaveDeg, azimuthDeg: Math.round(fc.azimuthDeg), pitchDeg: pitch };
   });
+}
+
+/**
+ * The square-walled reading that Google's roof data confirms best: the main
+ * outline or one of its alternatives, with its faces (hips, and gables where
+ * they fit better). Null when none is confirmed.
+ */
+export type SquareReading = {
+  ring: LatLng[];
+  faces: SquareFace[];
+  /** Every hip, valley and ridge checked against the image ("confirmed" = seen within 0.4 m). */
+  lines: LineCheck[];
+  /** Share of hip/valley/ridge length seen in the image. */
+  seen: number;
+  /** How far the faces' directions are from Google's (0 = exact). */
+  diff: number;
+  gables: number[];
+};
+
+/**
+ * Every reading that Google's roof data confirms, best first: most of its
+ * hips, valleys and ridges seen in the image, then closest to Google.
+ */
+export function rankSquareReadings(
+  rings: LatLng[][],
+  segments: RoofSegmentLite[] | null | undefined,
+  luma: GeoTiffRaster | null = null,
+  {
+    maxShareDiff = 0.1,
+    minSeen = 0.35,
+  }: {
+    maxShareDiff?: number;
+    /** Share of the computed hips, valleys and ridges that must be seen in the image (when there is an image). */
+    minSeen?: number;
+  } = {},
+): SquareReading[] {
+  const out: SquareReading[] = [];
+  for (const ring of rings) {
+    let rep = { diff: Infinity, seen: 0, lines: [] as LineCheck[], gables: [] as number[] };
+    const faces = hipFacesForSquareRoof(ring, segments, { luma, maxShareDiff, report: (r) => (rep = r) });
+    if (!faces) continue;
+    if (luma && rep.lines.length > 0 && rep.seen < minSeen) continue;
+    const lines = rep.lines.map((l) => ({
+      ...l,
+      status: (l.offsetM !== null && Math.abs(l.offsetM) <= 0.4 ? "confirmed" : l.status === "no-data" ? "no-data" : "unconfirmed") as LineCheck["status"],
+    }));
+    out.push({ ring, faces, lines, seen: rep.seen, diff: rep.diff, gables: rep.gables });
+  }
+  return out.sort((a, b) => (Math.abs(a.seen - b.seen) > 0.1 ? b.seen - a.seen : a.diff - b.diff));
+}
+
+export function bestSquareRoof(
+  squared: SquaredOutline | null | undefined,
+  segments: RoofSegmentLite[] | null | undefined,
+  luma: GeoTiffRaster | null = null,
+): SquareReading | null {
+  if (!squared) return null;
+  return rankSquareReadings([squared.ring, ...(squared.alternatives ?? [])], segments, luma)[0] ?? null;
 }

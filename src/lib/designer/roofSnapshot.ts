@@ -68,6 +68,12 @@ export type RoofSnapshotAnalysis = {
   areaM2: number;
   /** Square-walled outline drawn along the walls (see squareRoof.ts), when the roof is square-walled. */
   squared?: SquaredOutline | null;
+  /**
+   * More readings of the roof for the Relook button: the square outline
+   * redrawn with other cell sizes, colour limits and step limits, with and
+   * without growing into shade. Computed on demand (about a second).
+   */
+  relook?: () => LatLng[][];
 };
 
 export type SnapshotOptions = {
@@ -479,9 +485,48 @@ export function analyseRoofSnapshot(
     outlines,
     metresPerPixel: mpp,
     areaM2,
+    relook: () => {
+      const out: LatLng[][] = [];
+      const key = (r: LatLng[]) => r.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join(";");
+      const seen = new Set<string>();
+      let allow: Uint8Array | null = null;
+      if (high || lot) {
+        allow = new Uint8Array(W * H);
+        for (let i = 0; i < allow.length; i++) allow[i] = (!high || high[i]) && (!lot || lot[i]) ? 1 : 0;
+      }
+      const variants = [
+        {},
+        { grow: false },
+        { cellM: 0.2 },
+        { cellM: 0.33 },
+        { maxColourDist: 6, giveBackDist: 8 },
+        { jogM: 0.6 },
+        { openR: 4, bumpR: 7 },
+      ];
+      for (const v of variants) {
+        try {
+          const sq = squareRoofOutline(rgba, W, H, bounds, roof, { allow, ...v });
+          for (const r of sq ? [sq.ring, ...(sq.alternatives ?? [])] : []) {
+            const k = key(r);
+            if (!seen.has(k)) { seen.add(k); out.push(r); }
+          }
+        } catch {
+          /* a variant that fails is skipped */
+        }
+      }
+      return out;
+    },
     squared: (() => {
       try {
-        return squareRoofOutline(rgba, W, H, bounds, roof);
+        // Growth only where Google's height model says above ground, inside the lot.
+        let allow: Uint8Array | null = null;
+        if (high || lot) {
+          allow = new Uint8Array(W * H);
+          for (let i = 0; i < allow.length; i++) allow[i] = (!high || high[i]) && (!lot || lot[i]) ? 1 : 0;
+        }
+        const sweep = typeof process !== "undefined" ? process.env?.SQ_SWEEP : undefined;
+        if (sweep) (globalThis as { __sqSweep?: unknown }).__sqSweep = (o: Parameters<typeof squareRoofOutline>[5]) => squareRoofOutline(rgba, W, H, bounds, roof, { allow, ...o });
+        return squareRoofOutline(rgba, W, H, bounds, roof, { allow });
       } catch (e) {
         if (typeof process !== "undefined" && process.env?.SQ_DEBUG) console.error(e);
         return null;

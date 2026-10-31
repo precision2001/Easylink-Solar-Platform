@@ -15,7 +15,7 @@ import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineC
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { findRoofObstructions } from "@/lib/designer/roofObstructions";
 import { keepPanelsClear } from "@/lib/designer/panelClearance";
-import { hipFacesForSquareRoof } from "@/lib/designer/squareRoof";
+import { bestSquareRoof, hipFacesForSquareRoof } from "@/lib/designer/squareRoof";
 import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
 
 const [lat, lng] = [Number(process.argv[2]), Number(process.argv[3])];
@@ -41,8 +41,26 @@ async function get(url: string) { const r = await fetch(url); if (!r.ok) throw n
   const res = (() => {
         const straight = regularizeRoofOutlines(snap.outlines.map((o) => o.ring));
         const segs = process.env.SEGS ? JSON.parse(process.env.SEGS) : null;
-        const hip = !process.env.NO_SQUARE && snap.squared ? hipFacesForSquareRoof(snap.squared.ring, segs) : null;
-        const outline = hip ? [snap.squared!.ring] : regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, snap.mask).ring));
+        const sw = (globalThis as any).__sqSweep;
+        if (sw) {
+          const why = (globalThis as any).__sqWhy; (globalThis as any).__sqWhy = undefined;
+          for (const cellM of [0.2, 0.25, 0.33]) for (const maxColourDist of [3, 4, 6]) for (const openR of [2, 3, 4]) for (const jogM of [0.6, 1.0]) for (const grow of [true, false]) {
+            const o = sw({ cellM, maxColourDist, openR, jogM, grow });
+            if (!o) continue;
+            let last: any = null; (globalThis as any).__sqWhy = (w: any) => { if (typeof w === "object" && w.diff !== undefined) last = w; };
+            const hf = hipFacesForSquareRoof(o.ring, segs, { maxShareDiff: 9, minAreaRatio: 0 });
+            (globalThis as any).__sqWhy = undefined;
+            console.log("SW", JSON.stringify({ cellM, maxColourDist, openR, jogM, grow, pts: o.ring.length, area: Math.round(o.areaM2), diff: last?.diff, ratio: last ? +(last.fTotal / last.gTotal).toFixed(2) : null, gables: last?.gables, faces: hf?.length }));
+          }
+          (globalThis as any).__sqWhy = why;
+        }
+        const t0 = Date.now();
+        const bestSq = !process.env.NO_SQUARE ? bestSquareRoof(snap.squared, segs, snap.luma) : null;
+        console.log("bestSquareRoof ms", Date.now() - t0, "seen", bestSq?.seen?.toFixed(2), "gables", JSON.stringify(bestSq?.gables));
+        if (process.env.RELOOK && snap.relook) { const t1 = Date.now(); const rs = snap.relook(); console.log("relook readings", rs.length, "ms", Date.now() - t1); }
+        if (snap.squared) for (const r of [snap.squared.ring, ...(snap.squared.alternatives ?? [])]) hipFacesForSquareRoof(r, segs, { luma: snap.luma, report: (x) => console.log("candidate", r.length, JSON.stringify({ diff: x.diff, gables: x.gables, area: x.areaRatio, seen: x.seen, lines: x.lines.map((l) => (l.offsetM === null ? "-" : Math.abs(l.offsetM) <= 0.4 ? "Y" : "o")).join("") })) });
+        const hip = bestSq?.faces ?? null;
+        const outline = bestSq ? [bestSq.ring] : regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, snap.mask).ring));
         console.log("squared", !!snap.squared, snap.squared?.axisDeg, snap.squared?.areaM2, "hip faces", hip?.length ?? null);
         const detected = hip ? null : detectRoofFaces(dsm, outline, mask);
         let faces: any[] = hip ? hip : detected
@@ -69,7 +87,7 @@ async function get(url: string) { const r = await fetch(url); if (!r.ok) throw n
   const panelPx = (pn: any) => pn.corners ? pn.corners.map(toPx) : null;
   const j = {
     areaM2: snap.areaM2, mpp: snap.metresPerPixel, bounds: b,
-    rawOutlines: res.rawOutlines.map(ring), squared: snap.squared ? ring(snap.squared.ring) : null, outline: res.outline.map(ring), faces: res.faces.map(ring),
+    rawOutlines: res.rawOutlines.map(ring), squared: snap.squared ? ring(snap.squared.ring) : null, alts: (snap.squared?.alternatives ?? []).map(ring), outline: res.outline.map(ring), faces: res.faces.map(ring),
     obstructions: (res.obstructions ?? []).map(ring),
     counts: { PORTRAIT: res.panels.PORTRAIT.length, LANDSCAPE: res.panels.LANDSCAPE.length },
     panels: Object.fromEntries(Object.entries(res.panels).map(([o, ps]: any) => [o, ps.map((pn: any) => ({ c: toPx(pn.center), rot: pn.rotationDegrees, slope: pn.slopeDegrees, orientation: pn.orientation }))])),
