@@ -336,9 +336,9 @@ function StatTile({
  * seven tiles are the same height and their text lines up across the row.
  */
 const TILE_BOX =
-  "group relative grid h-[100px] min-w-0 flex-1 grid-rows-[16px_28px_16px] content-center justify-items-center gap-1.5 rounded-[10px] px-2 outline-none";
+  "group relative grid h-[108px] min-w-0 flex-1 grid-rows-[28px_28px_16px] content-center justify-items-center gap-1.5 rounded-[10px] px-2 outline-none";
 const TILE_LABEL =
-  "flex max-w-full items-center gap-1 truncate text-center font-source-sans text-[9px] font-semibold uppercase leading-4 tracking-[0.5px]";
+  "flex max-w-full items-center justify-center gap-1 self-center text-center font-source-sans text-[9.5px] font-semibold uppercase leading-[13px] tracking-[0.5px]";
 const TILE_VALUE = "font-source-sans text-[19px] font-bold leading-7 whitespace-nowrap";
 const TILE_SUB = "font-source-sans text-[9px] leading-4 text-white/60";
 
@@ -373,7 +373,7 @@ function ValuePanel({
         <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-[4px] ${iconClassName}`}>
           <Icon name={icon} className="size-2 text-white" />
         </span>
-        <span className="truncate">{label}</span>
+        <span className="line-clamp-2">{label}</span>
         {tip ? <span aria-hidden className="text-white/50">ⓘ</span> : null}
       </div>
       <p className={`${TILE_VALUE} ${dollarClassName ?? "text-white"}`}>{dollar}</p>
