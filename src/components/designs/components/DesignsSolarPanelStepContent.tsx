@@ -1760,11 +1760,15 @@ export const DesignsSolarPanelStepContent = forwardRef<
   );
 
   return (
-    <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-1 flex-col justify-center px-4 py-6 sm:px-8 sm:py-8 lg:px-[81px] lg:py-8">
-      <div className="mx-auto grid w-full max-w-[1278px] grid-cols-1 gap-5 lg:grid-cols-[591fr_649fr] lg:items-stretch lg:gap-[58px]">
+    // Desktop: both windows stay inside the screen at one height; when the
+    // notes under the metrics grow (after Save Roof), the left window scrolls
+    // inside itself instead of pushing the page — the map window and its
+    // buttons never leave the screen (2A Delhi St, 31 Oct 2026).
+    <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-1 flex-col justify-center px-4 py-6 sm:px-8 sm:py-8 lg:h-full lg:min-h-0 lg:px-[81px] lg:py-[clamp(12px,3vh,32px)]">
+      <div className="mx-auto grid w-full max-w-[1278px] grid-cols-1 gap-5 lg:h-full lg:max-h-[min(640px,100%)] lg:min-h-0 lg:grid-cols-[591fr_649fr] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch lg:gap-[58px]">
         {/* ── Left panel ── */}
-        <div className="flex w-full min-w-0 items-center rounded-[46px] border-[3px] border-design-accent-cyan bg-linear-to-r from-yellow-lemon to-orange-amber px-6 py-8 shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] sm:px-10 sm:py-10 lg:h-full lg:px-[30px] lg:py-[30px]">
-          <div className="mx-auto flex w-full max-w-[514px] flex-col items-center gap-6 sm:gap-[32px]">
+        <div className="flex w-full min-w-0 items-center rounded-[46px] border-[3px] border-design-accent-cyan bg-linear-to-r from-yellow-lemon to-orange-amber px-6 py-8 shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] sm:px-10 sm:py-10 lg:h-full lg:min-h-0 lg:overflow-hidden lg:px-[30px] lg:py-[24px]">
+          <div className="mx-auto flex w-full max-w-[514px] flex-col items-center gap-6 sm:gap-[32px] lg:max-h-full lg:gap-[20px] lg:overflow-y-auto lg:overscroll-contain lg:px-1 lg:py-1 lg:[scrollbar-width:thin] lg:[scrollbar-color:rgba(11,42,74,0.45)_transparent]">
             {/* Title + description */}
             <div className="flex max-w-[498px] flex-col items-center gap-[10px] text-center">
               <h2
@@ -1917,7 +1921,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
         </div>
 
         {/* ── Right panel: map ── */}
-        <div className="w-full min-w-0 overflow-hidden rounded-[28px] border-[3px] border-design-accent-cyan shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] lg:h-full">
+        <div className="w-full min-w-0 overflow-hidden rounded-[28px] border-[3px] border-design-accent-cyan shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] lg:h-full lg:min-h-0">
           {/* Outer wrapper: overlays (RGB/Panels/Save) sit outside capture ref */}
           <div className="relative aspect-[649/525] h-full w-full min-h-[280px] overflow-hidden rounded-[25px] lg:aspect-auto lg:min-h-0">
             {/* Capture target = satellite map + roof/panel overlays only (no UI chrome) */}
