@@ -1,16 +1,17 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { toast } from "react-toastify";
 
 import { blobToBase64 } from "@/lib/proposal/blobToBase64";
+import { PAGE_H, PAGE_W, ProposalPages } from "@/components/proposal/ProposalPages";
+import { downloadPdfBlob } from "@/lib/proposal/generateProposalPdf";
 import {
-  downloadPdfBlob,
-  generateProposalPdfBlob,
-} from "@/lib/proposal/generateProposalPdf";
+  loadProposalDocument,
+  type LoadedProposal,
+} from "@/lib/proposal/loadProposalDocument";
 import { useAppSelector } from "@/lib/store/hooks";
 import { selectDesignProposal } from "@/lib/store/designProposalSlice";
 
@@ -23,8 +24,6 @@ export type DesignsProposalDownloadModalProps = {
   onConfirmDownload?: () => void;
 };
 
-const COMPANY_BLURB =
-  "Easylink Solar Company is a leading provider of solar energy solutions based in Sydney. The company has been providing top-notch services to its customers and has received 5-star reviews from its happy customers. At Easylink Solar, the focus is on the customer, with a goal of reducing electricity bills and increasing solar feed-in credit. The company specializes in residential and commercial solar installations, providing top-quality and premium solar panels, inverters, and batteries. The team at Easylink Solar ensures a worry-free experience for its customers, both before and after the installation. With a focus on customer satisfaction, Easylink Solar is the ideal choice for anyone looking to switch to solar energy.";
 
 function firstWordName(fullName: string): string {
   const t = fullName.trim();
@@ -33,8 +32,9 @@ function firstWordName(fullName: string): string {
 }
 
 /**
- * Figma 20:22302 — proposal download confirmation / letter modal.
- * Download builds a multi-page PDF from Redux (`designProposal`) including the solar map screenshot when saved.
+ * Proposal preview: the customer's ten proposal pages, priced and filled
+ * from their design, with a download button. The PDF is drawn from the same
+ * loaded pages, so the download matches the preview.
  */
 export function DesignsProposalDownloadModal({
   open,
@@ -44,6 +44,36 @@ export function DesignsProposalDownloadModal({
 }: DesignsProposalDownloadModalProps) {
   const proposal = useAppSelector(selectDesignProposal);
   const [downloading, setDownloading] = useState(false);
+  const [loaded, setLoaded] = useState<LoadedProposal | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [boxWidth, setBoxWidth] = useState(PAGE_W);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoaded(null);
+    setLoadError(false);
+    loadProposalDocument(proposal)
+      .then((l) => {
+        if (!cancelled) setLoaded(l);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Reload when the modal opens; the design can't change while it's open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const fit = () => setBoxWidth(Math.min(PAGE_W, window.innerWidth - 64));
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [open]);
 
   const dearName = useMemo(() => {
     if (letterFirstName?.trim()) return letterFirstName.trim();
@@ -69,7 +99,9 @@ export function DesignsProposalDownloadModal({
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const blob = await generateProposalPdfBlob(proposal);
+      if (!loaded) return;
+      const { renderProposalPdf } = await import("@/lib/proposal/renderProposalPdf");
+      const blob = await renderProposalPdf(loaded);
       downloadPdfBlob(blob, proposal.customer.name);
 
       const emailTo = proposal.customer.email?.trim();
@@ -144,78 +176,63 @@ export function DesignsProposalDownloadModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="proposal-download-modal-title"
-        className="relative z-[1] flex max-h-[min(841px,90vh)] w-full max-w-[948px] flex-col overflow-y-auto rounded-[16px] bg-white shadow-[0px_8px_40px_rgba(0,0,0,0.25)]"
+        className="relative z-[1] flex max-h-[min(841px,90vh)] w-full max-w-[880px] flex-col overflow-y-auto rounded-[16px] bg-white shadow-[0px_8px_40px_rgba(0,0,0,0.25)]"
       >
-        <div className="flex flex-col px-6 pb-10 pt-10 sm:px-[78px] sm:pb-12 sm:pt-[69px]">
-          <header className="flex flex-col items-center gap-[6px]">
-            <Image
-              src="/images/solarDesignLogo.png"
-              alt="Solar Design Logo"
-              width={54}
-              height={54}
-            />
+        <div className="sticky top-0 z-[2] flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-8">
+          <div>
             <h2
               id="proposal-download-modal-title"
-              className="text-center font-source-sans text-[22px] font-medium uppercase leading-normal text-black sm:text-[26px]"
+              className="font-source-sans text-[20px] font-bold leading-tight text-[#0B1426] sm:text-[24px]"
             >
-              Solar Energy System Proposal
+              Your solar proposal, {dearName}
             </h2>
-          </header>
-
-          <section className="mt-10 flex max-w-[697px] flex-col gap-5 font-source-sans text-[18px] font-medium uppercase leading-normal text-black">
-            <p>Dear {dearName},</p>
-            <div className="flex flex-col gap-2">
-              <p>
-                Thank you for the opportunity to present your Solar Energy
-                System Proposal.
-              </p>
-              <p>
-                Best Regards,
-                <br />
-                Sujay Salvi
-              </p>
-            </div>
-            <p className="font-bold">Easylink Solar</p>
-          </section>
-
-          <p className="mt-8 max-w-[793px] font-source-sans text-[18px] font-normal leading-normal text-black">
-            {COMPANY_BLURB}
-          </p>
-
-          <div className="mt-10 flex max-w-full flex-col gap-4 font-source-sans text-black sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-[19px] sm:gap-y-2">
-            <p className="text-[18px] font-normal leading-normal">
-              Solar Proposal powered by OpenSolar Pty Ltd.
-            </p>
-            <p className="text-[0px] leading-[normal]">
-              <span className="text-[14px] font-normal">
-                By proceeding you agree to the{" "}
-              </span>
-              <a
-                href="#"
-                className="text-[14px] font-normal text-design-accent-cyan underline decoration-solid [text-decoration-skip-ink:none]"
-                onClick={(e) => e.preventDefault()}
-              >
-                Terms &amp; Conditions
-              </a>
-              <span className="text-[14px] font-normal"> and </span>
-              <a
-                href="#"
-                className="text-[14px] font-normal text-design-accent-cyan underline decoration-solid [text-decoration-skip-ink:none]"
-                onClick={(e) => e.preventDefault()}
-              >
-                Privacy Notice
-              </a>
+            <p className="font-source-sans text-[14px] text-slate-600">
+              Ten pages, priced for your design. Download it or check it below.
             </p>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              disabled={downloading || !loaded}
+              className="flex h-11 items-center justify-center rounded-[12px] bg-[#FFD60A] px-5 font-source-sans text-[16px] font-bold text-[#0B1426] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => void handleDownload()}
+            >
+              {downloading ? "Preparing PDF…" : loaded ? "Download PDF" : "Loading…"}
+            </button>
+            <button
+              type="button"
+              aria-label="Close"
+              className="flex h-11 w-11 items-center justify-center rounded-[12px] border border-slate-300 text-[22px] leading-none text-slate-700 hover:bg-slate-100"
+              onClick={onClose}
+            >
+              ×
+            </button>
+          </div>
+        </div>
 
-          <button
-            type="button"
-            disabled={downloading}
-            className="mx-auto mt-10 flex h-12 w-full max-w-[278px] shrink-0 items-center justify-center rounded-[12px] bg-[linear-gradient(147.99deg,#2094F3_0%,#17CFCF_100%)] font-source-sans text-[18px] font-semibold uppercase leading-6 text-white shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={() => void handleDownload()}
-          >
-            {downloading ? "Preparing PDF…" : "download your proposal"}
-          </button>
+        <div className="bg-slate-100 px-4 py-6 sm:px-8">
+          {loaded ? (
+            <div className="mx-auto flex flex-col items-center">
+              <div
+                  style={{
+                    width: boxWidth,
+                    height: (PAGE_H * 10 + 24 * 9) * (boxWidth / PAGE_W),
+                    overflow: "hidden",
+                  }}
+                >
+                  <div style={{ width: PAGE_W, transform: `scale(${boxWidth / PAGE_W})`, transformOrigin: "top left" }}>
+                    <ProposalPages doc={loaded.doc} images={loaded.images} gap={24} />
+                  </div>
+              </div>
+            </div>
+          ) : (
+            <p className="py-24 text-center font-source-sans text-[16px] text-slate-600">
+              {loadError ? "We couldn't load your proposal. Close this and try again." : "Pricing your design and drawing your proposal…"}
+            </p>
+          )}
+          <p className="mx-auto mt-6 max-w-[640px] text-center font-source-sans text-[13px] text-slate-600">
+            Figures are estimates from your design and bill. Your installer confirms the final design and price at your free site check.
+          </p>
         </div>
       </div>
     </div>,

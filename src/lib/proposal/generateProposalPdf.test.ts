@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  equipmentRows,
-  generateProposalPdfBlob,
-  nextStepsContent,
-} from "./generateProposalPdf";
+import { equipmentRows } from "./generateProposalPdf";
+import { resolveLinks } from "./loadProposalDocument";
 import {
   DESIGN_PROPOSAL_DEFAULTS,
   emptyEquipmentItems,
@@ -60,48 +57,25 @@ describe("equipmentRows", () => {
   });
 });
 
-describe("nextStepsContent", () => {
-  const today = new Date(2026, 9, 31);
+describe("resolveLinks", () => {
   const origin = "https://easylinksolar.com.au";
 
   it("falls back to the portal and public designer when there are no links", () => {
-    const c = nextStepsContent({}, today, origin);
+    const c = resolveLinks({}, origin);
     expect(c.portalUrl).toBe("https://easylinksolar.com.au/customers/design");
     expect(c.portalLabel).toBe("easylinksolar.com.au/customers/design");
     expect(c.referralCode).toBeNull();
     expect(c.referralUrl).toBe("https://easylinksolar.com.au/designs");
   });
 
-  it("holds the price 30 days and dates the rebates to today", () => {
-    const c = nextStepsContent({}, today, origin);
-    expect(c.validUntil).toBe("30 November 2026");
-    expect(c.rebatesAsAt).toBe("31 October 2026");
-  });
-
   it("uses the customer's referral code and share link when given", () => {
-    const c = nextStepsContent(
-      { referralCode: "ALEX1", referralUrl: `${origin}/shared/tok?ref=ALEX1` },
-      today,
-      origin,
-    );
+    const c = resolveLinks({ referralCode: "ALEX1", referralUrl: `${origin}/shared/tok?ref=ALEX1` }, origin);
     expect(c.referralCode).toBe("ALEX1");
     expect(c.referralUrl).toBe(`${origin}/shared/tok?ref=ALEX1`);
   });
 
   it("builds a signup link from a code alone", () => {
-    const c = nextStepsContent({ referralCode: "A B" }, today, origin);
+    const c = resolveLinks({ referralCode: "A B" }, origin);
     expect(c.referralUrl).toBe(`${origin}/customers/auth?ref=A%20B`);
-  });
-});
-
-describe("generateProposalPdfBlob", () => {
-  it("ends with the next-step page", async () => {
-    const blob = await generateProposalPdfBlob(
-      { ...DESIGN_PROPOSAL_DEFAULTS, customer: { ...DESIGN_PROPOSAL_DEFAULTS.customer, name: "Alex Smith" } },
-      { referralCode: "ALEX1" },
-    );
-    const text = Buffer.from(await blob.arrayBuffer()).toString("latin1");
-    expect(text).toContain("Book your free site check");
-    expect(text).toContain("ALEX1");
   });
 });
