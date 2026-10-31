@@ -660,7 +660,7 @@ export const DesignsEnergyStepContent = forwardRef<
     parseBillPeriod(proposal.pricing.billPeriod),
   );
 
-  const [valuePeriod, setValuePeriod] = useState<ValuePeriod>("fortnight");
+  const [valuePeriod, setValuePeriod] = useState<ValuePeriod>("year");
 
   const gridRatePerKwh = proposal.pricing.gridRatePerKwh ?? GRID_RATE_PER_KWH;
 
@@ -944,21 +944,32 @@ export const DesignsEnergyStepContent = forwardRef<
                   title="Consumption & solar value"
                 />
 
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {(Object.keys(VALUE_PERIOD_LABELS) as ValuePeriod[]).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setValuePeriod(p)}
-                      className={`rounded-full px-2 py-0.5 font-source-sans text-[9px] font-semibold transition ${
-                        valuePeriod === p
-                          ? "bg-white text-orange-amber ring-1 ring-orange-amber"
-                          : "bg-white text-[#152238]/70 hover:text-[#152238]"
-                      }`}
-                    >
-                      {VALUE_PERIOD_LABELS[p]}
-                    </button>
-                  ))}
+                {/* Period: five equal frosted glass buttons across the card; the
+                    chosen one in the EasyLink logo yellow-gold. Defaults to Year. */}
+                <div
+                  role="tablist"
+                  aria-label="Period"
+                  className="mt-1.5 grid grid-cols-5 gap-1 rounded-[12px] border border-white/[0.18] bg-white/[0.06] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-md"
+                >
+                  {(Object.keys(VALUE_PERIOD_LABELS) as ValuePeriod[]).map((p) => {
+                    const on = valuePeriod === p;
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        onClick={() => setValuePeriod(p)}
+                        className={`relative h-[30px] overflow-hidden rounded-[9px] border font-source-sans text-[12px] tracking-[0.3px] transition before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-1/2 before:bg-[linear-gradient(180deg,rgba(255,255,255,0.14)_0%,rgba(255,255,255,0)_100%)] ${
+                          on
+                            ? "border-[rgba(255,245,170,0.9)] bg-[linear-gradient(133deg,rgba(255,239,98,0.97)_0%,rgba(255,200,40,0.95)_45%,rgba(247,141,0,0.95)_100%)] font-bold text-[#152238] shadow-[0_0_18px_rgba(247,141,0,0.45),inset_0_1px_0_rgba(255,255,255,0.5)]"
+                            : "border-white/[0.18] bg-[linear-gradient(156deg,rgba(32,148,243,0.28)_0%,rgba(23,207,207,0.18)_100%)] font-semibold text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] hover:bg-[linear-gradient(156deg,rgba(32,148,243,0.42)_0%,rgba(23,207,207,0.3)_100%)]"
+                        }`}
+                      >
+                        <span className="relative">{VALUE_PERIOD_LABELS[p]}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="mt-auto grid grid-cols-2 gap-1.5 pt-2 sm:grid-cols-4">
