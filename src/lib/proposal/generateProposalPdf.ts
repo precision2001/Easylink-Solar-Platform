@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import QRCode from "qrcode";
 
 import {
   buildFinancialProjectionFromProposal,
@@ -94,14 +95,251 @@ function addImageFitWidth(
   return hMm;
 }
 
-function formatValidUntil(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
+function formatAuDate(d: Date): string {
   return d.toLocaleDateString("en-AU", {
     day: "numeric",
     month: "long",
     year: "numeric",
   });
+}
+
+function formatValidUntil(from: Date = new Date()): string {
+  const d = new Date(from);
+  d.setDate(d.getDate() + 30);
+  return formatAuDate(d);
+}
+
+/**
+ * Links printed on the "Your next step" page. All optional: the builder
+ * (signed-out) path has no design id or referral code yet, so it falls back
+ * to the portal sign-in and the public designer.
+ */
+export type ProposalPdfLinks = {
+  /** Where the customer books the site check and sees their saved design. */
+  portalUrl?: string;
+  /** The customer's own referral code, when they have one. */
+  referralCode?: string;
+  /** Link a friend opens — a shared journey carrying the referral code. */
+  referralUrl?: string;
+};
+
+function siteOrigin(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return process.env.NEXT_PUBLIC_SITE_URL ?? "https://easylinksolar.com.au";
+}
+
+export type NextStepsContent = {
+  portalUrl: string;
+  portalLabel: string;
+  validUntil: string;
+  rebatesAsAt: string;
+  referralCode: string | null;
+  referralUrl: string;
+};
+
+/** Pure: resolves what the next-step page prints. Exported for tests. */
+export function nextStepsContent(
+  links: ProposalPdfLinks = {},
+  today: Date = new Date(),
+  origin: string = siteOrigin(),
+): NextStepsContent {
+  const portalUrl = links.portalUrl ?? `${origin}/customers/design`;
+  const code = links.referralCode?.trim() || null;
+  return {
+    portalUrl,
+    portalLabel: portalUrl.replace(/^https?:\/\/(www\.)?/, ""),
+    validUntil: formatValidUntil(today),
+    rebatesAsAt: formatAuDate(today),
+    referralCode: code,
+    referralUrl:
+      links.referralUrl ??
+      (code
+        ? `${origin}/customers/auth?ref=${encodeURIComponent(code)}`
+        : `${origin}/designs`),
+  };
+}
+
+async function qrDataUrl(text: string): Promise<string | null> {
+  try {
+    return await QRCode.toDataURL(text, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 320,
+    });
+  } catch {
+    return null;
+  }
+}
+
+const NAVY: [number, number, number] = [11, 20, 38];
+const SUN: [number, number, number] = [255, 214, 10];
+const SLATE: [number, number, number] = [71, 85, 105];
+
+/** Final page: one call to action, price validity, and the referral ask. */
+async function drawNextStepsPage(
+  doc: jsPDF,
+  proposal: DesignProposalState,
+  logoDataUrl: string | null,
+  content: NextStepsContent,
+): Promise<void> {
+  doc.addPage("a4", "portrait");
+  const margin = PDF_MARGIN_MM;
+  const contentW = PDF_BODY_WIDTH_MM;
+  const pageH = doc.internal.pageSize.getHeight();
+  let y = drawHeader(doc, proposal, logoDataUrl, 12);
+
+  const [portalQr, referralQr] = await Promise.all([
+    qrDataUrl(content.portalUrl),
+    qrDataUrl(content.referralUrl),
+  ]);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(...NAVY);
+  doc.text("Your next step", margin, y + 4);
+  y += 14;
+
+  /* Call to action — the only one in the document. */
+  const ctaH = 58;
+  const qrSize = 44;
+  doc.setFillColor(...NAVY);
+  doc.roundedRect(margin, y, contentW, ctaH, 4, 4, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(17);
+  doc.text("Book your free site check", margin + 8, y + 15);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(201, 212, 229);
+  const ctaBody = doc.splitTextToSize(
+    "Scan the code or open the link to pick a time. Your design, price and documents are waiting in your portal.",
+    contentW - qrSize - 28,
+  );
+  doc.text(ctaBody, margin + 8, y + 24);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...SUN);
+  doc.text(content.portalLabel, margin + 8, y + ctaH - 9);
+  const qrX = margin + contentW - qrSize - 7;
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(qrX - 1, y + 7 - 1, qrSize + 2, qrSize + 2, 2, 2, "F");
+  if (portalQr) doc.addImage(portalQr, "PNG", qrX, y + 7, qrSize, qrSize);
+  doc.link(margin, y, contentW, ctaH, { url: content.portalUrl });
+  y += ctaH + 8;
+
+  /* Price validity + paper option, side by side. */
+  const boxW = (contentW - 6) / 2;
+  const boxH = 34;
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(margin, y, boxW, boxH, 3, 3, "F");
+  doc.roundedRect(margin + boxW + 6, y, boxW, boxH, 3, 3, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...SLATE);
+  doc.text("PRICE HELD UNTIL", margin + 6, y + 8);
+  doc.text("PREFER PAPER?", margin + boxW + 12, y + 8);
+
+  doc.setFontSize(15);
+  doc.setTextColor(...NAVY);
+  doc.text(content.validUntil, margin + 6, y + 16);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...SLATE);
+  doc.text(
+    doc.splitTextToSize(
+      `Rebates as at ${content.rebatesAsAt}. We recheck them before install.`,
+      boxW - 12,
+    ),
+    margin + 6,
+    y + 23,
+  );
+  doc.text(
+    doc.splitTextToSize(
+      "Sign the acceptance form with your installer at the site check.",
+      boxW - 12,
+    ),
+    margin + boxW + 12,
+    y + 16,
+  );
+  y += boxH + 12;
+
+  /* What happens next. */
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...NAVY);
+  doc.text("What happens next", margin, y);
+  y += 8;
+  const steps: [string, string][] = [
+    ["Site check", "We check your roof and switchboard. About 30 minutes."],
+    ["Approval", "We apply to your electricity network for you."],
+    ["Install day", "One or two days with an accredited, insured crew."],
+    ["Switch on", "We set up your monitoring app and show you around."],
+  ];
+  steps.forEach(([title, body], i) => {
+    doc.setFillColor(...SUN);
+    doc.circle(margin + 4, y + 2.5, 4, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...NAVY);
+    doc.text(String(i + 1), margin + 4, y + 4, { align: "center" });
+    doc.text(title, margin + 12, y + 1.5);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...SLATE);
+    doc.text(body, margin + 12, y + 6.5);
+    y += 13;
+  });
+  y += 6;
+
+  /* Referral ask. */
+  const refH = 52;
+  const refQr = 38;
+  doc.setFillColor(...SUN);
+  doc.roundedRect(margin, y, contentW, refH, 4, 4, "F");
+  doc.setTextColor(...NAVY);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("KNOW SOMEONE WITH A SUNNY ROOF?", margin + 8, y + 10);
+  doc.setFontSize(14);
+  doc.text(
+    doc.splitTextToSize(
+      "Share your design. Your friend gets their own in two minutes.",
+      contentW - refQr - 30,
+    ),
+    margin + 8,
+    y + 18,
+  );
+  doc.setFontSize(10);
+  if (content.referralCode) {
+    doc.setFont("helvetica", "normal");
+    doc.text("Your referral code:", margin + 8, y + refH - 9);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(content.referralCode, margin + 42, y + refH - 9);
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.text(
+      "Your personal referral link is in your portal.",
+      margin + 8,
+      y + refH - 9,
+    );
+  }
+  const rqX = margin + contentW - refQr - 7;
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(rqX - 1, y + 7 - 1, refQr + 2, refQr + 2, 2, 2, "F");
+  if (referralQr) doc.addImage(referralQr, "PNG", rqX, y + 7, refQr, refQr);
+  doc.link(rqX, y + 7, refQr, refQr, { url: content.referralUrl });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.text(
+    "EasyLink Solar · This proposal is indicative and not a binding quote until confirmed in writing.",
+    margin,
+    pageH - 10,
+  );
+  doc.setTextColor(0, 0, 0);
 }
 
 function quoteNumber(): string {
@@ -305,6 +543,7 @@ function drawHeader(
  */
 export async function generateProposalPdfBlob(
   proposal: DesignProposalState,
+  links: ProposalPdfLinks = {},
 ): Promise<Blob> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -312,7 +551,8 @@ export async function generateProposalPdfBlob(
   const contentW = pageW - 2 * margin;
   const fn = firstName(proposal.customer.name);
   const quote = quoteNumber();
-  const validUntil = formatValidUntil();
+  const nextSteps = nextStepsContent(links);
+  const validUntil = nextSteps.validUntil;
 
   const mapShot = proposal.solarDesign?.mapScreenshotDataUrl ?? null;
   const fallbackHero = await fetchPublicImageAsDataUrl(
@@ -540,6 +780,8 @@ export async function generateProposalPdfBlob(
     margin,
     pageHP - 10,
   );
+
+  await drawNextStepsPage(doc, proposal, logoDataUrl, nextSteps);
 
   return doc.output("blob");
 }
