@@ -343,6 +343,23 @@ export function findBatteryKnee(
   };
 }
 
+/**
+ * Extra storage (kWh a day) kept for charging an electric car overnight and
+ * for heavier loads added later (heat pump, pool pump, induction cooking):
+ * an average Australian EV drives ~15,000 km a year at ~0.17 kWh/km
+ * (≈7 kWh a day), plus ~3 kWh of headroom.
+ */
+export const EV_FUTURE_DAILY_KWH = 10;
+
+/**
+ * Battery size that covers the house *and* an EV / future heavy loads: the
+ * home-only size plus the daily EV allowance, rounded up to a size on the curve.
+ */
+export function evReadyBatteryKwh(homeOnlyKwh: number): number {
+  const want = homeOnlyKwh + EV_FUTURE_DAILY_KWH;
+  return BATTERY_CURVE_SIZES_KWH.find((k) => k >= want) ?? BATTERY_CURVE_SIZES_KWH[BATTERY_CURVE_SIZES_KWH.length - 1];
+}
+
 /** "7.2 kW" -> 7.2, else panel count x default wattage, else 0. */
 export function resolveSystemKw(systemSize: string, totalPanels: string): number {
   const sized = systemSize.match(/([\d.]+)\s*kW/i);

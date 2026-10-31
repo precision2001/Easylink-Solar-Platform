@@ -23,6 +23,8 @@ import {
   GRID_RATE_PER_KWH,
   MONTH_LABELS,
   SOLAR_YIELD_KWH_PER_KW_YEAR,
+  EV_FUTURE_DAILY_KWH,
+  evReadyBatteryKwh,
   findBatteryKnee,
   resolveSystemKw,
   simulateYear,
@@ -212,17 +214,26 @@ function EnergyBreakdownChart({ monthlySolarPct }: { monthlySolarPct: number[] }
   );
 }
 
+/** Battery size for the house's own usage today. */
+const HOME_RED = "#E5383B";
+/** Battery size that also charges an EV / covers future heavy loads. */
+const EV_GREEN = "#12A150";
+
 /** SVG line chart: annual grid import against battery size, with the "knee" marked. */
 function GridImportChart({
   importsBySize,
   currentBatteryKwh,
   currentImportKwh,
   recommendedKwh,
+  evReadyKwh,
 }: {
   importsBySize: number[];
   currentBatteryKwh: number;
   currentImportKwh: number;
+  /** Home-only size (red). */
   recommendedKwh: number;
+  /** Home + EV / future heavy loads size (green). */
+  evReadyKwh: number;
 }) {
   const w = 320;
   const h = 150;
@@ -243,6 +254,9 @@ function GridImportChart({
   const kneeIdx = BATTERY_CURVE_SIZES_KWH.indexOf(recommendedKwh);
   const kneeX = x(recommendedKwh);
   const kneeY = y(importsBySize[kneeIdx] ?? 0);
+  const evIdx = BATTERY_CURVE_SIZES_KWH.indexOf(evReadyKwh);
+  const evX = x(evReadyKwh);
+  const evY = y(importsBySize[evIdx] ?? 0);
   const curX = x(Math.min(currentBatteryKwh, maxKwh));
   const curY = y(currentImportKwh);
 
@@ -287,23 +301,33 @@ function GridImportChart({
 
         <path d={path} fill="none" stroke="#2FA8E0" strokeWidth={2} strokeLinejoin="round" />
 
-        <line
-          x1={kneeX}
-          y1={padT}
-          x2={kneeX}
-          y2={h - padB}
-          stroke="#F2941F"
-          strokeWidth={1}
-          strokeDasharray="3 2"
+        {/* Band between the two sizes: the storage kept for the EV and future loads. */}
+        <rect
+          x={kneeX}
+          y={padT}
+          width={Math.max(0, evX - kneeX)}
+          height={h - padT - padB}
+          fill={EV_GREEN}
+          opacity={0.08}
         />
-        <circle cx={kneeX} cy={kneeY} r={4} fill="#F2941F" stroke="#fff" strokeWidth={1.2} />
+        <line x1={kneeX} y1={padT} x2={kneeX} y2={h - padB} stroke={HOME_RED} strokeWidth={1} strokeDasharray="3 2" />
+        <line x1={evX} y1={padT} x2={evX} y2={h - padB} stroke={EV_GREEN} strokeWidth={1} strokeDasharray="3 2" />
+        <rect x={kneeX - 3.5} y={kneeY - 3.5} width={7} height={7} fill={HOME_RED} stroke="#fff" strokeWidth={1.2} />
+        <rect x={evX - 3.5} y={evY - 3.5} width={7} height={7} fill={EV_GREEN} stroke="#fff" strokeWidth={1.2} />
+        <text x={evX + 3} y={padT + 8} fontSize={7.5} fill={EV_GREEN} fontWeight={700}>
+          EV
+        </text>
         <circle cx={curX} cy={curY} r={4} fill="#152238" stroke="#fff" strokeWidth={1.2} />
       </svg>
 
       <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 font-inter text-[8.5px] text-[#6a7282]">
         <span className="flex items-center gap-1">
-          <span className="size-[7px] rounded-full bg-[#F2941F]" />
-          Recommended: {recommendedKwh} kWh
+          <span className="size-[7px]" style={{ background: HOME_RED }} />
+          Home only: {recommendedKwh} kWh
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="size-[7px]" style={{ background: EV_GREEN }} />
+          Home + EV / future loads: {evReadyKwh} kWh
         </span>
         <span className="flex items-center gap-1">
           <span className="size-[7px] rounded-full bg-[#152238]" />
@@ -778,7 +802,11 @@ export const DesignsEnergyStepContent = forwardRef<
   const billCostPeriod = supplyChargePeriod + gridImportCostPeriod - exportIncomePeriod;
   const netPeriod = exportIncomePeriod - gridImportCostPeriod - supplyChargePeriod;
 
-  const recommendApplied = batteryKwh === knee.recommendedKwh;
+  const evReadyKwh = evReadyBatteryKwh(knee.recommendedKwh);
+  const homeApplied = batteryKwh === knee.recommendedKwh;
+  const evApplied = batteryKwh === evReadyKwh;
+  const setBattery = (kwh: number) =>
+    dispatch(mergeProposalData({ equipment: { batteryCapacityKwh: Math.round(kwh) } }));
 
   return (
     <div className="relative z-10 mx-auto flex h-full w-full max-w-[1520px] min-h-0 flex-1 flex-col px-4 py-2 sm:px-6 lg:px-8">
@@ -824,9 +852,12 @@ export const DesignsEnergyStepContent = forwardRef<
                   Battery — the lever for $0 grid
                 </p>
               </div>
-              {recommendApplied ? (
-                <span className="mt-1 inline-block rounded-full bg-[#152238] px-2 py-[2px] font-source-sans text-[9px] font-bold uppercase tracking-[0.4px] text-yellow-lemon">
-                  Recommended size applied
+              {homeApplied || evApplied ? (
+                <span
+                  className="mt-1 inline-flex items-center gap-1 rounded-full bg-[#152238] px-2 py-[2px] font-source-sans text-[9px] font-bold uppercase tracking-[0.4px] text-yellow-lemon"
+                >
+                  <span className="size-[7px]" style={{ background: homeApplied ? HOME_RED : EV_GREEN }} />
+                  {homeApplied ? "Home-only size applied" : "EV-ready size applied"}
                 </span>
               ) : null}
 
@@ -835,20 +866,49 @@ export const DesignsEnergyStepContent = forwardRef<
                   <span>Battery capacity</span>
                   <span className="font-mono">{effectiveBatteryKwh} kWh</span>
                 </div>
-                <div className="mt-0.5">
-                  <SingleScrollBar
-                    value={effectiveBatteryKwh}
-                    onChange={(v) =>
-                      dispatch(
-                        mergeProposalData({
-                          equipment: { batteryCapacityKwh: Math.round(v) },
-                        }),
-                      )
-                    }
-                    min={0}
-                    max={100}
-                    ariaLabel="Battery capacity in kWh"
-                  />
+                <div className="relative mt-0.5">
+                  {/* Size markers, click to apply: red = this house today, green = + EV / future loads. */}
+                  {[
+                    { kwh: knee.recommendedKwh, color: HOME_RED, label: "Home only", applied: homeApplied },
+                    { kwh: evReadyKwh, color: EV_GREEN, label: "+ EV / future", applied: evApplied },
+                  ].map((m) => (
+                    <button
+                      key={m.label}
+                      type="button"
+                      onClick={() => setBattery(m.kwh)}
+                      title={`${m.label}: ${m.kwh} kWh`}
+                      aria-label={`Set battery to ${m.label} size, ${m.kwh} kWh`}
+                      className="absolute top-[-2px] z-10 flex -translate-x-1/2 flex-col items-center"
+                      style={{ left: `${Math.min(100, m.kwh)}%` }}
+                    >
+                      <span
+                        className="rounded-[3px] border-2 bg-white/85 px-1 font-mono text-[8.5px] font-bold leading-[13px]"
+                        style={{ borderColor: m.color, color: m.color, boxShadow: m.applied ? `0 0 0 2px ${m.color}55` : undefined }}
+                      >
+                        {m.kwh}
+                      </span>
+                      <span className="h-[6px] w-[2px]" style={{ background: m.color }} />
+                    </button>
+                  ))}
+                  <div className="pt-[14px]">
+                    <SingleScrollBar
+                      value={effectiveBatteryKwh}
+                      onChange={setBattery}
+                      min={0}
+                      max={100}
+                      ariaLabel="Battery capacity in kWh"
+                    />
+                  </div>
+                </div>
+                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 font-inter text-[8.5px] leading-[1.2] text-[#3a3020]/85">
+                  <span className="flex items-center gap-1">
+                    <span className="size-[7px] border-2" style={{ borderColor: HOME_RED }} />
+                    Home only — today&apos;s usage
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="size-[7px] border-2" style={{ borderColor: EV_GREEN }} />
+                    + EV charging / future loads (+{EV_FUTURE_DAILY_KWH} kWh/day)
+                  </span>
                 </div>
               </div>
 
@@ -1030,7 +1090,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   icon="battery"
                   accentClassName="bg-[#152238]"
                   title="Grid import vs. battery size"
-                  subtitle="The marker shows where extra storage stops being worth adding"
+                  subtitle="Red: enough for the house today. Green: also charges an EV / future loads"
                 />
                 <div className="mt-1.5 min-h-0 flex-1 rounded-[10px] bg-white px-2 py-1.5">
                   <GridImportChart
@@ -1038,6 +1098,7 @@ export const DesignsEnergyStepContent = forwardRef<
                     currentBatteryKwh={effectiveBatteryKwh}
                     currentImportKwh={sim.annualGridImportKwh}
                     recommendedKwh={knee.recommendedKwh}
+                    evReadyKwh={evReadyKwh}
                   />
                 </div>
               </div>
