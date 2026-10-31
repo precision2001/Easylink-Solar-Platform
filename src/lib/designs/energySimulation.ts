@@ -348,8 +348,8 @@ export function findBatteryKnee(
  * Australia's best-selling EV (60 kWh usable).
  */
 export const DEFAULT_EV_BATTERY_KWH = 60;
-/** Share of the energy leaving the home battery that ends up in the car (AC charging losses ~10%). */
-export const EV_CHARGE_EFFICIENCY = 0.9;
+/** Share of the energy leaving the home battery that ends up in the car (EasyLink allows a 1% loss). */
+export const EV_CHARGE_EFFICIENCY = 0.99;
 
 /**
  * Battery size that covers the house *and* fills the car's whole battery
@@ -359,6 +359,19 @@ export const EV_CHARGE_EFFICIENCY = 0.9;
 export function evReadyBatteryKwh(homeOnlyKwh: number, evBatteryKwh = DEFAULT_EV_BATTERY_KWH): number {
   const want = homeOnlyKwh + Math.max(0, evBatteryKwh) / EV_CHARGE_EFFICIENCY;
   return BATTERY_CURVE_SIZES_KWH.find((k) => k >= want) ?? BATTERY_CURVE_SIZES_KWH[BATTERY_CURVE_SIZES_KWH.length - 1];
+}
+
+/**
+ * "Future Ready" size: halfway between the home-only and the full-EV-charge
+ * sizes, on the nearest size of the curve (rounding up on a tie).
+ */
+export function futureReadyBatteryKwh(homeOnlyKwh: number, evReadyKwh: number): number {
+  const mid = (homeOnlyKwh + evReadyKwh) / 2;
+  let best = BATTERY_CURVE_SIZES_KWH[0];
+  for (const k of BATTERY_CURVE_SIZES_KWH) {
+    if (Math.abs(k - mid) <= Math.abs(best - mid)) best = k;
+  }
+  return best;
 }
 
 /** "7.2 kW" -> 7.2, else panel count x default wattage, else 0. */

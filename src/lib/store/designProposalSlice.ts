@@ -258,7 +258,7 @@ export const DESIGN_PROPOSAL_DEFAULTS: DesignProposalState = {
   pricing: {
     totalSystemPrice: "$11,200",
     monthlySavings: "$132",
-    currentBill: "$500",
+    currentBill: "$200",
     newBill: "$368",
     billPeriod: "quarter",
   },

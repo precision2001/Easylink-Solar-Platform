@@ -25,6 +25,7 @@ import {
   SOLAR_YIELD_KWH_PER_KW_YEAR,
   DEFAULT_EV_BATTERY_KWH,
   evReadyBatteryKwh,
+  futureReadyBatteryKwh,
   findBatteryKnee,
   resolveSystemKw,
   simulateYear,
@@ -218,6 +219,8 @@ function EnergyBreakdownChart({ monthlySolarPct }: { monthlySolarPct: number[] }
 const HOME_RED = "#E5383B";
 /** Battery size that also charges an EV / covers future heavy loads. */
 const EV_GREEN = "#12A150";
+/** Halfway between the two: room to grow (an EV later, a heat pump, a pool). */
+const FUTURE_BLUE = "#2563EB";
 
 /** SVG line chart: annual grid import against battery size, with the "knee" marked. */
 function GridImportChart({
@@ -226,14 +229,17 @@ function GridImportChart({
   currentImportKwh,
   recommendedKwh,
   evReadyKwh,
+  futureReadyKwh,
 }: {
   importsBySize: number[];
   currentBatteryKwh: number;
   currentImportKwh: number;
   /** Home-only size (red). */
   recommendedKwh: number;
-  /** Home + EV / future heavy loads size (green). */
+  /** Home + full EV charge size (green). */
   evReadyKwh: number;
+  /** Midpoint "Future Ready" size (blue). */
+  futureReadyKwh: number;
 }) {
   const w = 320;
   const h = 150;
@@ -257,6 +263,9 @@ function GridImportChart({
   const evIdx = BATTERY_CURVE_SIZES_KWH.indexOf(evReadyKwh);
   const evX = x(evReadyKwh);
   const evY = y(importsBySize[evIdx] ?? 0);
+  const frIdx = BATTERY_CURVE_SIZES_KWH.indexOf(futureReadyKwh);
+  const frX = x(futureReadyKwh);
+  const frY = y(importsBySize[frIdx] ?? 0);
   const curX = x(Math.min(currentBatteryKwh, maxKwh));
   const curY = y(currentImportKwh);
 
@@ -313,6 +322,8 @@ function GridImportChart({
         <line x1={kneeX} y1={padT} x2={kneeX} y2={h - padB} stroke={HOME_RED} strokeWidth={1} strokeDasharray="3 2" />
         <line x1={evX} y1={padT} x2={evX} y2={h - padB} stroke={EV_GREEN} strokeWidth={1} strokeDasharray="3 2" />
         <rect x={kneeX - 3.5} y={kneeY - 3.5} width={7} height={7} fill={HOME_RED} stroke="#fff" strokeWidth={1.2} />
+        <line x1={frX} y1={padT} x2={frX} y2={h - padB} stroke={FUTURE_BLUE} strokeWidth={1} strokeDasharray="3 2" />
+        <rect x={frX - 3.5} y={frY - 3.5} width={7} height={7} fill={FUTURE_BLUE} stroke="#fff" strokeWidth={1.2} />
         <rect x={evX - 3.5} y={evY - 3.5} width={7} height={7} fill={EV_GREEN} stroke="#fff" strokeWidth={1.2} />
         <text x={evX + 3} y={padT + 8} fontSize={7.5} fill={EV_GREEN} fontWeight={700}>
           EV
@@ -324,6 +335,10 @@ function GridImportChart({
         <span className="flex items-center gap-1">
           <span className="size-[7px]" style={{ background: HOME_RED }} />
           Home only: {recommendedKwh} kWh
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="size-[7px]" style={{ background: FUTURE_BLUE }} />
+          Future Ready: {futureReadyKwh} kWh
         </span>
         <span className="flex items-center gap-1">
           <span className="size-[7px]" style={{ background: EV_GREEN }} />
@@ -432,7 +447,8 @@ const BILL_MONTHLY_MIN = 100;
 const BILL_MONTHLY_MAX = 10000;
 
 /** Used only when a design has no saved bill yet. */
-const BILL_MONTHLY_DEFAULT = 500;
+/** Default bill: $200 a month ($600 a quarter). */
+const BILL_MONTHLY_DEFAULT = 200;
 
 function periodMultiplier(period: DesignBillPeriod): number {
   switch (period) {
@@ -807,6 +823,8 @@ export const DesignsEnergyStepContent = forwardRef<
   const sliderMax = BATTERY_CURVE_SIZES_KWH[BATTERY_CURVE_SIZES_KWH.length - 1];
   const homeApplied = batteryKwh === knee.recommendedKwh;
   const evApplied = batteryKwh === evReadyKwh;
+  const futureReadyKwh = futureReadyBatteryKwh(knee.recommendedKwh, evReadyKwh);
+  const futureApplied = batteryKwh === futureReadyKwh && !homeApplied && !evApplied;
   const setBattery = (kwh: number) =>
     dispatch(mergeProposalData({ equipment: { batteryCapacityKwh: Math.round(kwh) } }));
 
@@ -854,12 +872,12 @@ export const DesignsEnergyStepContent = forwardRef<
                   Battery — the lever for $0 grid
                 </p>
               </div>
-              {homeApplied || evApplied ? (
+              {homeApplied || evApplied || futureApplied ? (
                 <span
                   className="mt-1 inline-flex items-center gap-1 rounded-full bg-[#152238] px-2 py-[2px] font-source-sans text-[9px] font-bold uppercase tracking-[0.4px] text-yellow-lemon"
                 >
-                  <span className="size-[7px]" style={{ background: homeApplied ? HOME_RED : EV_GREEN }} />
-                  {homeApplied ? "Home-only size applied" : "EV-ready size applied"}
+                  <span className="size-[7px]" style={{ background: homeApplied ? HOME_RED : futureApplied ? FUTURE_BLUE : EV_GREEN }} />
+                  {homeApplied ? "Home-only size applied" : futureApplied ? "Future Ready size applied" : "EV-ready size applied"}
                 </span>
               ) : null}
 
@@ -872,6 +890,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   {/* Size markers, click to apply: red = this house today, green = + EV / future loads. */}
                   {[
                     { kwh: knee.recommendedKwh, color: HOME_RED, label: "Home only", applied: homeApplied },
+                    { kwh: futureReadyKwh, color: FUTURE_BLUE, label: "Future Ready", applied: futureApplied },
                     { kwh: evReadyKwh, color: EV_GREEN, label: "+ full EV charge", applied: evApplied },
                   ].map((m) => (
                     <button
@@ -906,6 +925,10 @@ export const DesignsEnergyStepContent = forwardRef<
                   <span className="flex items-center gap-1">
                     <span className="size-[7px] border-2" style={{ borderColor: HOME_RED }} />
                     Home only — today&apos;s usage
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="size-[7px] border-2" style={{ borderColor: FUTURE_BLUE }} />
+                    Future Ready — halfway
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="size-[7px] border-2" style={{ borderColor: EV_GREEN }} />
@@ -1108,7 +1131,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   icon="battery"
                   accentClassName="bg-[#152238]"
                   title="Grid import vs. battery size"
-                  subtitle="Red: enough for the house today. Green: also fills the car's battery"
+                  subtitle="Red: the house today. Blue: Future Ready. Green: also fills the car's battery"
                 />
                 <div className="mt-1.5 min-h-0 flex-1 rounded-[10px] bg-white px-2 py-1.5">
                   <GridImportChart
@@ -1117,6 +1140,7 @@ export const DesignsEnergyStepContent = forwardRef<
                     currentImportKwh={sim.annualGridImportKwh}
                     recommendedKwh={knee.recommendedKwh}
                     evReadyKwh={evReadyKwh}
+                    futureReadyKwh={futureReadyKwh}
                   />
                 </div>
               </div>
