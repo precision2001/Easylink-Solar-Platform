@@ -170,9 +170,16 @@ function auDate(d: Date): string {
   return d.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" });
 }
 
-function firstWord(name: string): string {
-  const t = name.trim();
-  return t ? (t.split(/\s+/)[0] ?? "there") : "there";
+const TITLES = new Set(["mr", "mrs", "ms", "miss", "mx", "dr", "prof"]);
+
+/** How to greet the customer: their first name, or title + name when they gave one ("Mrs Elham"). */
+export function greetingName(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "there";
+  if (TITLES.has(words[0].toLowerCase().replace(/\.$/, "")) && words.length > 1) {
+    return `${words[0]} ${words[words.length - 1]}`;
+  }
+  return words[0];
 }
 
 function periodMonths(p: DesignBillPeriod): number {
@@ -243,6 +250,14 @@ function splitGain(s: SavingsEstimate): { notBought: number; exportIncome: numbe
   const avoided = (s.selfUsedKwh + s.batteryKwh) * TARIFF_DEFAULTS.usagePerKwh;
   const notBought = Math.min(s.yearlySavings, avoided);
   return { notBought, exportIncome: Math.max(0, s.yearlySavings - notBought) };
+}
+
+/** The engine labels STC lines with its working ("Solar STCs: (18.48 kW × …) = 127"); customers see the rebate. */
+function rebateLabel(label: string, count: number): string {
+  const n = count > 0 ? ` (${count} STCs)` : "";
+  if (/battery/i.test(label)) return `Federal battery rebate${n}`;
+  if (/solar|stc/i.test(label)) return `Federal solar rebate${n}`;
+  return label;
 }
 
 function payback(price: number | null, yearly: number): number | null {
@@ -351,7 +366,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
   ).reduce((a, b) => a + b, 0);
 
   return {
-    firstName: firstWord(proposal.customer.name),
+    firstName: greetingName(proposal.customer.name),
     fullName: proposal.customer.name.trim(),
     address: proposal.customer.address?.trim() ?? "",
     quoteRef: input.quoteRef ?? `EL-${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`,
@@ -361,7 +376,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
 
     systemKw,
     panelCount,
-    panelLine: `${panelCount} × ${panelModel ?? "solar panels"}${panelW ? ` ${panelW} W` : ""}`,
+    panelLine: `${panelCount} × ${panelModel ?? "solar panels"}${panelW && !/\d\s*W\b/i.test(panelModel ?? "") ? ` ${panelW} W` : ""}`,
     inverterLine: quote?.inverter
       ? `${quote.inverter.model} · ${quote.inverter.kw} kW`
       : firstInverter
@@ -401,7 +416,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
     priceBeforeRebates: quote?.priceBeforeStcs ?? null,
     rebateLines: (quote?.stcLines ?? [])
       .filter((l) => l.value > 0)
-      .map((l) => ({ label: l.label, value: l.value })),
+      .map((l) => ({ label: rebateLabel(l.label, l.count), value: l.value })),
     gst: price != null ? Math.round((price / 11) * 100) / 100 : null,
     paybackYears: payback(price, yearlyGain),
     savings25Years: Math.round(cum[cum.length - 1] ?? 0),

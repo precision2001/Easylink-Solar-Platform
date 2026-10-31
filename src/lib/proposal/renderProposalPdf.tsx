@@ -1,6 +1,6 @@
 "use client";
 
-import html2canvas from "html2canvas";
+import { toCanvas } from "html-to-image";
 import { jsPDF } from "jspdf";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -60,17 +60,16 @@ async function capturePages({ doc, images }: LoadedProposal): Promise<CapturedPa
 
     const out: CapturedPage[] = [];
     for (const el of Array.from(host.querySelectorAll<HTMLElement>("[data-proposal-page]"))) {
-      const canvas = await html2canvas(el, {
-        scale: SCALE,
+      // The browser draws the page itself (SVG foreignObject), so text sits
+      // exactly where the preview shows it on every computer. html2canvas
+      // re-laid text out on its own and dropped big numbers onto the line
+      // below on Windows.
+      const canvas = await toCanvas(el, {
+        pixelRatio: SCALE,
         width: PAGE_W,
         height: PAGE_H,
         backgroundColor: "#FFFFFF",
-        useCORS: true,
-        logging: false,
-        // The page sits off screen; render it as if it were at the origin.
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: PAGE_W,
+        cacheBust: false,
       });
       const pageBox = el.getBoundingClientRect();
       const links = Array.from(el.querySelectorAll<HTMLElement>("[data-pdf-link]")).flatMap((a) => {

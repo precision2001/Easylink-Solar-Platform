@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 
 import { PAGE_H, PAGE_W, ProposalPages } from "@/components/proposal/ProposalPages";
 import { downloadPdfBlob } from "@/lib/proposal/generateProposalPdf";
+import { greetingName } from "@/lib/proposal/proposalDocument";
 import {
   loadProposalDocument,
   type LoadedProposal,
@@ -22,13 +23,6 @@ export type DesignsProposalDownloadModalProps = {
   /** Optional hook after a successful PDF download. */
   onConfirmDownload?: () => void;
 };
-
-
-function firstWordName(fullName: string): string {
-  const t = fullName.trim();
-  if (!t) return "Customer";
-  return t.split(/\s+/)[0] ?? "Customer";
-}
 
 /**
  * Proposal preview: the customer's ten proposal pages, priced and filled
@@ -76,7 +70,7 @@ export function DesignsProposalDownloadModal({
 
   const dearName = useMemo(() => {
     if (letterFirstName?.trim()) return letterFirstName.trim();
-    return firstWordName(proposal.customer.name);
+    return greetingName(proposal.customer.name);
   }, [letterFirstName, proposal.customer.name]);
 
   useEffect(() => {

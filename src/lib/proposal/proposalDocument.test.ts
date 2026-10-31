@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildProposalDocument, cumulativeGain, designBatteryKwh } from "./proposalDocument";
+import { buildProposalDocument, cumulativeGain, designBatteryKwh, greetingName } from "./proposalDocument";
 import { estimateSavings, type ProposalPricingResponse } from "./proposalPricing";
 import { DESIGN_PROPOSAL_DEFAULTS, emptyEquipmentItems, type DesignProposalState } from "@/lib/store/designProposalSlice";
 
@@ -114,5 +114,33 @@ describe("designBatteryKwh", () => {
       ),
     ).toBeCloseTo(16.6);
     expect(designBatteryKwh(design({ batteryCapacityId: "14.6kwh" }))).toBe(14.6);
+  });
+});
+
+describe("greetingName", () => {
+  it("keeps a title with the name", () => {
+    expect(greetingName("Mrs Elham")).toBe("Mrs Elham");
+    expect(greetingName("dr. Jane Citizen")).toBe("dr. Citizen");
+  });
+  it("uses the first name otherwise", () => {
+    expect(greetingName("Alex Smith")).toBe("Alex");
+    expect(greetingName("  ")).toBe("there");
+  });
+});
+
+describe("rebate lines", () => {
+  it("shows customers the rebate, not the engine's working", () => {
+    const p = {
+      ...pricing,
+      selected: {
+        ...pricing.selected,
+        stcLines: [
+          { label: "Solar STCs: (18.48 kW × 1.382 × 5 yrs) = 127", count: 127, value: 4763 },
+          { label: "Battery STCs: ((14 kWh @ 100%) × 6.8) = 119", count: 119, value: 4463 },
+        ],
+      },
+    };
+    const doc = buildProposalDocument({ proposal: design({ batteryCapacityKwh: 20 }), pricing: p, links, today });
+    expect(doc.rebateLines.map((l) => l.label)).toEqual(["Federal solar rebate (127 STCs)", "Federal battery rebate (119 STCs)"]);
   });
 });

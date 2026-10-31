@@ -289,7 +289,7 @@ function Cover({ doc, images }: PageProps) {
         ) : (
           <RoofImage src={images.roof} height={400} label="Your roof with the panels placed" />
         )}
-        <div style={{ position: "absolute", right: 16, top: 16, background: "rgba(11,20,38,0.86)", borderRadius: 999, padding: "6px 12px", fontSize: 12, color: C.mutedOnDark }}>
+        <div style={{ position: "absolute", left: 16, top: 16, background: "rgba(11,20,38,0.86)", borderRadius: 999, padding: "6px 12px", fontSize: 12, color: C.mutedOnDark }}>
           Your roof, from your design
         </div>
         <div style={{ position: "absolute", left: 18, bottom: 18, display: "flex", gap: 10 }}>
