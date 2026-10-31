@@ -78,6 +78,39 @@ describe("fitToBox", () => {
   });
 });
 
+describe("placeDriveway", () => {
+  it("parks the car off the street-facing wall, nose to the house, battery beside it", async () => {
+    const { placeDriveway, rectCorners, EV_SIZE } = await import("./roofGeometry");
+    const d = buildRoofDrawing(design({ generatedPanels: [] }))!;
+    // Street to the south of a 10 m × 8 m house.
+    const p = placeDriveway(d, { x: 0, y: -25 });
+    expect(p.ev).toBeDefined();
+    expect(p.battery).toBeDefined();
+    // Car is south of the house, pointing away from it (towards the street).
+    expect(p.ev!.y).toBeLessThan(-4);
+    expect(Math.round(p.ev!.angleDeg)).toBe(-90);
+    // None of the car is on the roof.
+    for (const q of rectCorners(p.ev!, EV_SIZE.length, EV_SIZE.width)) expect(q.y).toBeLessThan(-4);
+    // Battery sits against that same wall, near the car's nose.
+    expect(p.battery!.y).toBeGreaterThan(-4.6);
+    expect(p.battery!.y).toBeLessThan(-4);
+    expect(Math.abs(p.battery!.x - p.ev!.x)).toBeLessThan(3);
+  });
+
+  it("prefers the paved spot", async () => {
+    const { placeDriveway } = await import("./roofGeometry");
+    const d = buildRoofDrawing(design({ generatedPanels: [] }))!;
+    const p = placeDriveway(d, { x: 0, y: -25 }, (c) => (c.every((q) => q.x > 1) ? 1 : 0));
+    expect(p.ev!.x).toBeGreaterThan(1);
+  });
+
+  it("leaves the drawing alone when no wall faces the street", async () => {
+    const { placeDriveway } = await import("./roofGeometry");
+    const d = { ...buildRoofDrawing(design({ generatedPanels: [] }))!, outlines: [] };
+    expect(placeDriveway(d, { x: 0, y: -25 }).ev).toBeUndefined();
+  });
+});
+
 describe("orientForBox", () => {
   it("lays a tall roof wide in a wide frame, walls square to it", async () => {
     const { orientForBox } = await import("./roofGeometry");

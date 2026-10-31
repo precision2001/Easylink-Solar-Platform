@@ -5,7 +5,7 @@
  * the north). Below the house: the battery on the wall and an electric car
  * charging from the sun. Vector, so it stays sharp at any size and in the PDF.
  */
-import { fitToBox, orientForBox, type RoofDrawing } from "@/lib/proposal/roofGeometry";
+import { BATTERY_SIZE, EV_SIZE, fitToBox, orientForBox, type Placed, type RoofDrawing } from "@/lib/proposal/roofGeometry";
 
 const mix = (a: number[], b: number[], t: number) =>
   `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
@@ -23,32 +23,48 @@ type Props = {
   ev?: boolean;
 };
 
-/** An electric car seen from above, nose to the left, `len` px long. */
-function Car({ x, y, len }: { x: number; y: number; len: number }) {
-  const w = len * 0.46;
-  const r = w * 0.32;
+/**
+ * An electric car seen from above, drawn in metres (4.8 × 1.95) with its
+ * nose at the house end (local −x) and the charge port on the nose corner.
+ */
+function Car() {
+  const L = EV_SIZE.length;
+  const W = EV_SIZE.width;
+  const x0 = -L / 2;
+  const y0 = -W / 2;
   return (
-    <g transform={`translate(${x} ${y})`}>
-      <ellipse cx={len / 2 + 3} cy={w / 2 + 4} rx={len / 2} ry={w / 2} fill="#050A14" opacity="0.45" />
-      {/* Wheels */}
+    <g>
+      <rect x={x0 + 0.12} y={y0 + 0.14} width={L} height={W} rx={0.6} fill="#050A14" opacity="0.45" />
       {[0.2, 0.78].map((t) => (
         <g key={t}>
-          <rect x={len * t - 7} y={-3} width={14} height={7} rx={2} fill="#0B0F17" />
-          <rect x={len * t - 7} y={w - 4} width={14} height={7} rx={2} fill="#0B0F17" />
+          <rect x={x0 + L * t - 0.36} y={y0 - 0.1} width={0.72} height={0.3} rx={0.08} fill="#0B0F17" />
+          <rect x={x0 + L * t - 0.36} y={y0 + W - 0.2} width={0.72} height={0.3} rx={0.08} fill="#0B0F17" />
         </g>
       ))}
-      <rect x={0} y={0} width={len} height={w} rx={r} fill="url(#ev-body)" stroke="#CBD5E1" strokeWidth={1} />
-      {/* Windscreen, roof glass, rear window */}
-      <path d={`M${len * 0.26} ${w * 0.14} L${len * 0.38} ${w * 0.2} L${len * 0.38} ${w * 0.8} L${len * 0.26} ${w * 0.86} Q${len * 0.21} ${w / 2} ${len * 0.26} ${w * 0.14} Z`} fill="#0E1A2E" />
-      <rect x={len * 0.4} y={w * 0.2} width={len * 0.32} height={w * 0.6} rx={w * 0.14} fill="#16243A" />
-      <path d={`M${len * 0.74} ${w * 0.2} L${len * 0.84} ${w * 0.16} Q${len * 0.88} ${w / 2} ${len * 0.84} ${w * 0.84} L${len * 0.74} ${w * 0.8} Z`} fill="#0E1A2E" />
-      {/* Headlights */}
-      <rect x={2} y={w * 0.12} width={4} height={w * 0.18} rx={2} fill="#E0F2FE" />
-      <rect x={2} y={w * 0.7} width={4} height={w * 0.18} rx={2} fill="#E0F2FE" />
-      {/* Charge port, on the side facing the house */}
-      <circle cx={len * 0.86} cy={1.5} r={3} fill="#FFD60A" />
+      <rect x={x0} y={y0} width={L} height={W} rx={0.62} fill="url(#ev-body)" stroke="#CBD5E1" strokeWidth={0.05} />
+      <path d={`M${x0 + L * 0.26} ${y0 + W * 0.14} L${x0 + L * 0.38} ${y0 + W * 0.2} L${x0 + L * 0.38} ${y0 + W * 0.8} L${x0 + L * 0.26} ${y0 + W * 0.86} Q${x0 + L * 0.21} 0 ${x0 + L * 0.26} ${y0 + W * 0.14} Z`} fill="#0E1A2E" />
+      <rect x={x0 + L * 0.4} y={y0 + W * 0.2} width={L * 0.32} height={W * 0.6} rx={W * 0.14} fill="#16243A" />
+      <path d={`M${x0 + L * 0.74} ${y0 + W * 0.2} L${x0 + L * 0.84} ${y0 + W * 0.16} Q${x0 + L * 0.88} 0 ${x0 + L * 0.84} ${y0 + W * 0.84} L${x0 + L * 0.74} ${y0 + W * 0.8} Z`} fill="#0E1A2E" />
+      <rect x={x0 + 0.08} y={y0 + W * 0.12} width={0.18} height={W * 0.18} rx={0.08} fill="#E0F2FE" />
+      <rect x={x0 + 0.08} y={y0 + W * 0.7} width={0.18} height={W * 0.18} rx={0.08} fill="#E0F2FE" />
     </g>
   );
+}
+
+/** The paved patch under the car, a little bigger than the car (m). */
+function rectDriveway(car: Placed): { x: number; y: number }[] {
+  const a = (car.angleDeg * Math.PI) / 180;
+  const L = EV_SIZE.length + 1.2;
+  const W = EV_SIZE.width + 1.0;
+  const ux = { x: Math.cos(a), y: Math.sin(a) };
+  const uy = { x: -Math.sin(a), y: Math.cos(a) };
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => ({ x: car.x + (i * L * ux.x) / 2 + (j * W * uy.x) / 2, y: car.y + (i * L * ux.y) / 2 + (j * W * uy.y) / 2 }));
+}
+
+/** Screen transform for something placed in metres: centre, turn (y runs down on screen) and scale. */
+function placeTransform(p: Placed, toPx: (q: { x: number; y: number }) => { x: number; y: number }, scale: number) {
+  const c = toPx(p);
+  return `translate(${c.x.toFixed(1)} ${c.y.toFixed(1)}) rotate(${(-p.angleDeg).toFixed(1)}) scale(${scale.toFixed(3)})`;
 }
 
 function Bolt({ x, y, r }: { x: number; y: number; r: number }) {
@@ -62,13 +78,12 @@ function Bolt({ x, y, r }: { x: number; y: number; r: number }) {
 
 export function RoofIllustration({ roof: drawing, width, height, battery = false, ev = false }: Props) {
   const pad = Math.max(24, Math.min(width, height) * 0.07);
-  const extras = battery || ev;
-  // The yard below the house, for the battery and the car.
-  const yardH = extras ? Math.round(height * 0.27) : 0;
-  const roofH = height - yardH;
-  // Turned to fill its frame (landscape in a wide frame); the north arrow turns with it.
-  const roof = orientForBox(drawing, width - 2 * pad, roofH - 2 * pad);
-  const { toPx, scale } = fitToBox(roof, width, roofH, pad);
+  // The car and battery only show where the driveway was found.
+  const shown: RoofDrawing = { ...drawing, ev: ev ? drawing.ev : undefined, battery: battery && drawing.ev ? drawing.battery : undefined };
+  // House, driveway and battery turned together to fill the frame (landscape
+  // in a wide frame); the north arrow turns with them.
+  const roof = orientForBox(shown, width - 2 * pad, height - 2 * pad);
+  const { toPx, scale } = fitToBox(roof, width, height, pad);
   const path = (ring: { x: number; y: number }[]) =>
     ring.map((p, i) => {
       const q = toPx(p);
@@ -77,17 +92,14 @@ export function RoofIllustration({ roof: drawing, width, height, battery = false
   const sh = Math.max(3, 0.45 * scale);
   const cellLine = scale > 18;
 
-  // Where the house's wall (its lowest roof edge) meets the yard.
-  const roofPx = roof.faces.flatMap((f) => f.ring.map(toPx));
-  const wallY = Math.max(...roofPx.map((p) => p.y));
-  const left = Math.min(...roofPx.map((p) => p.x));
-  const right = Math.max(...roofPx.map((p) => p.x));
-  const yardTop = Math.min(roofH, wallY + 10);
-  const carLen = Math.min(150, width * 0.2);
-  const carX = Math.min(width - carLen - 70, Math.max(left + (right - left) * 0.42, width * 0.42));
-  const carY = yardTop + (height - yardTop) * 0.5 - (carLen * 0.46) / 2;
-  const chargerX = carX + carLen * 0.86;
-  const battX = Math.min(right - 40, Math.max(left + 20, carX - 70));
+  // Car nose (the house end) and the battery, in screen px, for the cable.
+  const car = roof.ev;
+  const batt = roof.battery;
+  const nose = car
+    ? toPx({ x: car.x - Math.cos((car.angleDeg * Math.PI) / 180) * (EV_SIZE.length / 2 - 0.3), y: car.y - Math.sin((car.angleDeg * Math.PI) / 180) * (EV_SIZE.length / 2 - 0.3) })
+    : null;
+  const battPx = batt ? toPx(batt) : null;
+  const drivewayPts = car ? rectDriveway(car) : null;
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Your roof with every panel where the design places it" style={{ display: "block" }}>
@@ -122,10 +134,8 @@ export function RoofIllustration({ roof: drawing, width, height, battery = false
       <rect width={width} height={height} fill="url(#roof-ground)" />
       <circle cx={width - 70} cy={58} r={46} fill="url(#roof-sun)" />
 
-      {extras ? (
-        /* Driveway */
-        <rect x={Math.max(0, carX - 40)} y={yardTop} width={Math.min(width, carLen + 120)} height={height - yardTop} fill="#2A3B55" opacity="0.7" />
-      ) : null}
+      {/* Driveway under the car */}
+      {drivewayPts ? <path d={path(drivewayPts)} fill="#3A4B64" opacity="0.75" /> : null}
 
       {/* House shadow */}
       <g transform={`translate(${sh} ${sh})`} opacity="0.4">
@@ -153,31 +163,31 @@ export function RoofIllustration({ roof: drawing, width, height, battery = false
         );
       })}
 
-      {/* Battery on the wall, full and glowing */}
-      {battery ? (
-        <g transform={`translate(${battX} ${wallY + 4})`}>
-          <rect x={0} y={0} width={30} height={46} rx={6} fill="#E8EEF6" stroke="#FFFFFF" strokeWidth={1.5} />
-          <rect x={6} y={8} width={18} height={32} rx={3} fill="#1E2F47" />
-          <rect x={6} y={14} width={18} height={26} rx={3} fill="#FFD60A" filter="url(#glow)" />
-          <path d="M16 18 L11 28 L15 28 L13 36 L19 25 L15 25 Z" fill="#0B1426" />
+      {/* Battery on the wall beside the car, full and glowing */}
+      {batt ? (
+        <g transform={placeTransform(batt, toPx, scale)}>
+          <rect x={-BATTERY_SIZE.length / 2} y={-BATTERY_SIZE.width / 2} width={BATTERY_SIZE.length} height={BATTERY_SIZE.width} rx={0.08} fill="#E8EEF6" stroke="#FFFFFF" strokeWidth={0.05} />
+          <rect x={-BATTERY_SIZE.length / 2 + 0.1} y={-0.1} width={(BATTERY_SIZE.length - 0.2) * 0.85} height={0.2} rx={0.05} fill="#FFD60A" filter="url(#glow)" />
         </g>
       ) : null}
 
-      {/* Wall charger and an electric car charging */}
-      {ev ? (
+      {/* The car in the driveway, charging from the battery */}
+      {car && nose ? (
         <g>
-          <rect x={chargerX - 7} y={wallY + 4} width={14} height={20} rx={3} fill="#0B1426" stroke="#CBD5E1" strokeWidth={1} />
-          <circle cx={chargerX} cy={wallY + 10} r={2.5} fill="#22C55E" />
-          <path
-            d={`M${chargerX} ${wallY + 24} C ${chargerX + 4} ${wallY + 40}, ${chargerX - 2} ${carY - 14}, ${chargerX} ${carY + 1}`}
-            fill="none"
-            stroke="#FFD60A"
-            strokeWidth={2.5}
-            strokeLinecap="round"
-            filter="url(#glow)"
-          />
-          <Car x={carX} y={carY} len={carLen} />
-          <Bolt x={carX + carLen * 0.55} y={carY + carLen * 0.23} r={11} />
+          {battPx ? (
+            <path
+              d={`M${battPx.x.toFixed(1)} ${battPx.y.toFixed(1)} Q ${((battPx.x + nose.x) / 2 + 6).toFixed(1)} ${((battPx.y + nose.y) / 2 + 6).toFixed(1)} ${nose.x.toFixed(1)} ${nose.y.toFixed(1)}`}
+              fill="none"
+              stroke="#FFD60A"
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              filter="url(#glow)"
+            />
+          ) : null}
+          <g transform={placeTransform(car, toPx, scale)}>
+            <Car />
+          </g>
+          <Bolt x={toPx(car).x} y={toPx(car).y} r={Math.max(8, Math.min(13, scale * 0.45))} />
         </g>
       ) : null}
 

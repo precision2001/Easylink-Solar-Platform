@@ -23,8 +23,17 @@ export type RoofFaceShape = {
   light: number;
 };
 
+/** Something placed beside the house: centre (m) and the direction of its long side (degrees, counter-clockwise from east). */
+export type Placed = { x: number; y: number; angleDeg: number };
+
 export type RoofDrawing = {
   faces: RoofFaceShape[];
+  /** The house outline(s), for finding walls. */
+  outlines: XY[][];
+  /** The car in the driveway (long side along the driveway, nose to the house). */
+  ev?: Placed;
+  /** The battery on the wall by the car (long side along the wall). */
+  battery?: Placed;
   /** Each panel's four corners, seen from above. */
   panels: XY[][];
   /** Bounds of everything, metres. */
@@ -36,7 +45,7 @@ export type RoofDrawing = {
   center: LatLng;
 };
 
-function toXY(p: LatLng, c: LatLng): XY {
+export function toXY(p: LatLng, c: LatLng): XY {
   return {
     x: (p.lng - c.lng) * M_PER_LAT * Math.cos((c.lat * Math.PI) / 180),
     y: (p.lat - c.lat) * M_PER_LAT,
@@ -118,9 +127,11 @@ export function buildRoofDrawing(sd: DesignProposalSolarDesign | null | undefine
       })
     : outlines.map((r) => ({ ring: r.map((p) => toXY(p, center)), light: 0.6 }));
 
+  const outlineXY = (outlines.length ? outlines : faceRings.map((f) => f.ring)).map((r) => r.map((p) => toXY(p, center)));
   const pts = [...faces.flatMap((f) => f.ring), ...panels.flat()];
   return {
     faces,
+    outlines: outlineXY,
     panels,
     minX: Math.min(...pts.map((p) => p.x)),
     minY: Math.min(...pts.map((p) => p.y)),
@@ -128,6 +139,113 @@ export function buildRoofDrawing(sd: DesignProposalSolarDesign | null | undefine
     maxY: Math.max(...pts.map((p) => p.y)),
     center,
   };
+}
+
+export const EV_SIZE = { length: 4.8, width: 1.95 };
+export const BATTERY_SIZE = { length: 1.1, width: 0.45 };
+
+/** Corners of a rectangle of `length` × `width` centred on `p`, long side along `p.angleDeg`. */
+export function rectCorners(p: Placed, length: number, width: number): XY[] {
+  const a = (p.angleDeg * Math.PI) / 180;
+  const ux = { x: Math.cos(a), y: Math.sin(a) };
+  const uy = { x: -Math.sin(a), y: Math.cos(a) };
+  return [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ].map(([i, j]) => ({ x: p.x + (i * length * ux.x) / 2 + (j * width * uy.x) / 2, y: p.y + (i * length * ux.y) / 2 + (j * width * uy.y) / 2 }));
+}
+
+function extraCorners(d: RoofDrawing): XY[] {
+  return [
+    ...(d.ev ? rectCorners(d.ev, EV_SIZE.length, EV_SIZE.width) : []),
+    ...(d.battery ? rectCorners(d.battery, BATTERY_SIZE.length, BATTERY_SIZE.width) : []),
+  ];
+}
+
+function pointInRing(p: XY, r: XY[]): boolean {
+  let ins = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const a = r[i];
+    const b = r[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) ins = !ins;
+  }
+  return ins;
+}
+
+function signedArea(r: XY[]): number {
+  let a = 0;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += r[j].x * r[i].y - r[i].x * r[j].y;
+  return a / 2;
+}
+
+/**
+ * Puts the electric car in the driveway and the battery on the wall beside
+ * it, the way they'd normally sit at this house:
+ *
+ *  - the car stands just outside a wall that faces the street (the street
+ *    is where Google's Street View camera stands), nose to the house;
+ *  - of those spots, the one that looks most like concrete or pavers on the
+ *    satellite image wins (`paved`, 0–1 for a footprint) — grass, garden
+ *    and roof lose — with the spot nearest the street breaking ties;
+ *  - the battery goes on that wall right beside the car's nose, where a
+ *    short cable reaches the car.
+ */
+export function placeDriveway(
+  d: RoofDrawing,
+  street: XY | null,
+  paved: (corners: XY[]) => number = () => 0.5,
+): RoofDrawing {
+  type Spot = { ev: Placed; battery: Placed; score: number };
+  let best: Spot | null = null;
+  const GAP = 0.7; // car nose to wall, m
+  for (const ring of d.outlines) {
+    const ccw = signedArea(ring) > 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < EV_SIZE.width + 0.8) continue;
+      const t = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+      // Outward normal: to the right of a counter-clockwise ring.
+      const n = ccw ? { x: t.y, y: -t.x } : { x: -t.y, y: t.x };
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      // How squarely this wall faces the street (1 = head on). Driveways
+      // run from the street to a wall that faces it, so the car points
+      // down the driveway — not across it from a side wall.
+      let facing = 0.5;
+      if (street) {
+        const sl = Math.hypot(street.x - mid.x, street.y - mid.y) || 1;
+        facing = ((street.x - mid.x) * n.x + (street.y - mid.y) * n.y) / sl;
+        if (facing < 0.5) continue;
+      }
+      const steps = Math.max(1, Math.floor((len - EV_SIZE.width) / 1));
+      for (let k = 0; k <= steps; k++) {
+        const along = EV_SIZE.width / 2 + 0.2 + ((len - EV_SIZE.width - 0.4) * k) / Math.max(1, steps);
+        const wall = { x: a.x + t.x * along, y: a.y + t.y * along };
+        const ev: Placed = {
+          x: wall.x + n.x * (GAP + EV_SIZE.length / 2),
+          y: wall.y + n.y * (GAP + EV_SIZE.length / 2),
+          angleDeg: (Math.atan2(n.y, n.x) * 180) / Math.PI,
+        };
+        const corners = rectCorners(ev, EV_SIZE.length, EV_SIZE.width);
+        if (d.outlines.some((r) => corners.some((c) => pointInRing(c, r)))) continue;
+        // Battery on the wall beside the car's nose, on whichever side stays on this wall.
+        const side = along + EV_SIZE.width / 2 + 0.5 + BATTERY_SIZE.length / 2 <= len ? 1 : -1;
+        const bAlong = along + side * (EV_SIZE.width / 2 + 0.5 + BATTERY_SIZE.length / 2);
+        const battery: Placed = {
+          x: a.x + t.x * bAlong + n.x * (BATTERY_SIZE.width / 2 + 0.05),
+          y: a.y + t.y * bAlong + n.y * (BATTERY_SIZE.width / 2 + 0.05),
+          angleDeg: (Math.atan2(t.y, t.x) * 180) / Math.PI,
+        };
+        const dist = street ? Math.hypot(street.x - ev.x, street.y - ev.y) : 0;
+        const score = paved(corners) + 0.35 * facing - dist * 0.002;
+        if (!best || score > best.score) best = { ev, battery, score };
+      }
+    }
+  }
+  return best ? { ...d, ev: best.ev, battery: best.battery } : d;
 }
 
 function rotate(p: XY, rad: number): XY {
@@ -156,7 +274,7 @@ export function orientForBox(d: RoofDrawing, width: number, height: number): Roo
       candidates.add(Math.round((((-deg % 90) + 90) % 90 + 90) * 10) / 10);
     }
   }
-  const pts = [...rings.flat(), ...d.panels.flat()];
+  const pts = [...rings.flat(), ...d.panels.flat(), ...extraCorners(d)];
   let best = { deg: 0, scale: -1 };
   for (const deg of candidates) {
     const rad = (deg * Math.PI) / 180;
@@ -172,11 +290,18 @@ export function orientForBox(d: RoofDrawing, width: number, height: number): Roo
   const rad = (best.deg * Math.PI) / 180;
   const faces = d.faces.map((f) => ({ ...f, ring: f.ring.map((p) => rotate(p, rad)) }));
   const panels = d.panels.map((c) => c.map((p) => rotate(p, rad)));
-  const all = [...faces.flatMap((f) => f.ring), ...panels.flat()];
-  return {
+  const turn = (p?: Placed): Placed | undefined => (p ? { ...rotate(p, rad), angleDeg: p.angleDeg + best.deg } : undefined);
+  const turned = {
     ...d,
     faces,
     panels,
+    outlines: d.outlines.map((r) => r.map((p) => rotate(p, rad))),
+    ev: turn(d.ev),
+    battery: turn(d.battery),
+  };
+  const all = [...faces.flatMap((f) => f.ring), ...panels.flat(), ...extraCorners(turned)];
+  return {
+    ...turned,
     minX: Math.min(...all.map((p) => p.x)),
     minY: Math.min(...all.map((p) => p.y)),
     maxX: Math.max(...all.map((p) => p.x)),
