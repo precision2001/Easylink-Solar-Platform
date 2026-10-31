@@ -5,6 +5,7 @@
  * Built from what the designer saved — the faces it packed on, the panels
  * where it placed them, the panel size — so each proposal draws its own roof.
  */
+import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import type { DesignProposalSolarDesign } from "@/lib/store/designProposalSlice";
 import type { SolarPanel } from "@/types/solar";
 
@@ -82,10 +83,16 @@ export function buildRoofDrawing(sd: DesignProposalSolarDesign | null | undefine
   if (!sd) return null;
   const panelsLL = sd.generatedPanels ?? [];
   const outlines = (sd.savedRoofs ?? []).filter((r) => r.length >= 3);
-  // Faces the designer saved. Designs saved before faces were stored get
-  // the roof outline only: a guessed split would draw ridges the panels
-  // were never packed against.
-  const faceRings: { ring: LatLng[]; azimuthDeg?: number }[] = (sd.roofFaces ?? []).filter((f) => f.ring.length >= 3);
+  // Faces the designer saved; designs saved before that get the outline
+  // split into faces the way the designer splits a roof with nothing better.
+  let faceRings: { ring: LatLng[]; azimuthDeg?: number }[] = (sd.roofFaces ?? []).filter((f) => f.ring.length >= 3);
+  if (faceRings.length === 0 && outlines.length > 0) {
+    try {
+      faceRings = splitRoofsIntoFaces(outlines).map((f) => ({ ring: f.ring }));
+    } catch {
+      faceRings = [];
+    }
+  }
   const allLL: LatLng[] = [
     ...faceRings.flatMap((f) => f.ring),
     ...outlines.flat(),

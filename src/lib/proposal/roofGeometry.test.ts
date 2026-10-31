@@ -56,10 +56,9 @@ describe("buildRoofDrawing", () => {
     expect(d.panels).toHaveLength(1);
   });
 
-  it("draws only the outline for older designs without saved faces", () => {
+  it("splits the outline into faces for older designs without saved faces", () => {
     const d = buildRoofDrawing(design())!;
-    expect(d.faces).toHaveLength(1);
-    expect(d.faces[0].ring).toHaveLength(4);
+    expect(d.faces.length).toBeGreaterThan(1);
   });
 });
 

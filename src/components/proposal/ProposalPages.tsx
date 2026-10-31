@@ -284,7 +284,7 @@ function Cover({ doc, images }: PageProps) {
       <div style={{ margin: "30px 56px 0 56px", position: "relative" }}>
         {doc.roof && doc.roof.panels.length > 0 ? (
           <div style={{ borderRadius: 22, overflow: "hidden", height: 400 }}>
-            <RoofIllustration roof={doc.roof} width={682} height={400} />
+            <RoofIllustration roof={doc.roof} width={682} height={400} battery={doc.batteryKwh > 0} ev />
           </div>
         ) : (
           <RoofImage src={images.roof} height={400} label="Your roof with the panels placed" />
