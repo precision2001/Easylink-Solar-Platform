@@ -11,6 +11,8 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 
+import { RoofIllustration } from "@/components/proposal/RoofIllustration";
+
 import {
   COMPANY,
   PREPARED_BY,
@@ -280,7 +282,16 @@ function Cover({ doc, images }: PageProps) {
       </div>
 
       <div style={{ margin: "30px 56px 0 56px", position: "relative" }}>
-        <RoofImage src={images.roof} height={400} label="Your roof with the panels placed" />
+        {doc.roof && doc.roof.panels.length > 0 ? (
+          <div style={{ borderRadius: 22, overflow: "hidden", height: 400 }}>
+            <RoofIllustration roof={doc.roof} width={682} height={400} />
+          </div>
+        ) : (
+          <RoofImage src={images.roof} height={400} label="Your roof with the panels placed" />
+        )}
+        <div style={{ position: "absolute", right: 16, top: 16, background: "rgba(11,20,38,0.86)", borderRadius: 999, padding: "6px 12px", fontSize: 12, color: C.mutedOnDark }}>
+          Your roof, from your design
+        </div>
         <div style={{ position: "absolute", left: 18, bottom: 18, display: "flex", gap: 10 }}>
           <div style={{ background: "rgba(11,20,38,0.86)", borderRadius: 12, padding: "10px 14px", fontSize: 13, lineHeight: 1.35 }}>
             <b style={{ fontSize: 16, color: C.sun }}>{doc.panelCount} panels</b>
@@ -500,11 +511,17 @@ function RoofDesign({ doc, images }: PageProps) {
       <div style={{ ...eyebrow(), marginTop: 36 }}>Your roof design</div>
       <h2 style={h2()}>Every panel placed on your actual roof.</h2>
       <p style={{ margin: "12px 0 0 0", fontSize: 15, lineHeight: 1.55, color: C.body, maxWidth: 600 }}>
-        We traced each face of your roof from close-up aerial images, then checked it against Google&apos;s 3D roof data.
+        Your roof from above, with each panel where we&apos;ll put it. We traced every face from close-up aerial images and checked it against Google&apos;s 3D roof data.
       </p>
 
       <div style={{ marginTop: 24 }}>
-        <RoofImage src={images.roof} height={470} label="Roof plan with the panels placed" />
+        {images.roof || !doc.roof ? (
+          <RoofImage src={images.roof} height={470} label="Your roof from above with every panel placed" />
+        ) : (
+          <div style={{ borderRadius: 20, overflow: "hidden", height: 470 }}>
+            <RoofIllustration roof={doc.roof} width={682} height={470} />
+          </div>
+        )}
       </div>
 
       <table style={{ marginTop: 22, width: "100%", borderCollapse: "collapse", fontSize: 15 }}>

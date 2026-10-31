@@ -1281,6 +1281,26 @@ export const DesignsSolarPanelStepContent = forwardRef<
   );
 
   const savedFaceSet = useMemo(() => facesFor(savedRoofs), [facesFor, savedRoofs]);
+
+  /** The faces the panels sit on, in a plain serialisable shape, saved with the design for the proposal drawing. */
+  const facesForProposal = useCallback(
+    (paths: google.maps.LatLngLiteral[][]) => {
+      if (paths.length === 0) return undefined;
+      try {
+        return facesFor(paths).faces.map((f) => {
+          const face = f as { ring: google.maps.LatLngLiteral[]; pitchDeg?: number; azimuthDeg?: number };
+          return {
+            ring: face.ring.map((p) => ({ lat: p.lat, lng: p.lng })),
+            pitchDeg: face.pitchDeg,
+            azimuthDeg: face.azimuthDeg,
+          };
+        });
+      } catch {
+        return undefined;
+      }
+    },
+    [facesFor],
+  );
   const savedFaces = savedFaceSet.faces;
 
   /**
@@ -1379,6 +1399,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
               panelCountInput: panelSnap,
               mapScreenshotDataUrl: dataUrl,
               panelOrientation: orientation,
+              panelDimensions: data?.panelDimensions,
+              roofFaces: facesForProposal(pathsSnapshot),
             },
           }),
         );
@@ -1392,7 +1414,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
         });
       });
     },
-    [dispatch, selectedLocation],
+    [dispatch, selectedLocation, data?.panelDimensions, facesForProposal],
   );
 
   /**
@@ -1751,12 +1773,14 @@ export const DesignsSolarPanelStepContent = forwardRef<
               panelCountInput: solarPersistRef.current.panelCountInput,
               mapScreenshotDataUrl: screenshotFromStoreRef.current,
               panelOrientation: solarPersistRef.current.panelOrientation,
+              panelDimensions: data?.panelDimensions,
+              roofFaces: facesForProposal(solarPersistRef.current.savedRoofs),
             },
           }),
         );
       },
     }),
-    [dispatch, proposalMetrics, selectedLocation],
+    [dispatch, proposalMetrics, selectedLocation, data?.panelDimensions, facesForProposal],
   );
 
   return (

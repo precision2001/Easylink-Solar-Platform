@@ -14,6 +14,10 @@ export type DesignProposalSolarDesign = {
   mapScreenshotDataUrl: string | null;
   /** The single orientation every panel in the design uses. Older saved designs omit it (treated as portrait). */
   panelOrientation?: "PORTRAIT" | "LANDSCAPE";
+  /** Panel size the layout was packed with (Google Solar API). Older designs omit it. */
+  panelDimensions?: { heightM: number; widthM: number };
+  /** The roof faces the panels were packed on (outline, slope, direction), for drawing the roof in proposals. */
+  roofFaces?: { ring: { lat: number; lng: number }[]; pitchDeg?: number; azimuthDeg?: number }[];
 };
 
 export type DesignProposalSummary = {

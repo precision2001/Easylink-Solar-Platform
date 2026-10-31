@@ -24,6 +24,7 @@ import {
   BATTERY_CAPACITY_OPTIONS,
   DEFAULT_BATTERY_CAPACITY_ID,
 } from "@/lib/designs/proposalOptions";
+import { buildRoofDrawing, type RoofDrawing } from "@/lib/proposal/roofGeometry";
 import {
   EQUIPMENT_CATEGORY_KEYS,
   type DesignBillPeriod,
@@ -143,6 +144,8 @@ export type ProposalDocument = {
   options: ProposalOption[];
   roofAreaM2: number | null;
   panelOrientation: "portrait" | "landscape";
+  /** The design's roof faces and panels, for drawing; null for designs without a saved roof. */
+  roof: RoofDrawing | null;
 
   links: ProposalLinks;
 };
@@ -421,6 +424,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
       ? Math.round(proposal.solarDesign.polygonTotalAreaM2)
       : null,
     panelOrientation: proposal.solarDesign?.panelOrientation === "LANDSCAPE" ? "landscape" : "portrait",
+    roof: buildRoofDrawing(proposal.solarDesign),
 
     links,
   };
