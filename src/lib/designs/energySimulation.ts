@@ -305,7 +305,7 @@ export function simulateYear(
 
 /** Battery sizes (kWh) swept to build the grid-import-vs-battery-size curve. */
 export const BATTERY_CURVE_SIZES_KWH = [
-  0, 2, 4, 6, 8, 10, 13, 16, 20, 25, 30, 35, 40, 50, 60, 70, 80, 90, 100,
+  0, 2, 4, 6, 8, 10, 13, 16, 20, 25, 30, 35, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150,
 ];
 
 export type BatteryKnee = {
@@ -344,19 +344,20 @@ export function findBatteryKnee(
 }
 
 /**
- * Extra storage (kWh a day) kept for charging an electric car overnight and
- * for heavier loads added later (heat pump, pool pump, induction cooking):
- * an average Australian EV drives ~15,000 km a year at ~0.17 kWh/km
- * (≈7 kWh a day), plus ~3 kWh of headroom.
+ * Car battery assumed when the quote doesn't name one: Tesla Model Y RWD,
+ * Australia's best-selling EV (60 kWh usable).
  */
-export const EV_FUTURE_DAILY_KWH = 10;
+export const DEFAULT_EV_BATTERY_KWH = 60;
+/** Share of the energy leaving the home battery that ends up in the car (AC charging losses ~10%). */
+export const EV_CHARGE_EFFICIENCY = 0.9;
 
 /**
- * Battery size that covers the house *and* an EV / future heavy loads: the
- * home-only size plus the daily EV allowance, rounded up to a size on the curve.
+ * Battery size that covers the house *and* fills the car's whole battery
+ * from the home battery: the home-only size plus a full car charge (with
+ * charging losses), rounded up to a size on the curve.
  */
-export function evReadyBatteryKwh(homeOnlyKwh: number): number {
-  const want = homeOnlyKwh + EV_FUTURE_DAILY_KWH;
+export function evReadyBatteryKwh(homeOnlyKwh: number, evBatteryKwh = DEFAULT_EV_BATTERY_KWH): number {
+  const want = homeOnlyKwh + Math.max(0, evBatteryKwh) / EV_CHARGE_EFFICIENCY;
   return BATTERY_CURVE_SIZES_KWH.find((k) => k >= want) ?? BATTERY_CURVE_SIZES_KWH[BATTERY_CURVE_SIZES_KWH.length - 1];
 }
 

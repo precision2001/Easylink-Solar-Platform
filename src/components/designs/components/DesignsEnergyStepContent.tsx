@@ -23,7 +23,7 @@ import {
   GRID_RATE_PER_KWH,
   MONTH_LABELS,
   SOLAR_YIELD_KWH_PER_KW_YEAR,
-  EV_FUTURE_DAILY_KWH,
+  DEFAULT_EV_BATTERY_KWH,
   evReadyBatteryKwh,
   findBatteryKnee,
   resolveSystemKw,
@@ -327,7 +327,7 @@ function GridImportChart({
         </span>
         <span className="flex items-center gap-1">
           <span className="size-[7px]" style={{ background: EV_GREEN }} />
-          Home + EV / future loads: {evReadyKwh} kWh
+          Home + full EV charge: {evReadyKwh} kWh
         </span>
         <span className="flex items-center gap-1">
           <span className="size-[7px] rounded-full bg-[#152238]" />
@@ -802,7 +802,9 @@ export const DesignsEnergyStepContent = forwardRef<
   const billCostPeriod = supplyChargePeriod + gridImportCostPeriod - exportIncomePeriod;
   const netPeriod = exportIncomePeriod - gridImportCostPeriod - supplyChargePeriod;
 
-  const evReadyKwh = evReadyBatteryKwh(knee.recommendedKwh);
+  const evBatteryKwh = proposal.equipment.evBatteryKwh ?? DEFAULT_EV_BATTERY_KWH;
+  const evReadyKwh = evReadyBatteryKwh(knee.recommendedKwh, evBatteryKwh);
+  const sliderMax = BATTERY_CURVE_SIZES_KWH[BATTERY_CURVE_SIZES_KWH.length - 1];
   const homeApplied = batteryKwh === knee.recommendedKwh;
   const evApplied = batteryKwh === evReadyKwh;
   const setBattery = (kwh: number) =>
@@ -870,7 +872,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   {/* Size markers, click to apply: red = this house today, green = + EV / future loads. */}
                   {[
                     { kwh: knee.recommendedKwh, color: HOME_RED, label: "Home only", applied: homeApplied },
-                    { kwh: evReadyKwh, color: EV_GREEN, label: "+ EV / future", applied: evApplied },
+                    { kwh: evReadyKwh, color: EV_GREEN, label: "+ full EV charge", applied: evApplied },
                   ].map((m) => (
                     <button
                       key={m.label}
@@ -879,7 +881,7 @@ export const DesignsEnergyStepContent = forwardRef<
                       title={`${m.label}: ${m.kwh} kWh`}
                       aria-label={`Set battery to ${m.label} size, ${m.kwh} kWh`}
                       className="absolute top-[-2px] z-10 flex -translate-x-1/2 flex-col items-center"
-                      style={{ left: `${Math.min(100, m.kwh)}%` }}
+                      style={{ left: `${(Math.min(sliderMax, m.kwh) / sliderMax) * 100}%` }}
                     >
                       <span
                         className="rounded-[3px] border-2 bg-white/85 px-1 font-mono text-[8.5px] font-bold leading-[13px]"
@@ -895,7 +897,7 @@ export const DesignsEnergyStepContent = forwardRef<
                       value={effectiveBatteryKwh}
                       onChange={setBattery}
                       min={0}
-                      max={100}
+                      max={sliderMax}
                       ariaLabel="Battery capacity in kWh"
                     />
                   </div>
@@ -907,7 +909,23 @@ export const DesignsEnergyStepContent = forwardRef<
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="size-[7px] border-2" style={{ borderColor: EV_GREEN }} />
-                    + EV charging / future loads (+{EV_FUTURE_DAILY_KWH} kWh/day)
+                    + a full charge of a
+                    <input
+                      type="number"
+                      min={10}
+                      max={150}
+                      step={1}
+                      value={evBatteryKwh}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (Number.isFinite(v) && v > 0) {
+                          dispatch(mergeProposalData({ equipment: { evBatteryKwh: Math.min(150, Math.round(v)) } }));
+                        }
+                      }}
+                      aria-label="Car battery size in kWh"
+                      className="w-[34px] rounded-[3px] border border-[#3a3020]/30 bg-white/70 px-0.5 text-center font-mono text-[8.5px]"
+                    />
+                    kWh car
                   </span>
                 </div>
               </div>
@@ -1090,7 +1108,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   icon="battery"
                   accentClassName="bg-[#152238]"
                   title="Grid import vs. battery size"
-                  subtitle="Red: enough for the house today. Green: also charges an EV / future loads"
+                  subtitle="Red: enough for the house today. Green: also fills the car's battery"
                 />
                 <div className="mt-1.5 min-h-0 flex-1 rounded-[10px] bg-white px-2 py-1.5">
                   <GridImportChart

@@ -131,6 +131,8 @@ export type DesignProposalEquipment = {
   batteryMode?: "self-consumption" | "export";
   /** Energy step's "system age" slider (years since install) used to preview degradation. */
   systemAgeYears?: number;
+  /** Usable battery of the customer's electric car (kWh), for the EV-ready battery size. */
+  evBatteryKwh?: number;
 };
 
 /**
