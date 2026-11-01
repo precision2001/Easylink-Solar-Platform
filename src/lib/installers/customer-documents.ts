@@ -1,4 +1,5 @@
 import { fetchWithInstallerSession } from "@/lib/installers/installer-fetch-client";
+import { compressImageForUpload } from "@/lib/images/compress-browser";
 
 export type InstallerCustomerDocument = {
   id: string;
@@ -37,7 +38,8 @@ export async function uploadInstallerCustomerDocument(
   file: File,
 ): Promise<InstallerCustomerDocument> {
   const formData = new FormData();
-  formData.set("file", file);
+  // Images are shrunk before upload (lib/images/policy.ts); other files untouched.
+  formData.set("file", await compressImageForUpload(file));
 
   const res = await fetchWithInstallerSession(
     `/api/installers/customers/${encodeURIComponent(customerId)}/documents`,

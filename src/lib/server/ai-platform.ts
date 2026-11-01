@@ -4,6 +4,7 @@ import { ADMIN_ACCESS_COOKIE } from "@/lib/auth/admin-cookies";
 import { CUSTOMER_ACCESS_COOKIE } from "@/lib/auth/customer-cookies";
 import { INSTALLER_ACCESS_COOKIE } from "@/lib/auth/installer-cookies";
 import type { BackendPortal } from "@/lib/server/backend-authed-fetch";
+import { compressFormDataImages } from "@/lib/server/image-compress";
 
 /**
  * Bridge from the portals to the EasyLink AI platform (easylink-ai-platform).
@@ -58,7 +59,13 @@ export async function proxyBody(request: Request): Promise<{ body?: BodyInit; he
   if (type.startsWith("multipart/form-data")) {
     const len = Number(request.headers.get("content-length") ?? 0);
     if (len > 26 * 1024 * 1024) return Response.json({ success: false, message: "That file is too big (25 MB at most)." }, { status: 413 });
-    return { body: await request.arrayBuffer(), headers: { "Content-Type": type } };
+    // Every image is compressed before it is forwarded (lib/images/policy.ts).
+    // Re-sent as FormData so fetch writes a fresh multipart boundary.
+    try {
+      return { body: await compressFormDataImages(await request.formData()), headers: {} };
+    } catch {
+      return Response.json({ success: false, message: "Could not read that upload." }, { status: 400 });
+    }
   }
   const text = await request.text();
   return { body: text || undefined, headers: {} };

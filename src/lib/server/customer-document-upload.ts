@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { compressImageFile } from "@/lib/server/image-compress";
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024;
 
@@ -21,7 +22,7 @@ const ALLOWED_TYPES = new Set([
 
 export async function saveCustomerDocumentToPublic(
   customerId: string,
-  file: File,
+  upload: File,
 ): Promise<
   | {
       ok: true;
@@ -36,6 +37,8 @@ export async function saveCustomerDocumentToPublic(
     return { ok: false, message: "Customer is required." };
   }
 
+  // Every image is compressed before it is stored (lib/images/policy.ts).
+  const file = await compressImageFile(upload);
   if (!file.size) {
     return { ok: false, message: "Empty file." };
   }

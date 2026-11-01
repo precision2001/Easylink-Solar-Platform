@@ -50,6 +50,7 @@ import {
 } from "@/lib/designer/designRules";
 import { mergeProposalData } from "@/lib/store/designProposalSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
+import { compressCanvasSnapshot } from "@/lib/images/compress-browser";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -1383,7 +1384,10 @@ export const DesignsSolarPanelStepContent = forwardRef<
               logging: false,
               backgroundColor: "#1a1d29",
             });
-            dataUrl = canvas.toDataURL("image/png");
+            // JPEG within the snapshot budget (lib/images/policy.ts): a PNG
+            // of satellite imagery is ~1 MB and was over the web server's
+            // request limit, so designs failed to save.
+            dataUrl = compressCanvasSnapshot(canvas);
           }
         } catch {
           dataUrl = null;

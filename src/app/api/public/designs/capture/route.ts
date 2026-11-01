@@ -2,6 +2,7 @@ import { after, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { emitAiEvents, VISITOR_COOKIE } from "@/lib/server/ai-platform";
 import { buildBackendUrl, extractMessage } from "@/lib/customers/backend";
+import { compressDesignBody } from "@/lib/server/image-compress";
 
 const CAPTURE_PATH = "/design-capture";
 
@@ -21,7 +22,8 @@ const CLIENT_IP_HEADER = "x-easylink-client-ip";
 export async function POST(request: Request) {
   let body: unknown;
   try {
-    body = await request.json();
+    // Map snapshot compressed here too, for tabs still running the old PNG capture.
+    body = await compressDesignBody(await request.json());
   } catch {
     return NextResponse.json({ message: "Invalid request body." }, { status: 400 });
   }
