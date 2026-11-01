@@ -64,6 +64,15 @@ describe("compressImageBuffer", () => {
     expect((await compressImageBuffer(pdf, "application/pdf")).buffer).toBe(pdf);
   });
 
+  it("leaves an image the browser already compressed exactly as it is", async () => {
+    const browserOutput = await sharp(await noisyPng(1200, 900)).jpeg({ quality: 70 }).toBuffer();
+    expect(browserOutput.length).toBeGreaterThan(200 * 1024);
+    expect(browserOutput.length).toBeLessThan(700 * 1024);
+    const out = await compressImageBuffer(browserOutput, "image/jpeg");
+    expect(out.changed).toBe(false);
+    expect(out.buffer).toBe(browserOutput);
+  });
+
   it("keeps the original when the file can't be read", async () => {
     const junk = Buffer.alloc(400_000, 7);
     const out = await compressImageBuffer(junk, "image/jpeg");
