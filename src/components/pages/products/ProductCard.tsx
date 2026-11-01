@@ -146,7 +146,7 @@ export function ProductCard({
 
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="font-inter text-[17px] font-bold leading-[22px] text-warm-ink">
+            <h3 className="font-inter text-[17px] font-bold leading-[22px] text-warm-ink [overflow-wrap:anywhere]">
               {product.name}
             </h3>
             <p className="mt-0.5 truncate font-dm-sans text-[11px] text-warm-gray">

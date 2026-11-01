@@ -92,7 +92,8 @@ export async function fetchBuilderCatalogue(
    */
   includeIds: readonly string[] = [],
 ): Promise<BuilderCatalogue> {
-  const params = new URLSearchParams({ perCategory: "100" });
+  // 200 is the backend's maximum; the EasyLink catalogue has 100+ inverters.
+  const params = new URLSearchParams({ perCategory: "200" });
   const ids = includeIds.filter(Boolean);
   if (ids.length > 0) params.set("ids", ids.join(","));
 

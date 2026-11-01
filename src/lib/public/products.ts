@@ -122,9 +122,8 @@ function catalogSpecValue(categoryKey: ProductCategoryKey, row: BackendCatalogRo
     case "ev-chargers":
       return typeof specs.ratedKw === "number" ? specs.ratedKw : 0;
     case "heat-pumps":
-      // No comparable kW rating captured for heat pumps yet — band filters
-      // for this category won't match anything until that data exists.
-      return 0;
+      // Heating capacity in kW, when the catalogue has it.
+      return typeof specs.heatingKw === "number" ? specs.heatingKw : 0;
     default:
       return 0;
   }
@@ -156,7 +155,11 @@ function toCatalogProduct(
     name: row.name,
     model: row.sku || (typeof specs.series === "string" ? specs.series : row.name),
     rating: row.rating ?? 0,
-    hasDatasheet: false,
+    hasDatasheet: typeof specs.datasheetUrl === "string" && specs.datasheetUrl.startsWith("http"),
+    datasheetUrl:
+      typeof specs.datasheetUrl === "string" && specs.datasheetUrl.startsWith("http")
+        ? specs.datasheetUrl
+        : undefined,
     inStock: row.active,
     features: catalogFeatures(row),
     price: row.retailPrice ?? row.basePrice,
@@ -181,12 +184,15 @@ export async function fetchCatalogProducts(params: {
   page?: number;
   limit?: number;
   search?: string;
+  /** Exact brand to show; matched server-side (case-insensitive). */
+  brand?: string;
 }): Promise<CatalogPage> {
   const sp = new URLSearchParams();
   sp.set("category", CATALOG_CATEGORY_TO_BACKEND[params.categoryKey]);
   sp.set("page", String(params.page ?? 1));
   sp.set("limit", String(params.limit ?? 12));
   sp.set("active", "true");
+  if (params.brand?.trim()) sp.set("brand", params.brand.trim());
   if (params.search?.trim()) sp.set("search", params.search.trim());
 
   const res = await fetch(`/api/products?${sp.toString()}`, { cache: "no-store" });
@@ -210,4 +216,45 @@ export function selectedDesignProductsFromCatalog(products: SolarProduct[]): Des
     detail: product.category === "panel" ? "Panel" : product.category === "inverter" ? "Inverter" : "Battery",
     icon: product.category === "panel" ? "sun" : "cpu",
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Brand index for the /products menus — every active product's brand and
+// headline spec value, per category, from one request.
+// ---------------------------------------------------------------------------
+
+export type CatalogIndexEntry = { brand: string; specValue: number };
+export type CatalogIndex = Record<ProductCategoryKey, CatalogIndexEntry[]>;
+
+export type BrandCount = { brand: string; count: number };
+
+/** Brands in a category, most products first, then A–Z. */
+export function brandCounts(entries: CatalogIndexEntry[] | undefined): BrandCount[] {
+  const counts = new Map<string, number>();
+  for (const { brand } of entries ?? []) counts.set(brand, (counts.get(brand) ?? 0) + 1);
+  return Array.from(counts, ([brand, count]) => ({ brand, count })).sort(
+    (a, b) => b.count - a.count || a.brand.localeCompare(b.brand),
+  );
+}
+
+export async function fetchCatalogIndex(): Promise<CatalogIndex> {
+  const res = await fetch("/api/products/equipment-options?perCategory=200", {
+    cache: "no-store",
+  });
+  const json = (await res.json().catch(() => ({}))) as CatalogApiEnvelope<
+    Record<string, BackendCatalogRow[]>
+  >;
+  if (!res.ok) throw new Error(json.message || "Could not load brands");
+  const grouped = json.data ?? {};
+  const index = {} as CatalogIndex;
+  for (const [categoryKey, backendCategory] of Object.entries(
+    CATALOG_CATEGORY_TO_BACKEND,
+  ) as [ProductCategoryKey, string][]) {
+    const rows = Array.isArray(grouped[backendCategory]) ? grouped[backendCategory] : [];
+    index[categoryKey] = rows.map((row) => ({
+      brand: row.brand?.trim() || "Unbranded",
+      specValue: catalogSpecValue(categoryKey, row),
+    }));
+  }
+  return index;
 }
