@@ -11,12 +11,20 @@ import {
   PRODUCTS_BY_CATEGORY,
 } from "@/components/pages/products/productsData";
 import type { ProductCategoryKey } from "@/components/pages/products/types";
+import {
+  brandCounts,
+  type CatalogIndex,
+} from "@/lib/public/products";
 
 type Props = {
   activeCategory: ProductCategoryKey;
   activeFilterKey: string;
   onSelectCategory: (category: ProductCategoryKey) => void;
   onSelectFilter: (filterKey: string) => void;
+  /** Live brand/spec index; until it loads, band counts fall back to the sample data. */
+  catalogIndex?: CatalogIndex | null;
+  activeBrand: string;
+  onSelectBrand: (brand: string) => void;
 };
 
 export function ProductsSidebar({
@@ -24,6 +32,9 @@ export function ProductsSidebar({
   activeFilterKey,
   onSelectCategory,
   onSelectFilter,
+  catalogIndex,
+  activeBrand,
+  onSelectBrand,
 }: Props) {
   const [expandedKeys, setExpandedKeys] = useState<Set<ProductCategoryKey>>(
     () => new Set([activeCategory]),
@@ -65,6 +76,8 @@ export function ProductsSidebar({
             (filter) => filter.kind === "band",
           );
           const products = PRODUCTS_BY_CATEGORY[category.key];
+          const liveEntries = catalogIndex?.[category.key];
+          const brands = brandCounts(liveEntries);
 
           return (
             <li key={category.key} className="py-1">
@@ -102,9 +115,15 @@ export function ProductsSidebar({
                     </p>
                     <ul className="flex flex-col gap-2">
                       {bandFilters.map((filter) => {
-                        const count = products.filter((product) =>
-                          matchesFilter(product, filter),
-                        ).length;
+                        const count = liveEntries
+                          ? liveEntries.filter(
+                              (entry) =>
+                                (filter.min === undefined || entry.specValue >= filter.min) &&
+                                (filter.max === undefined || entry.specValue < filter.max),
+                            ).length
+                          : products.filter((product) =>
+                              matchesFilter(product, filter),
+                            ).length;
                         const checked = isActiveCategory && activeFilterKey === filter.key;
 
                         return (
@@ -126,6 +145,36 @@ export function ProductsSidebar({
                         );
                       })}
                     </ul>
+
+                    {brands.length > 0 ? (
+                      <>
+                        <p className="mt-2 font-dm-sans text-[11px] font-bold uppercase tracking-[0.05em] text-white/50">
+                          Brands
+                        </p>
+                        <ul className="flex max-h-[280px] flex-col gap-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
+                          {brands.map(({ brand, count }) => {
+                            const checked = isActiveCategory && activeBrand === brand;
+                            return (
+                              <li key={brand}>
+                                <label className="flex cursor-pointer items-center gap-2 font-dm-sans text-[12px] text-white/80 hover:text-white">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      if (!isActiveCategory) onSelectCategory(category.key);
+                                      onSelectBrand(checked ? "" : brand);
+                                    }}
+                                    className="size-3.5 rounded-sm border-white/40 bg-transparent accent-white"
+                                  />
+                                  <span className="min-w-0 truncate">{brand}</span>
+                                  <span className="text-white/40">({count})</span>
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>

@@ -5,6 +5,7 @@ import { ProductsSystemStepper } from "@/components/pages/products/ProductsSyste
 import { ProductsSidebar } from "@/components/pages/products/ProductsSidebar";
 import { ProductsCategoryCards } from "@/components/pages/products/ProductsCategoryCards";
 import { ProductsFilterChips } from "@/components/pages/products/ProductsFilterChips";
+import { ProductsBrandChips } from "@/components/pages/products/ProductsBrandChips";
 import { ProductsSearchBar } from "@/components/pages/products/ProductsSearchBar";
 import { ProductsCatalogList } from "@/components/pages/products/ProductsCatalogList";
 import { ProductsCompareBar } from "@/components/pages/products/ProductsCompareBar";
@@ -16,8 +17,11 @@ import {
 } from "@/components/pages/products/productsData";
 import type { Product, ProductCategoryKey } from "@/components/pages/products/types";
 import {
+  brandCounts,
   CATALOG_CATEGORY_TO_BACKEND,
+  fetchCatalogIndex,
   fetchCatalogProducts,
+  type CatalogIndex,
 } from "@/lib/public/products";
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -28,6 +32,8 @@ export function ProductsPageSection() {
   const [activeCategory, setActiveCategory] =
     useState<ProductCategoryKey>("batteries");
   const [activeFilterKey, setActiveFilterKey] = useState("all");
+  const [activeBrand, setActiveBrand] = useState("");
+  const [catalogIndex, setCatalogIndex] = useState<CatalogIndex | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState("");
@@ -68,6 +74,7 @@ export function ProductsPageSection() {
         page: number;
         pageSize: number;
         search: string;
+        brand: string;
       },
       signal: { cancelled: boolean },
     ) => {
@@ -83,13 +90,16 @@ export function ProductsPageSection() {
           page: params.page,
           limit: params.pageSize,
           search: params.search,
+          brand: params.brand,
         });
         if (signal.cancelled) return;
         setProducts(fetched);
         setTotal(fetchedTotal);
         setTotalPages(fetchedTotalPages);
         setCategoryCounts((prev) =>
-          params.search ? prev : { ...prev, [params.categoryKey]: fetchedTotal },
+          params.search || params.brand
+            ? prev
+            : { ...prev, [params.categoryKey]: fetchedTotal },
         );
         setProductCache((prev) => {
           const next = { ...prev };
@@ -113,11 +123,29 @@ export function ProductsPageSection() {
 
   useEffect(() => {
     const signal = { cancelled: false };
-    void loadCategory({ categoryKey: activeCategory, page, pageSize, search: debouncedSearch }, signal);
+    void loadCategory(
+      { categoryKey: activeCategory, page, pageSize, search: debouncedSearch, brand: activeBrand },
+      signal,
+    );
     return () => {
       signal.cancelled = true;
     };
-  }, [activeCategory, page, pageSize, debouncedSearch, loadCategory]);
+  }, [activeCategory, page, pageSize, debouncedSearch, activeBrand, loadCategory]);
+
+  // Brands (and live band counts) for the sidebar and brand row, in one request.
+  useEffect(() => {
+    let cancelled = false;
+    fetchCatalogIndex()
+      .then((index) => {
+        if (!cancelled) setCatalogIndex(index);
+      })
+      .catch(() => {
+        // Menus simply show no brands; the product grid still works.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadCategoryCounts = useCallback(async (signal: { cancelled: boolean }) => {
     const entries = await Promise.all(
@@ -148,8 +176,14 @@ export function ProductsPageSection() {
   }, [loadCategoryCounts]);
 
   const handleSelectCategory = (category: ProductCategoryKey) => {
+    if (category !== activeCategory) setActiveBrand("");
     setActiveCategory(category);
     setActiveFilterKey("all");
+    setPage(1);
+  };
+
+  const handleSelectBrand = (brand: string) => {
+    setActiveBrand(brand);
     setPage(1);
   };
 
@@ -220,6 +254,9 @@ export function ProductsPageSection() {
           activeFilterKey={activeFilterKey}
           onSelectCategory={handleSelectCategory}
           onSelectFilter={handleSelectFilter}
+          catalogIndex={catalogIndex}
+          activeBrand={activeBrand}
+          onSelectBrand={handleSelectBrand}
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -233,6 +270,11 @@ export function ProductsPageSection() {
             filters={filters}
             activeFilterKey={activeFilterKey}
             onSelect={handleSelectFilter}
+          />
+          <ProductsBrandChips
+            brands={brandCounts(catalogIndex?.[activeCategory])}
+            activeBrand={activeBrand}
+            onSelect={handleSelectBrand}
           />
           {loading ? (
             <div className="w-full rounded-2xl border border-dashed border-warm-border bg-white px-6 py-12 text-center">
