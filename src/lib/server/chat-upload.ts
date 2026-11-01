@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { compressImageFile } from "@/lib/server/image-compress";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_FILE_BYTES = 12 * 1024 * 1024;
@@ -28,9 +29,11 @@ const FILE_TYPES = new Set([
 export type UploadKind = "image" | "attachment";
 
 export async function saveChatUploadToPublic(
-  file: File,
+  upload: File,
   kind: UploadKind,
 ): Promise<{ ok: true; url: string; filename: string } | { ok: false; message: string }> {
+  // Every image is compressed before it is stored (lib/images/policy.ts).
+  const file = await compressImageFile(upload);
   if (!file.size) {
     return { ok: false, message: "Empty file." };
   }

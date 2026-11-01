@@ -1,4 +1,5 @@
 import { aiRequest, type AiPortal } from "./client";
+import { compressImageForUpload } from "@/lib/images/compress-browser";
 
 /** The job journey (EasyLink Job Journey doc), as the AI platform returns it. */
 export type Who = "customer" | "installer" | "staff";
@@ -107,7 +108,8 @@ export const jobs = {
   /** Upload a photo or bill to the job (multipart, checked and stored by the AI platform). */
   upload: async (portal: AiPortal, id: string, file: File, purpose: "photo" | "bill" | "site", label: string) => {
     const fd = new FormData();
-    fd.set("file", file);
+    // Phone photos are 3–8 MB; shrink before upload (lib/images/policy.ts).
+    fd.set("file", await compressImageForUpload(file));
     fd.set("purpose", purpose);
     fd.set("label", label);
     const base = portal === "admin" ? "/api/admin/ai" : portal === "installer" ? "/api/installers/ai" : "/api/customers/ai";

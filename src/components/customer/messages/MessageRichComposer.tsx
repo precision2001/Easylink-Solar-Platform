@@ -13,6 +13,7 @@ import {
   toggleItalic,
   type EditResult,
 } from "@/lib/messages/textareaFormat";
+import { compressImageForUpload } from "@/lib/images/compress-browser";
 
 const QUICK_EMOJIS = [
   "😀",
@@ -149,7 +150,9 @@ export function MessageRichComposer({
       setUploadBusy(true);
       try {
         const form = new FormData();
-        form.append("file", file);
+        // Images are shrunk before upload (lib/images/policy.ts); other files untouched.
+        const upload = await compressImageForUpload(file);
+        form.append("file", upload, upload.name);
         form.append("kind", kind === "attachment" ? "attachment" : "image");
 
         const res = await fetch(`${chatUploadBase}/chat/upload`, {
