@@ -1,6 +1,6 @@
 "use client";
 
-import { toCanvas } from "html-to-image";
+import { getFontEmbedCSS, toCanvas } from "html-to-image";
 import { jsPDF } from "jspdf";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -33,6 +33,51 @@ async function imagesReady(root: HTMLElement): Promise<void> {
   );
 }
 
+/** Font families (first in each stack) and weights the pages use. */
+function fontsUsed(root: HTMLElement): { family: string; weight: string; style: string }[] {
+  const seen = new Map<string, { family: string; weight: string; style: string }>();
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+    if (!el.childNodes.length) continue;
+    const cs = getComputedStyle(el);
+    const family = cs.fontFamily.split(",")[0]?.trim();
+    if (!family) continue;
+    const key = `${family}|${cs.fontWeight}|${cs.fontStyle}`;
+    if (!seen.has(key)) seen.set(key, { family, weight: cs.fontWeight, style: cs.fontStyle });
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Loads every font face the pages use, then builds the @font-face CSS for
+ * just those families once, for every page capture. Without this the first
+ * capture could be drawn before the fonts were ready, and the browser fell
+ * back to a copy of the font installed on the computer, whose line spacing
+ * dropped big numbers onto the line below (seen on Windows, Nov 2026).
+ */
+async function prepareFonts(root: HTMLElement): Promise<string | undefined> {
+  const used = fontsUsed(root);
+  if (document.fonts?.load) {
+    await Promise.all(used.map((f) => document.fonts.load(`${f.style} ${f.weight} 32px ${f.family}`).catch(() => [])));
+  }
+  if (document.fonts?.ready) await document.fonts.ready;
+  try {
+    const all = await getFontEmbedCSS(root);
+    const families = new Set(used.map((f) => f.family.replace(/^["']|["']$/g, "")));
+    const keep = all
+      .split(/(?=@font-face)/)
+      .filter((rule) => {
+        const m = rule.match(/font-family:\s*["']?([^;"']+)["']?/);
+        return m ? families.has(m[1].trim()) : false;
+      })
+      .join("\n");
+    return keep || all;
+  } catch {
+    return undefined; // html-to-image embeds fonts itself
+  }
+}
+
+const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
 type CapturedPage = {
   canvas: HTMLCanvasElement;
   links: { x: number; y: number; w: number; h: number; url: string }[];
@@ -56,10 +101,20 @@ async function capturePages({ doc, images }: LoadedProposal): Promise<CapturedPa
   try {
     flushSync(() => root.render(<ProposalPages doc={doc} images={images} gap={0} />));
     await imagesReady(host);
-    if (document.fonts?.ready) await document.fonts.ready;
+    const fontEmbedCSS = await prepareFonts(host);
+    // Lay the pages out again with the fonts in place before measuring.
+    await nextFrame();
+    await nextFrame();
+
+    const pages = Array.from(host.querySelectorAll<HTMLElement>("[data-proposal-page]"));
+    // A small throwaway capture first, so the embedded fonts are decoded
+    // before the real ones (the first capture could miss them).
+    if (pages[0]) {
+      await toCanvas(pages[0], { pixelRatio: 0.25, width: PAGE_W, height: PAGE_H, fontEmbedCSS, cacheBust: false }).catch(() => null);
+    }
 
     const out: CapturedPage[] = [];
-    for (const el of Array.from(host.querySelectorAll<HTMLElement>("[data-proposal-page]"))) {
+    for (const el of pages) {
       // The browser draws the page itself (SVG foreignObject), so text sits
       // exactly where the preview shows it on every computer. html2canvas
       // re-laid text out on its own and dropped big numbers onto the line
@@ -70,6 +125,7 @@ async function capturePages({ doc, images }: LoadedProposal): Promise<CapturedPa
         height: PAGE_H,
         backgroundColor: "#FFFFFF",
         cacheBust: false,
+        fontEmbedCSS,
       });
       const pageBox = el.getBoundingClientRect();
       const links = Array.from(el.querySelectorAll<HTMLElement>("[data-pdf-link]")).flatMap((a) => {

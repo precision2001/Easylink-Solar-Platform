@@ -45,8 +45,12 @@ const C = {
   border: "#CBD5E1",
 };
 
-const DISPLAY = "var(--font-source-sans), 'Source Sans 3', 'Source Sans Pro', Arial, sans-serif";
-const BODY = "var(--font-inter), Inter, Arial, sans-serif";
+// Only the site's own font files (next/font), then Arial. No "Source Sans 3"
+// or "Inter" by name: a copy installed on the computer (Adobe Fonts installs
+// Source Sans 3) has different line spacing, and when the PDF capture fell
+// back to it the big numbers dropped onto the line below.
+const DISPLAY = "var(--font-source-sans), Arial, sans-serif";
+const BODY = "var(--font-inter), Arial, sans-serif";
 
 const page = (dark: boolean): CSSProperties => ({
   width: PAGE_W,
