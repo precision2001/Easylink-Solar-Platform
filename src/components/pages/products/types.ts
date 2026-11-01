@@ -50,6 +50,8 @@ export type Product = {
   model: string;
   rating: number;
   hasDatasheet?: boolean;
+  /** Manufacturer datasheet (PDF) from the EasyLink catalogue, when known. */
+  datasheetUrl?: string;
   inStock?: boolean;
   features: string[];
   price: number;

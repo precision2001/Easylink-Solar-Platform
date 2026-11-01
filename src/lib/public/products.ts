@@ -156,7 +156,11 @@ function toCatalogProduct(
     name: row.name,
     model: row.sku || (typeof specs.series === "string" ? specs.series : row.name),
     rating: row.rating ?? 0,
-    hasDatasheet: false,
+    hasDatasheet: typeof specs.datasheetUrl === "string" && specs.datasheetUrl.startsWith("http"),
+    datasheetUrl:
+      typeof specs.datasheetUrl === "string" && specs.datasheetUrl.startsWith("http")
+        ? specs.datasheetUrl
+        : undefined,
     inStock: row.active,
     features: catalogFeatures(row),
     price: row.retailPrice ?? row.basePrice,
