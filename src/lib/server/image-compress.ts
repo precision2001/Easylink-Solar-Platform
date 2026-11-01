@@ -61,7 +61,15 @@ export async function compressImageBuffer(
   if (!sharp) return unchanged;
 
   try {
+    // Reads the header only. An image the browser already compressed is
+    // within both limits, so it is stored as-is: no extra time, and no
+    // second round of JPEG loss.
     const meta = await sharp(input, { failOn: "none" }).metadata();
+    const longest = Math.max(meta.width ?? 0, meta.height ?? 0);
+    const rotated = (meta.orientation ?? 1) > 1;
+    if (input.length <= targetBytes && longest > 0 && longest <= maxDimension && !rotated) {
+      return unchanged;
+    }
     const transparent = Boolean(meta.hasAlpha) && mime !== "image/jpeg";
     const pipeline = () =>
       sharp(input, { failOn: "none" })
