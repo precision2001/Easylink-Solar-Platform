@@ -9,12 +9,6 @@ import type {
   ProductCategoryKey,
 } from "@/components/pages/products/types";
 
-type ApiEnvelope<T> = {
-  success?: boolean;
-  message?: string;
-  data?: T;
-};
-
 type BackendProduct = {
   id: string;
   name: string;
@@ -34,6 +28,9 @@ function normalizeCategory(category: string): SolarProductCategory {
   const normalized = category.toLowerCase();
   if (normalized.includes("inverter")) return "inverter";
   if (normalized.includes("battery")) return "battery";
+  if (normalized.includes("ev")) return "ev-charger";
+  if (normalized.includes("heat")) return "heat-pump";
+  if (normalized.includes("portable")) return "portable-power";
   return "panel";
 }
 
@@ -56,33 +53,58 @@ function toSolarProduct(product: BackendProduct): SolarProduct {
     price: formatPrice(product.retailPrice ?? product.basePrice),
     bestSeller: product.bestSeller ?? false,
     imageUrl: productImage(product)?.thumbUrl,
+    brand: product.brand?.trim() || undefined,
   };
 }
 
-async function fetchProductRows(query: string): Promise<BackendProduct[]> {
-  const res = await fetch(`/api/products?${query}`, { cache: "no-store" });
-  const json = (await res.json()) as ApiEnvelope<BackendProduct[]>;
-  if (!res.ok) throw new Error(json.message || "Failed to load products");
-  return Array.isArray(json.data) ? json.data : [];
-}
+/** A product row as the public /products API returns it. */
+export type PublicProductRow = BackendProduct & {
+  category: string;
+  wattage?: number | null;
+  sku?: string | null;
+};
 
 /**
- * Best sellers when any are flagged; otherwise a mix of active panels,
- * inverters and batteries, so the screen is never empty just because no
- * product carries the best-seller flag.
+ * Every active product in the catalogue, all categories. The API pages at
+ * 100 rows, so this walks the pages (the catalogue is a few hundred rows).
  */
-export async function fetchPublicProducts(): Promise<SolarProduct[]> {
-  const best = await fetchProductRows("limit=24&active=true&bestSeller=true");
-  if (best.length > 0) return best.map(toSolarProduct);
-  const perCategory = await Promise.all(
-    ["Solar Panel", "Inverter", "Battery"].map((category) =>
-      fetchProductRows(
-        `limit=8&active=true&category=${encodeURIComponent(category)}`,
-      ).catch(() => [] as BackendProduct[]),
-    ),
-  );
-  return perCategory.flat().map(toSolarProduct);
+export async function fetchAllActiveProductRows(): Promise<PublicProductRow[]> {
+  const rows: PublicProductRow[] = [];
+  for (let page = 1; page <= 20; page++) {
+    const res = await fetch(`/api/products?limit=100&page=${page}&active=true`, {
+      cache: "no-store",
+    });
+    const json = (await res.json()) as CatalogApiEnvelope<PublicProductRow[]>;
+    if (!res.ok) throw new Error(json.message || "Failed to load products");
+    const batch = Array.isArray(json.data) ? json.data : [];
+    rows.push(...batch);
+    const totalPages = json.meta?.pagination?.totalPages ?? 1;
+    if (batch.length === 0 || page >= totalPages) break;
+  }
+  return rows;
 }
+
+/** Every active product for the customer portal; best sellers first, then category and name. */
+export async function fetchPublicProducts(): Promise<SolarProduct[]> {
+  const rows = await fetchAllActiveProductRows();
+  return rows
+    .map(toSolarProduct)
+    .sort(
+      (a, b) =>
+        Number(b.bestSeller ?? false) - Number(a.bestSeller ?? false) ||
+        CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
+const CATEGORY_ORDER: SolarProductCategory[] = [
+  "panel",
+  "inverter",
+  "battery",
+  "ev-charger",
+  "heat-pump",
+  "portable-power",
+];
 
 // ---------------------------------------------------------------------------
 // /products (the full "Build Your System" catalog page) — richer product
@@ -121,6 +143,7 @@ export const CATALOG_CATEGORY_TO_BACKEND: Record<ProductCategoryKey, string> = {
   inverters: "Inverter",
   "ev-chargers": "EV Charger",
   "heat-pumps": "Heat Pump",
+  "portable-power": "Portable Power",
 };
 
 function catalogSpecValue(categoryKey: ProductCategoryKey, row: BackendCatalogRow): number {
@@ -142,6 +165,8 @@ function catalogSpecValue(categoryKey: ProductCategoryKey, row: BackendCatalogRo
           : 0;
     case "ev-chargers":
       return typeof specs.ratedKw === "number" ? specs.ratedKw : 0;
+    case "portable-power":
+      return typeof specs.capacityKwh === "number" ? specs.capacityKwh : 0;
     case "heat-pumps":
       // Heating capacity in kW, when the catalogue has it.
       return typeof specs.heatingKw === "number" ? specs.heatingKw : 0;
@@ -232,11 +257,20 @@ export async function fetchCatalogProducts(params: {
   };
 }
 
+const CUSTOMER_CATEGORY_LABEL: Record<SolarProductCategory, string> = {
+  panel: "Panel",
+  inverter: "Inverter",
+  battery: "Battery",
+  "ev-charger": "EV charger",
+  "heat-pump": "Heat pump",
+  "portable-power": "Portable power",
+};
+
 export function selectedDesignProductsFromCatalog(products: SolarProduct[]): DesignSummaryItem[] {
   return products.slice(0, 2).map((product) => ({
     id: product.id,
     name: product.name,
-    detail: product.category === "panel" ? "Panel" : product.category === "inverter" ? "Inverter" : "Battery",
+    detail: CUSTOMER_CATEGORY_LABEL[product.category],
     icon: product.category === "panel" ? "sun" : "cpu",
   }));
 }

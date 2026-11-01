@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Btn, Field, inputCls, Pill } from "@/components/jobs/ui";
-import { aud, CATALOGUE, DEAL_TYPES, market, systemLine, type AiPortalForDeals, type DealCheck, type DealItem, type ReadyDeal } from "@/lib/ai-platform/market";
+import { aud, CATALOGUE, DEAL_TYPES, fetchDealCatalogue, market, systemLine, type AiPortalForDeals, type DealCheck, type DealItem, type ReadyDeal } from "@/lib/ai-platform/market";
 
 export type DealInput = Partial<ReadyDeal>;
 
@@ -37,7 +37,25 @@ const blank = (): DealInput => ({
 export function DealForm({ portal, initial, busy, error, onSave }: { portal: AiPortalForDeals; initial?: ReadyDeal; busy: boolean; error: string | null; onSave: (input: DealInput, submit: boolean) => void }) {
   const [d, setD] = useState<DealInput>(() => (initial ? structuredClone(initial) : blank()));
   const [check, setCheck] = useState<DealCheck | null>(null);
-  const up = (patch: Partial<DealInput>) => setD((x) => ({ ...x, ...patch }));
+  // Live catalogue (every active product); the built-in list only if it can't load.
+  const [catalogue, setCatalogue] = useState<(DealItem & { sku: string })[]>(CATALOGUE);
+  const [catalogueLive, setCatalogueLive] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetchDealCatalogue()
+      .then((rows) => {
+        if (cancelled || rows.length === 0) return;
+        setCatalogue(rows);
+        setCatalogueLive(true);
+      })
+      .catch(() => {
+        // Keep the built-in list; the form still works.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const up =(patch: Partial<DealInput>) => setD((x) => ({ ...x, ...patch }));
   const items = d.items ?? [];
   const setItem = (i: number, patch: Partial<DealItem>) => up({ items: items.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
 
@@ -82,7 +100,7 @@ export function DealForm({ portal, initial, busy, error, onSave }: { portal: AiP
             className={`${inputCls} w-auto`}
             value=""
             onChange={(e) => {
-              const c = CATALOGUE.find((x) => x.sku === e.target.value);
+              const c = catalogue.find((x) => x.sku === e.target.value);
               if (c) {
                 const { sku, ...i } = c;
                 void sku;
@@ -90,11 +108,19 @@ export function DealForm({ portal, initial, busy, error, onSave }: { portal: AiP
               }
             }}
           >
-            <option value="">Add from the catalogue…</option>
-            {CATALOGUE.map((c) => (
-              <option key={c.sku} value={c.sku}>
-                {c.model}
-              </option>
+            <option value="">
+              {catalogueLive ? `Add from the catalogue (${catalogue.length})…` : "Add from the catalogue…"}
+            </option>
+            {CATS.filter((cat) => catalogue.some((c) => c.category === cat.key)).map((cat) => (
+              <optgroup key={cat.key} label={cat.label}>
+                {catalogue
+                  .filter((c) => c.category === cat.key)
+                  .map((c) => (
+                    <option key={c.sku} value={c.sku}>
+                      {c.model}
+                    </option>
+                  ))}
+              </optgroup>
             ))}
           </select>
         </div>

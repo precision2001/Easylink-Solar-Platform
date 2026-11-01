@@ -13,7 +13,8 @@ export type ProductCategoryKey =
   | "solar-panels"
   | "inverters"
   | "ev-chargers"
-  | "heat-pumps";
+  | "heat-pumps"
+  | "portable-power";
 
 export type ProductCategory = {
   key: ProductCategoryKey;

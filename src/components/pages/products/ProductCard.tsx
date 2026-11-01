@@ -31,6 +31,7 @@ const CATEGORY_PHOTO_LABEL: Record<ProductCategoryKey, string> = {
   inverters: "inverter photo",
   "ev-chargers": "EV charger photo",
   "heat-pumps": "heat pump photo",
+  "portable-power": "portable power photo",
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-AU", {

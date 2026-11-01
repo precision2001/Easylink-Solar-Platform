@@ -9,7 +9,13 @@ import {
   useInstallerProductsList,
 } from "@/lib/installers/products";
 
-type CategoryKey = "Solar Panel" | "Inverter" | "Battery" | "EV Charger" | "Heat Pump";
+type CategoryKey =
+  | "Solar Panel"
+  | "Inverter"
+  | "Battery"
+  | "EV Charger"
+  | "Heat Pump"
+  | "Portable Power";
 
 const CATEGORY_TABS: {
   key: CategoryKey;
@@ -47,6 +53,12 @@ const CATEGORY_TABS: {
     iconName: "HeatPump",
     blurb: "Heat pump hot water systems",
   },
+  {
+    key: "Portable Power",
+    label: "Portable Power",
+    iconName: "Battery",
+    blurb: "BLUETTI and EcoFlow portable power stations",
+  },
 ];
 
 const SPEC_LABEL_BY_CATEGORY: Record<CategoryKey, string> = {
@@ -55,6 +67,7 @@ const SPEC_LABEL_BY_CATEGORY: Record<CategoryKey, string> = {
   Battery: "Capacity",
   "EV Charger": "Rated",
   "Heat Pump": "Capacity",
+  "Portable Power": "Capacity",
 };
 
 const PAGE_SIZE = 24;
@@ -144,7 +157,7 @@ function ProductCard({ product }: { product: InstallerProductSummary }) {
   } else if (category === "Inverter" || category === "EV Charger") {
     const kw = getRatedKw(product) ?? (product.wattage ? product.wattage / 1000 : null);
     if (kw) primaryFigure = `${kw} kW`;
-  } else if (category === "Battery") {
+  } else if (category === "Battery" || category === "Portable Power") {
     const kwh = getCapacityKwh(product);
     if (kwh) primaryFigure = `${kwh} kWh`;
   } else if (category === "Heat Pump") {

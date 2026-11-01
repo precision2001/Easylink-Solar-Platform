@@ -1505,8 +1505,9 @@ export type MasterProductCategoryId =
   | "panels"
   | "inverters"
   | "batteries"
-  | "racking"
-  | "equipment";
+  | "ev-chargers"
+  | "heat-pumps"
+  | "portable-power";
 
 export const MASTER_PRODUCT_CATEGORIES: {
   id: MasterProductCategoryId;
@@ -1516,9 +1517,23 @@ export const MASTER_PRODUCT_CATEGORIES: {
   { id: "panels", label: "Panels" },
   { id: "inverters", label: "Inverters" },
   { id: "batteries", label: "Batteries" },
-  { id: "racking", label: "Racking" },
-  { id: "equipment", label: "Equipment" },
+  { id: "ev-chargers", label: "EV Chargers" },
+  { id: "heat-pumps", label: "Heat Pumps" },
+  { id: "portable-power", label: "Portable Power" },
 ];
+
+/** Live product category (backend `Product.category`) for each admin catalogue tab. */
+export const MASTER_PRODUCT_CATEGORY_BACKEND: Record<
+  Exclude<MasterProductCategoryId, "all">,
+  string
+> = {
+  panels: "Solar Panel",
+  inverters: "Inverter",
+  batteries: "Battery",
+  "ev-chargers": "EV Charger",
+  "heat-pumps": "Heat Pump",
+  "portable-power": "Portable Power",
+};
 
 export type MasterProductRowIcon =
   | "Sun"
@@ -1527,9 +1542,10 @@ export type MasterProductRowIcon =
   | "Wrench"
   | "Package";
 
+/** @deprecated Sample rows from the original mock; the catalogue panel now reads live products. */
 export type MasterProductCatalogRow = {
   id: string;
-  category: Exclude<MasterProductCategoryId, "all">;
+  category: string;
   name: string;
   subtitle: string;
   sku: string;

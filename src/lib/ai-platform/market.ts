@@ -207,6 +207,46 @@ export function systemLine(s: MarketSystem, kw?: number) {
 }
 
 /** Equipment installers pick from when building a deal (they can type their own too). */
+const DEAL_CATEGORY: Record<string, DealItem["category"]> = {
+  "Solar Panel": "panel",
+  Inverter: "inverter",
+  Battery: "battery",
+  "EV Charger": "ev_charger",
+  "Heat Pump": "heat_pump",
+  "Portable Power": "portable",
+};
+
+/**
+ * The live product catalogue as deal line items (sku = product id). Panels
+ * default to 15 per deal, everything else to 1; the form can change both.
+ */
+export async function fetchDealCatalogue(): Promise<(DealItem & { sku: string })[]> {
+  const { fetchAllActiveProductRows } = await import("@/lib/public/products");
+  const rows = await fetchAllActiveProductRows();
+  return rows
+    .filter((row) => DEAL_CATEGORY[row.category])
+    .map((row) => {
+      const specs = (row.specs ?? {}) as Record<string, unknown>;
+      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+      const category = DEAL_CATEGORY[row.category]!;
+      const type = typeof specs.type === "string" ? specs.type.toLowerCase() : "";
+      return {
+        sku: row.id,
+        category,
+        model: [row.brand?.trim(), row.name].filter(Boolean).join(" "),
+        qty: category === "panel" ? 15 : 1,
+        watts: category === "panel" ? num(row.wattage) : undefined,
+        kw: category === "inverter" || category === "ev_charger" ? num(specs.ratedKw) : undefined,
+        hybrid: category === "inverter" ? type.includes("hybrid") : undefined,
+        usableKwh:
+          category === "battery" || category === "portable"
+            ? num(specs.usableCapacityKwh) ?? num(specs.nominalCapacityKwh)
+            : undefined,
+      };
+    });
+}
+
+/** Offline fallback for the deal form if the live catalogue can't be loaded. */
 export const CATALOGUE: (DealItem & { sku: string })[] = [
   { sku: "PNL-AX440", category: "panel", model: "AXITEC 440 W panel", qty: 15, watts: 440 },
   { sku: "PNL-TR440", category: "panel", model: "TRINA Vertex S+ 440 W panel", qty: 15, watts: 440 },
