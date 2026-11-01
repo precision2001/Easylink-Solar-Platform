@@ -300,7 +300,15 @@ type Lead = {
   source: string | null;
   status: string;
   createdAt: string;
+  /** Set when marked as spam (button below, or the contact-form filter). */
+  spamAt?: string | null;
+  spamReason?: string | null;
+  /** Contact-form leads the spam check thinks are spam, with its reasons. */
+  spamSuggestion?: string[] | null;
 };
+
+/** Which leads the table shows: real ones, or the ones marked as spam. */
+type LeadView = "leads" | "spam";
 
 const STATUS_PALETTE: Record<string, [string, string]> = {
   NEW: ["#DBEAFE", "#1E40AF"],
@@ -334,6 +342,10 @@ function LeadsTable() {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<LeadView>("leads");
+  const [spamTotal, setSpamTotal] = useState(0);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -343,6 +355,7 @@ function LeadsTable() {
       limit: String(PAGE_SIZE),
     });
     if (query) params.set("search", query);
+    if (view === "spam") params.set("spam", "only");
 
     fetch(`/api/admin/leads?${params}`)
       .then(async (res) => {
@@ -357,6 +370,7 @@ function LeadsTable() {
         setError(null);
         setRows(json.data ?? []);
         setTotal(json.meta?.pagination?.total ?? 0);
+        setSpamTotal(json.meta?.spamTotal ?? 0);
       })
       .catch((err: unknown) => {
         if (!live) return;
@@ -367,7 +381,27 @@ function LeadsTable() {
     return () => {
       live = false;
     };
-  }, [page, query]);
+  }, [page, query, view, reload]);
+
+  /** The row's Spam / Not spam button. The row leaves this view either way. */
+  async function setSpam(lead: Lead, spam: boolean) {
+    setBusyId(lead.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/leads/${encodeURIComponent(lead.id)}/spam`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spam }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message ?? "Could not update the lead.");
+      setReload((n) => n + 1);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not update the lead.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -377,7 +411,33 @@ function LeadsTable() {
       className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]"
     >
       <div className="flex flex-wrap items-center gap-2.5">
-        <h2 className="m-0 flex-grow text-[18px] font-bold text-[#0F172A]">All leads</h2>
+        <h2 className="m-0 text-[18px] font-bold text-[#0F172A]">
+          {view === "spam" ? "Spam" : "All leads"}
+        </h2>
+        <div role="tablist" aria-label="Lead view" className="flex flex-grow gap-1.5">
+          {(
+            [
+              ["leads", "Leads"],
+              ["spam", `Spam${spamTotal ? ` (${spamTotal})` : ""}`],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={view === key}
+              onClick={() => {
+                setView(key);
+                setPage(1);
+              }}
+              className={`h-[30px] rounded-full px-3 text-[12.5px] font-semibold ${
+                view === key ? "bg-[#0B1A2E] text-white" : "border border-[#CBD5E1] bg-white text-[#334155]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <span className="rounded-full bg-[#DCFCE7] px-2.5 py-[3px] text-[12px] font-bold text-[#166534]">
           Live data
         </span>
@@ -418,14 +478,18 @@ function LeadsTable() {
         <p className="m-0 py-4 text-[13px] text-[#5B6B80]">Loading leads…</p>
       ) : rows.length === 0 ? (
         <p className="m-0 py-4 text-[13px] text-[#5B6B80]">
-          {query ? `No leads match “${query}”.` : "No leads yet."}
+          {query
+            ? `No leads match “${query}”.`
+            : view === "spam"
+              ? "Nothing marked as spam."
+              : "No leads yet."}
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px] border-collapse text-[13px]">
             <thead>
               <tr className="text-left text-[#475569]">
-                {["Customer", "Phone", "Address", "Retailer", "Source", "Status", "Created"].map(
+                {["Customer", "Phone", "Address", "Retailer", "Source", "Status", "Created", ""].map(
                   (h) => (
                     <th key={h} className="border-b border-[#E3E8EF] p-2 font-semibold">
                       {h}
@@ -456,6 +520,16 @@ function LeadsTable() {
                     </td>
                     <td className="border-b border-[#EEF2F6] px-2 py-[11px] text-[#5B6B80]">
                       {l.source ?? <Blank />}
+                      {view === "spam" && l.spamReason ? (
+                        <div className="text-[12px] text-[#991B1B]">{l.spamReason}</div>
+                      ) : l.spamSuggestion?.length ? (
+                        <div
+                          className="mt-1 inline-block rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11.5px] font-semibold text-[#92400E]"
+                          title={`Spam check: ${l.spamSuggestion.join(", ")}`}
+                        >
+                          Looks like spam
+                        </div>
+                      ) : null}
                     </td>
                     <td className="border-b border-[#EEF2F6] px-2 py-[11px]">
                       <span
@@ -471,6 +545,17 @@ function LeadsTable() {
                         month: "short",
                         year: "numeric",
                       })}
+                    </td>
+                    <td className="border-b border-[#EEF2F6] px-2 py-[11px] text-right">
+                      <button
+                        type="button"
+                        disabled={busyId === l.id}
+                        onClick={() => void setSpam(l, view !== "spam")}
+                        aria-label={`${view === "spam" ? "Not spam" : "Mark as spam"}: ${l.customerName}`}
+                        className="h-8 whitespace-nowrap rounded-[8px] border border-[#CBD5E1] bg-white px-2.5 text-[12.5px] font-semibold text-[#334155] hover:border-[#991B1B] hover:text-[#991B1B] disabled:opacity-60"
+                      >
+                        {busyId === l.id ? "Saving…" : view === "spam" ? "Not spam" : "Spam"}
+                      </button>
                     </td>
                   </tr>
                 );
