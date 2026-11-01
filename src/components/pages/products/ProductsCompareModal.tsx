@@ -92,6 +92,15 @@ export function ProductsCompareModal({ products, onClose, onRemove }: Props) {
                         "linear-gradient(160deg, #f3ead6 0%, #e9dcc0 100%)",
                     }}
                   >
+                    {product.imageThumbUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- compressed library thumbnail
+                      <img
+                        src={product.imageThumbUrl}
+                        alt={`${product.brand} ${product.name}`}
+                        loading="lazy"
+                        className="h-full max-h-24 w-auto max-w-[70%] object-contain p-2"
+                      />
+                    ) : null}
                     <button
                       type="button"
                       aria-label={`Remove ${product.name} from compare`}

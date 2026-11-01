@@ -15,6 +15,7 @@ import { selectBuilderCatalogue } from "@/lib/store/builderCatalogueSlice";
 import {
   batteryCapacityKwh,
   cecApprovedLabel as cecApprovedLabelFor,
+  productImage,
   inverterRatedKw,
   numberSpec,
   productType,
@@ -133,11 +134,14 @@ function DesignsItemProductSummary({
   leftCol,
   rightCol,
   onRemove,
+  photoUrl,
 }: {
   category: EquipmentCategoryKey;
   leftCol: SpecLine[];
   rightCol: SpecLine[];
   onRemove?: () => void;
+  /** The selected product's own photo; falls back to the category image. */
+  photoUrl?: string;
 }) {
   const image = SECTION_IMAGE[category];
   const iconName = SECTION_ICON[category];
@@ -150,7 +154,15 @@ function DesignsItemProductSummary({
           flex to the available width instead, with ellipsis absorbing the rest. */}
       <div className="absolute inset-0 flex items-center justify-between gap-2 px-3">
         <div className="relative flex h-[99px] w-[50px] shrink-0 items-center justify-center overflow-hidden">
-          {image ? (
+          {photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- compressed library thumbnail
+            <img
+              src={photoUrl}
+              alt=""
+              loading="lazy"
+              className="h-full w-full rounded-md bg-white/70 object-contain p-0.5"
+            />
+          ) : image ? (
             <Image
               src={image.src}
               alt=""
@@ -300,6 +312,7 @@ function DesignsItemsStack({
               leftCol={leftCol}
               rightCol={rightCol}
               onRemove={() => onRemove(index)}
+              photoUrl={product ? productImage(product)?.thumbUrl : undefined}
             />
           </div>
         );

@@ -103,7 +103,9 @@ export function ProductCard({
         style={
           product.photo
             ? undefined
-            : { backgroundImage: "linear-gradient(160deg, #f3ead6 0%, #e9dcc0 100%)" }
+            : product.imageUrl
+              ? { backgroundImage: "radial-gradient(ellipse at 50% 40%, #ffffff 0%, #f4efe4 70%, #ebe2cf 100%)" }
+              : { backgroundImage: "linear-gradient(160deg, #f3ead6 0%, #e9dcc0 100%)" }
         }
       >
         {product.photo ? (
@@ -116,6 +118,15 @@ export function ProductCard({
               sizes="(max-width: 640px) 100vw, 33vw"
             />
           </>
+        ) : product.imageUrl ? (
+          <Image
+            src={product.imageUrl}
+            alt={`${product.brand} ${product.name}`}
+            fill
+            unoptimized
+            className="object-contain p-8 drop-shadow-[0_10px_18px_rgba(60,40,10,0.18)]"
+            sizes="(max-width: 640px) 100vw, 33vw"
+          />
         ) : (
           <span className="font-dm-sans text-[12px] font-medium text-warm-gray">
             {CATEGORY_PHOTO_LABEL[product.categoryKey]}

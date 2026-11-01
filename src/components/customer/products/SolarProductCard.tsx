@@ -43,8 +43,8 @@ export function SolarProductCard({
         </div>
         <div className="relative flex h-full items-center justify-center">
           <Image
-            src={productsAssets.productImg}
-            alt=""
+            src={product.imageUrl ?? productsAssets.productImg}
+            alt={product.imageUrl ? product.name : ""}
             width={120}
             height={80}
             className="h-[95%] w-auto max-w-[34%] object-contain"

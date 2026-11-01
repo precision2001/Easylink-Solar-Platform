@@ -8,6 +8,8 @@ export type SolarProduct = {
   reviewCount: number;
   price: string;
   bestSeller?: boolean;
+  /** Product photo thumbnail from the image library, when there is one. */
+  imageUrl?: string;
 };
 
 export type DesignSummaryItem = {

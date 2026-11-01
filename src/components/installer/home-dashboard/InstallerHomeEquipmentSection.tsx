@@ -19,6 +19,7 @@ import {
   inverterRatedKw,
   numberSpec,
   productLabel,
+  productImage,
   productSeries,
   productsByCategory,
   NO_VALUE,
@@ -242,6 +243,7 @@ function ProductEquipmentCard({
   onChangeQuantity: (quantity: number) => void;
   onRemove: () => void;
 }) {
+  const photo = productImage(item?.product);
   return (
     <CardShell title={title} icon={icon}>
       <div className="absolute right-[13.24px] top-[8.83px]">
@@ -255,6 +257,17 @@ function ProductEquipmentCard({
           <Icon name="Trash" className="size-[13.24px]" />
         </button>
       </div>
+      {photo ? (
+        <div className="mt-[10px] flex h-20 items-center justify-center rounded-md bg-white">
+          {/* eslint-disable-next-line @next/next/no-img-element -- compressed library thumbnail */}
+          <img
+            src={photo.thumbUrl}
+            alt={productLabel(item) ?? title}
+            loading="lazy"
+            className="h-full w-auto max-w-[80%] object-contain p-1.5"
+          />
+        </div>
+      ) : null}
       <div className="mt-[13px] flex flex-col gap-[4.413px]">
         {specRowsFor(cardKey, item).map((row) => (
           <EquipmentSpecRow key={row.label} label={row.label} value={row.value} />

@@ -1,5 +1,6 @@
 "use client";
 
+import { productImage } from "@/lib/designs/product-specs";
 import classNames from "classnames";
 import { useEffect, useMemo, useState } from "react";
 import Icon from "@/components/ui/Icons";
@@ -151,8 +152,22 @@ function ProductCard({ product }: { product: InstallerProductSummary }) {
     if (litres) primaryFigure = `${litres} L`;
   }
 
+  const photo = productImage(product);
+  const cecApproved = specsRecord(product).cecApproved === true;
+
   return (
     <article className="flex h-full flex-col gap-3 rounded-xl border border-warm-border bg-white p-4 shadow-sm">
+      {photo ? (
+        <div className="-mx-4 -mt-4 flex h-36 items-center justify-center rounded-t-xl bg-cream-50">
+          {/* eslint-disable-next-line @next/next/no-img-element -- compressed library thumbnail */}
+          <img
+            src={photo.thumbUrl}
+            alt={`${product.brand ?? ""} ${product.name}`.trim()}
+            loading="lazy"
+            className="h-full w-auto max-w-[80%] object-contain p-3"
+          />
+        </div>
+      ) : null}
       <div className="flex items-start justify-between gap-3">
         <div
           className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-sky-wash/80 text-warm-ink"
@@ -160,9 +175,11 @@ function ProductCard({ product }: { product: InstallerProductSummary }) {
         >
           <Icon name={meta.iconName} className="size-5" />
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-wash/60 px-2 py-0.5 font-dm-sans text-[10px] font-semibold uppercase tracking-[0.06em] text-navy-800">
-          <Icon name="CheckCircle" className="size-3" /> CEC approved
-        </span>
+        {cecApproved ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-wash/60 px-2 py-0.5 font-dm-sans text-[10px] font-semibold uppercase tracking-[0.06em] text-navy-800">
+            <Icon name="CheckCircle" className="size-3" /> CEC approved
+          </span>
+        ) : null}
       </div>
 
       <div className="flex min-w-0 flex-col gap-1">

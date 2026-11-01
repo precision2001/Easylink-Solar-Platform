@@ -3,6 +3,7 @@ import type {
   SolarProduct,
   SolarProductCategory,
 } from "@/components/customer/products/types";
+import { productImage } from "@/lib/designs/product-specs";
 import type {
   Product as CatalogProduct,
   ProductCategoryKey,
@@ -24,6 +25,9 @@ type BackendProduct = {
   rating?: number | null;
   reviewCount?: number | null;
   bestSeller?: boolean | null;
+  brand?: string | null;
+  imageUrl?: string | null;
+  specs?: Record<string, unknown> | null;
 };
 
 function normalizeCategory(category: string): SolarProductCategory {
@@ -51,16 +55,33 @@ function toSolarProduct(product: BackendProduct): SolarProduct {
     reviewCount: product.reviewCount ?? 0,
     price: formatPrice(product.retailPrice ?? product.basePrice),
     bestSeller: product.bestSeller ?? false,
+    imageUrl: productImage(product)?.thumbUrl,
   };
 }
 
-export async function fetchPublicProducts(): Promise<SolarProduct[]> {
-  const res = await fetch("/api/products?limit=24&active=true&bestSeller=true", {
-    cache: "no-store",
-  });
+async function fetchProductRows(query: string): Promise<BackendProduct[]> {
+  const res = await fetch(`/api/products?${query}`, { cache: "no-store" });
   const json = (await res.json()) as ApiEnvelope<BackendProduct[]>;
   if (!res.ok) throw new Error(json.message || "Failed to load products");
-  return Array.isArray(json.data) ? json.data.map(toSolarProduct) : [];
+  return Array.isArray(json.data) ? json.data : [];
+}
+
+/**
+ * Best sellers when any are flagged; otherwise a mix of active panels,
+ * inverters and batteries, so the screen is never empty just because no
+ * product carries the best-seller flag.
+ */
+export async function fetchPublicProducts(): Promise<SolarProduct[]> {
+  const best = await fetchProductRows("limit=24&active=true&bestSeller=true");
+  if (best.length > 0) return best.map(toSolarProduct);
+  const perCategory = await Promise.all(
+    ["Solar Panel", "Inverter", "Battery"].map((category) =>
+      fetchProductRows(
+        `limit=8&active=true&category=${encodeURIComponent(category)}`,
+      ).catch(() => [] as BackendProduct[]),
+    ),
+  );
+  return perCategory.flat().map(toSolarProduct);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +181,8 @@ function toCatalogProduct(
       typeof specs.datasheetUrl === "string" && specs.datasheetUrl.startsWith("http")
         ? specs.datasheetUrl
         : undefined,
+    imageUrl: productImage(row)?.url,
+    imageThumbUrl: productImage(row)?.thumbUrl,
     inStock: row.active,
     features: catalogFeatures(row),
     price: row.retailPrice ?? row.basePrice,

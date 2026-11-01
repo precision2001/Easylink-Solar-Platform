@@ -17,6 +17,7 @@ export type SpecProduct = {
   category: string;
   wattage?: number | null;
   sku?: string | null;
+  imageUrl?: string | null;
   specs?: unknown;
 } | null | undefined;
 
@@ -59,6 +60,31 @@ export function productLabel(item: SpecLineItem): string | undefined {
   const product = item?.product;
   if (!product) return undefined;
   return product.brand ? `${product.brand} ${product.name}` : product.name;
+}
+
+export type ProductImage = { url: string; thumbUrl: string };
+
+/**
+ * The product's photo from the image library (specs.image: compressed WebP in
+ * S3, with a 400 px thumbnail), falling back to a bare imageUrl. Undefined when
+ * the product has no photo — callers keep their own placeholder for that.
+ */
+export function productImage(product: SpecProduct): ProductImage | undefined {
+  const image = specsOf(product)?.image;
+  if (image && typeof image === "object" && !Array.isArray(image)) {
+    const { url, thumbUrl } = image as Record<string, unknown>;
+    if (typeof url === "string" && url.startsWith("http")) {
+      return {
+        url,
+        thumbUrl: typeof thumbUrl === "string" && thumbUrl.startsWith("http") ? thumbUrl : url,
+      };
+    }
+  }
+  const fallback = product?.imageUrl;
+  if (typeof fallback === "string" && fallback.startsWith("http")) {
+    return { url: fallback, thumbUrl: fallback };
+  }
+  return undefined;
 }
 
 export function productType(item: SpecLineItem): string | undefined {

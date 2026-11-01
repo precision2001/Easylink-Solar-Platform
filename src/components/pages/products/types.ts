@@ -52,6 +52,9 @@ export type Product = {
   hasDatasheet?: boolean;
   /** Manufacturer datasheet (PDF) from the EasyLink catalogue, when known. */
   datasheetUrl?: string;
+  /** Product photo from the image library (1000 px WebP) and its 400 px thumbnail. */
+  imageUrl?: string;
+  imageThumbUrl?: string;
   inStock?: boolean;
   features: string[];
   price: number;
