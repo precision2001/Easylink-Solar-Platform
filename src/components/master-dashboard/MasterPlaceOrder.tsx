@@ -1,14 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { fetchAllActiveProductRows, type PublicProductRow } from "@/lib/public/products";
+import { productImage } from "@/lib/designs/product-specs";
 
 /**
- * Matches the Easylink Designer "Place order" mock exactly (categories,
- * products, prices, stock) — there's no real product/stock catalogue wired
- * to a distributor-ordering flow in this app yet, so the catalogue is
- * sample data, same convention as the Overview pages. Cart math (subtotal/
- * GST/delivery/total) and quantity/category controls are real client-side
- * logic, not fabricated — they just operate on the sample catalogue.
+ * Place order. Products come from the live EasyLink catalogue (every active
+ * product, with its library photo). Prices are the catalogue's sell prices —
+ * estimates until supplier price lists are loaded, and labelled as such —
+ * and stock isn't connected to the distributors yet. Racking and BOS kits
+ * aren't catalogued, so those stay as sample lines. Cart math is real.
  */
 type Product = {
   kind: string;
@@ -20,6 +21,9 @@ type Product = {
   stock: string;
   stockColor: string;
   defaultQty: number;
+  imageUrl?: string;
+  /** Price is a catalogue estimate, not a supplier price. */
+  estimate?: boolean;
 };
 
 const CATEGORIES = [
@@ -27,9 +31,10 @@ const CATEGORIES = [
   "Panels",
   "Inverters",
   "Batteries",
-  "Portable power (BLUETTI)",
-  "Racking & BOS",
   "EV chargers",
+  "Heat pumps",
+  "Portable power",
+  "Racking & BOS",
 ] as const;
 
 const KIND_BY_CATEGORY: Record<(typeof CATEGORIES)[number], string | null> = {
@@ -37,33 +42,58 @@ const KIND_BY_CATEGORY: Record<(typeof CATEGORIES)[number], string | null> = {
   Panels: "Panel",
   Inverters: "Inverter",
   Batteries: "Battery",
-  "Portable power (BLUETTI)": "Portable power",
-  "Racking & BOS": "Racking",
   "EV chargers": "EV charger",
+  "Heat pumps": "Heat pump",
+  "Portable power": "Portable power",
+  "Racking & BOS": "Racking",
 };
 
-const OK = "#166534";
-const LOW = "#92400E";
-const OUT = "#991B1B";
+const KIND_BY_BACKEND: Record<string, string> = {
+  "Solar Panel": "Panel",
+  Inverter: "Inverter",
+  Battery: "Battery",
+  "EV Charger": "EV charger",
+  "Heat Pump": "Heat pump",
+  "Portable Power": "Portable power",
+};
 
-const PRODUCTS: Product[] = [
-  { kind: "Panel", name: "[Panel brand] 440 W N-type", sku: "PNL-440-NT", spec: "CEC listed · 30-yr warranty", price: 186.36, rrp: 219.0, stock: "In stock · Syd 1,240 · Bne 860", stockColor: OK, defaultQty: 24 },
-  { kind: "Inverter", name: "[Inverter brand] 10 kW hybrid", sku: "INV-H10", spec: "Battery-ready · 3-phase option", price: 2954.55, rrp: 3390.0, stock: "In stock · Syd 34", stockColor: OK, defaultQty: 1 },
-  { kind: "Battery", name: "[Battery brand] 13.5 kWh", sku: "BAT-135", spec: "VPP compatible", price: 8409.09, rrp: 9850.0, stock: "Low stock · Syd 6", stockColor: LOW, defaultQty: 1 },
-  { kind: "Battery", name: "[Battery brand] 10 kWh stackable", sku: "BAT-100S", spec: "Modular 5 kWh blocks", price: 6120.0, rrp: 7200.0, stock: "Backorder · ETA 24 Oct", stockColor: OUT, defaultQty: 1 },
-  { kind: "Portable power", name: "BLUETTI AC180", sku: "BLU-AC180", spec: "1,152 Wh · 1,800 W", price: 790.91, rrp: 999.0, stock: "In stock · Syd 52", stockColor: OK, defaultQty: 2 },
-  { kind: "Portable power", name: "BLUETTI EP760 + B500", sku: "BLU-EP760", spec: "Home backup system", price: 5450.0, rrp: 6499.0, stock: "In stock · Syd 8", stockColor: OK, defaultQty: 1 },
-  { kind: "Racking", name: "Racking kit · tile roof", sku: "RCK-T24", spec: "24 panels · AS/NZS 1170", price: 1190.99, rrp: 1390.0, stock: "In stock · Syd 41", stockColor: OK, defaultQty: 1 },
-  { kind: "EV charger", name: "[EV brand] 7 kW smart charger", sku: "EVC-7S", spec: "Solar-aware charging", price: 945.45, rrp: 1190.0, stock: "In stock · Bne 19", stockColor: OK, defaultQty: 1 },
+const GREY = "#5B6B80";
+
+function specLine(row: PublicProductRow): string {
+  const s = (row.specs ?? {}) as Record<string, unknown>;
+  const n = (k: string) => (typeof s[k] === "number" ? (s[k] as number) : undefined);
+  const parts: string[] = [];
+  if (row.category === "Solar Panel" && row.wattage) parts.push(`${row.wattage} W`);
+  else if (n("ratedKw")) parts.push(`${n("ratedKw")} kW`);
+  if (n("usableCapacityKwh")) parts.push(`${n("usableCapacityKwh")} kWh`);
+  if (n("capacityL")) parts.push(`${n("capacityL")} L`);
+  if (s.cecApproved === true) parts.push("CEC listed");
+  return parts.join(" · ") || row.category;
+}
+
+function toOrderProduct(row: PublicProductRow): Product {
+  return {
+    kind: KIND_BY_BACKEND[row.category] ?? row.category,
+    name: [row.brand?.trim(), row.name].filter(Boolean).join(" "),
+    sku: row.sku || row.id,
+    spec: specLine(row),
+    price: row.retailPrice ?? row.basePrice ?? 0,
+    rrp: row.retailPrice ?? row.basePrice ?? 0,
+    stock: "Stock not connected yet",
+    stockColor: GREY,
+    defaultQty: row.category === "Solar Panel" ? 20 : 1,
+    imageUrl: productImage(row)?.thumbUrl,
+    estimate: ((row.specs ?? {}) as Record<string, unknown>).priceEstimate === true,
+  };
+}
+
+
+/** Racking and BOS kits aren't in the product catalogue yet; sample lines. */
+const SAMPLE_EXTRAS: Product[] = [
+  { kind: "Racking", name: "Racking kit · tile roof", sku: "RCK-T24", spec: "24 panels · AS/NZS 1170 · sample line", price: 1190.99, rrp: 1390.0, stock: "Sample line", stockColor: GREY, defaultQty: 1 },
 ];
 
-// Matches the mock's starting cart exactly.
-const INITIAL_CART: Record<string, number> = {
-  "PNL-440-NT": 24,
-  "INV-H10": 1,
-  "BAT-135": 1,
-  "RCK-T24": 1,
-};
+const INITIAL_CART: Record<string, number> = {};
 
 type DeliveryOption = "site" | "warehouse" | "pickup";
 
@@ -80,9 +110,26 @@ function formatAud(n: number): string {
 export function MasterPlaceOrder() {
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
   const [cart, setCart] = useState<Record<string, number>>(INITIAL_CART);
-  const [qtyDraft, setQtyDraft] = useState<Record<string, number>>(
-    Object.fromEntries(PRODUCTS.map((p) => [p.sku, p.defaultQty])),
-  );
+  const [catalogue, setCatalogue] = useState<Product[]>(SAMPLE_EXTRAS);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [search, setSearch] = useState("");
+  const [qtyDraft, setQtyDraft] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAllActiveProductRows()
+      .then((rows) => {
+        if (cancelled) return;
+        setCatalogue([...rows.map(toOrderProduct), ...SAMPLE_EXTRAS]);
+        setLoadState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setLoadState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [delivery, setDelivery] = useState<DeliveryOption>("site");
   const [poReference, setPoReference] = useState("PO 7790 · Rouse Hill");
   const [preferredDate, setPreferredDate] = useState("Thu 16 Oct 2026");
@@ -90,18 +137,22 @@ export function MasterPlaceOrder() {
 
   const filteredProducts = useMemo(() => {
     const kind = KIND_BY_CATEGORY[category];
-    return kind === null ? PRODUCTS : PRODUCTS.filter((p) => p.kind === kind);
-  }, [category]);
+    const q = search.trim().toLowerCase();
+    return catalogue
+      .filter((p) => kind === null || p.kind === kind)
+      .filter((p) => !q || `${p.name} ${p.sku} ${p.spec}`.toLowerCase().includes(q));
+  }, [category, catalogue, search]);
 
   const cartItems = useMemo(
     () =>
       Object.entries(cart)
         .filter(([, qty]) => qty > 0)
         .map(([sku, qty]) => {
-          const product = PRODUCTS.find((p) => p.sku === sku)!;
-          return { product, qty, total: product.price * qty };
-        }),
-    [cart],
+          const product = catalogue.find((p) => p.sku === sku);
+          return product ? { product, qty, total: product.price * qty } : null;
+        })
+        .filter((i): i is NonNullable<typeof i> => i !== null),
+    [cart, catalogue],
   );
 
   const subtotal = cartItems.reduce((sum, i) => sum + i.total, 0);
@@ -110,7 +161,7 @@ export function MasterPlaceOrder() {
   const total = subtotal + deliveryCost + gst;
 
   const addToCart = (sku: string) => {
-    const qty = Math.max(1, qtyDraft[sku] ?? 1);
+    const qty = Math.max(1, qtyDraft[sku] ?? catalogue.find((p) => p.sku === sku)?.defaultQty ?? 1);
     setCart((prev) => ({ ...prev, [sku]: qty }));
   };
 
@@ -125,6 +176,8 @@ export function MasterPlaceOrder() {
           type="search"
           aria-label="Search products"
           placeholder="Search SKU, brand, wattage…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
           className="h-[38px] w-[300px] max-w-full rounded-[10px] border border-[#CBD5E1] px-3 text-[13px] outline-none focus-visible:border-[#0B1A2E]"
         />
       </header>
@@ -133,7 +186,11 @@ export function MasterPlaceOrder() {
         <div className="flex-grow">
           <h1 className="m-0 font-source-sans text-[28px] font-bold text-[#0F172A]">Place order</h1>
           <p className="mt-1 text-[13px] text-[#5B6B80]">
-            Gold partner pricing applied · live stock from Sydney and Brisbane warehouses
+            {loadState === "loading"
+              ? "Loading the catalogue…"
+              : loadState === "error"
+                ? "Couldn't load the catalogue — showing sample lines only"
+                : `${catalogue.length - SAMPLE_EXTRAS.length} catalogue products · prices are estimates until supplier price lists are loaded · stock not connected yet`}
           </p>
         </div>
         <span
@@ -182,8 +239,13 @@ export function MasterPlaceOrder() {
                   key={p.sku}
                   className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-3.5"
                 >
-                  <div className="flex h-[110px] items-center justify-center rounded-[10px] bg-[#EEF2F6] text-[12px] text-[#5B6B80]">
-                    [{p.kind} image]
+                  <div className="flex h-[110px] items-center justify-center overflow-hidden rounded-[10px] bg-[#EEF2F6] text-[12px] text-[#5B6B80]">
+                    {p.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- compressed library thumbnail
+                      <img src={p.imageUrl} alt={p.name} loading="lazy" className="h-full w-auto max-w-[85%] object-contain p-2" />
+                    ) : (
+                      <>{p.kind}</>
+                    )}
                   </div>
                   <span className="flex flex-col gap-0.5">
                     <span className="text-[14px] font-bold text-[#0F172A]">{p.name}</span>
@@ -193,8 +255,10 @@ export function MasterPlaceOrder() {
                   </span>
                   <span className="flex items-baseline gap-1.5">
                     <span className="text-[18px] font-bold text-[#0F172A]">{formatAud(p.price)}</span>
-                    <span className="text-[12px] text-[#5B6B80]">ex GST</span>
-                    <span className="ml-auto text-[12px] text-[#5B6B80] line-through">{formatAud(p.rrp)}</span>
+                    <span className="text-[12px] text-[#5B6B80]">{p.estimate ? "estimate" : "ex GST"}</span>
+                    {p.rrp > p.price ? (
+                      <span className="ml-auto text-[12px] text-[#5B6B80] line-through">{formatAud(p.rrp)}</span>
+                    ) : null}
                   </span>
                   <span className="text-[12px] font-semibold" style={{ color: p.stockColor }}>
                     {p.stock}
@@ -207,7 +271,7 @@ export function MasterPlaceOrder() {
                       id={`q-${p.sku}`}
                       type="number"
                       min={1}
-                      value={qtyDraft[p.sku] ?? 1}
+                      value={qtyDraft[p.sku] ?? p.defaultQty}
                       onChange={(e) =>
                         setQtyDraft((prev) => ({ ...prev, [p.sku]: Number(e.target.value) || 1 }))
                       }

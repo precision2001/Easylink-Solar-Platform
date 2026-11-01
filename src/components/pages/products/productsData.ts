@@ -79,6 +79,12 @@ export const PRODUCT_CATEGORIES: ProductCategory[] = [
     iconSrc: "/images/products/header/layer-heat-pump-icon.png",
     count: 188,
   },
+  {
+    key: "portable-power",
+    label: "Portable Power",
+    iconSrc: "/images/products/header/layer-portable-power-icon.png",
+    count: 26,
+  },
 ];
 
 export const FILTERS_BY_CATEGORY: Record<ProductCategoryKey, FilterChipDef[]> = {
@@ -121,6 +127,12 @@ export const FILTERS_BY_CATEGORY: Record<ProductCategoryKey, FilterChipDef[]> = 
     { key: "under-5", label: "Under 5kW", kind: "band", max: 5 },
     { key: "5-10", label: "5-10kW", kind: "band", min: 5, max: 10 },
     { key: "10-plus", label: "10kW+", kind: "band", min: 10 },
+  ],
+  "portable-power": [
+    { key: "all", label: "All portable power", kind: "all" },
+    { key: "under-1", label: "Under 1kWh", kind: "band", max: 1 },
+    { key: "1-3", label: "1-3kWh", kind: "band", min: 1, max: 3 },
+    { key: "3-plus", label: "3kWh+", kind: "band", min: 3 },
   ],
 };
 
@@ -474,6 +486,8 @@ export const PRODUCTS_BY_CATEGORY: Record<ProductCategoryKey, Product[]> = {
       price: 8990,
     },
   ],
+  // Live catalogue only; no sample cards for this category.
+  "portable-power": [],
 };
 
 export const SPEC_LABEL_BY_CATEGORY: Record<ProductCategoryKey, string> = {
@@ -482,6 +496,7 @@ export const SPEC_LABEL_BY_CATEGORY: Record<ProductCategoryKey, string> = {
   inverters: "Rated Power",
   "ev-chargers": "Charge Rate",
   "heat-pumps": "Heating Capacity",
+  "portable-power": "Capacity",
 };
 
 export const SPEC_UNIT_BY_CATEGORY: Record<ProductCategoryKey, string> = {
@@ -490,6 +505,7 @@ export const SPEC_UNIT_BY_CATEGORY: Record<ProductCategoryKey, string> = {
   inverters: "kW",
   "ev-chargers": "kW",
   "heat-pumps": "kW",
+  "portable-power": "kWh",
 };
 
 export const BAND_GROUP_LABEL: Record<ProductCategoryKey, string> = {
@@ -498,6 +514,7 @@ export const BAND_GROUP_LABEL: Record<ProductCategoryKey, string> = {
   inverters: "Power Range",
   "ev-chargers": "Charge Rate",
   "heat-pumps": "Capacity Range",
+  "portable-power": "Capacity Range",
 };
 
 export const MAX_COMPARE_PRODUCTS = 3;

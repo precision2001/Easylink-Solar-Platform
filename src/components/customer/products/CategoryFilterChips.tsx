@@ -9,6 +9,9 @@ const OPTIONS: { value: FilterValue; label: string }[] = [
   { value: "panel", label: "Panel" },
   { value: "inverter", label: "Inverter" },
   { value: "battery", label: "Battery" },
+  { value: "ev-charger", label: "EV charger" },
+  { value: "heat-pump", label: "Heat pump" },
+  { value: "portable-power", label: "Portable power" },
 ];
 
 type Props = {

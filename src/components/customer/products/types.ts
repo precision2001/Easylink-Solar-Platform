@@ -1,4 +1,10 @@
-export type SolarProductCategory = "panel" | "inverter" | "battery";
+export type SolarProductCategory =
+  | "panel"
+  | "inverter"
+  | "battery"
+  | "ev-charger"
+  | "heat-pump"
+  | "portable-power";
 
 export type SolarProduct = {
   id: string;
@@ -8,6 +14,9 @@ export type SolarProduct = {
   reviewCount: number;
   price: string;
   bestSeller?: boolean;
+  brand?: string;
+  /** Product photo thumbnail from the image library, when there is one. */
+  imageUrl?: string;
 };
 
 export type DesignSummaryItem = {
