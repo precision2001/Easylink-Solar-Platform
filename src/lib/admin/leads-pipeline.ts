@@ -57,7 +57,20 @@ export type BoardColumn = {
   stage: LeadStage;
   label: string;
   count: number;
+  /** Sum of the stage's estimated system values. */
+  value: number;
   cards: PipelineLead[];
+};
+
+/** Counts for the leads table's tabs. */
+export type PipelineSummary = {
+  open: number;
+  overdue: number;
+  dueToday: number;
+  notContacted: number;
+  unassigned: number;
+  mine: number;
+  spam: number;
 };
 
 export const TASK_KINDS: { key: TaskKind; label: string; defaultTitle: string }[] = [
@@ -76,12 +89,11 @@ export async function fetchPipelineMeta(): Promise<PipelineMeta> {
   return json(await fetch("/api/admin/leads/pipeline/meta", { cache: "no-store" }), "Could not load the pipeline.");
 }
 
-export async function fetchBoard(): Promise<BoardColumn[]> {
-  const data = await json<{ columns: BoardColumn[] }>(
+export async function fetchBoard(): Promise<{ columns: BoardColumn[]; summary: PipelineSummary }> {
+  return json(
     await fetch("/api/admin/leads/pipeline/board", { cache: "no-store" }),
     "Could not load the pipeline board.",
   );
-  return data.columns;
 }
 
 export type PipelinePatch = {
@@ -200,4 +212,61 @@ export function defaultDueLocal(now = new Date()): string {
   }
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/* ---------- urgency, shared by board cards and table rows ---------- */
+
+/**
+ * How urgently a lead needs attention: overdue work, a missed first
+ * response, or no next action at all are "late"; something due today is
+ * "soon".
+ */
+export function leadUrgency(lead: PipelineLead, now = new Date()): Tone {
+  if (lead.status === "LOST") return "normal";
+  if (lead.responseOverdue || !lead.nextAction || lead.nextAction.overdue) return "late";
+  return describeDue(lead.nextAction.dueAt, now).tone;
+}
+
+export const TONE_RAIL: Record<Tone, string> = {
+  late: "#DC2626",
+  soon: "#F59E0B",
+  normal: "transparent",
+};
+
+export const TONE_CHIP: Record<Tone, { bg: string; fg: string }> = {
+  late: { bg: "#FEE2E2", fg: "#991B1B" },
+  soon: { bg: "#FEF3C7", fg: "#92400E" },
+  normal: { bg: "#F1F5F9", fg: "#334155" },
+};
+
+/** Where a lead came from, as a short label for its chip. */
+export function sourceKind(source: string | null): { label: string; icon: "sun" | "users" | "mail" | "phone" | "link" } {
+  const s = (source ?? "").toLowerCase();
+  if (s.includes("referral")) return { label: "Referral", icon: "users" };
+  if (s.startsWith("design platform")) return { label: "Design", icon: "sun" };
+  if (s.startsWith("contact form")) return { label: "Contact form", icon: "mail" };
+  if (/dial|call/.test(s)) return { label: "Dialler", icon: "phone" };
+  if (s.includes("partner")) return { label: "Partner", icon: "link" };
+  return { label: source ? source.split(/ [—·] /)[0]!.slice(0, 22) : "Other", icon: "link" };
+}
+
+/** "Just now", "25 min ago", "3 h ago", "2 days ago", then the date. */
+export function ago(iso: string, now = new Date()): string {
+  const ms = now.getTime() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return "Just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 14) return `${d} day${d === 1 ? "" : "s"} ago`;
+  return new Date(iso).toLocaleDateString("en-AU", { timeZone: "Australia/Sydney", day: "numeric", month: "short" });
+}
+
+/** "$48k", "$1.2m" for column totals. */
+export function compactAud(n: number): string {
+  if (!n) return "";
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+  if (n >= 1_000) return `$${Math.round(n / 1_000)}k`;
+  return `$${Math.round(n)}`;
 }
