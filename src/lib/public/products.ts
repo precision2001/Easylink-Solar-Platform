@@ -51,6 +51,7 @@ function toSolarProduct(product: BackendProduct): SolarProduct {
     rating: product.rating ?? 4.7,
     reviewCount: product.reviewCount ?? 0,
     price: formatPrice(product.retailPrice ?? product.basePrice),
+    priceValue: product.retailPrice ?? product.basePrice,
     bestSeller: product.bestSeller ?? false,
     imageUrl: productImage(product)?.thumbUrl,
     brand: product.brand?.trim() || undefined,

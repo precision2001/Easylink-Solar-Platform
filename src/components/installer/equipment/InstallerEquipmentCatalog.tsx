@@ -1,6 +1,7 @@
 "use client";
 
 import { productImage } from "@/lib/designs/product-specs";
+import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import classNames from "classnames";
 import { useEffect, useMemo, useState } from "react";
 import Icon from "@/components/ui/Icons";
@@ -231,13 +232,30 @@ function ProductCard({ product }: { product: InstallerProductSummary }) {
         </div>
       </dl>
 
-      {approved || expires ? (
-        <p className="mt-auto font-dm-sans text-[10px] leading-[14px] text-warm-gray">
-          {approved ? <>Approved {approved}</> : null}
-          {approved && expires ? <> · </> : null}
-          {expires ? <>Expires {expires}</> : null}
-        </p>
-      ) : null}
+      <div className="mt-auto flex items-end justify-between gap-2">
+        {approved || expires ? (
+          <p className="font-dm-sans text-[10px] leading-[14px] text-warm-gray">
+            {approved ? <>Approved {approved}</> : null}
+            {approved && expires ? <> · </> : null}
+            {expires ? <>Expires {expires}</> : null}
+          </p>
+        ) : (
+          <span />
+        )}
+        <AddToCartButton
+          label="Add"
+          disabled={!(product.basePrice > 0) || product.active === false}
+          line={{
+            productId: product.id,
+            quantity: 1,
+            name: product.name,
+            brand: product.brand ?? null,
+            category: product.category,
+            price: product.basePrice,
+            imageUrl: photo?.thumbUrl ?? null,
+          }}
+        />
+      </div>
     </article>
   );
 }

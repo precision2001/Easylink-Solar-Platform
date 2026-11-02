@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { CustomerAvatar } from "@/components/customer/CustomerAvatar";
 import { DashboardNotificationBell } from "@/components/dashboard/DashboardNotificationBell";
+import { CartButton } from "@/components/cart/CartButton";
 import { usePortalLogout } from "@/hooks/usePortalLogout";
 import {
   CUSTOMER_PORTAL,
@@ -95,6 +96,7 @@ export function CustomerDashboardHeader({
           >
             <Icon name="Search" className="size-[18px] customer-nav-muted" />
           </button>
+          <CartButton tone="dark" className="size-8" />
           <DashboardNotificationBell mode="customer" />
           <button
             type="button"

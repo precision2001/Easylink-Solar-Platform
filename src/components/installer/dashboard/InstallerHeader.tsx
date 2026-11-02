@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
 import { DashboardNotificationBell } from "@/components/dashboard/DashboardNotificationBell";
+import { CartButton } from "@/components/cart/CartButton";
 import Icon from "@/components/ui/Icons";
 import { usePortalLogout } from "@/hooks/usePortalLogout";
 
@@ -195,6 +196,7 @@ export function InstallerHeader({
           >
             <Icon name="Search" className="size-[18px] text-warm-gray" />
           </button>
+          <CartButton className="size-8" />
           <DashboardNotificationBell mode="installer" />
           <button
             type="button"
