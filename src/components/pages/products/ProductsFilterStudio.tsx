@@ -13,6 +13,8 @@ import type { Product, ProductCategoryKey } from "@/components/pages/products/ty
 import {
   bandRange,
   domainOf,
+  FIXED_PRICE_DOMAIN,
+  FIXED_SPEC_DOMAIN,
   sameRange,
   SPEC_STEP,
   EMPTY_FILTERS,
@@ -34,7 +36,7 @@ const HAS_CEC: Record<ProductCategoryKey, boolean> = {
   "portable-power": false,
 };
 
-const BINS = 28;
+const BINS = 40;
 
 const aud = (n: number) =>
   n.toLocaleString("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 });
@@ -71,11 +73,15 @@ export function ProductsFilterStudio({
   const specLabel = SPEC_LABEL_BY_CATEGORY[categoryKey];
 
   const specDomain = useMemo(
-    () => domainOf(products.map((p) => p.specValue), SPEC_STEP[categoryKey]),
+    () =>
+      FIXED_SPEC_DOMAIN[categoryKey] ??
+      domainOf(products.map((p) => p.specValue), SPEC_STEP[categoryKey]),
     [products, categoryKey],
   );
   const priceDomain = useMemo(
-    () => domainOf(products.map((p) => p.price), categoryKey === "solar-panels" ? 10 : 100),
+    () =>
+      FIXED_PRICE_DOMAIN[categoryKey] ??
+      domainOf(products.map((p) => p.price), categoryKey === "solar-panels" ? 10 : 100),
     [products, categoryKey],
   );
 

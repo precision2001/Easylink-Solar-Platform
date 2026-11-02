@@ -117,6 +117,18 @@ export function bandRange(band: object, domain: Range | null): Range | null {
 export const sameRange = (a: Range | null, b: Range | null) =>
   Boolean(a && b && a[0] === b[0] && a[1] === b[1]);
 
+/**
+ * Fixed slider ranges where the business wants a set scale rather than the
+ * data's own min/max (batteries: up to 100 kWh and $100,000, so commercial
+ * units and large stacks fit).
+ */
+export const FIXED_SPEC_DOMAIN: Partial<Record<string, Range>> = {
+  batteries: [0, 100],
+};
+export const FIXED_PRICE_DOMAIN: Partial<Record<string, Range>> = {
+  batteries: [0, 100000],
+};
+
 /** Slider granularity per category, in the category's own unit. */
 export const SPEC_STEP: Record<string, number> = {
   "solar-panels": 5,

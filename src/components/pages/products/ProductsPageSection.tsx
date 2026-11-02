@@ -2,7 +2,6 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ProductsSystemStepper } from "@/components/pages/products/ProductsSystemStepper";
-import { ProductsSidebar } from "@/components/pages/products/ProductsSidebar";
 import { ProductsCategoryCards } from "@/components/pages/products/ProductsCategoryCards";
 import { ProductsFilterStudio } from "@/components/pages/products/ProductsFilterStudio";
 import { ProductsSearchBar } from "@/components/pages/products/ProductsSearchBar";
@@ -17,21 +16,15 @@ import type {
   ProductCategoryKey,
 } from "@/components/pages/products/types";
 import {
-  bandRange,
-  domainOf,
   EMPTY_FILTERS,
   filterProducts,
-  sameRange,
   sortProducts,
-  SPEC_STEP,
   type FilterState,
 } from "@/components/pages/products/filterModel";
 import {
   CATALOG_CATEGORY_TO_BACKEND,
-  fetchCatalogIndex,
   fetchCatalogProducts,
   fetchCategoryCatalog,
-  type CatalogIndex,
 } from "@/lib/public/products";
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -47,7 +40,6 @@ export function ProductsPageSection() {
   >({});
   const [catalogs, setCatalogs] = useState<Partial<Record<ProductCategoryKey, Product[]>>>({});
   const [errors, setErrors] = useState<Partial<Record<ProductCategoryKey, string>>>({});
-  const [catalogIndex, setCatalogIndex] = useState<CatalogIndex | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState("");
@@ -83,21 +75,6 @@ export function ProductsPageSection() {
       cancelled = true;
     };
   }, [activeCategory, catalogs]);
-
-  // Live counts for the sidebar's other categories (brands, size bands).
-  useEffect(() => {
-    let cancelled = false;
-    fetchCatalogIndex()
-      .then((index) => {
-        if (!cancelled) setCatalogIndex(index);
-      })
-      .catch(() => {
-        // The sidebar falls back to sample counts; the page still works.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const loadCategoryCounts = useCallback(async (signal: { cancelled: boolean }) => {
     const entries = await Promise.all(
@@ -148,35 +125,10 @@ export function ProductsPageSection() {
     setFiltersByCategory((prev) => ({ ...prev, [category]: next }));
     setPage(1);
   };
-  const filtersFor = (category: ProductCategoryKey) => filtersByCategory[category] ?? EMPTY_FILTERS;
 
   const handleSelectCategory = (category: ProductCategoryKey) => {
     setActiveCategory(category);
     setPage(1);
-  };
-
-  // Sidebar shortcuts drive the same filter state as the studio.
-  const domainFor = (category: ProductCategoryKey) =>
-    domainOf((catalogs[category] ?? []).map((p) => p.specValue), SPEC_STEP[category] ?? 1);
-  const isBandActive = (category: ProductCategoryKey, band: FilterChipDef) =>
-    sameRange(filtersFor(category).spec, bandRange(band, domainFor(category)));
-  const toggleBand = (category: ProductCategoryKey, band: FilterChipDef) => {
-    const r = bandRange(band, domainFor(category));
-    const current = filtersFor(category);
-    setFilters(category, { ...current, spec: sameRange(current.spec, r) ? null : r });
-    handleSelectCategory(category);
-  };
-  const isBrandActive = (category: ProductCategoryKey, brand: string) =>
-    filtersFor(category).brands.includes(brand);
-  const toggleBrand = (category: ProductCategoryKey, brand: string) => {
-    const current = filtersFor(category);
-    setFilters(category, {
-      ...current,
-      brands: current.brands.includes(brand)
-        ? current.brands.filter((b) => b !== brand)
-        : [...current.brands, brand],
-    });
-    handleSelectCategory(category);
   };
 
   const handlePageSizeChange = (size: number) => {
@@ -229,17 +181,7 @@ export function ProductsPageSection() {
         />
       </div>
 
-      <div className="mx-auto mt-6 flex w-full max-w-[1360px] flex-col gap-6 px-4 sm:px-6 lg:flex-row">
-        <ProductsSidebar
-          activeCategory={activeCategory}
-          onSelectCategory={handleSelectCategory}
-          catalogIndex={catalogIndex}
-          isBandActive={isBandActive}
-          onToggleBand={toggleBand}
-          isBrandActive={isBrandActive}
-          onToggleBrand={toggleBrand}
-        />
-
+      <div className="mx-auto mt-6 flex w-full max-w-[1360px] flex-col gap-6 px-4 sm:px-6">
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <ProductsSearchBar
             search={search}
