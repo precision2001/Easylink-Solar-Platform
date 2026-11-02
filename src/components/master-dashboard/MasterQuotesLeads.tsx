@@ -10,6 +10,7 @@ import {
   type BoardColumn,
   type LeadStage,
   type PipelineMeta,
+  type PipelineSummary,
 } from "@/lib/admin/leads-pipeline";
 
 /**
@@ -144,6 +145,7 @@ export function MasterQuotesLeads() {
   const [territory, setTerritory] = useState("NSW & ACT");
   const [meta, setMeta] = useState<PipelineMeta | null>(null);
   const [board, setBoard] = useState<BoardColumn[] | null>(null);
+  const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [boardError, setBoardError] = useState<string | null>(null);
   const [stage, setStage] = useState<LeadStage | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -157,10 +159,11 @@ export function MasterQuotesLeads() {
   useEffect(() => {
     let live = true;
     fetchBoard()
-      .then((cols) => {
+      .then(({ columns, summary }) => {
         if (!live) return;
         setBoardError(null);
-        setBoard(cols);
+        setBoard(columns);
+        setSummary(summary ?? null);
       })
       .catch((err: unknown) => {
         if (!live) return;
@@ -216,6 +219,7 @@ export function MasterQuotesLeads() {
 
         <LeadsWorkspace
           meta={meta}
+          summary={summary}
           stage={stage}
           onClearStage={() => setStage(null)}
           reloadKey={reloadKey}
