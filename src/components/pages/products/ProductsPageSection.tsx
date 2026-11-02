@@ -1,138 +1,90 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ProductsSystemStepper } from "@/components/pages/products/ProductsSystemStepper";
 import { ProductsSidebar } from "@/components/pages/products/ProductsSidebar";
 import { ProductsCategoryCards } from "@/components/pages/products/ProductsCategoryCards";
-import { ProductsFilterChips } from "@/components/pages/products/ProductsFilterChips";
-import { ProductsBrandChips } from "@/components/pages/products/ProductsBrandChips";
+import { ProductsFilterStudio } from "@/components/pages/products/ProductsFilterStudio";
 import { ProductsSearchBar } from "@/components/pages/products/ProductsSearchBar";
 import { ProductsCatalogList } from "@/components/pages/products/ProductsCatalogList";
 import { ProductsCompareBar } from "@/components/pages/products/ProductsCompareBar";
 import { ProductsCompareModal } from "@/components/pages/products/ProductsCompareModal";
 import { CustomerPaymentReturnNotice } from "@/components/customer/products/CustomerPaymentReturnNotice";
+import { MAX_COMPARE_PRODUCTS } from "@/components/pages/products/productsData";
+import type {
+  FilterChipDef,
+  Product,
+  ProductCategoryKey,
+} from "@/components/pages/products/types";
 import {
-  FILTERS_BY_CATEGORY,
-  MAX_COMPARE_PRODUCTS,
-} from "@/components/pages/products/productsData";
-import type { Product, ProductCategoryKey } from "@/components/pages/products/types";
+  bandRange,
+  domainOf,
+  EMPTY_FILTERS,
+  filterProducts,
+  sameRange,
+  sortProducts,
+  SPEC_STEP,
+  type FilterState,
+} from "@/components/pages/products/filterModel";
 import {
-  brandCounts,
   CATALOG_CATEGORY_TO_BACKEND,
   fetchCatalogIndex,
   fetchCatalogProducts,
+  fetchCategoryCatalog,
   type CatalogIndex,
 } from "@/lib/public/products";
 
 const DEFAULT_PAGE_SIZE = 12;
-/** Debounce so search doesn't fire an API call on every keystroke. */
-const SEARCH_DEBOUNCE_MS = 400;
+
+/** The ProductsCatalogList filter props are unused now: filtering happens here. */
+const NO_CHIP_FILTERS: FilterChipDef[] = [{ key: "all", label: "All", kind: "all" }];
 
 export function ProductsPageSection() {
-  const [activeCategory, setActiveCategory] =
-    useState<ProductCategoryKey>("batteries");
-  const [activeFilterKey, setActiveFilterKey] = useState("all");
-  const [activeBrand, setActiveBrand] = useState("");
+  const [activeCategory, setActiveCategory] = useState<ProductCategoryKey>("batteries");
+  // Filters are remembered per category, so switching tabs and back keeps them.
+  const [filtersByCategory, setFiltersByCategory] = useState<
+    Partial<Record<ProductCategoryKey, FilterState>>
+  >({});
+  const [catalogs, setCatalogs] = useState<Partial<Record<ProductCategoryKey, Product[]>>>({});
+  const [errors, setErrors] = useState<Partial<Record<ProductCategoryKey, string>>>({});
   const [catalogIndex, setCatalogIndex] = useState<CatalogIndex | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
   const [compareModalOpen, setCompareModalOpen] = useState(false);
-
-  const [products, setProducts] = useState<Product[]>([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // Fetched products stay here across page/category switches so a product
-  // already added to comparison stays resolvable even after it scrolls off.
-  const [productCache, setProductCache] = useState<Record<string, Product>>({});
   const [categoryCounts, setCategoryCounts] = useState<
     Partial<Record<ProductCategoryKey, number>>
   >({});
 
-  const filters = FILTERS_BY_CATEGORY[activeCategory];
-  const compareProducts = Array.from(compareIds)
-    .map((id) => productCache[id])
-    .filter((product): product is NonNullable<typeof product> => Boolean(product));
+  const filters = filtersByCategory[activeCategory] ?? EMPTY_FILTERS;
+  const all = catalogs[activeCategory];
+  const loadError = errors[activeCategory] ?? null;
+  const loading = all === undefined && !loadError;
 
-  // Debounce the raw search input.
+  // Load each category's whole catalogue once (a couple of hundred rows at most).
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(timeout);
-  }, [search]);
-
-  const loadCategory = useCallback(
-    async (
-      params: {
-        categoryKey: ProductCategoryKey;
-        page: number;
-        pageSize: number;
-        search: string;
-        brand: string;
-      },
-      signal: { cancelled: boolean },
-    ) => {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const {
-          products: fetched,
-          total: fetchedTotal,
-          totalPages: fetchedTotalPages,
-        } = await fetchCatalogProducts({
-          categoryKey: params.categoryKey,
-          page: params.page,
-          limit: params.pageSize,
-          search: params.search,
-          brand: params.brand,
-        });
-        if (signal.cancelled) return;
-        setProducts(fetched);
-        setTotal(fetchedTotal);
-        setTotalPages(fetchedTotalPages);
-        setCategoryCounts((prev) =>
-          params.search || params.brand
-            ? prev
-            : { ...prev, [params.categoryKey]: fetchedTotal },
-        );
-        setProductCache((prev) => {
-          const next = { ...prev };
-          for (const product of fetched) next[product.id] = product;
-          return next;
-        });
-      } catch (err) {
-        if (signal.cancelled) return;
-        setProducts([]);
-        setTotal(0);
-        setTotalPages(1);
-        setLoadError(
-          err instanceof Error ? err.message : "Could not load products",
-        );
-      } finally {
-        if (!signal.cancelled) setLoading(false);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const signal = { cancelled: false };
-    void loadCategory(
-      { categoryKey: activeCategory, page, pageSize, search: debouncedSearch, brand: activeBrand },
-      signal,
-    );
+    if (catalogs[activeCategory] !== undefined) return;
+    let cancelled = false;
+    fetchCategoryCatalog(activeCategory)
+      .then((rows) => {
+        if (cancelled) return;
+        setCatalogs((prev) => ({ ...prev, [activeCategory]: rows }));
+        setCategoryCounts((prev) => ({ ...prev, [activeCategory]: rows.length }));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setErrors((prev) => ({
+          ...prev,
+          [activeCategory]: err instanceof Error ? err.message : "Could not load products",
+        }));
+      });
     return () => {
-      signal.cancelled = true;
+      cancelled = true;
     };
-  }, [activeCategory, page, pageSize, debouncedSearch, activeBrand, loadCategory]);
+  }, [activeCategory, catalogs]);
 
-  // Brands (and live band counts) for the sidebar and brand row, in one request.
+  // Live counts for the sidebar's other categories (brands, size bands).
   useEffect(() => {
     let cancelled = false;
     fetchCatalogIndex()
@@ -140,7 +92,7 @@ export function ProductsPageSection() {
         if (!cancelled) setCatalogIndex(index);
       })
       .catch(() => {
-        // Menus simply show no brands; the product grid still works.
+        // The sidebar falls back to sample counts; the page still works.
       });
     return () => {
       cancelled = true;
@@ -149,24 +101,22 @@ export function ProductsPageSection() {
 
   const loadCategoryCounts = useCallback(async (signal: { cancelled: boolean }) => {
     const entries = await Promise.all(
-      (Object.keys(CATALOG_CATEGORY_TO_BACKEND) as ProductCategoryKey[]).map(
-        (categoryKey) =>
-          fetchCatalogProducts({ categoryKey, limit: 1 })
-            .then(({ total: categoryTotal }) => [categoryKey, categoryTotal] as const)
-            .catch(() => [categoryKey, undefined] as const),
+      (Object.keys(CATALOG_CATEGORY_TO_BACKEND) as ProductCategoryKey[]).map((categoryKey) =>
+        fetchCatalogProducts({ categoryKey, limit: 1 })
+          .then(({ total }) => [categoryKey, total] as const)
+          .catch(() => [categoryKey, undefined] as const),
       ),
     );
     if (signal.cancelled) return;
     setCategoryCounts((prev) => {
       const next = { ...prev };
-      for (const [categoryKey, categoryTotal] of entries) {
-        if (categoryTotal !== undefined) next[categoryKey] = categoryTotal;
+      for (const [categoryKey, total] of entries) {
+        if (total !== undefined && next[categoryKey] === undefined) next[categoryKey] = total;
       }
       return next;
     });
   }, []);
 
-  // Load the real per-category totals once, for the category cards.
   useEffect(() => {
     const signal = { cancelled: false };
     void loadCategoryCounts(signal);
@@ -175,21 +125,58 @@ export function ProductsPageSection() {
     };
   }, [loadCategoryCounts]);
 
+  const filtered = useMemo(
+    () => sortProducts(filterProducts(all ?? [], filters, search), filters.sort),
+    [all, filters, search],
+  );
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageProducts = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Every loaded product, so items added to compare stay resolvable across categories.
+  const productById = useMemo(() => {
+    const map: Record<string, Product> = {};
+    for (const list of Object.values(catalogs)) for (const p of list ?? []) map[p.id] = p;
+    return map;
+  }, [catalogs]);
+  const compareProducts = Array.from(compareIds)
+    .map((id) => productById[id])
+    .filter((p): p is Product => Boolean(p));
+
+  const setFilters = (category: ProductCategoryKey, next: FilterState) => {
+    setFiltersByCategory((prev) => ({ ...prev, [category]: next }));
+    setPage(1);
+  };
+  const filtersFor = (category: ProductCategoryKey) => filtersByCategory[category] ?? EMPTY_FILTERS;
+
   const handleSelectCategory = (category: ProductCategoryKey) => {
-    if (category !== activeCategory) setActiveBrand("");
     setActiveCategory(category);
-    setActiveFilterKey("all");
     setPage(1);
   };
 
-  const handleSelectBrand = (brand: string) => {
-    setActiveBrand(brand);
-    setPage(1);
+  // Sidebar shortcuts drive the same filter state as the studio.
+  const domainFor = (category: ProductCategoryKey) =>
+    domainOf((catalogs[category] ?? []).map((p) => p.specValue), SPEC_STEP[category] ?? 1);
+  const isBandActive = (category: ProductCategoryKey, band: FilterChipDef) =>
+    sameRange(filtersFor(category).spec, bandRange(band, domainFor(category)));
+  const toggleBand = (category: ProductCategoryKey, band: FilterChipDef) => {
+    const r = bandRange(band, domainFor(category));
+    const current = filtersFor(category);
+    setFilters(category, { ...current, spec: sameRange(current.spec, r) ? null : r });
+    handleSelectCategory(category);
   };
-
-  const handleSelectFilter = (filterKey: string) => {
-    setActiveFilterKey(filterKey);
-    setPage(1);
+  const isBrandActive = (category: ProductCategoryKey, brand: string) =>
+    filtersFor(category).brands.includes(brand);
+  const toggleBrand = (category: ProductCategoryKey, brand: string) => {
+    const current = filtersFor(category);
+    setFilters(category, {
+      ...current,
+      brands: current.brands.includes(brand)
+        ? current.brands.filter((b) => b !== brand)
+        : [...current.brands, brand],
+    });
+    handleSelectCategory(category);
   };
 
   const handlePageSizeChange = (size: number) => {
@@ -200,11 +187,8 @@ export function ProductsPageSection() {
   const handleToggleCompare = (id: string) => {
     setCompareIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else if (next.size < MAX_COMPARE_PRODUCTS) {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else if (next.size < MAX_COMPARE_PRODUCTS) next.add(id);
       return next;
     });
   };
@@ -234,10 +218,7 @@ export function ProductsPageSection() {
       </div>
 
       <div className="mt-8 px-4 sm:px-6">
-        <ProductsSystemStepper
-          activeCategory={activeCategory}
-          onSelectCategory={handleSelectCategory}
-        />
+        <ProductsSystemStepper activeCategory={activeCategory} onSelectCategory={handleSelectCategory} />
       </div>
 
       <div className="mx-auto mt-8 w-full max-w-[1360px] px-4 sm:px-6">
@@ -251,54 +232,52 @@ export function ProductsPageSection() {
       <div className="mx-auto mt-6 flex w-full max-w-[1360px] flex-col gap-6 px-4 sm:px-6 lg:flex-row">
         <ProductsSidebar
           activeCategory={activeCategory}
-          activeFilterKey={activeFilterKey}
           onSelectCategory={handleSelectCategory}
-          onSelectFilter={handleSelectFilter}
           catalogIndex={catalogIndex}
-          activeBrand={activeBrand}
-          onSelectBrand={handleSelectBrand}
+          isBandActive={isBandActive}
+          onToggleBand={toggleBand}
+          isBrandActive={isBrandActive}
+          onToggleBrand={toggleBrand}
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <ProductsSearchBar
             search={search}
-            onSearchChange={setSearch}
+            onSearchChange={(value) => {
+              setSearch(value);
+              setPage(1);
+            }}
             pageSize={pageSize}
             onPageSizeChange={handlePageSizeChange}
           />
-          <ProductsFilterChips
-            filters={filters}
-            activeFilterKey={activeFilterKey}
-            onSelect={handleSelectFilter}
-          />
-          <ProductsBrandChips
-            brands={brandCounts(catalogIndex?.[activeCategory])}
-            activeBrand={activeBrand}
-            onSelect={handleSelectBrand}
-          />
+          {all && all.length ? (
+            <ProductsFilterStudio
+              key={activeCategory}
+              categoryKey={activeCategory}
+              products={all}
+              search={search}
+              state={filters}
+              onChange={(next) => setFilters(activeCategory, next)}
+              resultCount={total}
+            />
+          ) : null}
           {loading ? (
             <div className="w-full rounded-2xl border border-dashed border-warm-border bg-white px-6 py-12 text-center">
-              <p className="font-dm-sans text-[13px] text-warm-gray">
-                Loading products…
-              </p>
+              <p className="font-dm-sans text-[13px] text-warm-gray">Loading products…</p>
             </div>
           ) : loadError ? (
             <div className="w-full rounded-2xl border border-dashed border-danger/30 bg-danger/5 px-6 py-12 text-center">
-              <p className="font-inter text-[15px] font-semibold text-danger">
-                Could not load products
-              </p>
-              <p className="mt-1 font-dm-sans text-[12px] text-warm-gray">
-                {loadError}
-              </p>
+              <p className="font-inter text-[15px] font-semibold text-danger">Could not load products</p>
+              <p className="mt-1 font-dm-sans text-[12px] text-warm-gray">{loadError}</p>
             </div>
           ) : (
             <ProductsCatalogList
-              products={products}
-              filters={filters}
-              activeFilterKey={activeFilterKey}
+              products={pageProducts}
+              filters={NO_CHIP_FILTERS}
+              activeFilterKey="all"
               compareIds={compareIds}
               onToggleCompare={handleToggleCompare}
-              page={page}
+              page={safePage}
               pageSize={pageSize}
               totalPages={totalPages}
               total={total}

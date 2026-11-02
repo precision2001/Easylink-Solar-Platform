@@ -211,7 +211,35 @@ function toCatalogProduct(
     inStock: row.active,
     features: catalogFeatures(row),
     price: row.retailPrice ?? row.basePrice,
+    cecApproved: specs.cecApproved === true,
+    priceEstimate: specs.priceEstimate === true,
   };
+}
+
+/**
+ * Every active product in one category, mapped for the /products page. The
+ * curated catalogue is at most a couple of hundred rows per category, so the
+ * page filters, sorts and paginates on the client for instant results.
+ */
+export async function fetchCategoryCatalog(
+  categoryKey: ProductCategoryKey,
+): Promise<CatalogProduct[]> {
+  const rows: BackendCatalogRow[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const sp = new URLSearchParams({
+      category: CATALOG_CATEGORY_TO_BACKEND[categoryKey],
+      page: String(page),
+      limit: "100",
+      active: "true",
+    });
+    const res = await fetch(`/api/products?${sp}`, { cache: "no-store" });
+    const json = (await res.json()) as CatalogApiEnvelope<BackendCatalogRow[]>;
+    if (!res.ok) throw new Error(json.message || "Failed to load products");
+    const batch = Array.isArray(json.data) ? json.data : [];
+    rows.push(...batch);
+    if (batch.length === 0 || page >= (json.meta?.pagination?.totalPages ?? 1)) break;
+  }
+  return rows.map((row) => toCatalogProduct(categoryKey, row));
 }
 
 export type CatalogPage = {
