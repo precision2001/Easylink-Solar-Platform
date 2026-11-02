@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { EasylinkAiChatbot } from "@/components/ai-chat/EasylinkAiChatbot";
 import { AiEventCapture } from "@/components/ai/AiEventCapture";
 import { ClarityAnalytics } from "@/components/analytics/ClarityAnalytics";
+import { CartDrawer } from "@/components/cart/CartDrawer";
 import { ReduxProvider } from "@/components/providers/ReduxProvider";
 import { ToastProvider } from "@/components/providers/ToastProvider";
 import { TopProgressBar } from "@/components/providers/TopProgressBar";
@@ -64,6 +65,7 @@ export default function RootLayout({
         <ReduxProvider>
           <TopProgressBar />
           {children}
+          <CartDrawer />
           <EasylinkAiChatbot />
           <AiEventCapture />
           <ToastProvider />

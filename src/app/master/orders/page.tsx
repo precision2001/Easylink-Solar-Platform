@@ -1,6 +1,6 @@
 "use client";
 
-import { MasterDistOrders } from "@/components/master-dashboard/MasterDistOrders";
+import { MasterShopOrders } from "@/components/master-dashboard/MasterShopOrders";
 import { MasterDistSidebar } from "@/components/master-dashboard/MasterDistSidebar";
 
 export default function MasterOrdersPage() {
@@ -10,7 +10,7 @@ export default function MasterOrdersPage() {
         <MasterDistSidebar active="dOrders" />
       </div>
       <main className="min-w-0 flex-[999_1_560px]">
-        <MasterDistOrders />
+        <MasterShopOrders />
       </main>
     </div>
   );

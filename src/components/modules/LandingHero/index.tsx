@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import searchIcon from "@/components/ui/Icons/search.svg";
 import userIcon from "@/components/ui/Icons/user.svg";
-import shopIcon from "@/components/ui/Icons/shop.svg";
 import { LANDING_NAV_ITEMS } from "@/utils/constant";
 import { RainbowButton } from "@/components/ui/RainbowButton";
+import { CartButton } from "@/components/cart/CartButton";
 import { useAppSelector } from "@/lib/store/hooks";
 import { usePortalLogout, type PortalLogoutKind } from "@/hooks/usePortalLogout";
 
@@ -156,13 +156,7 @@ export function Header() {
                 <AccountMenuContent session={session} />
               </div>
             </details>
-            <button
-              type="button"
-              aria-label="Cart"
-              className="relative inline-flex size-9 items-center justify-center rounded-full text-slate-900 transition hover:bg-slate-900/10"
-            >
-              <Image src={shopIcon} alt="Cart" width={26} height={24} />
-            </button>
+            <CartButton />
 
             <RainbowButton
               href="/contact-us"
@@ -171,9 +165,12 @@ export function Header() {
             >
               Contact Us
             </RainbowButton>
-            <button className="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-white transition hover:bg-cyan-500 xl:px-5">
+            <Link
+              href="/products"
+              className="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-white transition hover:bg-cyan-500 xl:px-5"
+            >
               Buy Now
-            </button>
+            </Link>
           </div>
           <p className="hidden text-[11px] font-medium tracking-wide text-slate-800 2xl:block">
             Powered by{" "}
@@ -184,6 +181,7 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2 lg:hidden">
+          <CartButton />
           <details className="relative">
             <summary
               aria-label={session ? `Account — signed in as ${session.user.firstName}` : "Account"}
@@ -225,9 +223,9 @@ export function Header() {
               >
                 Contact Us
               </Link>
-              <button className="rounded-md bg-cyan-400 px-3 py-2 text-xs font-semibold text-slate-950">
+              <Link href="/products" className="rounded-md bg-cyan-400 px-3 py-2 text-center text-xs font-semibold text-slate-950">
                 Buy Now
-              </button>
+              </Link>
             </div>
           </div>
           </details>

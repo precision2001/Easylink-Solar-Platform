@@ -13,6 +13,8 @@ export type SolarProduct = {
   rating: number;
   reviewCount: number;
   price: string;
+  /** The same price as a number, for the cart (which re-prices server-side). */
+  priceValue?: number;
   bestSeller?: boolean;
   brand?: string;
   /** Product photo thumbnail from the image library, when there is one. */

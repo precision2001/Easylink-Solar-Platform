@@ -12,6 +12,8 @@ import {
   selectedDesignProductsFromCatalog,
 } from "@/lib/public/products";
 import { useAppSelector } from "@/lib/store/hooks";
+import { addLineToCart } from "@/components/cart/AddToCartButton";
+import { MyOrders } from "@/components/cart/MyOrders";
 import { CUSTOMER_PORTAL } from "@/utils/constant";
 
 export default function SolarProductsPage() {
@@ -90,13 +92,27 @@ export default function SolarProductsPage() {
                 product={product}
                 favorited={favorites.has(product.id)}
                 onToggleFavorite={() => toggleFavorite(product.id)}
-                onAdd={() => {}}
+                onAdd={() =>
+                  addLineToCart({
+                    productId: product.id,
+                    quantity: 1,
+                    name: product.name,
+                    brand: product.brand ?? null,
+                    category: product.category,
+                    price: product.priceValue ?? null,
+                    imageUrl: product.imageUrl ?? null,
+                  })
+                }
               />
             ))}
           </div>
         )}
 
         <SelectedDesignProductsSection items={selectedDesignProducts} />
+
+        <div className="customer-cream-card-bg customer-cream-card-border rounded-[10px] border p-4">
+          <MyOrders portal="customer" />
+        </div>
       </main>
     </div>
   );

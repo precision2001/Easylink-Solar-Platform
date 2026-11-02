@@ -11,6 +11,7 @@ import {
   type PaymentStatus,
 } from "@/lib/customers/payments";
 import { useAppSelector } from "@/lib/store/hooks";
+import { MyOrders } from "@/components/cart/MyOrders";
 
 const STATUS_STYLES: Record<PaymentStatus, string> = {
   PAID: "bg-emerald-500/10 text-emerald-700",
@@ -169,6 +170,10 @@ export function CustomerPaymentsPageView() {
             </table>
           </div>
         )}
+
+        <div className="rounded-2xl border border-warm-border bg-cream-50 p-4">
+          <MyOrders portal="customer" />
+        </div>
       </main>
     </div>
   );
