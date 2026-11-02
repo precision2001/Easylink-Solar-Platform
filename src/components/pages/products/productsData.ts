@@ -94,7 +94,8 @@ export const FILTERS_BY_CATEGORY: Record<ProductCategoryKey, FilterChipDef[]> = 
     { key: "commercial", label: "Commercial", kind: "segment", segment: "commercial" },
     { key: "under-10", label: "Under 10kWh", kind: "band", max: 10 },
     { key: "10-20", label: "10-20kWh", kind: "band", min: 10, max: 20 },
-    { key: "20-plus", label: "20kWh+", kind: "band", min: 20 },
+    { key: "20-plus", label: "20kWh+", kind: "band", min: 20, max: 50 },
+    { key: "50-plus", label: "50kWh+ commercial", kind: "band", min: 50 },
   ],
   "solar-panels": [
     { key: "all", label: "All solar panels", kind: "all" },
