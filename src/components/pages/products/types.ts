@@ -56,6 +56,10 @@ export type Product = {
   /** Product photo from the image library (1000 px WebP) and its 400 px thumbnail. */
   imageUrl?: string;
   imageThumbUrl?: string;
+  /** On the CEC approved list (panels, inverters, batteries). */
+  cecApproved?: boolean;
+  /** Price is an estimate, not from the supplier price book. */
+  priceEstimate?: boolean;
   inStock?: boolean;
   features: string[];
   price: number;

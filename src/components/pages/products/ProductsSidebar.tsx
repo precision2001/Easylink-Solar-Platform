@@ -10,7 +10,7 @@ import {
   PRODUCT_CATEGORIES,
   PRODUCTS_BY_CATEGORY,
 } from "@/components/pages/products/productsData";
-import type { ProductCategoryKey } from "@/components/pages/products/types";
+import type { FilterChipDef, ProductCategoryKey } from "@/components/pages/products/types";
 import {
   brandCounts,
   type CatalogIndex,
@@ -18,23 +18,24 @@ import {
 
 type Props = {
   activeCategory: ProductCategoryKey;
-  activeFilterKey: string;
   onSelectCategory: (category: ProductCategoryKey) => void;
-  onSelectFilter: (filterKey: string) => void;
   /** Live brand/spec index; until it loads, band counts fall back to the sample data. */
   catalogIndex?: CatalogIndex | null;
-  activeBrand: string;
-  onSelectBrand: (brand: string) => void;
+  /** Shortcuts into the filter studio's state (size band and brand, per category). */
+  isBandActive: (category: ProductCategoryKey, band: FilterChipDef) => boolean;
+  onToggleBand: (category: ProductCategoryKey, band: FilterChipDef) => void;
+  isBrandActive: (category: ProductCategoryKey, brand: string) => boolean;
+  onToggleBrand: (category: ProductCategoryKey, brand: string) => void;
 };
 
 export function ProductsSidebar({
   activeCategory,
-  activeFilterKey,
   onSelectCategory,
-  onSelectFilter,
   catalogIndex,
-  activeBrand,
-  onSelectBrand,
+  isBandActive,
+  onToggleBand,
+  isBrandActive,
+  onToggleBrand,
 }: Props) {
   const [expandedKeys, setExpandedKeys] = useState<Set<ProductCategoryKey>>(
     () => new Set([activeCategory]),
@@ -124,7 +125,7 @@ export function ProductsSidebar({
                           : products.filter((product) =>
                               matchesFilter(product, filter),
                             ).length;
-                        const checked = isActiveCategory && activeFilterKey === filter.key;
+                        const checked = isActiveCategory && isBandActive(category.key, filter);
 
                         return (
                           <li key={filter.key}>
@@ -132,10 +133,7 @@ export function ProductsSidebar({
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                onChange={() => {
-                                  onSelectCategory(category.key);
-                                  onSelectFilter(checked ? "all" : filter.key);
-                                }}
+                                onChange={() => onToggleBand(category.key, filter)}
                                 className="size-3.5 rounded-sm border-white/40 bg-transparent accent-white"
                               />
                               {filter.label}
@@ -153,17 +151,14 @@ export function ProductsSidebar({
                         </p>
                         <ul className="flex max-h-[280px] flex-col gap-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
                           {brands.map(({ brand, count }) => {
-                            const checked = isActiveCategory && activeBrand === brand;
+                            const checked = isActiveCategory && isBrandActive(category.key, brand);
                             return (
                               <li key={brand}>
                                 <label className="flex cursor-pointer items-center gap-2 font-dm-sans text-[12px] text-white/80 hover:text-white">
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={() => {
-                                      if (!isActiveCategory) onSelectCategory(category.key);
-                                      onSelectBrand(checked ? "" : brand);
-                                    }}
+                                    onChange={() => onToggleBrand(category.key, brand)}
                                     className="size-3.5 rounded-sm border-white/40 bg-transparent accent-white"
                                   />
                                   <span className="min-w-0 truncate">{brand}</span>
