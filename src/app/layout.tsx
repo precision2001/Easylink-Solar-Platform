@@ -8,6 +8,7 @@ import { ReduxProvider } from "@/components/providers/ReduxProvider";
 import { ToastProvider } from "@/components/providers/ToastProvider";
 import { TopProgressBar } from "@/components/providers/TopProgressBar";
 import "react-toastify/dist/ReactToastify.css";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 // Geist / Geist Mono used to load here too, preloaded on every page via
@@ -47,6 +48,7 @@ const dmSans = localFont({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "EasyLink Solar",
   description: "Australia's trusted solar energy platform – EasyLink Solar",
 };
@@ -57,7 +59,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en-AU" suppressHydrationWarning>
       <body
         className={`${sourceSans.variable} ${outfit.variable} ${inter.variable} ${dmSans.variable} antialiased`}
         suppressHydrationWarning

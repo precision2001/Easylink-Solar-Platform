@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 
 const customerFeatures = [
   "AI-powered solar calculations",
@@ -56,7 +57,8 @@ export function PlatformSection() {
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
           {/* For Customers */}
           <div className="flex flex-col items-center gap-[14px]">
-            <button
+            <Link
+              href="/designs"
               className="rounded-xl px-8 py-3 text-base font-semibold text-white shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-4px_rgba(0,0,0,0.1)]"
               style={{
                 backgroundImage:
@@ -64,7 +66,7 @@ export function PlatformSection() {
               }}
             >
               I Need Solar
-            </button>
+            </Link>
             <div className="w-full rounded-2xl bg-white p-8 shadow-[0_8px_32px_-8px_rgba(17,28,39,0.12)]">
               <h3 className="font-[family-name:var(--font-source-sans)] text-2xl font-bold tracking-[-0.6px] text-ink">
                 For Customers
@@ -82,9 +84,12 @@ export function PlatformSection() {
 
           {/* For Installers */}
           <div className="flex flex-col items-center gap-[14px]">
-            <button className="rounded-xl border-2 border-ink px-8 py-3 text-base font-semibold text-ink">
+            <Link
+              href="/installers/landing"
+              className="rounded-xl border-2 border-ink px-8 py-3 text-base font-semibold text-ink"
+            >
               I&apos;m an Installer
-            </button>
+            </Link>
             <div className="w-full rounded-2xl bg-white p-8 shadow-[0_8px_32px_-8px_rgba(17,28,39,0.12)]">
               <h3 className="font-[family-name:var(--font-source-sans)] text-2xl font-bold tracking-[-0.6px] text-ink">
                 For Installers

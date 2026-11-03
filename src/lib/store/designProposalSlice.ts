@@ -230,8 +230,10 @@ export const DESIGN_PROPOSAL_DEFAULTS: DesignProposalState = {
   summary: {
     systemSize: "6.6 kW",
     totalPanels: "16",
-    yearlySavings: "$1,580",
-    payback: "7.1 yrs",
+    // Empty until the pricing engine has priced the design (proposal step).
+    // Never seed money figures here — they'd be shown as if they were real.
+    yearlySavings: "",
+    payback: "",
   },
   customer: {
     // Real Redux initial state for a brand-new design — must start empty,
@@ -241,7 +243,8 @@ export const DESIGN_PROPOSAL_DEFAULTS: DesignProposalState = {
     name: "",
     email: "",
     phoneNumber: "",
-    address: "42 Bondi Rd, Bondi, NSW 2026",
+    // Empty: the visitor must pick their own address on the location step.
+    address: "",
     property: "Residential",
   },
   equipment: {
@@ -256,10 +259,10 @@ export const DESIGN_PROPOSAL_DEFAULTS: DesignProposalState = {
     items: emptyEquipmentItems(),
   },
   pricing: {
-    totalSystemPrice: "$11,200",
-    monthlySavings: "$132",
+    totalSystemPrice: "",
+    monthlySavings: "",
     currentBill: "$200",
-    newBill: "$368",
+    newBill: "",
     billPeriod: "quarter",
   },
   solarDesign: null,

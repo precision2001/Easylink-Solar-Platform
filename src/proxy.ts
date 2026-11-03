@@ -228,11 +228,22 @@ async function handleMasterProtected(request: NextRequest): Promise<NextResponse
   return gate;
 }
 
+/** Exactly "/customers" or "/customers/" — not anything beneath it. */
+export function isPublicCustomersLanding(pathname: string): boolean {
+  return pathname === "/customers" || pathname === "/customers/";
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/customers/auth")) {
     return handleCustomerAuthPage(request);
+  }
+
+  // The bare /customers page is the public customer marketing page; only the
+  // portal routes beneath it need a session.
+  if (isPublicCustomersLanding(pathname)) {
+    return NextResponse.next();
   }
 
   if (pathname.startsWith("/customers")) {

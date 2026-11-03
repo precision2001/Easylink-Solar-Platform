@@ -497,7 +497,8 @@ function deriveEnergyValues(
   const monthlySavings = Math.max(0, currentMonthly - newMonthly);
   const yearlyNum = monthlySavings * 12;
 
-  let payback = "7.1 yrs";
+  // No payback until real pricing exists — the proposal step fills it in.
+  let payback = "";
   if (totalSystemPrice != null && totalSystemPrice > 0 && yearlyNum > 0) {
     payback = `${(totalSystemPrice / yearlyNum).toFixed(1)} yrs`;
   }
