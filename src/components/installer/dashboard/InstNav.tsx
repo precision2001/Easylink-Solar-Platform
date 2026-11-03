@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePortalLogout } from "@/hooks/usePortalLogout";
+import { useAppSelector } from "@/lib/store/hooks";
+import { PREVIEW_SCREENS } from "@/components/installer/dashboard/previewScreens";
 
 /**
  * Installer sidebar, matching the Easylink Designer InstNav artboard: the
@@ -78,7 +80,6 @@ function buildGroups(elite: boolean): NavGroup[] {
           label: "AI assistant",
           icon: "spark",
           href: "/installers/dashboard/ai-assistant",
-          badge: "3",
         },
       ],
     },
@@ -91,9 +92,8 @@ function buildGroups(elite: boolean): NavGroup[] {
           label: "Customers",
           icon: "users",
           href: "/installers/dashboard/customers",
-          badge: "14",
         },
-        { key: "messages", label: "Messages", icon: "chat", href: "/installers/dashboard/messages", badge: "2" },
+        { key: "messages", label: "Messages", icon: "chat", href: "/installers/dashboard/messages" },
         {
           key: "pipeline",
           label: "Pipeline",
@@ -130,14 +130,12 @@ function buildGroups(elite: boolean): NavGroup[] {
           label: "Ready Sites",
           icon: "pin",
           href: "/installers/dashboard/ready-sites",
-          badge: "4",
         },
         {
           key: "deals",
           label: "Ready Deals",
           icon: "tag",
           href: "/installers/dashboard/ready-deals",
-          badge: "1",
         },
       ],
     },
@@ -148,15 +146,13 @@ function buildGroups(elite: boolean): NavGroup[] {
           key: "offers",
           label: "Job offers",
           icon: "inbox",
-          badge: "3",
           href: "/installers/dashboard/job-offers",
         },
-        { key: "jobs", label: "My jobs", icon: "box" },
+        { key: "jobs", label: "My jobs", icon: "box", href: "/installers/dashboard/jobs" },
         {
           key: "handover",
           label: "Handover packs",
           icon: "check",
-          badge: "1",
           href: "/installers/dashboard/handover-packs",
         },
         {
@@ -228,7 +224,7 @@ function buildGroups(elite: boolean): NavGroup[] {
         // locking the rows: nothing in Communication redirects to the plan page.
         { key: "cc", label: "Contact Centre", icon: "headset", href: "/installers/dashboard/contact-centre" },
         { key: "lists", label: "Contact lists", icon: "upload", href: "/installers/dashboard/contact-lists" },
-        { key: "cinbox", label: "Inbox · all channels", icon: "chat", href: "/installers/dashboard/inbox", badge: "5" },
+        { key: "cinbox", label: "Inbox · all channels", icon: "chat", href: "/installers/dashboard/inbox" },
         { key: "campaigns", label: "Campaigns & lists", icon: "mega", href: "/installers/dashboard/campaigns" },
         { key: "ai", label: "AI agents & numbers", icon: "spark", href: "/installers/dashboard/ai-agents" },
       ],
@@ -273,9 +269,13 @@ function GlitterIcon({ d, active }: { d: string; active?: boolean }) {
 type Props = {
   /** Omit to derive the highlighted row from the current route. */
   active?: string;
+  /** Membership tier, when known. Omitted = not shown (never guessed). */
   tier?: "starter" | "professional" | "elite";
+  /** Override the signed-in name; defaults to the installer session's user. */
   accountName?: string;
   personName?: string;
+  /** Called when a row is chosen — the phone drawer closes itself with it. */
+  onNavigate?: () => void;
 };
 
 /** Longest-prefix match so nested routes keep their section highlighted. */
@@ -288,6 +288,9 @@ const ROUTE_KEYS: [string, string][] = [
   ["/installers/dashboard/ready-sites", "ready"],
   ["/installers/dashboard/ready-deals", "deals"],
   ["/installers/dashboard/job-offers", "offers"],
+  ["/installers/dashboard/jobs", "jobs"],
+  ["/installers/dashboard/projects", "jobs"],
+  ["/installers/dashboard/account", "docs"],
   ["/installers/dashboard/handover-packs", "handover"],
   ["/installers/dashboard/payouts", "payouts"],
   ["/installers/dashboard/service-areas", "areas"],
@@ -328,16 +331,24 @@ const TIER_LABEL: Record<NonNullable<Props["tier"]>, { label: string; bg: string
 
 export function InstNav({
   active: activeProp,
-  tier = "elite",
-  accountName = "Solarman Pty Ltd",
-  personName = "Emmanuel · Owner",
+  tier,
+  accountName,
+  personName,
+  onNavigate,
 }: Props) {
   const pathname = usePathname();
   const active = activeProp ?? resolveActive(pathname);
   const { logout, pending } = usePortalLogout("installer");
-  const elite = tier === "elite";
+  const user = useAppSelector((st) => st.installerAuth.user);
+  const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+  const shownName = accountName ?? (fullName || user?.email || "Installer");
+  const shownPerson = personName ?? (fullName && user?.email ? user.email : undefined);
+  // Communication is an Elite feature. The group is tagged ELITE unless we
+  // know the installer is on a lower plan, when it reads UPGRADE. Rows stay
+  // open either way (see buildGroups).
+  const elite = tier === undefined || tier === "elite";
   const groups = buildGroups(elite);
-  const tierInfo = TIER_LABEL[tier];
+  const tierInfo = tier ? TIER_LABEL[tier] : null;
 
   return (
     <nav
@@ -347,6 +358,7 @@ export function InstNav({
     >
       <Link
         href="/installers/dashboard/home"
+        onClick={onNavigate}
         className="flex items-center gap-2.5 px-2.5 pb-2 pt-1 text-white no-underline"
       >
         <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] bg-[#F68A0A]">
@@ -373,7 +385,7 @@ export function InstNav({
         >
           Signed in as
         </span>
-        <span className="gt w-fit text-[14px] font-semibold text-white">{accountName}</span>
+        <span className="gt w-fit max-w-full truncate text-[14px] font-semibold text-white">{shownName}</span>
         <span className="flex flex-wrap gap-1.5">
           <span
             className="rounded-full px-2 py-0.5 text-[11px] font-bold"
@@ -381,26 +393,24 @@ export function InstNav({
           >
             Installer
           </span>
-          <span
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-            style={{ background: "#1B3557", color: "#C3CFDF" }}
-          >
-            {personName}
-          </span>
-          <Link
-            href="/installers/dashboard/plan"
-            className="rounded-full px-2 py-0.5 text-[11px] font-bold no-underline"
-            style={{ background: tierInfo.bg, color: tierInfo.fg }}
-          >
-            {tierInfo.label}
-          </Link>
-        </span>
-        <span
-          title="Switching between accounts isn't built yet"
-          className="w-fit cursor-default text-[12px] font-semibold"
-          style={{ color: "#FFB547" }}
-        >
-          Switch account
+          {shownPerson ? (
+            <span
+              className="max-w-full truncate rounded-full px-2 py-0.5 text-[11px] font-semibold"
+              style={{ background: "#1B3557", color: "#C3CFDF" }}
+            >
+              {shownPerson}
+            </span>
+          ) : null}
+          {tierInfo ? (
+            <Link
+              href="/installers/dashboard/plan"
+              onClick={onNavigate}
+              className="rounded-full px-2 py-0.5 text-[11px] font-bold no-underline"
+              style={{ background: tierInfo.bg, color: tierInfo.fg }}
+            >
+              {tierInfo.label}
+            </Link>
+          ) : null}
         </span>
       </div>
 
@@ -471,6 +481,7 @@ export function InstNav({
                   key={item.key}
                   href={item.href}
                   aria-current={isActive ? "page" : undefined}
+                  onClick={onNavigate}
                   className="flex min-h-9 items-center gap-2.5 rounded-[9px] px-2.5 text-[14px] no-underline"
                   style={
                     isActive
@@ -480,6 +491,15 @@ export function InstNav({
                 >
                   <GlitterIcon d={d} active={isActive} />
                   <span className="flex-grow">{item.label}</span>
+                  {PREVIEW_SCREENS[item.href] ? (
+                    <span
+                      title="Preview · sample data"
+                      className="rounded-full px-1.5 py-px text-[10px] font-semibold"
+                      style={{ background: "#2A4466", color: "#E6EDF7" }}
+                    >
+                      Preview
+                    </span>
+                  ) : null}
                   {badge}
                 </Link>
               );
@@ -488,18 +508,17 @@ export function InstNav({
         );
       })}
 
-      <div
-        className="mt-auto flex flex-col gap-1.5 rounded-xl p-3"
+      <Link
+        href="/installers/dashboard/messages"
+        onClick={onNavigate}
+        className="mt-auto flex flex-col gap-1 rounded-xl p-3 no-underline"
         style={{ background: "#13263F" }}
       >
         <span className="text-[12px]" style={{ color: "#9FB0C8" }}>
-          Installer line
+          Need help?
         </span>
-        <span className="text-[14px] font-semibold text-white">Ravi Bose · ext 207</span>
-        <span className="text-[12px]" style={{ color: "#7EE2A0" }}>
-          Available · Mon–Sat 7 am–6 pm
-        </span>
-      </div>
+        <span className="text-[14px] font-semibold text-white">Message EasyLink support</span>
+      </Link>
 
       <button
         type="button"
