@@ -572,7 +572,7 @@ export function LeadsWorkspace({
             </colgroup>
             <thead>
               <tr className="bg-[#F8FAFC] text-left text-[12px] text-[#5B6B80]">
-                {["Customer", "Stage", "Owner", "Next action", "Source", ""].map((h, i) => (
+                {["Customer", "Stage", "Sales owner", "Next action", "Source", ""].map((h, i) => (
                   <th key={i} scope="col" className={`border-b border-[#E3E8EF] py-2 font-semibold ${i === 0 ? "pl-5" : "px-2"}`}>
                     {h}
                   </th>
@@ -652,7 +652,7 @@ export function LeadsWorkspace({
                     <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
                       {editable ? (
                         <PillSelect
-                          label={`Owner for ${l.customerName}`}
+                          label={`Sales owner for ${l.customerName}`}
                           value={l.owner?.id ?? ""}
                           disabled={busy}
                           dashed={!l.owner}
@@ -667,7 +667,7 @@ export function LeadsWorkspace({
                             )
                           }
                         >
-                          <option value="">Assign owner</option>
+                          <option value="">Assign sales owner</option>
                           {meta.owners.map((o) => (
                             <option key={o.id} value={o.id}>
                               {personName(o)}

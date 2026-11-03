@@ -23,7 +23,8 @@ import {
 const RULES = [
   { s: "New lead", t: "Every new lead arrives with a first task: call them. It's due at the source's response target, counted in sales hours (Mon–Fri 8 am–6 pm, Sat 9 am–1 pm): design form 15 min, contact form 2 h, referral 4 h, anything else 1 day." },
   { s: "Next action", t: "Every open lead should always have one. Done completes it; + Next sets the following one. A lead with none, or with one past due, shows in red and in the Overdue view." },
-  { s: "Owner", t: "The EasyLink staff member responsible for the sale. Separate from the installer, who is set at dispatch." },
+  { s: "Sales owner", t: "The EasyLink staff member responsible for the sale. Not the installer: the installer is assigned in Dispatch once the deposit is paid." },
+  { s: "Site visit", t: "Setting a Site visit as the next action moves the lead to Appointment; marking the visit done moves it to Site assessment. Forward only." },
   { s: "Stage", t: "Move it here as the sale progresses. Installers' journey milestones (site visit scheduled, installation started, system live…) move it forward automatically." },
   { s: "Deposit paid", t: "The job appears in Dispatch. From Installing it shows in the installer's pipeline." },
   { s: "Lost", t: "Needs a reason, and cancels the lead's open tasks. Lost leads leave the working list; reopen them from the Lost view." },
