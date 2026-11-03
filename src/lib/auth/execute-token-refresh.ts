@@ -41,17 +41,35 @@ async function refreshOnce(refreshToken: string): Promise<TokenRefreshResult> {
  * Deduplicates concurrent refresh calls that share the same refresh token
  * (e.g. middleware and BFF refresh routes racing after token rotation).
  */
+/**
+ * The backend rotates the refresh token on every use, so a request that
+ * arrives with the old cookie just after another one renewed it would be
+ * refused. Keep a successful result for a short while and hand it to those.
+ */
+const RECENT_MS = 30_000;
+const recent = new Map<string, { at: number; result: TokenRefreshResult }>();
+
 export async function executeTokenRefresh(
   refreshToken: string,
 ): Promise<TokenRefreshResult> {
+  const now = Date.now();
+  for (const [key, entry] of recent) if (now - entry.at > RECENT_MS) recent.delete(key);
+  const cached = recent.get(refreshToken);
+  if (cached) return cached.result;
+
   const existing = refreshInFlight.get(refreshToken);
   if (existing) {
     return existing;
   }
 
-  const promise = refreshOnce(refreshToken).finally(() => {
-    refreshInFlight.delete(refreshToken);
-  });
+  const promise = refreshOnce(refreshToken)
+    .then((result) => {
+      if (result.ok) recent.set(refreshToken, { at: Date.now(), result });
+      return result;
+    })
+    .finally(() => {
+      refreshInFlight.delete(refreshToken);
+    });
 
   refreshInFlight.set(refreshToken, promise);
   return promise;
