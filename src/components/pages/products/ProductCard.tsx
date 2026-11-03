@@ -10,6 +10,7 @@ import { createProductCheckout } from "@/lib/customers/payments";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import {
   fetchAfterpayConfig,
+  fetchZipConfig,
   isAfterpayPayable,
   type AfterpayConfig,
 } from "@/lib/public/afterpayConfig";
@@ -63,10 +64,14 @@ export function ProductCard({
   // so showing the button unconditionally would mostly promise a checkout
   // Afterpay refuses after the redirect.
   const [afterpay, setAfterpay] = useState<AfterpayConfig | null>(null);
+  const [zip, setZip] = useState<AfterpayConfig | null>(null);
   useEffect(() => {
     let active = true;
     void fetchAfterpayConfig().then((c) => {
       if (active) setAfterpay(c);
+    });
+    void fetchZipConfig().then((c) => {
+      if (active) setZip(c);
     });
     return () => {
       active = false;
@@ -75,6 +80,7 @@ export function ProductCard({
 
   const totalMinor = Math.round(product.price * 100) * quantity;
   const afterpayAvailable = inStock && isAfterpayPayable(afterpay, totalMinor);
+  const zipAvailable = inStock && isAfterpayPayable(zip, totalMinor);
 
   // Card purchases go through the cart (several products, one warehouse);
   // "Pay in 4" stays a single-product Afterpay checkout.
@@ -282,6 +288,9 @@ export function ProductCard({
             ) : null}
           </div>
         </div>
+        {zipAvailable ? (
+          <p className="mt-2 font-dm-sans text-[11px] text-warm-gray">Zip available at checkout. T&amp;Cs apply.</p>
+        ) : null}
       </div>
     </article>
   );

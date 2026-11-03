@@ -10,6 +10,7 @@ export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "CANCELLED" | "REFUN
 
 export type CustomerPayment = {
   id: string;
+  provider: string;
   installerId: string | null;
   customerId: string | null;
   status: PaymentStatus;
@@ -20,7 +21,7 @@ export type CustomerPayment = {
   description: string;
   customerEmail: string;
   customerName: string;
-  stripeSessionId: string;
+  stripeSessionId: string | null;
   stripePaymentIntentId: string | null;
   receiptUrl: string | null;
   failureMessage: string | null;

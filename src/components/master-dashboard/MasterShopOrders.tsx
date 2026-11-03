@@ -99,7 +99,7 @@ export function MasterShopOrders() {
         <div>
           <h1 className="text-[22px] font-bold">Orders</h1>
           <p className="text-[13px] text-[#64748B]">
-            Cart orders from the website, customer portal and installer portal — paid by card through Stripe.
+            Cart orders from the website, customer portal and installer portal — paid by card, Afterpay or Zip.
           </p>
         </div>
         <div className="flex gap-1 rounded-lg bg-white p-1 shadow-sm">
@@ -270,6 +270,12 @@ export function MasterShopOrders() {
                                 ) : null}
                                 {o.notes ? <p><span className="text-[#64748B]">Notes </span>{o.notes}</p> : null}
                                 {o.paidAt ? <p><span className="text-[#64748B]">Paid </span>{new Date(o.paidAt).toLocaleString("en-AU")}</p> : null}
+                                {o.payment ? (
+                                  <span className="mr-2 text-warm-gray">
+                                    Paid with {o.payment.provider === "stripe" ? "card" : o.payment.provider === "zip" ? "Zip" : "Afterpay"}
+                                    {o.payment.zipReceiptNumber ? ` · Receipt ${o.payment.zipReceiptNumber}` : ""}
+                                  </span>
+                                ) : null}
                                 {o.payment?.receiptUrl ? (
                                   <a href={o.payment.receiptUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#1E40AF] hover:underline">
                                     Stripe receipt

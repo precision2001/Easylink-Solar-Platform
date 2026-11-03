@@ -17,7 +17,7 @@ function formatAmount(payment: { amount: number; currency: string }): string {
 }
 
 /**
- * Stripe sends the customer back to /products with `?payment=...`.
+ * Stripe or Afterpay sends the customer back to /products with `?payment=...`.
  * We surface the outcome, then strip the params so a refresh does not re-toast.
  */
 export function CustomerPaymentReturnNotice() {
@@ -68,7 +68,7 @@ export function CustomerPaymentReturnNotice() {
         if (payment.status === "PAID") {
           toast.success(`Order confirmed — ${formatAmount(payment)} paid.`);
         } else if (payment.status === "PENDING") {
-          toast.info("Checkout finished — Stripe is still confirming this payment.");
+          toast.info("Checkout finished — this payment is still being confirmed.");
         } else {
           toast.error(
             payment.failureMessage ?? `Payment ${payment.status.toLowerCase()}.`,

@@ -17,6 +17,7 @@ import {
   startCheckout,
   type AuState,
   type BuyerSession,
+  type CartPaymentMethod,
   type CartQuote,
   type Fulfilment,
   type Warehouse,
@@ -81,12 +82,16 @@ export function CartCheckoutPage() {
   const [state, setState] = useState<AuState | "">("");
   const [postcode, setPostcode] = useState("");
   const [notes, setNotes] = useState("");
+  const [payMethod, setPayMethod] = useState<CartPaymentMethod>("card");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Returned from Stripe without paying.
+  // Returned from the payment provider without paying.
   useEffect(() => {
-    if (searchParams.get("payment") === "cancelled") {
+    const outcome = searchParams.get("payment");
+    if (outcome === "cancelled") {
       toast.info("Payment cancelled — your cart is still here.");
+    } else if (outcome === "failed") {
+      toast.error("That payment didn't go through. Your cart is still here, so you can try another way to pay.");
     }
   }, [searchParams]);
 
@@ -147,6 +152,23 @@ export function CartCheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on cart contents
   }, [linesKey, warehouseId, fulfilment]);
 
+  // Afterpay and Zip are consumer credit, so installer accounts pay by card.
+  const isCustomer = session?.portal !== "installer";
+  const afterpayOption = isCustomer ? quote?.paymentOptions?.afterpay : undefined;
+  const zipOption = isCustomer ? quote?.paymentOptions?.zip : undefined;
+  const methodAvailable =
+    payMethod === "card" || (payMethod === "afterpay" ? afterpayOption?.available : zipOption?.available);
+  // A changed cart can move the total outside a provider's range.
+  const activeMethod: CartPaymentMethod = methodAvailable ? payMethod : "card";
+  const zipChosen = activeMethod === "zip";
+  const needsAddress = fulfilment === "DELIVERY" || zipChosen;
+  const payOptions: { id: CartPaymentMethod; title: string; sub: string }[] = [
+    { id: "card", title: "Card", sub: "Pay in full by card" },
+    ...(afterpayOption?.available ? [{ id: "afterpay" as const, title: "Afterpay", sub: "Pay in 4 instalments" }] : []),
+    ...(zipOption?.available ? [{ id: "zip" as const, title: "Zip", sub: "Interest-free terms available" }] : []),
+  ];
+  const providerName = activeMethod === "afterpay" ? "Afterpay" : activeMethod === "zip" ? "Zip" : "Stripe";
+
   const selected = warehouses.find((w) => w.id === warehouseId);
   const suggested = fulfilment === "DELIVERY" ? nearestWarehouse(warehouses, state || null) : undefined;
   const unavailable = useMemo(() => new Set(quote?.unavailable ?? []), [quote]);
@@ -162,7 +184,8 @@ export function CartCheckoutPage() {
     const e: Record<string, string> = {};
     if (!contactName.trim()) e.contactName = "Enter your name";
     if (!/^\S+@\S+\.\S+$/.test(contactEmail.trim())) e.contactEmail = "Enter a valid email";
-    if (fulfilment === "DELIVERY") {
+    if (zipChosen && !contactPhone.trim()) e.contactPhone = "Zip needs your mobile number";
+    if (needsAddress) {
       if (!addressLine1.trim()) e.addressLine1 = "Enter the street address";
       if (!suburb.trim()) e.suburb = "Enter the suburb";
       if (!state) e.state = "Choose a state";
@@ -190,7 +213,8 @@ export function CartCheckoutPage() {
         contactName: contactName.trim(),
         contactEmail: contactEmail.trim(),
         contactPhone: contactPhone.trim() || undefined,
-        ...(fulfilment === "DELIVERY"
+        paymentMethod: activeMethod,
+        ...(needsAddress
           ? {
               addressLine1: addressLine1.trim(),
               addressLine2: addressLine2.trim() || undefined,
@@ -201,7 +225,7 @@ export function CartCheckoutPage() {
           : {}),
         notes: notes.trim() || undefined,
       });
-      toast.info("Redirecting to Stripe secure checkout…");
+      toast.info(`Redirecting to ${providerName}…`);
       window.location.assign(checkoutUrl);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not start checkout");
@@ -318,10 +342,13 @@ export function CartCheckoutPage() {
             ))}
           </div>
 
-          {fulfilment === "DELIVERY" ? (
+          {needsAddress ? (
             <div className="mb-4 grid gap-3 sm:grid-cols-2">
+              {fulfilment === "PICKUP" ? (
+                <p className="font-dm-sans text-[12px] text-warm-gray sm:col-span-2">Zip needs your billing address, even for a pickup.</p>
+              ) : null}
               <div className="sm:col-span-2">
-                <label className={LABEL} htmlFor="co-line1">Street address</label>
+                <label className={LABEL} htmlFor="co-line1">{fulfilment === "PICKUP" ? "Billing address" : "Street address"}</label>
                 <input id="co-line1" className={INPUT} value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} autoComplete="address-line1" />
                 {errors.addressLine1 ? <p className="mt-1 text-[11px] text-danger">{errors.addressLine1}</p> : null}
               </div>
@@ -411,8 +438,9 @@ export function CartCheckoutPage() {
               {errors.contactName ? <p className="mt-1 text-[11px] text-danger">{errors.contactName}</p> : null}
             </div>
             <div>
-              <label className={LABEL} htmlFor="co-phone">Mobile (optional)</label>
+              <label className={LABEL} htmlFor="co-phone">Mobile{zipChosen ? "" : " (optional)"}</label>
               <input id="co-phone" className={INPUT} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} autoComplete="tel" inputMode="tel" />
+              {errors.contactPhone ? <p className="mt-1 text-[11px] text-danger">{errors.contactPhone}</p> : null}
             </div>
             <div className="sm:col-span-2">
               <label className={LABEL} htmlFor="co-email">Email for the receipt</label>
@@ -432,6 +460,38 @@ export function CartCheckoutPage() {
               />
             </div>
           </div>
+        </Section>
+
+        <Section step={4} title="Payment method">
+          <div role="radiogroup" aria-label="Payment method" className="grid gap-2 sm:grid-cols-3">
+            {payOptions.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                role="radio"
+                aria-checked={activeMethod === o.id}
+                onClick={() => setPayMethod(o.id)}
+                className={`rounded-xl border p-3 text-left transition ${
+                  activeMethod === o.id ? "border-brand-blue bg-sky-wash/40 ring-2 ring-brand-blue/30" : "border-warm-border hover:bg-cream-50"
+                }`}
+              >
+                <span className="block font-inter text-[14px] font-bold text-warm-ink">{o.title}</span>
+                <span className="block font-dm-sans text-[12px] text-warm-gray">{o.sub}</span>
+              </button>
+            ))}
+          </div>
+          {!isCustomer ? (
+            <p className="mt-2 font-dm-sans text-[12px] text-warm-gray">Installer accounts pay by card.</p>
+          ) : payOptions.length < 3 && quote?.paymentOptions ? (
+            <p className="mt-2 font-dm-sans text-[12px] text-warm-gray">
+              Available options depend on your order total.
+            </p>
+          ) : null}
+          {activeMethod !== "card" ? (
+            <p className="mt-2 font-dm-sans text-[12px] leading-[17px] text-warm-gray">
+              {providerName} checks your eligibility and sets your repayments. Fees and T&amp;Cs apply. Your order is confirmed once {providerName} approves it.
+            </p>
+          ) : null}
         </Section>
       </div>
 
@@ -483,10 +543,10 @@ export function CartCheckoutPage() {
                   {submitting ? (
                     <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
                   ) : null}
-                  {quote ? `Pay ${money(quote.total)}` : "Pay"}
+                  {!quote ? "Pay" : activeMethod === "card" ? `Pay ${money(quote.total)}` : `Continue to ${providerName}`}
                 </button>
                 <p className="mt-2 text-center font-dm-sans text-[11px] text-warm-gray">
-                  Secure payment by Stripe. You&apos;ll get an email receipt.
+                  Secure payment by {providerName}. You&apos;ll get an email confirmation.
                 </p>
               </>
             ) : (
