@@ -164,9 +164,12 @@ export function CartCheckoutPage() {
   const needsAddress = fulfilment === "DELIVERY" || zipChosen;
   const payOptions: { id: CartPaymentMethod; title: string; sub: string }[] = [
     { id: "card", title: "Card", sub: "Pay in full by card" },
-    ...(afterpayOption?.available ? [{ id: "afterpay" as const, title: "Afterpay", sub: "Pay in 4 instalments" }] : []),
-    ...(zipOption?.available ? [{ id: "zip" as const, title: "Zip", sub: "Interest-free terms available" }] : []),
+    ...(afterpayOption?.available ? [{ id: "afterpay" as const, title: "Afterpay", sub: `Pay in 4 instalments · ${money(afterpayOption.total)} total` }] : []),
+    ...(zipOption?.available ? [{ id: "zip" as const, title: "Zip", sub: `Interest-free terms · ${money(zipOption.total)} total` }] : []),
   ];
+  const activeOption = activeMethod === "afterpay" ? afterpayOption : activeMethod === "zip" ? zipOption : undefined;
+  const paymentFee = activeOption?.fee ?? 0;
+  const payableTotal = activeOption?.total ?? quote?.total ?? 0;
   const providerName = activeMethod === "afterpay" ? "Afterpay" : activeMethod === "zip" ? "Zip" : "Stripe";
 
   const selected = warehouses.find((w) => w.id === warehouseId);
@@ -489,6 +492,7 @@ export function CartCheckoutPage() {
           ) : null}
           {activeMethod !== "card" ? (
             <p className="mt-2 font-dm-sans text-[12px] leading-[17px] text-warm-gray">
+              {paymentFee > 0 ? `Paying with ${providerName} adds a ${money(paymentFee)} payment fee to this order. ` : ""}
               {providerName} checks your eligibility and sets your repayments. Fees and T&amp;Cs apply. Your order is confirmed once {providerName} approves it.
             </p>
           ) : null}
@@ -512,9 +516,15 @@ export function CartCheckoutPage() {
                 {!quote ? "—" : quote.deliveryFee > 0 ? money(quote.deliveryFee) : fulfilment === "PICKUP" ? "Free" : "Included"}
               </dd>
             </div>
+            {paymentFee > 0 ? (
+              <div className="flex justify-between">
+                <dt className="text-warm-gray">{providerName} payment fee</dt>
+                <dd className="font-semibold text-warm-ink">{money(paymentFee)}</dd>
+              </div>
+            ) : null}
             <div className="flex justify-between border-t border-warm-border pt-3">
               <dt className="font-inter text-[15px] font-bold text-warm-ink">Total (incl. GST)</dt>
-              <dd className="font-inter text-[20px] font-bold text-warm-ink">{quote ? money(quote.total) : "—"}</dd>
+              <dd className="font-inter text-[20px] font-bold text-warm-ink">{quote ? money(payableTotal) : "—"}</dd>
             </div>
           </dl>
           {quoteError ? <p className="mt-2 text-[12px] text-danger">{quoteError}</p> : null}

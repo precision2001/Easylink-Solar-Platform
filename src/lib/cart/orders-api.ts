@@ -33,7 +33,14 @@ export type Warehouse = {
   sortOrder: number;
 };
 
-export type BnplOption = { available: boolean; min: number | null; max: number | null };
+export type BnplOption = {
+  available: boolean;
+  min: number | null;
+  max: number | null;
+  /** The provider fee the buyer covers, and the total including it. */
+  fee: number;
+  total: number;
+};
 export type CartPaymentMethod = "card" | "afterpay" | "zip";
 
 export type CartQuote = {
@@ -74,6 +81,7 @@ export type Order = {
   currency: string;
   subtotal: number;
   deliveryFee: number;
+  paymentFee?: number;
   total: number;
   items: {
     id: string;
