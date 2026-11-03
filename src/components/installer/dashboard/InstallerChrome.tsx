@@ -8,6 +8,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { CartButton } from "@/components/cart/CartButton";
 import { DashboardNotificationBell } from "@/components/dashboard/DashboardNotificationBell";
 import { InstNav } from "@/components/installer/dashboard/InstNav";
+import { previewNoticeFor } from "@/components/installer/dashboard/previewScreens";
 
 /**
  * The installer portal's one navigation: the InstNav sidebar on large screens
@@ -26,6 +27,7 @@ export function useInsideInstallerChrome(): boolean {
 
 export function InstallerChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const preview = previewNoticeFor(pathname);
   const [open, setOpen] = useState(false);
   const [openedAt, setOpenedAt] = useState(pathname);
 
@@ -125,6 +127,17 @@ export function InstallerChrome({ children }: { children: React.ReactNode }) {
             <CartButton />
             <DashboardNotificationBell mode="installer" />
           </header>
+          {preview ? (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-[#F6D58A] bg-[#FEF3C7] px-4 py-2.5 text-[13px] leading-[1.45] text-[#78350F] lg:px-6"
+            >
+              <span className="rounded-full bg-[#92400E] px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-white">
+                Preview · sample data
+              </span>
+              <span className="min-w-0 flex-[1_1_320px]">{preview}</span>
+            </div>
+          ) : null}
           <div className="min-w-0 flex-1">{children}</div>
         </div>
       </div>

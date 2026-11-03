@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePortalLogout } from "@/hooks/usePortalLogout";
 import { useAppSelector } from "@/lib/store/hooks";
+import { PREVIEW_SCREENS } from "@/components/installer/dashboard/previewScreens";
 
 /**
  * Installer sidebar, matching the Easylink Designer InstNav artboard: the
@@ -490,6 +491,15 @@ export function InstNav({
                 >
                   <GlitterIcon d={d} active={isActive} />
                   <span className="flex-grow">{item.label}</span>
+                  {PREVIEW_SCREENS[item.href] ? (
+                    <span
+                      title="Preview · sample data"
+                      className="rounded-full px-1.5 py-px text-[10px] font-semibold"
+                      style={{ background: "#2A4466", color: "#E6EDF7" }}
+                    >
+                      Preview
+                    </span>
+                  ) : null}
                   {badge}
                 </Link>
               );
