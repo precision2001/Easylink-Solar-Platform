@@ -6,6 +6,8 @@
  * render "N/A" or "—" from that — nothing here invents a default, because a
  * fabricated spec is indistinguishable from a real one once it reaches the UI.
  */
+import { dcAcLimitLabel, dcAcLimitPercent } from "@/lib/designer/designRules";
+
 export const NOT_AVAILABLE = "N/A";
 export const NO_VALUE = "—";
 
@@ -149,11 +151,24 @@ export function systemSizeKwFrom(
   return (count * wattage) / 1000;
 }
 
-/** STC rules stop crediting a system once panel DC exceeds this much of inverter AC. */
-export const STC_PANEL_INVERTER_LIMIT_PCT = 133;
+/**
+ * Panel DC to inverter AC limit for a standard (non-hybrid) inverter with no
+ * battery. Hybrid inverters and any battery allow more — see
+ * `dcAcLimitPercent` in `@/lib/designer/designRules`, the single source of
+ * the EasyLink rule (200% hybrid / battery, 133% otherwise) the designer,
+ * pricing engine and marketplace already use.
+ */
+export const STC_PANEL_INVERTER_LIMIT_PCT = dcAcLimitPercent(false);
+
+/** True when the inverter's catalogue type says it is a hybrid. */
+export function isHybridInverter(item: SpecLineItem): boolean {
+  return (productType(item) ?? "").toLowerCase().includes("hybrid");
+}
 
 export type PanelInverterRatio = {
   pct: number;
+  /** The limit this design is judged against: 200% hybrid / battery, else 133%. */
+  limitPct: number;
   overLimit: boolean;
   /** Largest panel count that still sits inside the limit. */
   maxPanels: number;
@@ -161,33 +176,38 @@ export type PanelInverterRatio = {
 };
 
 /**
- * Panel-to-inverter ratio against the STC limit. Oversizing panels past it
- * costs the customer their rebate, so the design card warns before a quote
- * goes out. Returns undefined when either side is unknown — an assumed
- * wattage or inverter rating would give a confidently wrong verdict.
+ * Panel-to-inverter ratio against the EasyLink sizing rule: up to 200% with a
+ * hybrid inverter (battery optional) or any battery, 133% for a standard
+ * inverter with no battery. Oversizing past it costs the customer their
+ * rebate, so the design card warns before a quote goes out. Returns undefined
+ * when either side is unknown — an assumed wattage or inverter rating would
+ * give a confidently wrong verdict.
  */
 export function panelInverterRatio(
   panelItem: SpecLineItem,
   inverterItem: SpecLineItem,
   panelCount: number | null | undefined,
+  hasBattery = false,
 ): PanelInverterRatio | undefined {
   const panelKw = systemSizeKwFrom(panelItem, panelCount);
   const inverterKw = inverterRatedKw(inverterItem);
   const wattage = panelItem?.product?.wattage;
   if (!panelKw || !inverterKw || !wattage) return undefined;
 
+  const hybridOrBattery = hasBattery || isHybridInverter(inverterItem);
+  const limitPct = dcAcLimitPercent(hybridOrBattery);
+  const label = dcAcLimitLabel(hybridOrBattery);
   const pct = Math.round((panelKw / inverterKw) * 100);
-  const overLimit = pct > STC_PANEL_INVERTER_LIMIT_PCT;
-  const maxPanels = Math.floor(
-    (inverterKw * (STC_PANEL_INVERTER_LIMIT_PCT / 100) * 1000) / wattage,
-  );
+  const overLimit = pct > limitPct;
+  const maxPanels = Math.floor((inverterKw * (limitPct / 100) * 1000) / wattage);
 
   return {
     pct,
+    limitPct,
     overLimit,
     maxPanels,
     message: overLimit
-      ? `Panels are ${pct}% of inverter size. STC rules allow up to ${STC_PANEL_INVERTER_LIMIT_PCT}%, so reduce to ${maxPanels} panels or use a larger inverter.`
-      : `Panel-to-inverter ratio is within the ${STC_PANEL_INVERTER_LIMIT_PCT}% STC limit.`,
+      ? `Panels are ${pct}% of inverter size, over the ${label}, so reduce to ${maxPanels} panels or use a larger inverter.`
+      : `Panel-to-inverter ratio is within the ${label}.`,
   };
 }

@@ -89,7 +89,8 @@ export function InstallerCustomerWorkspace() {
 
   const panelItem = productsByCategory(design?.products, "panel")[0];
   const inverterItem = productsByCategory(design?.products, "inverter")[0];
-  const ratio = panelInverterRatio(panelItem, inverterItem, design?.panelCount);
+  const hasBattery = productsByCategory(design?.products, "batter").length > 0;
+  const ratio = panelInverterRatio(panelItem, inverterItem, design?.panelCount, hasBattery);
 
   const equipment = useMemo(
     () =>
@@ -246,7 +247,7 @@ export function InstallerCustomerWorkspace() {
                       />
                       <SpecRow
                         label="Panel : inverter"
-                        value={ratio ? `${ratio.pct}%` : "-"}
+                        value={ratio ? `${ratio.pct}% of ${ratio.limitPct}%` : "-"}
                       />
                     </div>
                   </div>
