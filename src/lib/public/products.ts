@@ -1,5 +1,4 @@
 import type {
-  DesignSummaryItem,
   SolarProduct,
   SolarProductCategory,
 } from "@/components/customer/products/types";
@@ -284,24 +283,6 @@ export async function fetchCatalogProducts(params: {
     totalPages: pagination?.totalPages ?? 1,
     page: pagination?.page ?? params.page ?? 1,
   };
-}
-
-const CUSTOMER_CATEGORY_LABEL: Record<SolarProductCategory, string> = {
-  panel: "Panel",
-  inverter: "Inverter",
-  battery: "Battery",
-  "ev-charger": "EV charger",
-  "heat-pump": "Heat pump",
-  "portable-power": "Portable power",
-};
-
-export function selectedDesignProductsFromCatalog(products: SolarProduct[]): DesignSummaryItem[] {
-  return products.slice(0, 2).map((product) => ({
-    id: product.id,
-    name: product.name,
-    detail: CUSTOMER_CATEGORY_LABEL[product.category],
-    icon: product.category === "panel" ? "sun" : "cpu",
-  }));
 }
 
 // ---------------------------------------------------------------------------

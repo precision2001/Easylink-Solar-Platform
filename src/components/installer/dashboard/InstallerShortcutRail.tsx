@@ -20,7 +20,6 @@ import type { InstallerAppointment } from "@/lib/installers/appointments";
 import type { InstallerNote } from "@/lib/installers/notes";
 import type { InstallerTask } from "@/lib/installers/tasks";
 import type { InstallerTag } from "@/lib/installers/tags";
-import { INSTALLER_HOME_PROFILE } from "@/components/installer/home-dashboard/installerHomeMock";
 import {
   IconCheckSquare,
   IconPanelTag,
@@ -223,9 +222,12 @@ function ShortcutIconWordMark({ className }: { className?: string }) {
 function SolarDesignerAutoFetchModal({
   open,
   onClose,
+  customerName,
 }: {
   open: boolean;
   onClose: () => void;
+  /** The selected customer's name; the line is hidden when none is selected. */
+  customerName: string | null;
 }) {
   const [installationAddress, setInstallationAddress] = useState("");
 
@@ -308,15 +310,18 @@ function SolarDesignerAutoFetchModal({
         </div>
 
         <div className="flex flex-col gap-4 px-5 pb-5 pt-4">
-          <p className="font-dm-sans text-[12px] leading-[18px] text-warm-gray">
-            <span>Customer: </span>
-            <span
-              className="font-bold text-warm-ink"
-              style={{ fontVariationSettings: "'opsz' 14" }}
-            >
-              {INSTALLER_HOME_PROFILE.name}
-            </span>
-          </p>
+          {customerName ? (
+            <p className="font-dm-sans text-[12px] leading-[18px] text-warm-gray">
+              <span>Customer: </span>
+              <span
+                className="font-bold text-warm-ink"
+                style={{ fontVariationSettings: "'opsz' 14" }}
+                data-clarity-mask="true"
+              >
+                {customerName}
+              </span>
+            </p>
+          ) : null}
 
           <div className="flex flex-col gap-[6px]">
             <label
@@ -509,6 +514,14 @@ export const InstallerShortcutRail = memo(function InstallerShortcutRail({
       <SolarDesignerAutoFetchModal
         open={solarDesignerModalOpen}
         onClose={() => setSolarDesignerModalOpen(false)}
+        customerName={
+          selectedCustomer
+            ? [selectedCustomer.firstName, selectedCustomer.lastName]
+                .map((part) => part?.trim())
+                .filter(Boolean)
+                .join(" ") || null
+            : null
+        }
       />
       <InstallerCustomerImportModal
         open={importModalOpen}

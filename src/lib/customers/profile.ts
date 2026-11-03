@@ -102,6 +102,7 @@ export type CustomerAuthProfile = {
   role: string;
   emailVerified: boolean;
   phone?: string | null;
+  createdAt?: string | null;
 };
 
 /**
@@ -133,4 +134,21 @@ export async function updateCustomerProfile(
     throw new Error(json.message || "Could not save your contact details");
   }
   return json.data;
+}
+
+/**
+ * "2026-01-15T03:12:00.000Z" → "15 Jan 2026" in Sydney time. Returns null for
+ * a missing or unparseable value so the caller can hide the row rather than
+ * show a placeholder date.
+ */
+export function formatAccountDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Australia/Sydney",
+  }).format(date);
 }

@@ -11,6 +11,8 @@ export type CustomerUser = {
   address: string | null;
   role: string;
   emailVerified: boolean;
+  /** ISO timestamp. Only `GET /users/me` returns it; the sign-in payload does not. */
+  createdAt?: string | null;
 };
 
 export type CustomerAuthState = {

@@ -104,7 +104,9 @@ export function PipelineOperationalHealth({
             </h3>
           </div>
           <div className="space-y-4 p-4">
-            <div className="grid grid-cols-2 gap-2">
+            {/* Rework rate is left out: the backend reports lost leads as
+                "rework", which is not what the label claims. */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <InstallMetricCard
                 label="Avg. Install Time"
                 value={operational.installTime}
@@ -114,11 +116,6 @@ export function PipelineOperationalHealth({
                 label="First-Time Fix Rate"
                 value={operational.firstFix}
                 delta={operational.firstFixDelta}
-              />
-              <InstallMetricCard
-                label="Rework Rate"
-                value={operational.rework}
-                delta={operational.reworkDelta}
               />
               <InstallMetricCard
                 label="Crew Utilisation"
@@ -135,71 +132,9 @@ export function PipelineOperationalHealth({
       </div>
 
       <div className="space-y-4">
-        <section className="overflow-hidden rounded-[10px] border border-warm-border bg-cream-50 shadow-sm">
-          <div className="flex min-h-[42px] items-center gap-2 border-l-2 border-yellow-lemon bg-linear-to-b from-amber-hot/15 to-transparent pl-[18px] pr-4">
-            <span className="font-dm-sans text-[14px] text-warm-ink">☺</span>
-            <h3 className="font-inter text-[12px] font-bold uppercase leading-[18px] tracking-[0.3px] text-warm-ink">
-              Customer Satisfaction
-            </h3>
-          </div>
-          <div className="space-y-4 p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="flex size-[52px] shrink-0 items-center justify-center rounded-full bg-linear-to-b from-yellow-lemon to-orange-amber">
-                  <span className="font-dm-sans text-[28px] leading-none text-warm-ink">
-                    ☺
-                  </span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-inter text-[40px] font-bold leading-[28px] text-warm-ink">
-                      {businessHealth.nps}
-                    </span>
-                    <span className="font-dm-sans text-[11px] font-normal uppercase tracking-[0.3px] text-warm-gray">
-                      {businessHealth.npsLabel}
-                    </span>
-                  </div>
-                  <p className="mt-1 font-dm-sans text-[11px] font-normal leading-[16px] text-warm-gray">
-                    {businessHealth.industryAvg}
-                  </p>
-                </div>
-              </div>
-              <p className="font-dm-sans text-[24px] font-semibold leading-[18px] text-success">
-                ↗{" "}
-                <span className="text-[12px]">{businessHealth.npsDelta}</span>
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-warm-border bg-white px-3 py-3">
-                <p className="font-dm-sans text-[10px] font-normal uppercase tracking-[0.3px] text-warm-gray">
-                  ◉ CSAT Score
-                </p>
-                <div className="mt-1 flex items-center gap-2">
-                  <p className="font-inter text-[20px] font-bold leading-[30px] text-warm-ink">
-                    {businessHealth.csat}
-                  </p>
-                  <span className="font-dm-sans text-[10px] font-semibold leading-[15px] text-success">
-                    ↗ {businessHealth.csatDelta}
-                  </span>
-                </div>
-              </div>
-              <div className="rounded-lg border border-warm-border bg-white px-3 py-3">
-                <p className="font-dm-sans text-[10px] font-normal uppercase tracking-[0.3px] text-warm-gray">
-                  ⭐ Google Reviews
-                </p>
-                <div className="mt-1 flex items-end gap-2">
-                  <p className="font-inter text-[20px] font-bold leading-[30px] text-warm-ink">
-                    {businessHealth.reviews}
-                  </p>
-                  <span className="pb-0.5 font-dm-sans text-[10px] font-normal leading-[15px] text-warm-gray">
-                    {businessHealth.reviewsSuffix}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
+        {/* No customer satisfaction panel: the backend's NPS, CSAT, star
+            rating and review count are formulas of the win rate, not survey
+            or review data, so they are not shown until a real source exists. */}
         <section className="overflow-hidden rounded-[10px] border border-warm-border bg-cream-50 shadow-sm">
           <div className="flex min-h-[42px] items-center gap-2 border-l-2 border-yellow-lemon bg-linear-to-b from-amber-hot/15 to-transparent pl-[18px] pr-4">
             <span className="font-dm-sans text-[14px] text-warm-ink">$</span>
