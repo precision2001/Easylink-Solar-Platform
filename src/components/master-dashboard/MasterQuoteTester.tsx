@@ -93,12 +93,16 @@ const SAVE_TARGETS: Record<QuoteRole, string[]> = {
  * trade prices. The mock keeps these with the installer, not the price book,
  * because EasyLink does not set them.
  */
-const INSTALLER_RATES = { margin: 20, jobFixed: 1100 };
+const INSTALLER_RATES = { margin: 20 };
 
 /**
- * The price book as an installer buys it: supply at trade price, their margin,
- * their fixed job charge. Install rates stay at the book's defaults until
- * "My rates & margin" can override them per item.
+ * The price book as an installer buys it: supply at trade price and their own
+ * margin on it. Install rates stay at the book's defaults until "My rates &
+ * margin" can override them per item.
+ *
+ * Only the fields the quote engine actually reads are overridden. Settings has
+ * no per-job fixed charge, so one isn't invented here: a figure the engine
+ * ignores would still surface in the margin tile and make the totals wrong.
  */
 function installerPriceBook(pb: PriceBook): PriceBook {
   const trade = (cost: number) => tradePrice(cost, pb.settings);
@@ -107,7 +111,6 @@ function installerPriceBook(pb: PriceBook): PriceBook {
     settings: {
       ...pb.settings,
       margin: INSTALLER_RATES.margin,
-      jobFixed: INSTALLER_RATES.jobFixed,
     },
     panels: pb.panels.map((x) => ({ ...x, supply: trade(x.supply) })),
     inverters: pb.inverters.map((x) => ({ ...x, supply: trade(x.supply) })),
