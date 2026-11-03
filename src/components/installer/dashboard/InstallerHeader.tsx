@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
+import { useInsideInstallerChrome } from "@/components/installer/dashboard/InstallerChrome";
 import { DashboardNotificationBell } from "@/components/dashboard/DashboardNotificationBell";
 import { CartButton } from "@/components/cart/CartButton";
 import Icon from "@/components/ui/Icons";
@@ -96,6 +97,25 @@ export function InstallerHeader({
   const activeNav = resolveActiveNav(pathname, activeNavProp);
   const { logout, pending } = usePortalLogout("installer");
   const mobileNavRef = useRef<HTMLDetailsElement>(null);
+  const insideChrome = useInsideInstallerChrome();
+
+  // The installer dashboard layout already draws the sidebar (large screens)
+  // and the top bar + menu (phones), so this header would only duplicate them.
+  // Pages that open a customers panel keep that one button on small screens.
+  if (insideChrome) {
+    return onMenuClick ? (
+      <div className="flex shrink-0 items-center px-4 pt-3 md:hidden">
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="flex min-h-11 items-center gap-2 rounded-[10px] border border-warm-border bg-white px-3 font-inter text-[14px] font-semibold text-warm-ink"
+        >
+          <Icon name="Users" className="size-5 text-warm-ink" />
+          Customers
+        </button>
+      </div>
+    ) : null;
+  }
 
   return (
     <header className="sticky top-0 z-30 shrink-0 border-b border-warm-border bg-cream-50">
