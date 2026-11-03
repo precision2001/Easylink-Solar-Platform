@@ -35,10 +35,20 @@ import {
 } from "@/hooks/useContactsApi";
 import { money } from "@/lib/designer/simulation";
 
+export type ContactListsRole = "operations" | "installer";
+
 /**
  * Matches the Easylink Designer "Contact lists" mock (ContactListsBody.dc.html)
- * as Operations sees it — upload a spreadsheet, match its columns once, then
+ * in both roles it serves — upload a spreadsheet, match its columns once, then
  * call from one cleaned database.
+ *
+ * The calling database is Operations-only for now. It is served by
+ * /api/admin/contacts, which swaps an admin cookie for a bearer token, and the
+ * backend owns the calling rules — including the Do Not Call Register check,
+ * which is a legal obligation and must not be decided in the browser. There is
+ * no installer-side contacts API yet, so the installer view does not call the
+ * admin one: it shows what is missing instead of failing a request or, worse,
+ * showing sample contacts whose DNC status would be invented.
  *
  * Who may be called, the calling queue and the four options quoted on a call
  * live in @/lib/contact-lists/calling and are covered by tests; cold-calling a
@@ -248,7 +258,10 @@ function dncrLabel(c: ApiContact): string {
 /** Outcomes that mean the call went well, which the mock tints green. */
 const WARM_OUTCOMES: ContactOutcome[] = ["INTERESTED", "APPOINTMENT_BOOKED"];
 
-export function MasterContactLists() {
+export function MasterContactLists({
+  role = "operations",
+}: { role?: ContactListsRole } = {}) {
+  const ops = role === "operations";
   const api = useContactsApi();
   const options = useMemo(() => priceOptions(), []);
 
@@ -314,13 +327,16 @@ export function MasterContactLists() {
   }, [search]);
 
   const reloadSummary = useCallback(() => {
+    // The admin endpoint would reject an installer session, so don't ask.
+    if (!ops) return;
     api
       .fetchSummary()
       .then(setSummary)
       .catch((e: Error) => setLoadError(e.message));
-  }, [api]);
+  }, [api, ops]);
 
   const reloadContacts = useCallback(() => {
+    if (!ops) return;
     let live = true;
     api
       .fetchContacts({ search: query, filter, page, pageSize: 25 })
@@ -337,18 +353,18 @@ export function MasterContactLists() {
     return () => {
       live = false;
     };
-  }, [api, query, filter, page]);
+  }, [api, ops, query, filter, page]);
 
   useEffect(() => reloadContacts(), [reloadContacts]);
   useEffect(() => reloadSummary(), [reloadSummary]);
 
   useEffect(() => {
-    if (tab !== "formats" || formats !== null) return;
+    if (!ops || tab !== "formats" || formats !== null) return;
     api
       .fetchFormats()
       .then(setFormats)
       .catch((e: Error) => setLoadError(e.message));
-  }, [tab, formats, api]);
+  }, [ops, tab, formats, api]);
 
   const rows = contacts ?? [];
   const selected = rows.find(r => r.id === currentId) ?? null;
@@ -725,6 +741,21 @@ export function MasterContactLists() {
             );
           })}
         </div>
+
+        {!ops ? (
+          <p
+            role="status"
+            className="m-0 rounded-[10px] px-3 py-2 text-[13px] leading-[1.5]"
+            style={{ background: "#FEF3C7", color: "#92400E" }}
+          >
+            <strong>Your calling database isn&rsquo;t connected yet.</strong>{" "}
+            Contacts, imports and saved formats are served by an EasyLink-side
+            API that only the Operations console can reach today. That API also
+            decides who may legally be called — including the Do Not Call
+            Register check — so nothing is shown here until an installer-side
+            one exists. The call script and the quoted options below are live.
+          </p>
+        ) : null}
 
         {loadError ? (
           <p

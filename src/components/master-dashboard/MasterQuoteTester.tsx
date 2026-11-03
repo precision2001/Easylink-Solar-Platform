@@ -8,6 +8,7 @@ import {
   SAMPLE_PRICE_BOOK,
   SYSTEM_TYPES,
   ZONE_RATINGS,
+  type PriceBook,
   type QuoteInputs,
   type QuoteResult,
   type SystemType,
@@ -20,14 +21,21 @@ import {
   rate,
   showsPanels,
   systemLabel,
+  tradePrice,
   usesBattery,
   usesPanels,
 } from "@/lib/pricing/quote-engine";
 
 /**
- * Matches the Easylink Designer "Pricing engine · quote tester" mock
- * (DistPricingEngine.dc.html + PricingBody.dc.html, role "operations",
- * screen "quote").
+ * Matches the Easylink Designer "Pricing engine" mock (PricingBody.dc.html,
+ * screen "quote") in both roles that artboard supports: DistPricingEngine
+ * is role "operations", InstPricing is role "installer".
+ *
+ * The two differ only in whose money is on screen. Operations price from
+ * EasyLink cost plus the EasyLink margin. An installer buys at the trade
+ * price (cost plus the trade margin), installs at their own labour rates and
+ * adds their own margin, and never sees EasyLink cost — so the installer view
+ * prices the same quote through a price book derived at trade prices.
  *
  * Every figure on this screen is computed live by the engine in
  * @/lib/pricing/quote-engine — change a control and the line items, the
@@ -60,13 +68,51 @@ const CONTROL =
 const BTN =
   "inline-flex h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] border border-[#CBD5E1] bg-white px-3.5 text-[13px] font-semibold text-[#0F172A]";
 
-/** The people a finished price can be attached to. */
-const ATTACH_TO = [
-  "Raj Malhotra · EasyLink lead · Seven Hills",
-  "Penrith web lead · deposit-ready",
-  "New Ready Site (draft)",
-  "New Ready Deal template",
-];
+export type QuoteRole = "operations" | "installer";
+
+/** Who a finished price is saved against, per role. */
+const SAVE_TARGETS: Record<QuoteRole, string[]> = {
+  operations: [
+    "Raj Malhotra · EasyLink lead · Seven Hills",
+    "Penrith web lead · deposit-ready",
+    "New Ready Site (draft)",
+    "New Ready Deal template",
+  ],
+  installer: [
+    "Daniel Moretti · Yagoona",
+    "Priya Raman · Kellyville",
+    "Grace Lim · Bankstown",
+    "New customer",
+  ],
+};
+
+/**
+ * The installer's own labour rates and margin, which sit on top of EasyLink
+ * trade prices. The mock keeps these with the installer, not the price book,
+ * because EasyLink does not set them.
+ */
+const INSTALLER_RATES = { margin: 20, jobFixed: 1100 };
+
+/**
+ * The price book as an installer buys it: supply at trade price, their margin,
+ * their fixed job charge. Install rates stay at the book's defaults until
+ * "My rates & margin" can override them per item.
+ */
+function installerPriceBook(pb: PriceBook): PriceBook {
+  const trade = (cost: number) => tradePrice(cost, pb.settings);
+  return {
+    ...pb,
+    settings: {
+      ...pb.settings,
+      margin: INSTALLER_RATES.margin,
+      jobFixed: INSTALLER_RATES.jobFixed,
+    },
+    panels: pb.panels.map((x) => ({ ...x, supply: trade(x.supply) })),
+    inverters: pb.inverters.map((x) => ({ ...x, supply: trade(x.supply) })),
+    batteries: pb.batteries.map((x) => ({ ...x, supply: trade(x.supply) })),
+    extras: pb.extras.map((x) => ({ ...x, supply: trade(x.supply) })),
+  };
+}
 
 function Card({
   label,
@@ -173,9 +219,14 @@ function Chip({ tone, children }: { tone: keyof typeof CHIP_TONES; children: Rea
   );
 }
 
-export function MasterQuoteTester() {
-  const pb = SAMPLE_PRICE_BOOK;
+export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } = {}) {
+  const ops = role === "operations";
+  const pb = useMemo(
+    () => (ops ? SAMPLE_PRICE_BOOK : installerPriceBook(SAMPLE_PRICE_BOOK)),
+    [ops],
+  );
   const s = pb.settings;
+  const saveTargets = SAVE_TARGETS[role];
 
   const [q, setQ] = useState<QuoteInputs>(QUOTE_DEFAULTS);
   const [who, setWho] = useState(0);
@@ -259,15 +310,16 @@ export function MasterQuoteTester() {
       big: true,
     },
     {
-      label: "EasyLink margin",
+      label: ops ? "EasyLink margin" : "Your gross profit",
       value: money(r.marginDollars),
-      sub: `${s.margin}% on cost ${money(r.cost)}`,
+      sub: `${s.margin}% on ${ops ? "cost" : "trade + labour"} ${money(r.cost)}`,
       card: true,
     },
   ];
 
   return (
     <div className="flex min-h-full flex-col text-[#0F172A]">
+      {ops ? (
       <header className="flex flex-wrap items-center gap-3 border-b border-[#E3E8EF] bg-white px-8 py-3.5">
         <nav aria-label="Breadcrumb" className="flex-grow text-[13px] text-[#5B6B80]">
           <Link href="/master/price-book" className="text-[#5B6B80] hover:underline">
@@ -286,24 +338,39 @@ export function MasterQuoteTester() {
           Pricing engine
         </span>
       </header>
+      ) : null}
 
       <div className="flex w-full max-w-[1440px] flex-col gap-[18px] px-8 pb-14 pt-6">
         <div className="flex flex-wrap items-end gap-3.5">
           <div className="min-w-0 flex-[1_1_420px]">
             <h1 className="m-0 font-source-sans text-[28px] font-bold">
-              Pricing engine · quote tester
+              {ops ? "Pricing engine · quote tester" : "Pricing engine"}
             </h1>
             <p className="mb-0 mt-1 text-[13px] text-[#5B6B80]">
-              Test any system on the live rules: EasyLink cost, margin, GST and STCs, installed or
-              supply only
+              {ops
+                ? "Test any system on the live rules: EasyLink cost, margin, GST and STCs, installed or supply only"
+                : "Price any system for a customer: EasyLink trade prices, your install rates and margin, and STCs worked out for you"}
             </p>
           </div>
           <span className="rounded-full bg-[#0B1A2E] px-2.5 py-[3px] text-[11px] font-bold text-white">
-            EasyLink cost view
+            {ops ? "EasyLink cost view" : "Price book PB-2026-10"}
           </span>
-          <Link href="/master/price-book" className={BTN}>
-            Price book &amp; rules
-          </Link>
+          {ops ? (
+            <Link href="/master/price-book" className={BTN}>
+              Price book &amp; rules
+            </Link>
+          ) : (
+            <>
+              {/* My rates & margin is the installer's own price-book screen,
+                  which isn't built yet. */}
+              <span title="Not built yet" className={`${BTN} cursor-help`}>
+                My rates &amp; margin
+              </span>
+              <Link href="/installers/dashboard/solar-designer" className={BTN}>
+                Solar designer
+              </Link>
+            </>
+          )}
         </div>
 
         {msg ? (
@@ -568,7 +635,11 @@ export function MasterQuoteTester() {
                   {systemLabel(q.type)} · {r.install ? "installed" : "supply only"} ·{" "}
                   {r.stc ? "with STCs" : "no STCs"}
                 </h2>
-                <span className={SUB}>EasyLink cost prices ex GST</span>
+                <span className={SUB}>
+                  {ops
+                    ? "EasyLink cost prices ex GST"
+                    : "Supply at EasyLink trade price · install at your rates"}
+                </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] border-collapse">
@@ -576,7 +647,9 @@ export function MasterQuoteTester() {
                     <tr>
                       <th className={TH}>Item</th>
                       <th className={`${TH} text-right`}>Qty</th>
-                      <th className={`${TH} text-right`}>Supply cost</th>
+                      <th className={`${TH} text-right`}>
+                        {ops ? "Supply cost" : "Trade price"}
+                      </th>
                       <th className={`${TH} text-right`}>Install</th>
                       <th className={`${TH} text-right`}>Sell ex GST</th>
                       <th className={`${TH} text-right`}>Sell inc GST</th>
@@ -730,10 +803,12 @@ export function MasterQuoteTester() {
             </Card>
 
             <Card label="Save">
-              <h2 className="m-0 text-[16px] font-bold">Use this price</h2>
+              <h2 className="m-0 text-[16px] font-bold">
+                {ops ? "Use this price" : "Save the quote"}
+              </h2>
               <div className="flex flex-wrap items-end gap-2.5">
                 <div className="min-w-0 flex-[1_1_260px]">
-                  <Field label="Attach to">
+                  <Field label={ops ? "Attach to" : "Customer"}>
                     <select
                       className={CONTROL}
                       value={who}
@@ -742,7 +817,7 @@ export function MasterQuoteTester() {
                         setMsg("");
                       }}
                     >
-                      {ATTACH_TO.map((p, i) => (
+                      {saveTargets.map((p, i) => (
                         <option key={p} value={i}>
                           {p}
                         </option>
@@ -754,7 +829,7 @@ export function MasterQuoteTester() {
                   type="button"
                   className={BTN}
                   onClick={() =>
-                    setMsg(`Saved as a draft for ${ATTACH_TO[who]} · ${money(r.net)} net.`)
+                    setMsg(`Saved as a draft for ${saveTargets[who]} · ${money(r.net)} net.`)
                   }
                 >
                   Save as draft
@@ -767,16 +842,18 @@ export function MasterQuoteTester() {
                     setMsg(
                       r.blocks.length
                         ? "Fix the blocked items before sending."
-                        : `Price attached to ${ATTACH_TO[who]} · ${money(r.net)} net inc GST.`,
+                        : `${ops ? "Price attached to" : "Sent to"} ${saveTargets[who]} · ${money(r.net)} net inc GST.`,
                     )
                   }
                 >
-                  Attach price
+                  {ops ? "Attach price" : "Send to customer portal"}
                 </button>
               </div>
               <span className={SUB}>
-                Attaching saves the inputs, the price book version and every line, so the price can
-                be checked later. Saving is not wired up yet — this screen tests prices.
+                {ops
+                  ? "Attaching saves the inputs, the price book version and every line, so the price can be checked later."
+                  : "The customer sees the line items, STC working and net price in My design. Saved quotes keep the price book version they were priced on."}{" "}
+                Saving is not wired up yet — this screen prices quotes.
               </span>
             </Card>
           </div>

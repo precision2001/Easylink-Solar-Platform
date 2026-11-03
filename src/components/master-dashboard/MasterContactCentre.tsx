@@ -19,8 +19,11 @@ import {
   type CallTranscript,
 } from "@/lib/calls/transcript";
 
+export type ContactRole = "operations" | "installer";
+
 /**
- * The Easylink Designer "Contact Centre" mock (DistContact.dc.html).
+ * The Easylink Designer "Contact Centre" mock, in both roles it serves:
+ * DistContact.dc.html is Operations, InstContact.dc.html is the installer.
  *
  * "Recent calls & recordings" is real: the agent's own call history, with
  * playback of the stored recording. Everything else is the mock's sample data
@@ -36,6 +39,11 @@ import {
  *
  * The working dialler is a separate page (`/master/dialer`) with the real call
  * path; "Call" here links there rather than pretending to place a call.
+ *
+ * The call history is the one panel that cannot cross roles. It reads
+ * /api/admin/calls, which swaps an admin cookie for a bearer token, and there
+ * is no installer equivalent — so rather than fire a request that is certain
+ * to fail, the installer view says what is missing and why.
  */
 
 /** Select background per status — mock `bgs`. */
@@ -122,7 +130,7 @@ const RULES = [
  * directly. A row whose call was never recorded says so instead of offering
  * dead audio.
  */
-function RecentCallsCard() {
+function RecentCallsCard({ live }: { live: boolean }) {
   const [calls, setCalls] = useState<RecentCall[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const playback = useRecordingPlayback();
@@ -159,25 +167,27 @@ function RecentCallsCard() {
   };
 
   useEffect(() => {
-    let live = true;
+    // The admin endpoint would reject an installer session, so don't ask.
+    if (!live) return;
+    let active = true;
     (async () => {
       try {
         const res = await fetch("/api/admin/calls/recent?limit=8");
         const json = await res.json();
-        if (!live) return;
+        if (!active) return;
         if (!res.ok || !json?.success) {
           setLoadError(json?.message ?? "Could not load recent calls.");
           return;
         }
         setCalls(json.data as RecentCall[]);
       } catch {
-        if (live) setLoadError("Could not reach the server.");
+        if (active) setLoadError("Could not reach the server.");
       }
     })();
     return () => {
-      live = false;
+      active = false;
     };
-  }, []);
+  }, [live]);
 
   return (
     <section
@@ -188,9 +198,15 @@ function RecentCallsCard() {
         <h2 className="m-0 flex-grow text-[16px] font-bold text-[#0F172A]">
           My recent calls &amp; recordings
         </h2>
-        <span className="rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[11px] font-bold text-[#166534]">
-          Live data
-        </span>
+        {live ? (
+          <span className="rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[11px] font-bold text-[#166534]">
+            Live data
+          </span>
+        ) : (
+          <span className="rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-bold text-[#92400E]">
+            Not connected
+          </span>
+        )}
       </div>
 
       {playback.error ? (
@@ -199,7 +215,14 @@ function RecentCallsCard() {
         </p>
       ) : null}
 
-      {loadError ? (
+      {!live ? (
+        <p className="m-0 text-[13px] leading-[19px] text-[#5B6B80]">
+          Your call history isn&rsquo;t connected yet. Recordings and transcripts
+          are served by an EasyLink-side calls API that only the Operations
+          console can reach today; an installer-side one is needed before your
+          own calls can appear here.
+        </p>
+      ) : loadError ? (
         <p className="m-0 text-[13px] text-[#991B1B]">{loadError}</p>
       ) : calls === null ? (
         <p className="m-0 text-[13px] text-[#5B6B80]">Loading recent calls…</p>
@@ -330,7 +353,10 @@ function RecentCallsCard() {
   );
 }
 
-export function MasterContactCentre() {
+export function MasterContactCentre({
+  role = "operations",
+}: { role?: ContactRole } = {}) {
+  const ops = role === "operations";
   const [status, setStatus] = useState(0);
   const [dispo, setDispo] = useState(-1);
 
@@ -449,12 +475,21 @@ export function MasterContactCentre() {
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link
-                href="/master/dialer"
-                className="flex h-12 flex-[1_1_140px] items-center justify-center rounded-[12px] bg-[#22C55E] text-[15px] font-bold text-[#052E16] no-underline"
-              >
-                Call
-              </Link>
+              {ops ? (
+                <Link
+                  href="/master/dialer"
+                  className="flex h-12 flex-[1_1_140px] items-center justify-center rounded-[12px] bg-[#22C55E] text-[15px] font-bold text-[#052E16] no-underline"
+                >
+                  Call
+                </Link>
+              ) : (
+                <span
+                  title="No installer dialler yet — calls are placed from the Operations console"
+                  className="flex h-12 flex-[1_1_140px] cursor-help items-center justify-center rounded-[12px] bg-[#22C55E] text-[15px] font-bold text-[#052E16] opacity-70"
+                >
+                  Call
+                </span>
+              )}
               <span
                 title="Not built yet"
                 className="flex h-12 cursor-help items-center rounded-[12px] border border-[#2A4466] px-3.5 text-[13px] font-semibold text-white"
@@ -584,7 +619,7 @@ export function MasterContactCentre() {
             ))}
           </section>
 
-          <RecentCallsCard />
+          <RecentCallsCard live={ops} />
         </div>
 
         <section

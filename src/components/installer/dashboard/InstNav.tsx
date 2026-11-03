@@ -68,9 +68,6 @@ const GROUP_TAG: Record<"new" | "shared", { label: string; bg: string; fg: strin
 };
 
 function buildGroups(elite: boolean): NavGroup[] {
-  const commItem = (key: string, label: string, href: string, icon: keyof typeof ICONS, badge?: string): NavItem =>
-    elite ? { key, label, href, icon, badge } : { key, label, href: "/installers/dashboard/plan", icon: "lock" };
-
   return [
     {
       title: "",
@@ -162,36 +159,78 @@ function buildGroups(elite: boolean): NavGroup[] {
           badge: "1",
           href: "/installers/dashboard/handover-packs",
         },
-        { key: "payouts", label: "Payouts & RCTIs", icon: "receipt" },
+        {
+          key: "payouts",
+          label: "Payouts & RCTIs",
+          icon: "receipt",
+          href: "/installers/dashboard/payouts",
+        },
       ],
     },
     {
       title: "Installer Account",
       items: [
-        { key: "areas", label: "Service areas", icon: "map" },
-        { key: "crew", label: "Crew & accreditations", icon: "users" },
-        { key: "docs", label: "Documents & profile", icon: "file" },
-        { key: "reviews", label: "Reviews", icon: "star" },
+        {
+          key: "areas",
+          label: "Service areas",
+          icon: "map",
+          href: "/installers/dashboard/service-areas",
+        },
+        {
+          key: "crew",
+          label: "Crew & accreditations",
+          icon: "users",
+          href: "/installers/dashboard/crew",
+        },
+        {
+          key: "docs",
+          label: "Documents & profile",
+          icon: "file",
+          href: "/installers/dashboard/documents",
+        },
+        {
+          key: "reviews",
+          label: "Reviews",
+          icon: "star",
+          href: "/installers/dashboard/reviews",
+        },
       ],
     },
     {
       title: "Design & Sizing",
       tag: "shared",
       items: [
-        { key: "projects", label: "Solar designer · SLD", icon: "layers" },
-        { key: "pricing", label: "Pricing engine", icon: "receipt" },
-        { key: "rates", label: "My rates & margin", icon: "tag" },
+        {
+          key: "projects",
+          label: "Solar designer · SLD",
+          icon: "layers",
+          href: "/installers/dashboard/solar-designer",
+        },
+        {
+          key: "pricing",
+          label: "Pricing engine",
+          icon: "receipt",
+          href: "/installers/dashboard/pricing-engine",
+        },
+        {
+          key: "rates",
+          label: "My rates & margin",
+          icon: "tag",
+          href: "/installers/dashboard/my-rates",
+        },
       ],
     },
     {
       title: "Communication",
       tag: elite ? "elite" : "upgrade",
       items: [
-        commItem("cc", "Contact Centre", "/installers/dashboard/plan", "headset"),
-        commItem("lists", "Contact lists", "/installers/dashboard/plan", "upload"),
-        commItem("cinbox", "Inbox · all channels", "/installers/dashboard/plan", "chat", "5"),
-        commItem("campaigns", "Campaigns & lists", "/installers/dashboard/plan", "mega"),
-        commItem("ai", "AI agents & numbers", "/installers/dashboard/plan", "spark"),
+        // Every row here is built, so the group tag marks the tier rather than
+        // locking the rows: nothing in Communication redirects to the plan page.
+        { key: "cc", label: "Contact Centre", icon: "headset", href: "/installers/dashboard/contact-centre" },
+        { key: "lists", label: "Contact lists", icon: "upload", href: "/installers/dashboard/contact-lists" },
+        { key: "cinbox", label: "Inbox · all channels", icon: "chat", href: "/installers/dashboard/inbox", badge: "5" },
+        { key: "campaigns", label: "Campaigns & lists", icon: "mega", href: "/installers/dashboard/campaigns" },
+        { key: "ai", label: "AI agents & numbers", icon: "spark", href: "/installers/dashboard/ai-agents" },
       ],
     },
     {
@@ -250,10 +289,23 @@ const ROUTE_KEYS: [string, string][] = [
   ["/installers/dashboard/ready-deals", "deals"],
   ["/installers/dashboard/job-offers", "offers"],
   ["/installers/dashboard/handover-packs", "handover"],
+  ["/installers/dashboard/payouts", "payouts"],
+  ["/installers/dashboard/service-areas", "areas"],
+  ["/installers/dashboard/crew", "crew"],
+  ["/installers/dashboard/documents", "docs"],
+  ["/installers/dashboard/reviews", "reviews"],
+  ["/installers/dashboard/solar-designer", "projects"],
+  ["/installers/dashboard/pricing-engine", "pricing"],
+  ["/installers/dashboard/my-rates", "rates"],
+  ["/installers/dashboard/contact-centre", "cc"],
+  ["/installers/dashboard/contact-lists", "lists"],
   ["/installers/dashboard/pipeline-status", "pipeline"],
   ["/installers/dashboard/pipeline", "analytics"],
   ["/installers/dashboard/reports", "reports"],
   ["/installers/dashboard/equipment", "equipment"],
+  ["/installers/dashboard/inbox", "cinbox"],
+  ["/installers/dashboard/campaigns", "campaigns"],
+  ["/installers/dashboard/ai-agents", "ai"],
   ["/installers/dashboard/plan", "plan"],
   ["/installers/dashboard/home", "overview"],
   ["/installers/dashboard/overview", "overview"],

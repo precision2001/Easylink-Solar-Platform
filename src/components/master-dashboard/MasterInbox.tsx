@@ -3,9 +3,14 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 
+export type InboxRole = "operations" | "installer";
+
 /**
- * "Inbox" from the Easylink Designer mock (DistInbox.dc.html) — every channel
- * for customers, installers and partners in one list.
+ * "Inbox" from the Easylink Designer mock, in both roles that artboard
+ * serves: DistInbox.dc.html is Operations — every channel for customers,
+ * installers and partners — and InstInbox.dc.html is the installer's own
+ * inbox, which carries only their customers and so filters by channel
+ * rather than by who the other party is.
  *
  * The mock's interactive parts are ported as real state rather than frozen to
  * one frame: the who-filter, the conversation selection, and the per-channel
@@ -16,6 +21,9 @@ import Link from "next/link";
  * unifies SMS, WhatsApp, web chat, email and the portal into one thread per
  * contact, which is what this page is about — so the page says it is sample
  * and the compose controls are marked rather than pretending to send.
+ *
+ * Each role gets its own conversations: an installer sees their own
+ * customers, never another installer's or a partner's.
  */
 
 const NAVY = "#0B1A2E";
@@ -230,15 +238,146 @@ const FILTERS: [string, Kind | null][] = [
   ["Partners", "Partner"],
 ];
 
-export function MasterInbox() {
+/**
+ * The installer's inbox, from InstInbox.dc.html. Everyone here is their own
+ * customer or lead, so the filter is the channel the message arrived on.
+ */
+const CHANNEL_FILTERS: [string, Channel | null][] = [
+  ["All", null],
+  ["Portal", "Portal"],
+  ["SMS", "SMS"],
+  ["WhatsApp", "WhatsApp"],
+  ["Web chat", "Web chat"],
+  ["Email", "Email"],
+];
+
+const INSTALLER_CONVERSATIONS: Conversation[] = [
+  {
+    id: "daniel",
+    name: "Daniel Moretti",
+    kind: "Customer",
+    channel: "Portal",
+    at: "9:40 am",
+    unread: true,
+    last: "Is the Recommended option cheaper?",
+    stage: "Designing",
+    about: "14.52 kW → 12.76 kW suggested",
+    next: "Walkthrough Thu 16 Oct 5:30 pm",
+    owner: "Emmanuel",
+    ai: "Yes — 4 fewer panels lowers the price, and it keeps your full rebate. I'll show both side by side on Thursday.",
+    thread: [
+      {
+        who: "You",
+        at: "11 Oct, 9:05 am",
+        text: "Heads up: 33 panels is over the rebate limit for your inverter. I've added a Recommended option with 29 panels.",
+        speaker: "me",
+      },
+      {
+        who: "Daniel",
+        at: "9:40 am",
+        text: "Is the Recommended option cheaper?",
+        speaker: "them",
+      },
+    ],
+  },
+  {
+    id: "grace",
+    name: "Grace Lim",
+    kind: "Customer",
+    channel: "SMS",
+    at: "9:02 am",
+    unread: true,
+    last: "Week of 27 Oct works best for us",
+    stage: "Deposit paid",
+    about: "8 kW + 10 kWh",
+    next: "Callback 4:30 pm",
+    owner: "Emmanuel",
+    ai: "Great, I'll lock in Tue 28 Oct and send a confirmation. Reply STOP to opt out.",
+    thread: [
+      { who: "Grace", at: "9:02 am", text: "Week of 27 Oct works best for us", speaker: "them" },
+    ],
+  },
+  {
+    id: "marco",
+    name: "Marco · Ryde",
+    kind: "Customer",
+    channel: "WhatsApp",
+    at: "8:15 am",
+    unread: true,
+    last: "Do you clean panels? Mine are filthy",
+    stage: "New lead",
+    about: "—",
+    next: "Reply",
+    owner: "Emmanuel",
+    ai: "We do — we book EasyLink's drone team, who clean up to 40 panels with before and after photos. What's your address for a quote?",
+    thread: [
+      { who: "Marco", at: "8:15 am", text: "Do you clean panels? Mine are filthy", speaker: "them" },
+      {
+        who: "AI chat",
+        at: "8:15 am",
+        text: "Thanks Marco! A team member will reply shortly. What suburb are you in?",
+        speaker: "bot",
+      },
+    ],
+  },
+  {
+    id: "visitor",
+    name: "Website visitor",
+    kind: "Customer",
+    channel: "Web chat",
+    at: "Yesterday",
+    unread: false,
+    last: "AI captured lead: battery quote, Bass Hill",
+    stage: "New lead",
+    about: "Battery",
+    next: "Lucas Nguyen visit Sat",
+    owner: "Emmanuel",
+    ai: "Merged with Lucas Nguyen — same phone number.",
+    thread: [
+      {
+        who: "AI chat",
+        at: "Yesterday",
+        text: "Captured: battery for existing 6 kW system, Bass Hill. Booked Sat 18 Oct.",
+        speaker: "bot",
+      },
+    ],
+  },
+  {
+    id: "hannah",
+    name: "Hannah Cole",
+    kind: "Customer",
+    channel: "Email",
+    at: "Fri",
+    unread: false,
+    last: "Thanks for the handover pack!",
+    stage: "Payment completed",
+    about: "10 kW",
+    next: "Review request sent",
+    owner: "Emmanuel",
+    ai: "Glad it's all running! If you have a minute, a Google review helps a small team like ours.",
+    thread: [
+      { who: "Hannah", at: "Fri", text: "Thanks for the handover pack!", speaker: "them" },
+    ],
+  },
+];
+
+export function MasterInbox({ role = "operations" }: { role?: InboxRole } = {}) {
+  const ops = role === "operations";
+  /** Operations filter by who the other party is; an installer by channel. */
+  const conversations = ops ? CONVERSATIONS : INSTALLER_CONVERSATIONS;
+  const filters: [string, string | null][] = ops ? FILTERS : CHANNEL_FILTERS;
+
   const [who, setWho] = useState("All");
-  const [selectedId, setSelectedId] = useState(CONVERSATIONS[0]!.id);
+  const [selectedId, setSelectedId] = useState(conversations[0]!.id);
   const [reply, setReply] = useState("");
 
   const kept = useMemo(() => {
-    const kind = FILTERS.find(([label]) => label === who)?.[1] ?? null;
-    return kind ? CONVERSATIONS.filter(c => c.kind === kind) : CONVERSATIONS;
-  }, [who]);
+    const value = filters.find(([label]) => label === who)?.[1] ?? null;
+    if (!value) return conversations;
+    return ops
+      ? conversations.filter(c => c.kind === value)
+      : conversations.filter(c => c.channel === value);
+  }, [who, ops, conversations, filters]);
 
   /**
    * The open conversation is found across every conversation, not just the
@@ -246,7 +385,7 @@ export function MasterInbox() {
    * message someone is part-way through answering.
    */
   const current =
-    CONVERSATIONS.find(c => c.id === selectedId) ?? CONVERSATIONS[0]!;
+    conversations.find(c => c.id === selectedId) ?? conversations[0]!;
   const channel = CHANNELS[current.channel];
   const kind = KINDS[current.kind];
 
@@ -262,9 +401,18 @@ export function MasterInbox() {
             Inbox
           </span>
         </nav>
-        <span className="text-[13px]" style={{ color: SLATE }}>
-          Shared team inbox · Kerry and Mark on shift
-        </span>
+        {ops ? (
+          <span className="text-[13px]" style={{ color: SLATE }}>
+            Shared team inbox · Kerry and Mark on shift
+          </span>
+        ) : (
+          <span
+            className="rounded-full px-2.5 py-[3px] text-[12px] font-bold"
+            style={{ background: "#FFB547", color: SUN_INK }}
+          >
+            Elite
+          </span>
+        )}
         <span
           title="The conversations on this page are sample data"
           className="cursor-help rounded-full px-2.5 py-[3px] text-[12px] font-bold"
@@ -279,11 +427,13 @@ export function MasterInbox() {
           <div className="flex-grow">
             <h1 className="m-0 font-source-sans text-[28px] font-bold">Inbox</h1>
             <p className="mt-1 mb-0 text-[13px]" style={{ color: MUTED }}>
-              Customers, installers and partners · every channel in one place
+              {ops
+                ? "Customers, installers and partners · every channel in one place"
+                : "Your customers · portal, SMS, WhatsApp, web chat and email in one place"}
             </p>
           </div>
-          <div role="group" aria-label="Who" className="flex flex-wrap gap-1.5">
-            {FILTERS.map(([label]) => {
+          <div role="group" aria-label={ops ? "Who" : "Channel"} className="flex flex-wrap gap-1.5">
+            {filters.map(([label]) => {
               const on = who === label;
               return (
                 <button
@@ -490,7 +640,14 @@ export function MasterInbox() {
               <dt style={{ color: MUTED }}>Next</dt>
               <dd className="m-0 font-semibold">{current.next}</dd>
             </dl>
-            {kind.href ? (
+            {!ops ? (
+              <Link
+                href="/installers/dashboard/customers"
+                className="text-[13px] font-semibold text-[#1565C0]"
+              >
+                Open customer workspace
+              </Link>
+            ) : kind.href ? (
               <Link href={kind.href} className="text-[13px] font-semibold text-[#1565C0]">
                 {kind.link}
               </Link>
@@ -504,7 +661,7 @@ export function MasterInbox() {
               </span>
             )}
             <Link
-              href="/master/contact-centre"
+              href={ops ? "/master/contact-centre" : "/installers/dashboard/contact-centre"}
               className="text-[13px] font-semibold text-[#1565C0]"
             >
               Call now

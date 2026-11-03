@@ -18,11 +18,31 @@ const TABS: { key: string; label: string; href?: string }[] = [
     label: "Handover packs",
     href: "/installers/dashboard/handover-packs",
   },
-  { key: "payouts", label: "Payouts & RCTIs" },
-  { key: "areas", label: "Service areas" },
-  { key: "crew", label: "Crew & accreditations" },
-  { key: "docs", label: "Documents & profile" },
-  { key: "reviews", label: "Reviews" },
+  {
+    key: "payouts",
+    label: "Payouts & RCTIs",
+    href: "/installers/dashboard/payouts",
+  },
+  {
+    key: "areas",
+    label: "Service areas",
+    href: "/installers/dashboard/service-areas",
+  },
+  {
+    key: "crew",
+    label: "Crew & accreditations",
+    href: "/installers/dashboard/crew",
+  },
+  {
+    key: "docs",
+    label: "Documents & profile",
+    href: "/installers/dashboard/documents",
+  },
+  {
+    key: "reviews",
+    label: "Reviews",
+    href: "/installers/dashboard/reviews",
+  },
 ];
 
 export function InstallerAccountTabs({ active }: { active: string }) {
