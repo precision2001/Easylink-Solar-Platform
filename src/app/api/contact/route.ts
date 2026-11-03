@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { emitAiEvents, VISITOR_COOKIE } from "@/lib/server/ai-platform";
 import {
   buildBackendUrl,
   extractMessage,
@@ -88,6 +90,20 @@ export async function POST(request: Request) {
       { status: backendResponse.status },
     );
   }
+
+  // New website lead → the Sales agent responds within minutes (AI platform).
+  const leadData = (payload as { data?: { id?: unknown } } | null)?.data;
+  const visitorId = (await cookies()).get(VISITOR_COOKIE)?.value;
+  after(() =>
+    emitAiEvents(
+      null,
+      [
+        { type: "form.submitted", subject: { type: "visitor", id: visitorId ?? "anonymous" }, data: { form: "contact" } },
+        ...(leadData?.id ? [{ type: "lead.created", subject: { type: "lead", id: String(leadData.id) }, data: { source: "website_contact_form" } }] : []),
+      ],
+      visitorId,
+    ),
+  );
 
   return NextResponse.json(
     {

@@ -6,13 +6,13 @@ import {
   BATTERIES,
   BATTERY_SIZES,
   DCAC_LIMIT,
+  DCAC_LIMIT_HYBRID_OR_BATTERY,
   INVERTERS,
   PANEL_KW,
   PERIOD_DAYS,
   type BatteryMode,
   type Period,
   type Role,
-  STC_PRICE,
   STEP_NAMES,
   TIERS,
   defaultsFor,
@@ -21,12 +21,17 @@ import {
   importCurve,
   lifetimeSavings,
   money,
-  priceSystem,
   profileFor,
   recommendedBattery,
   simulate,
   yearlyConsumption,
 } from "@/lib/designer/simulation";
+import { dcAcLimitLabel, dcAcLimitPercent } from "@/lib/designer/designRules";
+import { useProposalPricing } from "@/lib/proposal/useProposalPricing";
+
+/** Designer panel tiers → proposal tiers in the price book. */
+const DESIGNER_TIER: Record<string, string> = { std: "standard", prem: "premium", black: "allBlack" };
+const DESIGNER_TIER_IDS = Object.values(DESIGNER_TIER);
 
 /**
  * Matches the Easylink Designer "Solar designer" mock (DesignerBody.dc.html)
@@ -158,7 +163,12 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const arrayKw = panels * PANEL_KW;
   const kwdc = (Math.round(arrayKw * 100) / 100).toString();
   const ratio = Math.round((arrayKw / inverter.kw) * 100);
-  const maxPanels = Math.min(p.roofMax, Math.floor((inverter.kw * DCAC_LIMIT) / PANEL_KW));
+  // 200% with a hybrid inverter or a battery, else the 133% STC rule.
+  const hybridOrBattery = inverter.hybrid || battery > 0;
+  const limitPct = dcAcLimitPercent(hybridOrBattery);
+  const limitLabel = dcAcLimitLabel(hybridOrBattery);
+  const inverterMaxPanels = Math.floor((inverter.kw * (hybridOrBattery ? DCAC_LIMIT_HYBRID_OR_BATTERY : DCAC_LIMIT)) / PANEL_KW);
+  const maxPanels = Math.min(p.roofMax, inverterMaxPanels);
 
   const sim = useMemo(() => {
     const consumption = yearlyConsumption(bill, days, rate);
@@ -181,11 +191,18 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const expC = exportIncome * f;
   const billCost = supplyC + gridC - expC;
 
-  const pricing = priceSystem({ arrayKw, panels, battery, tier, ratioPercent: ratio });
-  const payback = yearly > 0 ? pricing.total / yearly : 0;
+  // Prices from the pricing engine v2 (backend price book), as on the website.
+  const priced = useProposalPricing(panels, DESIGNER_TIER[tier] ?? "standard", battery, [], DESIGNER_TIER_IDS);
+  const quote = priced.data?.selected ?? null;
+  const pricing = {
+    total: quote ? quote.net : 0,
+    solarStcs: quote?.stcLines.filter((l) => l.label.startsWith("Solar")).reduce((t, l) => t + l.count, 0) ?? 0,
+    batteryStcs: quote?.stcLines.filter((l) => l.label.startsWith("Battery")).reduce((t, l) => t + l.count, 0) ?? 0,
+  };
+  const payback = yearly > 0 && quote ? pricing.total / yearly : 0;
   const save25 = lifetimeSavings(yearly) - pricing.total;
 
-  const blocked = ratio > 133 || panels > p.roofMax;
+  const blocked = ratio > limitPct || panels > p.roofMax;
   const stepName = step === 9 ? finalStepName(role) : STEP_NAMES[step - 1];
 
   const set = (fn: () => void) => {
@@ -290,11 +307,13 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const warn = (t: string, dd: string) => ({ t, d: dd, m: "!", bg: "#FFFBEB", fg: "#92400E" });
 
   const checks = [
-    ratio <= 133
-      ? ok(`Panel : inverter ${ratio}%`, "Within the 133% STC limit")
+    ratio <= limitPct
+      ? ok(`Panel : inverter ${ratio}%`, `Within the ${limitLabel}`)
       : bad(
           `Panel : inverter ${ratio}%`,
-          `Over the 133% STC limit · use ${Math.floor((inverter.kw * DCAC_LIMIT) / PANEL_KW)} panels or a larger inverter`,
+          `Over the ${limitLabel} · use ${inverterMaxPanels} panels${
+            hybridOrBattery ? "" : ", use a hybrid inverter or add a battery (200%)"
+          } or a larger inverter`,
         ),
     panels <= p.roofMax
       ? ok("Fits the roof", `${panels} of ${p.roofMax} possible panels`)
@@ -317,15 +336,13 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
 
   /* ---------------- step 8 ---------------- */
 
-  const priceLines: [string, string][] = [
-    [`Solar · ${kwdc} kW installed`, money(pricing.solarGross)],
-    [`Battery · ${battery} kWh installed`, money(pricing.batteryGross)],
-    [`Solar STC discount · ${pricing.solarStcs} STCs`, `−${money(pricing.solarStcs * STC_PRICE)}`],
-    [
-      `Battery STC discount · ${pricing.batteryStcs} STCs${battery > 50 ? " (first 50 kWh)" : ""}`,
-      `−${money(pricing.batteryStcs * STC_PRICE)}`,
-    ],
-  ];
+  const priceLines: [string, string][] = quote
+    ? [
+        [`Equipment · ${quote.items.map((i) => (i.qty > 1 ? `${i.qty} × ${i.item}` : i.item)).join(", ")}`, money(quote.itemTotal)],
+        [`Installation · ${quote.arrayKw.toFixed(2)} kW${quote.battery ? ` + ${quote.battery.kwh} kWh` : ""}`, money(quote.installTotal)],
+        ...quote.stcLines.map((l): [string, string] => [`${l.label.split(":")[0]} discount · ${l.count} STCs`, `−${money(l.value)}`]),
+      ]
+    : [[priced.error ? "Pricing is unavailable just now" : "Working out the price…", priced.error ? "Price on request" : "…"]];
   if (ev || heatPump) {
     priceLines.push([
       `${ev ? "EV charger" : ""}${ev && heatPump ? " and " : ""}${heatPump ? "heat pump" : ""} · quoted by your installer`,
@@ -337,20 +354,21 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const newMonth = curMonth - yearly / 12;
 
   const details: [string, string, string][] = [
+    ["Panels", `${quote?.panel ? quote.items[0]?.qty ?? panels : panels} × ${quote?.panel?.model ?? `${TIERS[tier].n} panel`}`, quote?.panel ? `${quote.panel.w} W` : ""],
     [
-      "Panels",
-      `${panels} × ${tier === "prem" ? "AXITEC AC-440TGB/108BBA" : `${TIERS[tier].n} 440 W [model]`}`,
-      tier === "prem" ? "PNL-AX440" : "add to price list",
+      "Inverter",
+      quote?.battery?.inverterBuiltIn
+        ? `Built into ${quote.battery.model}`
+        : (quote?.inverter?.model ?? inverter.name),
+      quote?.inverter ? `${quote.inverter.kw} kW · ${quote.inverter.phase}-phase` : "",
     ],
-    ["Inverter", inverter.name, inverter.sku],
     [
       "Battery",
       battery > 0
-        ? BATTERIES[batterySel] && BATTERIES[batterySel].kwh === battery
-          ? BATTERIES[batterySel].name
-          : `${battery} kWh · pick a model`
+        ? (quote?.battery?.model ??
+          (BATTERIES[batterySel] && BATTERIES[batterySel].kwh === battery ? BATTERIES[batterySel].name : `${battery} kWh · pick a model`))
         : "None",
-      battery > 0 && BATTERIES[batterySel] ? BATTERIES[batterySel].sku : "",
+      quote?.battery ? `${quote.battery.kwh} kWh usable` : "",
     ],
   ];
   if (ev) details.push(["EV charger", "myenergi zappi v2 · 7 kW", "EVC-ZAP7"]);
@@ -917,8 +935,8 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
           </div>
           <p className="m-0 rounded-[12px] px-3.5 py-3 text-[13px]" style={{ background: NAVY_2, color: NAV_TEXT }}>
             Showing {panelsShown} panels: sized to your usage and a {inverter.kw} kW inverter (max {maxPanels} within
-            the 133% rule). The roof could fit {p.roofMax}, but more panels than the inverter can use would not earn
-            STCs.
+            the {limitLabel}). The roof could fit {p.roofMax}, but more panels than the inverter is allowed would not
+            earn STCs.
           </p>
         </div>
       )}
@@ -1410,7 +1428,11 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
                 <div role="radiogroup" aria-label="Panel tier" className="grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
                   {Object.entries(TIERS).map(([k, t]) => {
                     const on = k === tier;
-                    const delta = t.per * panels;
+                    const totals = priced.data?.tierTotals ?? {};
+                    const mine = totals[DESIGNER_TIER[k]];
+                    const current = totals[DESIGNER_TIER[tier]];
+                    const delta = mine != null && current != null ? Math.round(mine - current) : 0;
+                    const info = priced.data?.tierInfo?.[DESIGNER_TIER[k]];
                     return (
                       <button
                         key={k}
@@ -1431,11 +1453,13 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
                           </span>
                         </span>
                         <span className="text-[12px]" style={{ color: SLATE }}>
-                          {t.d}
+                          {info ? `${info.w} W · ${info.model}` : t.d}
                         </span>
                         <strong className="text-[13px]">
-                          {delta === 0
-                            ? "Included"
+                          {on
+                            ? "Selected"
+                            : delta === 0
+                            ? "Same price"
                             : `${delta > 0 ? "+" : "−"}$${Math.abs(delta).toLocaleString("en-AU")}`}
                         </strong>
                       </button>

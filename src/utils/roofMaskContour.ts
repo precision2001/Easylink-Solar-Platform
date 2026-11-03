@@ -1,4 +1,4 @@
-import type { GeoTiffRaster } from "@/utils/geotiff";
+import { rasterLatLngOf, type GeoTiffRaster } from "@/utils/geotiff";
 
 export type LatLngRing = { lat: number; lng: number }[];
 
@@ -35,6 +35,7 @@ function isRoof(
  * treating the pixel grid as locally flat is accurate to well under 1%.
  */
 function pixelAreaM2(raster: GeoTiffRaster): number {
+  if (raster.utm) return Math.abs(raster.utm.resX * raster.utm.resY);
   const { bounds, width, height } = raster;
   const centerLatRad = ((bounds.north + bounds.south) / 2) * (Math.PI / 180);
   const metersPerDegLat = 111_320;
@@ -210,13 +211,8 @@ function ringToLatLng(
   ring: [number, number][],
   raster: GeoTiffRaster,
 ): LatLngRing {
-  const { bounds, width, height } = raster;
   const out: LatLngRing = [];
-  for (const [col, row] of ring) {
-    const lng = bounds.west + (col / width) * (bounds.east - bounds.west);
-    const lat = bounds.north + (row / height) * (bounds.south - bounds.north);
-    out.push({ lat, lng });
-  }
+  for (const [col, row] of ring) out.push(rasterLatLngOf(raster, col, row));
   return out;
 }
 
@@ -238,6 +234,7 @@ function ringToLatLng(
  */
 export function extractRoofOutlinesFromMask(
   maskRaster: GeoTiffRaster,
+  { simplifyPx = 1.0 }: { simplifyPx?: number } = {},
 ): RoofOutline[] {
   const { width, height } = maskRaster;
   const { labels, sizes } = labelConnectedComponents(maskRaster);
@@ -260,7 +257,7 @@ export function extractRoofOutlinesFromMask(
     const ringPx = mooreBoundaryRing(comp, width, height);
     if (ringPx.length < 3) continue;
 
-    const simplified = douglasPeucker(ringPx, 1.0);
+    const simplified = douglasPeucker(ringPx, simplifyPx);
     if (simplified.length < 3) continue;
 
     outlines.push({ ring: ringToLatLng(simplified, maskRaster), areaM2 });

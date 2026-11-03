@@ -1,25 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { fetchAllActiveProductRows, type PublicProductRow } from "@/lib/public/products";
+import { productImage } from "@/lib/designs/product-specs";
 
 /**
  * Matches the Easylink Designer "Pricing & stock" mock (DistPricing.dc.html) —
  * the one catalogue the whole portal shares, with the margin that sets what
  * linked installers pay.
  *
- * Sample data: this app has no catalogue feed. The margin slider is real
- * client state and the "Installer trade" column recomputes from it, because
- * seeing the trade price move is the entire point of the control.
- *
- * Rows with no price carry placeholders ($[RRP] / $[price] / price + N%)
- * rather than invented numbers — the mock's own way of showing which lines the
- * price list hasn't reached yet.
+ * Rows are the live EasyLink catalogue (every active product). The margin
+ * slider is real client state and the "Installer trade" column recomputes
+ * from it. RRP is the catalogue sell price (marked "est." while it is an
+ * estimate); "Your price" needs the supplier price list, so it shows a
+ * placeholder until that is loaded. Stock isn't connected to the distributors
+ * yet, so the stock columns show a dash rather than invented numbers.
  */
 
-/** Stock-level colours: comfortable, getting low, out. */
-const GREEN = "#166534";
-const AMBER = "#92400E";
-const RED = "#991B1B";
+/** Stock not connected yet. */
+const GREY = "#5B6B80";
 
 const TH = "border-b border-[#E3E8EF] p-2 text-left text-[13px] font-semibold text-[#475569]";
 const TD = "border-b border-[#EEF2F6] px-2 py-2.5 text-[13px]";
@@ -39,21 +38,41 @@ type Row = {
   brisbane: string;
   brisbaneTone: string;
   incoming: string;
+  category: string;
+  thumbUrl?: string;
+  rrpEstimate?: boolean;
 };
 
-const ROWS: Row[] = [
-  { name: "AXITEC AC-440TGB/108BBA 440 W", sku: "PNL-AX440", cec: "Approved", rrp: null, price: null, sydney: "1,240", sydneyTone: GREEN, brisbane: "860", brisbaneTone: GREEN, incoming: DASH },
-  { name: "FOXESS 1K5-1P-HI-9.9 hybrid", sku: "INV-FX99", cec: "Approved", rrp: null, price: null, sydney: "34", sydneyTone: GREEN, brisbane: "0", brisbaneTone: RED, incoming: "40 · 24 Oct" },
-  { name: "5 kW single-phase inverter", sku: "INV-S5", cec: "Approved", rrp: 1690, price: 1286.36, sydney: "58", sydneyTone: GREEN, brisbane: "31", brisbaneTone: GREEN, incoming: DASH },
-  { name: "FOX ESS 1K5-BAT-4660-L7", sku: "BAT-FX4660", cec: "Approved", rrp: null, price: null, sydney: "6", sydneyTone: AMBER, brisbane: "11", brisbaneTone: GREEN, incoming: "60 · 24 Oct" },
-  { name: "10 kWh stackable battery", sku: "BAT-100S", cec: "Approved", rrp: 7200, price: 6120, sydney: "0", sydneyTone: RED, brisbane: "0", brisbaneTone: RED, incoming: "120 · 24 Oct" },
-  { name: "myenergi zappi v2 7 kW", sku: "EVC-ZAP7", cec: "n/a", rrp: null, price: null, sydney: "0", sydneyTone: RED, brisbane: "19", brisbaneTone: GREEN, incoming: "30 · 28 Oct" },
-  { name: "Reclaim Energy Gen3 270 L", sku: "HWP-RC270", cec: "n/a", rrp: null, price: null, sydney: "12", sydneyTone: GREEN, brisbane: "4", brisbaneTone: AMBER, incoming: DASH },
-  { name: "Tile roof racking kit", sku: "RCK-T24", cec: "n/a", rrp: 1390, price: 1190.99, sydney: "41", sydneyTone: GREEN, brisbane: "26", brisbaneTone: GREEN, incoming: DASH },
-  { name: "DC isolator and cabling pack", sku: "BOS-DC2", cec: "n/a", rrp: null, price: null, sydney: "88", sydneyTone: GREEN, brisbane: "40", brisbaneTone: GREEN, incoming: DASH },
-  { name: "BLUETTI AC180", sku: "BLU-AC180", cec: "n/a", rrp: 999, price: 790.91, sydney: "52", sydneyTone: GREEN, brisbane: "18", brisbaneTone: GREEN, incoming: DASH },
-  { name: "BLUETTI EP760 + B500", sku: "BLU-EP760", cec: "n/a", rrp: 6499, price: 5450, sydney: "8", sydneyTone: AMBER, brisbane: "3", brisbaneTone: AMBER, incoming: "20 · 2 Nov" },
-];
+const CATEGORY_TABS = [
+  ["All", null],
+  ["Panels", "Solar Panel"],
+  ["Inverters", "Inverter"],
+  ["Batteries", "Battery"],
+  ["EV chargers", "EV Charger"],
+  ["Heat pumps", "Heat Pump"],
+  ["Portable power", "Portable Power"],
+] as const;
+
+function toRow(p: PublicProductRow): Row {
+  const specs = (p.specs ?? {}) as Record<string, unknown>;
+  const cec =
+    specs.cecApproved === true ? "Approved" : specs.cecApproved === false ? "Not listed" : "n/a";
+  return {
+    name: [p.brand?.trim(), p.name].filter(Boolean).join(" "),
+    sku: p.sku || p.id.slice(0, 8),
+    cec,
+    rrp: p.retailPrice ?? p.basePrice ?? null,
+    price: p.wholesalePrice ?? null,
+    sydney: DASH,
+    sydneyTone: GREY,
+    brisbane: DASH,
+    brisbaneTone: GREY,
+    incoming: DASH,
+    category: p.category,
+    thumbUrl: productImage(p)?.thumbUrl,
+    rrpEstimate: specs.priceEstimate === true,
+  };
+}
 
 /** Catalogue prices always carry cents. */
 function money(n: number): string {
@@ -62,6 +81,33 @@ function money(n: number): string {
 
 export function MasterDistPricing() {
   const [margin, setMargin] = useState(8);
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [tab, setTab] = useState<(typeof CATEGORY_TABS)[number][0]>("All");
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAllActiveProductRows()
+      .then((r) => {
+        if (!cancelled) setRows(r.map(toRow));
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : "Could not load the catalogue");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const visible = useMemo(() => {
+    const backend = CATEGORY_TABS.find(([label]) => label === tab)?.[1] ?? null;
+    const q = query.trim().toLowerCase();
+    return (rows ?? [])
+      .filter((r) => !backend || r.category === backend)
+      .filter((r) => !q || `${r.name} ${r.sku}`.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows, tab, query]);
 
   return (
     <div className="flex min-h-full flex-col text-[#0F172A]">
@@ -71,7 +117,7 @@ export function MasterDistPricing() {
           <span className="font-semibold text-[#0F172A]">Pricing &amp; Stock</span>
         </nav>
         <span className="rounded-full bg-[#DBEAFE] px-2.5 py-[3px] text-[12px] font-bold text-[#1E40AF]">
-          Sample data
+          {rows ? `${rows.length} products` : "Loading…"}
         </span>
       </header>
 
@@ -114,6 +160,37 @@ export function MasterDistPricing() {
           aria-label="Catalogue"
           className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]"
         >
+          <div className="flex flex-wrap items-center gap-2">
+            {CATEGORY_TABS.map(([label]) => {
+              const on = tab === label;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setTab(label)}
+                  className="h-8 rounded-full px-3 text-[12px] font-semibold"
+                  style={{
+                    border: `1px solid ${on ? "#0B1A2E" : "#CBD5E1"}`,
+                    background: on ? "#0B1A2E" : "#FFFFFF",
+                    color: on ? "#FFFFFF" : "#334155",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            <input
+              type="search"
+              aria-label="Search the catalogue"
+              placeholder="Search product or SKU…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="ml-auto h-8 w-[240px] max-w-full rounded-[9px] border border-[#CBD5E1] px-2.5 text-[13px] outline-none"
+            />
+          </div>
+          {loadError ? <p className="m-0 text-[13px] text-[#991B1B]">{loadError}</p> : null}
+          {!rows && !loadError ? <p className="m-0 text-[13px] text-[#5B6B80]">Loading the catalogue…</p> : null}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1060px] border-collapse">
               <thead>
@@ -130,14 +207,27 @@ export function MasterDistPricing() {
                 </tr>
               </thead>
               <tbody>
-                {ROWS.map((r) => (
-                  <tr key={r.sku}>
-                    <td className={`${TD} font-semibold`}>{r.name}</td>
+                {visible.map((r) => (
+                  <tr key={`${r.category}-${r.sku}-${r.name}`}>
+                    <td className={`${TD} font-semibold`}>
+                      <span className="flex items-center gap-2">
+                        {r.thumbUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- compressed library thumbnail
+                          <img src={r.thumbUrl} alt="" loading="lazy" className="size-8 shrink-0 rounded bg-white object-contain" />
+                        ) : (
+                          <span className="size-8 shrink-0 rounded bg-[#EEF2F6]" aria-hidden />
+                        )}
+                        {r.name}
+                      </span>
+                    </td>
                     <td className={TD}>
                       <code>{r.sku}</code>
                     </td>
                     <td className={TD}>{r.cec}</td>
-                    <td className={`${TD} ${NUM}`}>{r.rrp ? money(r.rrp) : "$[RRP]"}</td>
+                    <td className={`${TD} ${NUM}`}>
+                      {r.rrp ? money(r.rrp) : "$[RRP]"}
+                      {r.rrp && r.rrpEstimate ? <span className="ml-1 text-[11px] text-[#5B6B80]">est.</span> : null}
+                    </td>
                     <td className={`${TD} ${NUM}`}>{r.price ? money(r.price) : "$[price]"}</td>
                     <td className={`${TD} ${NUM} font-bold`}>
                       {r.price ? money(r.price * (1 + margin / 100)) : `price + ${margin}%`}
@@ -161,7 +251,9 @@ export function MasterDistPricing() {
             </table>
           </div>
           <span className="text-[12px] text-[#475569]">
-            Prices ex GST. Placeholders show where the price list hasn&rsquo;t been loaded yet.
+            Prices ex GST. &ldquo;est.&rdquo; marks catalogue estimates; placeholders show where the
+            supplier price list hasn&rsquo;t been loaded yet. Stock isn&rsquo;t connected to the
+            distributors yet.
           </span>
         </section>
       </div>

@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   QUOTE_DEFAULTS,
-  SAMPLE_PRICE_BOOK,
   SYSTEM_TYPES,
   ZONE_RATINGS,
   type PriceBook,
@@ -25,6 +24,7 @@ import {
   usesBattery,
   usesPanels,
 } from "@/lib/pricing/quote-engine";
+import { priceBookLabel, useAdminPriceBook } from "@/lib/pricing/useAdminPriceBook";
 
 /**
  * Matches the Easylink Designer "Pricing engine" mock (PricingBody.dc.html,
@@ -42,8 +42,10 @@ import {
  * certificates, the comparison matrix and the all-types grid all re-price.
  * Nothing here is hardcoded output.
  *
- * Sample data: the rules are real, the price book is the mock's, because this
- * app has no price book of its own yet.
+ * Prices come from the live price book (backend pricing engine v2, loaded
+ * through /api/admin/pricing/price-book) and are computed here with the same
+ * engine the backend uses, so every control re-prices instantly. If the book
+ * can't load, the placeholder sample book is used and the badge says so.
  */
 
 const SUNRISE = "linear-gradient(90deg, #FFE866, #F68A0A)";
@@ -110,6 +112,7 @@ function installerPriceBook(pb: PriceBook): PriceBook {
     panels: pb.panels.map((x) => ({ ...x, supply: trade(x.supply) })),
     inverters: pb.inverters.map((x) => ({ ...x, supply: trade(x.supply) })),
     batteries: pb.batteries.map((x) => ({ ...x, supply: trade(x.supply) })),
+    evChargers: pb.evChargers.map((x) => ({ ...x, supply: trade(x.supply) })),
     extras: pb.extras.map((x) => ({ ...x, supply: trade(x.supply) })),
   };
 }
@@ -221,14 +224,30 @@ function Chip({ tone, children }: { tone: keyof typeof CHIP_TONES; children: Rea
 
 export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } = {}) {
   const ops = role === "operations";
+  const live = useAdminPriceBook();
   const pb = useMemo(
-    () => (ops ? SAMPLE_PRICE_BOOK : installerPriceBook(SAMPLE_PRICE_BOOK)),
-    [ops],
+    () => (ops ? live.book : installerPriceBook(live.book)),
+    [ops, live.book],
   );
   const s = pb.settings;
   const saveTargets = SAVE_TARGETS[role];
 
   const [q, setQ] = useState<QuoteInputs>(QUOTE_DEFAULTS);
+
+  // When a book loads, point any ids it doesn't have at sensible items in it.
+  useEffect(() => {
+    setQ((prev) => {
+      const has = <T extends { id: string }>(list: T[], id?: string) => !!id && list.some((x) => x.id === id);
+      const nearest14 = [...pb.batteries].sort((a, b) => Math.abs(a.kwh - 14) - Math.abs(b.kwh - 14))[0];
+      return {
+        ...prev,
+        panelId: has(pb.panels, prev.panelId) ? prev.panelId : (pb.proposal.tiers.standard ?? pb.panels[0]?.id),
+        batteryId: has(pb.batteries, prev.batteryId) ? prev.batteryId : nearest14?.id,
+        evId: has(pb.evChargers, prev.evId) ? prev.evId : pb.evChargers[0]?.id,
+        inverterId: prev.inverterId === "auto" || has(pb.inverters, prev.inverterId) ? prev.inverterId : "auto",
+      };
+    });
+  }, [pb]);
   const [who, setWho] = useState(0);
   const [msg, setMsg] = useState("");
 
@@ -328,8 +347,15 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
           <span aria-hidden="true">/</span>{" "}
           <span className="font-semibold text-[#0F172A]">Quote tester</span>
         </nav>
-        <span className="rounded-full bg-[#DBEAFE] px-2.5 py-[3px] text-[12px] font-bold text-[#1E40AF]">
-          Sample price book
+        <span
+          className="rounded-full px-2.5 py-[3px] text-[12px] font-bold"
+          style={
+            live.source === "sample"
+              ? { background: "#FEF3C7", color: "#92400E" }
+              : { background: "#DCFCE7", color: "#166534" }
+          }
+        >
+          {priceBookLabel(live.source, live.updatedAt, live.loading)}
         </span>
         <span
           className="rounded-full px-2.5 py-[3px] text-[12px] font-bold"
@@ -353,7 +379,7 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
             </p>
           </div>
           <span className="rounded-full bg-[#0B1A2E] px-2.5 py-[3px] text-[11px] font-bold text-white">
-            {ops ? "EasyLink cost view" : "Price book PB-2026-10"}
+            {ops ? "EasyLink cost view" : priceBookLabel(live.source, live.updatedAt, live.loading)}
           </span>
           {ops ? (
             <Link href="/master/price-book" className={BTN}>
@@ -361,17 +387,21 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
             </Link>
           ) : (
             <>
-              {/* My rates & margin is the installer's own price-book screen,
-                  which isn't built yet. */}
-              <span title="Not built yet" className={`${BTN} cursor-help`}>
+              <Link href="/installers/dashboard/my-rates" className={BTN}>
                 My rates &amp; margin
-              </span>
+              </Link>
               <Link href="/installers/dashboard/solar-designer" className={BTN}>
                 Solar designer
               </Link>
             </>
           )}
         </div>
+
+        {live.source === "sample" && !live.loading ? (
+          <div role="alert" className="rounded-[12px] bg-[#FEF3C7] px-3.5 py-[11px] text-[14px] font-semibold text-[#92400E]">
+            Couldn&rsquo;t load the live price book ({live.error}). These are sample prices, not real quotes.
+          </div>
+        ) : null}
 
         {msg ? (
           <div
@@ -427,7 +457,20 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
               </span>
             </Card>
 
-            {q.type !== "ev" ? (
+            {q.type === "ev" ? (
+              <Card label="EV charger">
+                <span className={EYE}>Equipment</span>
+                <Field label="EV charger">
+                  <select className={CONTROL} value={q.evId} onChange={(e) => patch({ evId: e.target.value })}>
+                    {pb.evChargers.map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        {ev.model} · {ev.sup ?? ""} {money(ev.supply)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </Card>
+            ) : (
               <Card label="Equipment">
                 <span className={EYE}>Equipment</span>
 
@@ -442,7 +485,7 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
                         >
                           {pb.panels.map((p) => (
                             <option key={p.id} value={p.id}>
-                              {p.model} · {p.w} W
+                              {p.model} · {p.sup ?? ""} {money(p.supply)}
                             </option>
                           ))}
                         </select>
@@ -466,7 +509,7 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
                   </>
                 ) : null}
 
-                {kinds ? (
+                {kinds && !(usesBattery(q.type) && pb.batteries.find((b) => b.id === q.batteryId)?.inv) ? (
                   <Field label="Inverter">
                     <select
                       className={CONTROL}
@@ -475,10 +518,10 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
                     >
                       <option value="auto">Auto-size</option>
                       {pb.inverters
-                        .filter((i) => kinds.includes(i.kind))
+                        .filter((i) => kinds.includes(i.kind) && !i.builtin)
                         .map((i) => (
                           <option key={i.id} value={i.id}>
-                            {i.model}
+                            {i.model} · {i.sup ?? ""} {money(i.supply)}
                           </option>
                         ))}
                     </select>
@@ -494,7 +537,7 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
                     >
                       {pb.batteries.map((b) => (
                         <option key={b.id} value={b.id}>
-                          {b.model} ({b.kwh} kWh usable)
+                          {b.model} · {b.sup ?? ""} {money(b.supply)}
                         </option>
                       ))}
                     </select>
@@ -504,12 +547,12 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
                 {q.type === "battery" ? (
                   <Check
                     label="Site already has solar panels (needed for battery STCs)"
-                    on={q.existing}
+                    on={q.existing !== false}
                     onChange={(v) => patch({ existing: v })}
                   />
                 ) : null}
               </Card>
-            ) : null}
+            )}
 
             <Card label="Site">
               <span className={EYE}>Site</span>
@@ -557,17 +600,13 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
             <Card label="Extras">
               <span className={EYE}>Extras</span>
               {pb.extras
-                .filter(
-                  (x) =>
-                    (x.id !== "ev" || q.type !== "ev") &&
-                    (x.per !== "panel" || usesPanels(q.type)),
-                )
+                .filter((x) => x.per !== "panel" || usesPanels(q.type))
                 .map((x) => (
                   <Check
                     key={x.id}
                     label={x.label}
                     per={x.per}
-                    on={!!q.extras[x.id]}
+                    on={!!q.extras?.[x.id]}
                     onChange={(v) => patch({ extras: { ...q.extras, [x.id]: v } })}
                   />
                 ))}
@@ -637,22 +676,21 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
                 </h2>
                 <span className={SUB}>
                   {ops
-                    ? "EasyLink cost prices ex GST"
+                    ? "Trade cost ex GST · customer prices inc GST"
                     : "Supply at EasyLink trade price · install at your rates"}
                 </span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] border-collapse">
+                <table className="w-full min-w-[860px] border-collapse">
                   <thead>
                     <tr>
                       <th className={TH}>Item</th>
                       <th className={`${TH} text-right`}>Qty</th>
-                      <th className={`${TH} text-right`}>
-                        {ops ? "Supply cost" : "Trade price"}
-                      </th>
-                      <th className={`${TH} text-right`}>Install</th>
-                      <th className={`${TH} text-right`}>Sell ex GST</th>
-                      <th className={`${TH} text-right`}>Sell inc GST</th>
+                      <th className={`${TH} text-right`}>{ops ? "Trade cost" : "Trade price"}</th>
+                      <th className={`${TH} text-right`}>Item price</th>
+                      <th className={`${TH} text-right`}>Installation</th>
+                      <th className={TH}>Install basis</th>
+                      <th className={`${TH} text-right`}>Item + installation</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -660,27 +698,29 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
                       <tr key={l.item}>
                         <td className={`${TD} whitespace-normal`}>{l.item}</td>
                         <td className={`${TD} ${NUM}`}>{l.qty}</td>
-                        <td className={`${TD} ${NUM}`}>{money(l.supply)}</td>
+                        <td className={`${TD} ${NUM}`}>{money(l.cost)}</td>
+                        <td className={`${TD} ${NUM}`}>{money(l.itemPrice)}</td>
                         <td className={`${TD} ${NUM}`}>{r.install ? money(l.install) : DASH}</td>
-                        <td className={`${TD} ${NUM}`}>{money(l.sellEx)}</td>
+                        <td className={`${TD} ${SUB}`}>{l.installNote}</td>
                         <td className={`${TD} ${NUM}`}>{money(l.sellInc)}</td>
                       </tr>
                     ))}
 
                     <tr className="bg-[#F8FAFC] font-bold">
-                      <td className={TD}>Total</td>
+                      <td className={TD}>Total before STCs</td>
                       <td className={TD} />
-                      <td className={`${TD} ${NUM}`}>{money(r.supplyTotal)}</td>
+                      <td className={`${TD} ${NUM}`}>{money(r.cost)}</td>
+                      <td className={`${TD} ${NUM}`}>{money(r.itemTotal)}</td>
                       <td className={`${TD} ${NUM}`}>
                         {r.install ? money(r.installTotal) : DASH}
                       </td>
-                      <td className={`${TD} ${NUM}`}>{money(r.sellEx)}</td>
+                      <td className={TD} />
                       <td className={`${TD} ${NUM}`}>{money(r.priceBeforeStcs)}</td>
                     </tr>
 
                     {r.stcLines.map((l) => (
                       <tr key={l.label} style={{ background: SUN_SOFT, color: SUN_INK }}>
-                        <td className={`${TD} whitespace-normal`} colSpan={5}>
+                        <td className={`${TD} whitespace-normal`} colSpan={6}>
                           {l.label}
                         </td>
                         <td className={`${TD} ${NUM}`}>&minus;{money(l.value)}</td>
@@ -690,7 +730,7 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
                     <tr>
                       <td
                         className={`${TD} text-[15px] font-bold`}
-                        colSpan={5}
+                        colSpan={6}
                         style={{ borderTop: `2px solid ${INK}` }}
                       >
                         Net price to customer

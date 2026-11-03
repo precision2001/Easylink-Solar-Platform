@@ -23,6 +23,9 @@ import {
   GRID_RATE_PER_KWH,
   MONTH_LABELS,
   SOLAR_YIELD_KWH_PER_KW_YEAR,
+  DEFAULT_EV_BATTERY_KWH,
+  evReadyBatteryKwh,
+  futureReadyBatteryKwh,
   findBatteryKnee,
   resolveSystemKw,
   simulateYear,
@@ -212,17 +215,31 @@ function EnergyBreakdownChart({ monthlySolarPct }: { monthlySolarPct: number[] }
   );
 }
 
+/** Battery size for the house's own usage today. */
+const HOME_RED = "#E5383B";
+/** Battery size that also charges an EV / covers future heavy loads. */
+const EV_GREEN = "#12A150";
+/** Halfway between the two: room to grow (an EV later, a heat pump, a pool). */
+const FUTURE_BLUE = "#2563EB";
+
 /** SVG line chart: annual grid import against battery size, with the "knee" marked. */
 function GridImportChart({
   importsBySize,
   currentBatteryKwh,
   currentImportKwh,
   recommendedKwh,
+  evReadyKwh,
+  futureReadyKwh,
 }: {
   importsBySize: number[];
   currentBatteryKwh: number;
   currentImportKwh: number;
+  /** Home-only size (red). */
   recommendedKwh: number;
+  /** Home + full EV charge size (green). */
+  evReadyKwh: number;
+  /** Midpoint "Future Ready" size (blue). */
+  futureReadyKwh: number;
 }) {
   const w = 320;
   const h = 150;
@@ -243,6 +260,12 @@ function GridImportChart({
   const kneeIdx = BATTERY_CURVE_SIZES_KWH.indexOf(recommendedKwh);
   const kneeX = x(recommendedKwh);
   const kneeY = y(importsBySize[kneeIdx] ?? 0);
+  const evIdx = BATTERY_CURVE_SIZES_KWH.indexOf(evReadyKwh);
+  const evX = x(evReadyKwh);
+  const evY = y(importsBySize[evIdx] ?? 0);
+  const frIdx = BATTERY_CURVE_SIZES_KWH.indexOf(futureReadyKwh);
+  const frX = x(futureReadyKwh);
+  const frY = y(importsBySize[frIdx] ?? 0);
   const curX = x(Math.min(currentBatteryKwh, maxKwh));
   const curY = y(currentImportKwh);
 
@@ -287,23 +310,39 @@ function GridImportChart({
 
         <path d={path} fill="none" stroke="#2FA8E0" strokeWidth={2} strokeLinejoin="round" />
 
-        <line
-          x1={kneeX}
-          y1={padT}
-          x2={kneeX}
-          y2={h - padB}
-          stroke="#F2941F"
-          strokeWidth={1}
-          strokeDasharray="3 2"
+        {/* Band between the two sizes: the storage kept for the EV and future loads. */}
+        <rect
+          x={kneeX}
+          y={padT}
+          width={Math.max(0, evX - kneeX)}
+          height={h - padT - padB}
+          fill={EV_GREEN}
+          opacity={0.08}
         />
-        <circle cx={kneeX} cy={kneeY} r={4} fill="#F2941F" stroke="#fff" strokeWidth={1.2} />
+        <line x1={kneeX} y1={padT} x2={kneeX} y2={h - padB} stroke={HOME_RED} strokeWidth={1} strokeDasharray="3 2" />
+        <line x1={evX} y1={padT} x2={evX} y2={h - padB} stroke={EV_GREEN} strokeWidth={1} strokeDasharray="3 2" />
+        <rect x={kneeX - 3.5} y={kneeY - 3.5} width={7} height={7} fill={HOME_RED} stroke="#fff" strokeWidth={1.2} />
+        <line x1={frX} y1={padT} x2={frX} y2={h - padB} stroke={FUTURE_BLUE} strokeWidth={1} strokeDasharray="3 2" />
+        <rect x={frX - 3.5} y={frY - 3.5} width={7} height={7} fill={FUTURE_BLUE} stroke="#fff" strokeWidth={1.2} />
+        <rect x={evX - 3.5} y={evY - 3.5} width={7} height={7} fill={EV_GREEN} stroke="#fff" strokeWidth={1.2} />
+        <text x={evX + 3} y={padT + 8} fontSize={7.5} fill={EV_GREEN} fontWeight={700}>
+          EV
+        </text>
         <circle cx={curX} cy={curY} r={4} fill="#152238" stroke="#fff" strokeWidth={1.2} />
       </svg>
 
       <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 font-inter text-[8.5px] text-[#6a7282]">
         <span className="flex items-center gap-1">
-          <span className="size-[7px] rounded-full bg-[#F2941F]" />
-          Recommended: {recommendedKwh} kWh
+          <span className="size-[7px]" style={{ background: HOME_RED }} />
+          Home only: {recommendedKwh} kWh
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="size-[7px]" style={{ background: FUTURE_BLUE }} />
+          Future Ready: {futureReadyKwh} kWh
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="size-[7px]" style={{ background: EV_GREEN }} />
+          Home + full EV charge: {evReadyKwh} kWh
         </span>
         <span className="flex items-center gap-1">
           <span className="size-[7px] rounded-full bg-[#152238]" />
@@ -322,16 +361,25 @@ function StatTile({
   label: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[10px] bg-white px-2 py-2.5">
-      <p className="font-source-sans text-[19px] font-bold leading-tight text-[#152238]">
-        {value}
-      </p>
-      <p className="text-center font-source-sans text-[9px] font-normal uppercase tracking-[0.5px] text-[#6a7282]">
-        {label}
-      </p>
+    <div className={`${TILE_BOX} bg-white`}>
+      <p className={`${TILE_LABEL} text-[#6a7282]`}>{label}</p>
+      <p className={`${TILE_VALUE} text-[#152238]`}>{value}</p>
+      <p className={`${TILE_SUB}`} aria-hidden>&nbsp;</p>
     </div>
   );
 }
+
+/*
+ * Every tile in the performance and value rows shares one box and three
+ * fixed lines — label, amount, kWh (blank when there is none) — so the
+ * seven tiles are the same height and their text lines up across the row.
+ */
+const TILE_BOX =
+  "group relative grid h-[108px] min-w-0 flex-1 grid-rows-[28px_28px_16px] content-center justify-items-center gap-1.5 rounded-[10px] px-2 outline-none";
+const TILE_LABEL =
+  "flex max-w-full items-center justify-center gap-1 self-center text-center font-source-sans text-[9.5px] font-semibold uppercase leading-[13px] tracking-[0.5px]";
+const TILE_VALUE = "font-source-sans text-[19px] font-bold leading-7 whitespace-nowrap";
+const TILE_SUB = "font-source-sans text-[9px] leading-4 text-white/60";
 
 function ValuePanel({
   icon,
@@ -350,35 +398,28 @@ function ValuePanel({
   dollarClassName?: string;
   breakdown?: string[];
 }) {
-  const hasBreakdown = Boolean(breakdown && breakdown.length > 0);
+  // Compact tile, one row of four, the height of the Grid-free / Export
+  // income / Avoided cost tiles above: label, amount, kWh. The workings
+  // (bill and net breakdown) show on hover or tap, not in the tile.
+  const tip = breakdown && breakdown.length > 0 ? breakdown.join("\n") : undefined;
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col rounded-[10px] border border-white/10 bg-white/[0.06] px-2.5 py-2">
-      <div className="flex items-center gap-1.5">
-        <span className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] ${iconClassName}`}>
-          <Icon name={icon} className="size-2.5 text-white" />
+    <div
+      tabIndex={tip ? 0 : undefined}
+      className={`${TILE_BOX} border border-white/10 bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-orange-amber`}
+    >
+      <div className={`${TILE_LABEL} text-white/80`}>
+        <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-[4px] ${iconClassName}`}>
+          <Icon name={icon} className="size-2 text-white" />
         </span>
-        <p className="truncate font-inter text-[11px] font-semibold uppercase tracking-[0.4px] text-white">
-          {label}
-        </p>
+        <span className="line-clamp-2">{label}</span>
+        {tip ? <span aria-hidden className="text-white/50">ⓘ</span> : null}
       </div>
-      {kwh ? (
-        <p className="mt-1 font-inter text-[13px] text-white">{kwh}</p>
-      ) : null}
-      <div className="flex items-center justify-center m-auto">
-        <p
-          className={`font-source-sans font-bold ${
-            hasBreakdown
-              ? "mt-1 text-[20px]"
-              : "mt-1 flex flex-1 items-center text-[28px]"
-          } ${dollarClassName ?? "text-white"}`}
-        >
-          {dollar}
-        </p>
-      </div>
-      {breakdown && breakdown.length > 0 ? (
-        <div className="mt-1 flex flex-1 flex-col justify-end gap-0.5 border-t border-white/10 pt-1 font-inter text-[10px] leading-3.5 text-white">
-          {breakdown.map((line, i) => (
+      <p className={`${TILE_VALUE} ${dollarClassName ?? "text-white"}`}>{dollar}</p>
+      <p className={TILE_SUB}>{kwh ?? "\u00a0"}</p>
+      {tip ? (
+        <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 hidden w-max max-w-[220px] -translate-x-1/2 flex-col gap-0.5 rounded-[8px] bg-[#152238] px-2 py-1.5 font-inter text-[10px] leading-3.5 text-white shadow-lg group-hover:flex group-focus:flex">
+          {breakdown!.map((line, i) => (
             <span key={i}>{line}</span>
           ))}
         </div>
@@ -406,7 +447,8 @@ const BILL_MONTHLY_MIN = 100;
 const BILL_MONTHLY_MAX = 10000;
 
 /** Used only when a design has no saved bill yet. */
-const BILL_MONTHLY_DEFAULT = 500;
+/** Default bill: $200 a month ($600 a quarter). */
+const BILL_MONTHLY_DEFAULT = 200;
 
 function periodMultiplier(period: DesignBillPeriod): number {
   switch (period) {
@@ -658,7 +700,7 @@ export const DesignsEnergyStepContent = forwardRef<
     parseBillPeriod(proposal.pricing.billPeriod),
   );
 
-  const [valuePeriod, setValuePeriod] = useState<ValuePeriod>("fortnight");
+  const [valuePeriod, setValuePeriod] = useState<ValuePeriod>("year");
 
   const gridRatePerKwh = proposal.pricing.gridRatePerKwh ?? GRID_RATE_PER_KWH;
 
@@ -776,7 +818,15 @@ export const DesignsEnergyStepContent = forwardRef<
   const billCostPeriod = supplyChargePeriod + gridImportCostPeriod - exportIncomePeriod;
   const netPeriod = exportIncomePeriod - gridImportCostPeriod - supplyChargePeriod;
 
-  const recommendApplied = batteryKwh === knee.recommendedKwh;
+  const evBatteryKwh = proposal.equipment.evBatteryKwh ?? DEFAULT_EV_BATTERY_KWH;
+  const evReadyKwh = evReadyBatteryKwh(knee.recommendedKwh, evBatteryKwh);
+  const sliderMax = BATTERY_CURVE_SIZES_KWH[BATTERY_CURVE_SIZES_KWH.length - 1];
+  const homeApplied = batteryKwh === knee.recommendedKwh;
+  const evApplied = batteryKwh === evReadyKwh;
+  const futureReadyKwh = futureReadyBatteryKwh(knee.recommendedKwh, evReadyKwh);
+  const futureApplied = batteryKwh === futureReadyKwh && !homeApplied && !evApplied;
+  const setBattery = (kwh: number) =>
+    dispatch(mergeProposalData({ equipment: { batteryCapacityKwh: Math.round(kwh) } }));
 
   return (
     <div className="relative z-10 mx-auto flex h-full w-full max-w-[1520px] min-h-0 flex-1 flex-col px-4 py-2 sm:px-6 lg:px-8">
@@ -822,9 +872,12 @@ export const DesignsEnergyStepContent = forwardRef<
                   Battery — the lever for $0 grid
                 </p>
               </div>
-              {recommendApplied ? (
-                <span className="mt-1 inline-block rounded-full bg-[#152238] px-2 py-[2px] font-source-sans text-[9px] font-bold uppercase tracking-[0.4px] text-yellow-lemon">
-                  Recommended size applied
+              {homeApplied || evApplied || futureApplied ? (
+                <span
+                  className="mt-1 inline-flex items-center gap-1 rounded-full bg-[#152238] px-2 py-[2px] font-source-sans text-[9px] font-bold uppercase tracking-[0.4px] text-yellow-lemon"
+                >
+                  <span className="size-[7px]" style={{ background: homeApplied ? HOME_RED : futureApplied ? FUTURE_BLUE : EV_GREEN }} />
+                  {homeApplied ? "Home-only size applied" : futureApplied ? "Future Ready size applied" : "EV-ready size applied"}
                 </span>
               ) : null}
 
@@ -833,20 +886,70 @@ export const DesignsEnergyStepContent = forwardRef<
                   <span>Battery capacity</span>
                   <span className="font-mono">{effectiveBatteryKwh} kWh</span>
                 </div>
-                <div className="mt-0.5">
-                  <SingleScrollBar
-                    value={effectiveBatteryKwh}
-                    onChange={(v) =>
-                      dispatch(
-                        mergeProposalData({
-                          equipment: { batteryCapacityKwh: Math.round(v) },
-                        }),
-                      )
-                    }
-                    min={0}
-                    max={100}
-                    ariaLabel="Battery capacity in kWh"
-                  />
+                <div className="relative mt-0.5">
+                  {/* Size markers, click to apply: red = this house today, green = + EV / future loads. */}
+                  {[
+                    { kwh: knee.recommendedKwh, color: HOME_RED, label: "Home only", applied: homeApplied },
+                    { kwh: futureReadyKwh, color: FUTURE_BLUE, label: "Future Ready", applied: futureApplied },
+                    { kwh: evReadyKwh, color: EV_GREEN, label: "+ full EV charge", applied: evApplied },
+                  ].map((m) => (
+                    <button
+                      key={m.label}
+                      type="button"
+                      onClick={() => setBattery(m.kwh)}
+                      title={`${m.label}: ${m.kwh} kWh`}
+                      aria-label={`Set battery to ${m.label} size, ${m.kwh} kWh`}
+                      className="absolute top-[-2px] z-10 flex -translate-x-1/2 flex-col items-center"
+                      style={{ left: `${(Math.min(sliderMax, m.kwh) / sliderMax) * 100}%` }}
+                    >
+                      <span
+                        className="rounded-[3px] border-2 bg-white/85 px-1 font-mono text-[8.5px] font-bold leading-[13px]"
+                        style={{ borderColor: m.color, color: m.color, boxShadow: m.applied ? `0 0 0 2px ${m.color}55` : undefined }}
+                      >
+                        {m.kwh}
+                      </span>
+                      <span className="h-[6px] w-[2px]" style={{ background: m.color }} />
+                    </button>
+                  ))}
+                  <div className="pt-[14px]">
+                    <SingleScrollBar
+                      value={effectiveBatteryKwh}
+                      onChange={setBattery}
+                      min={0}
+                      max={sliderMax}
+                      ariaLabel="Battery capacity in kWh"
+                    />
+                  </div>
+                </div>
+                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 font-inter text-[8.5px] leading-[1.2] text-[#3a3020]/85">
+                  <span className="flex items-center gap-1">
+                    <span className="size-[7px] border-2" style={{ borderColor: HOME_RED }} />
+                    Home only — today&apos;s usage
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="size-[7px] border-2" style={{ borderColor: FUTURE_BLUE }} />
+                    Future Ready — halfway
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="size-[7px] border-2" style={{ borderColor: EV_GREEN }} />
+                    + a full charge of a
+                    <input
+                      type="number"
+                      min={10}
+                      max={150}
+                      step={1}
+                      value={evBatteryKwh}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (Number.isFinite(v) && v > 0) {
+                          dispatch(mergeProposalData({ equipment: { evBatteryKwh: Math.min(150, Math.round(v)) } }));
+                        }
+                      }}
+                      aria-label="Car battery size in kWh"
+                      className="w-[34px] rounded-[3px] border border-[#3a3020]/30 bg-white/70 px-0.5 text-center font-mono text-[8.5px]"
+                    />
+                    kWh car
+                  </span>
                 </div>
               </div>
 
@@ -925,7 +1028,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   title="System performance"
                   subtitle="At the battery size and mode set on the left"
                 />
-                <div className="mt-2 flex flex-col justify-center h-full">
+                <div className="mt-auto pt-2">
                   <div className="flex items-center gap-1.5">
                     <StatTile value={`${independencePct.toFixed(0)}%`} label="Grid-free" />
                     <StatTile value={formatAud(sim.exportIncomeAud)} label="Export income/yr" />
@@ -942,24 +1045,35 @@ export const DesignsEnergyStepContent = forwardRef<
                   title="Consumption & solar value"
                 />
 
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {(Object.keys(VALUE_PERIOD_LABELS) as ValuePeriod[]).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setValuePeriod(p)}
-                      className={`rounded-full px-2 py-0.5 font-source-sans text-[9px] font-semibold transition ${
-                        valuePeriod === p
-                          ? "bg-white text-orange-amber ring-1 ring-orange-amber"
-                          : "bg-white text-[#152238]/70 hover:text-[#152238]"
-                      }`}
-                    >
-                      {VALUE_PERIOD_LABELS[p]}
-                    </button>
-                  ))}
+                {/* Period: five equal frosted glass buttons across the card; the
+                    chosen one in the EasyLink logo yellow-gold. Defaults to Year. */}
+                <div
+                  role="tablist"
+                  aria-label="Period"
+                  className="mt-1.5 grid grid-cols-5 gap-1 rounded-[12px] border border-white/[0.18] bg-white/[0.06] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-md"
+                >
+                  {(Object.keys(VALUE_PERIOD_LABELS) as ValuePeriod[]).map((p) => {
+                    const on = valuePeriod === p;
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        onClick={() => setValuePeriod(p)}
+                        className={`relative h-[30px] overflow-hidden rounded-[9px] border font-source-sans text-[12px] tracking-[0.3px] transition before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-1/2 before:bg-[linear-gradient(180deg,rgba(255,255,255,0.14)_0%,rgba(255,255,255,0)_100%)] ${
+                          on
+                            ? "border-[rgba(255,245,170,0.9)] bg-[linear-gradient(133deg,rgba(255,239,98,0.97)_0%,rgba(255,200,40,0.95)_45%,rgba(247,141,0,0.95)_100%)] font-bold text-[#152238] shadow-[0_0_18px_rgba(247,141,0,0.45),inset_0_1px_0_rgba(255,255,255,0.5)]"
+                            : "border-white/[0.18] bg-[linear-gradient(156deg,rgba(32,148,243,0.28)_0%,rgba(23,207,207,0.18)_100%)] font-semibold text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] hover:bg-[linear-gradient(156deg,rgba(32,148,243,0.42)_0%,rgba(23,207,207,0.3)_100%)]"
+                        }`}
+                      >
+                        <span className="relative">{VALUE_PERIOD_LABELS[p]}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <div className="mt-1 grid flex-1 grid-cols-2 gap-1">
+                <div className="mt-auto grid grid-cols-2 gap-1.5 pt-2 sm:grid-cols-4">
                   <ValuePanel
                     icon="home"
                     iconClassName="bg-[linear-gradient(126deg,#2094F3_0%,#17CFCF_100%)]"
@@ -1017,7 +1131,7 @@ export const DesignsEnergyStepContent = forwardRef<
                   icon="battery"
                   accentClassName="bg-[#152238]"
                   title="Grid import vs. battery size"
-                  subtitle="The marker shows where extra storage stops being worth adding"
+                  subtitle="Red: the house today. Blue: Future Ready. Green: also fills the car's battery"
                 />
                 <div className="mt-1.5 min-h-0 flex-1 rounded-[10px] bg-white px-2 py-1.5">
                   <GridImportChart
@@ -1025,6 +1139,8 @@ export const DesignsEnergyStepContent = forwardRef<
                     currentBatteryKwh={effectiveBatteryKwh}
                     currentImportKwh={sim.annualGridImportKwh}
                     recommendedKwh={knee.recommendedKwh}
+                    evReadyKwh={evReadyKwh}
+                    futureReadyKwh={futureReadyKwh}
                   />
                 </div>
               </div>

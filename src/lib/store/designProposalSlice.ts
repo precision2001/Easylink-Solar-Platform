@@ -12,6 +12,12 @@ export type DesignProposalSolarDesign = {
   panelCountInput: string;
   /** PNG data URL from html2canvas on Save — for proposals / PDFs */
   mapScreenshotDataUrl: string | null;
+  /** The single orientation every panel in the design uses. Older saved designs omit it (treated as portrait). */
+  panelOrientation?: "PORTRAIT" | "LANDSCAPE";
+  /** Panel size the layout was packed with (Google Solar API). Older designs omit it. */
+  panelDimensions?: { heightM: number; widthM: number };
+  /** The roof faces the panels were packed on (outline, slope, direction), for drawing the roof in proposals. */
+  roofFaces?: { ring: { lat: number; lng: number }[]; pitchDeg?: number; azimuthDeg?: number }[];
 };
 
 export type DesignProposalSummary = {
@@ -25,6 +31,11 @@ export type DesignProposalCustomer = {
   name: string;
   email: string;
   phoneNumber: string;
+  /**
+   * The register step's unticked-by-default marketing box (reminder emails
+   * and texts under the Spam Act). Undefined until the step is submitted.
+   */
+  marketingConsent?: boolean;
   address: string;
   property: string;
   /** Pin from the location step map (decimal degrees). Used by the solar-panel step map. */
@@ -120,6 +131,8 @@ export type DesignProposalEquipment = {
   batteryMode?: "self-consumption" | "export";
   /** Energy step's "system age" slider (years since install) used to preview degradation. */
   systemAgeYears?: number;
+  /** Usable battery of the customer's electric car (kWh), for the EV-ready battery size. */
+  evBatteryKwh?: number;
 };
 
 /**
@@ -245,7 +258,7 @@ export const DESIGN_PROPOSAL_DEFAULTS: DesignProposalState = {
   pricing: {
     totalSystemPrice: "$11,200",
     monthlySavings: "$132",
-    currentBill: "$500",
+    currentBill: "$200",
     newBill: "$368",
     billPeriod: "quarter",
   },

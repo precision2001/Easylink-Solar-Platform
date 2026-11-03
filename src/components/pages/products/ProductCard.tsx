@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import Icon from "@/components/ui/Icons";
 import { downloadDatasheet } from "@/components/pages/products/downloadDatasheet";
 import { createProductCheckout } from "@/lib/customers/payments";
+import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import {
   fetchAfterpayConfig,
   isAfterpayPayable,
@@ -31,6 +32,7 @@ const CATEGORY_PHOTO_LABEL: Record<ProductCategoryKey, string> = {
   inverters: "inverter photo",
   "ev-chargers": "EV charger photo",
   "heat-pumps": "heat pump photo",
+  "portable-power": "portable power photo",
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-AU", {
@@ -74,7 +76,9 @@ export function ProductCard({
   const totalMinor = Math.round(product.price * 100) * quantity;
   const afterpayAvailable = inStock && isAfterpayPayable(afterpay, totalMinor);
 
-  async function handleBuyNow(paymentMethod: "card" | "afterpay" = "card") {
+  // Card purchases go through the cart (several products, one warehouse);
+  // "Pay in 4" stays a single-product Afterpay checkout.
+  async function handleBuyNow(paymentMethod: "afterpay") {
     setBuying(true);
     try {
       const session = await createProductCheckout({
@@ -83,9 +87,7 @@ export function ProductCard({
         paymentMethod,
       });
       toast.info(
-        paymentMethod === "afterpay"
-          ? "Redirecting to Afterpay…"
-          : "Redirecting to Stripe secure checkout…",
+        paymentMethod === "afterpay" ? "Redirecting to Afterpay…" : "Redirecting to checkout…",
       );
       window.location.assign(session.checkoutUrl);
     } catch (err) {
@@ -103,7 +105,9 @@ export function ProductCard({
         style={
           product.photo
             ? undefined
-            : { backgroundImage: "linear-gradient(160deg, #f3ead6 0%, #e9dcc0 100%)" }
+            : product.imageUrl
+              ? { backgroundImage: "radial-gradient(ellipse at 50% 40%, #ffffff 0%, #f4efe4 70%, #ebe2cf 100%)" }
+              : { backgroundImage: "linear-gradient(160deg, #f3ead6 0%, #e9dcc0 100%)" }
         }
       >
         {product.photo ? (
@@ -116,6 +120,15 @@ export function ProductCard({
               sizes="(max-width: 640px) 100vw, 33vw"
             />
           </>
+        ) : product.imageUrl ? (
+          <Image
+            src={product.imageUrl}
+            alt={`${product.brand} ${product.name}`}
+            fill
+            unoptimized
+            className="object-contain p-8 drop-shadow-[0_10px_18px_rgba(60,40,10,0.18)]"
+            sizes="(max-width: 640px) 100vw, 33vw"
+          />
         ) : (
           <span className="font-dm-sans text-[12px] font-medium text-warm-gray">
             {CATEGORY_PHOTO_LABEL[product.categoryKey]}
@@ -146,7 +159,7 @@ export function ProductCard({
 
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="font-inter text-[17px] font-bold leading-[22px] text-warm-ink">
+            <h3 className="font-inter text-[17px] font-bold leading-[22px] text-warm-ink [overflow-wrap:anywhere]">
               {product.name}
             </h3>
             <p className="mt-0.5 truncate font-dm-sans text-[11px] text-warm-gray">
@@ -242,24 +255,19 @@ export function ProductCard({
             >
               {inCompare ? "Remove" : "+ Compare"}
             </button>
-            <button
-              type="button"
-              disabled={!inStock || buying}
-              aria-label="Buy now"
-              title="Buy now"
-              onClick={() => void handleBuyNow("card")}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-              style={{
-                backgroundImage:
-                  "linear-gradient(121.47deg, rgb(32, 148, 243) 0%, rgb(23, 207, 207) 100%)",
+            <AddToCartButton
+              variant="icon"
+              disabled={!inStock || buying || !(product.price > 0)}
+              line={{
+                productId: product.id,
+                quantity,
+                name: product.name,
+                brand: product.brand,
+                category: product.categoryKey,
+                price: product.price,
+                imageUrl: product.imageThumbUrl ?? product.imageUrl ?? null,
               }}
-            >
-              {buying ? (
-                <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-              ) : (
-                <Icon name="ProductCart" className="size-4" />
-              )}
-            </button>
+            />
             {afterpayAvailable ? (
               <button
                 type="button"

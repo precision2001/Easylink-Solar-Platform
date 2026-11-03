@@ -18,7 +18,10 @@ export function SolarProductCard({
   onToggleFavorite,
   onAdd,
 }: Props) {
-  const catLabel = product.category.toUpperCase();
+  const catLabel = [product.category.replace("-", " "), product.brand]
+    .filter(Boolean)
+    .join(" · ")
+    .toUpperCase();
 
   return (
     <article className="customer-cream-card-bg customer-cream-card-border flex flex-col overflow-hidden rounded-[10px] border">
@@ -43,8 +46,8 @@ export function SolarProductCard({
         </div>
         <div className="relative flex h-full items-center justify-center">
           <Image
-            src={productsAssets.productImg}
-            alt=""
+            src={product.imageUrl ?? productsAssets.productImg}
+            alt={product.imageUrl ? product.name : ""}
             width={120}
             height={80}
             className="h-[95%] w-auto max-w-[34%] object-contain"
@@ -78,7 +81,7 @@ export function SolarProductCard({
           {catLabel}
         </p>
         <h3
-          className="mt-2 line-clamp-2 min-h-[2.5rem] font-dm-sans text-[13px] font-semibold leading-[19.5px] text-warm-ink"
+          className="mt-2 line-clamp-2 min-h-[2.5rem] font-dm-sans text-[13px] font-semibold leading-[19.5px] text-warm-ink [overflow-wrap:anywhere]"
           style={{ fontVariationSettings: "'opsz' 14" }}
         >
           {product.name}

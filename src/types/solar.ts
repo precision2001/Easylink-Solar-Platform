@@ -2,6 +2,11 @@ export interface SolarPanel {
   center: { lat: number; lng: number };
   orientation: "PORTRAIT" | "LANDSCAPE";
   rotationDegrees?: number;
+  /**
+   * Roof pitch the panel was laid out for. Seen from above, a tilted panel's
+   * up-slope side is shorter by cos(pitch); omitted = flat (older designs).
+   */
+  slopeDegrees?: number;
   segmentIndex: number;
   yearlyEnergyDcKwh: number;
 }

@@ -1,0 +1,530 @@
+{
+ "faces": [
+  {
+   "name": "A west (fold)",
+   "ring": [
+    [
+     283,
+     24
+    ],
+    [
+     322,
+     272
+    ],
+    [
+     169,
+     196
+    ]
+   ],
+   "bearing": 298,
+   "pitch": 1.7
+  },
+  {
+   "name": "A north (fold)",
+   "ring": [
+    [
+     283,
+     24
+    ],
+    [
+     427,
+     100
+    ],
+    [
+     322,
+     272
+    ]
+   ],
+   "bearing": 298,
+   "pitch": 1.7
+  },
+  {
+   "name": "B",
+   "ring": [
+    [
+     169,
+     198
+    ],
+    [
+     322,
+     274
+    ],
+    [
+     256,
+     400
+    ],
+    [
+     110,
+     316
+    ]
+   ],
+   "bearing": 298,
+   "pitch": 1.7
+  },
+  {
+   "name": "C",
+   "ring": [
+    [
+     110,
+     318
+    ],
+    [
+     230,
+     386
+    ],
+    [
+     176,
+     492
+    ],
+    [
+     55,
+     425
+    ]
+   ],
+   "bearing": 298,
+   "pitch": 1.7
+  },
+  {
+   "name": "E main skillion",
+   "ring": [
+    [
+     182,
+     512
+    ],
+    [
+     239,
+     394
+    ],
+    [
+     277,
+     404
+    ],
+    [
+     416,
+     150
+    ],
+    [
+     463,
+     193
+    ],
+    [
+     488,
+     166
+    ],
+    [
+     640,
+     243
+    ],
+    [
+     523,
+     459
+    ],
+    [
+     698,
+     551
+    ],
+    [
+     796,
+     373
+    ],
+    [
+     809,
+     342
+    ],
+    [
+     957,
+     412
+    ],
+    [
+     746,
+     808
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 3.4
+  },
+  {
+   "name": "F box",
+   "ring": [
+    [
+     640,
+     296
+    ],
+    [
+     796,
+     373
+    ],
+    [
+     698,
+     551
+    ],
+    [
+     523,
+     459
+    ]
+   ],
+   "bearing": 118,
+   "pitch": 4.9
+  }
+ ],
+ "obstructions": [
+  [
+   [
+    346,
+    240
+   ],
+   [
+    420,
+    240
+   ],
+   [
+    395,
+    388
+   ],
+   [
+    300,
+    345
+   ]
+  ],
+  [
+   [
+    618,
+    322
+   ],
+   [
+    674,
+    322
+   ],
+   [
+    674,
+    448
+   ],
+   [
+    618,
+    448
+   ]
+  ],
+  [
+   [
+    822,
+    420
+   ],
+   [
+    850,
+    420
+   ],
+   [
+    872,
+    468
+   ],
+   [
+    870,
+    492
+   ],
+   [
+    822,
+    492
+   ]
+  ],
+  [
+   [
+    240,
+    138
+   ],
+   [
+    258,
+    138
+   ],
+   [
+    258,
+    157
+   ],
+   [
+    240,
+    157
+   ]
+  ],
+  [
+   [
+    136,
+    318
+   ],
+   [
+    150,
+    318
+   ],
+   [
+    150,
+    331
+   ],
+   [
+    136,
+    331
+   ]
+  ],
+  [
+   [
+    97,
+    386
+   ],
+   [
+    126,
+    386
+   ],
+   [
+    126,
+    422
+   ],
+   [
+    97,
+    422
+   ]
+  ],
+  [
+   [
+    400,
+    480
+   ],
+   [
+    412,
+    480
+   ],
+   [
+    412,
+    493
+   ],
+   [
+    400,
+    493
+   ]
+  ],
+  [
+   [
+    327,
+    361
+   ],
+   [
+    349,
+    361
+   ],
+   [
+    349,
+    394
+   ],
+   [
+    327,
+    394
+   ]
+  ],
+  [
+   [
+    169,
+    198
+   ],
+   [
+    324,
+    272
+   ],
+   [
+    322,
+    282
+   ],
+   [
+    173,
+    242
+   ]
+  ],
+  [
+   [
+    238,
+    397
+   ],
+   [
+    273,
+    401
+   ],
+   [
+    301,
+    440
+   ],
+   [
+    296,
+    449
+   ],
+   [
+    266,
+    429
+   ],
+   [
+    238,
+    426
+   ]
+  ],
+  [
+   [
+    199,
+    475
+   ],
+   [
+    305,
+    527
+   ],
+   [
+    300,
+    538
+   ],
+   [
+    195,
+    487
+   ]
+  ],
+  [
+   [
+    417,
+    159
+   ],
+   [
+    438,
+    159
+   ],
+   [
+    438,
+    177
+   ],
+   [
+    417,
+    177
+   ]
+  ],
+  [
+   [
+    464,
+    181
+   ],
+   [
+    481,
+    181
+   ],
+   [
+    481,
+    199
+   ],
+   [
+    464,
+    199
+   ]
+  ]
+ ],
+ "scale_m_per_px": 0.03099478035434276,
+ "center_latlng": [
+  -33.8547661,
+  151.0491638
+ ],
+ "center_px": [
+  490,
+  440
+ ],
+ "axis_deg": -28,
+ "google_segments": [
+  {
+   "pitch": 3.4,
+   "azimuth": 124,
+   "areaM2": 125.4,
+   "px": [
+    638.5,
+    595.2
+   ]
+  },
+  {
+   "pitch": 1.7,
+   "azimuth": 227,
+   "areaM2": 30.4,
+   "px": [
+    322.4,
+    440.0
+   ]
+  },
+  {
+   "pitch": 4.9,
+   "azimuth": 100,
+   "areaM2": 38.5,
+   "px": [
+    686.6,
+    443.6
+   ]
+  },
+  {
+   "pitch": 1.7,
+   "azimuth": 290,
+   "areaM2": 82.9,
+   "px": [
+    241.5,
+    279.8
+   ]
+  },
+  {
+   "pitch": 1.3,
+   "azimuth": 179,
+   "areaM2": 41.3,
+   "px": [
+    524.0,
+    349.9
+   ]
+  },
+  {
+   "pitch": 4.6,
+   "azimuth": 20,
+   "areaM2": 11.3,
+   "px": [
+    419.3,
+    257.2
+   ]
+  }
+ ],
+ "google_offset_px": [
+  0,
+  0
+ ],
+ "flat_roof": true,
+ "obstruction_names": [
+  "vent block D (fan + vents)",
+  "dark oval on box F",
+  "antenna, rear roof",
+  "vent/antenna A",
+  "vent B/C",
+  "vent/antenna C",
+  "vent, rear roof (moved to the real spot)",
+  "fan below block D (missed by eye)",
+  "step shadow A onto B",
+  "level difference + step corner, rear roof SW",
+  "level difference, rear roof SW",
+  "edge shadow at notch",
+  "edge shadow at notch"
+ ],
+ "image": "66-frances-st.png",
+ "source": "zoom-21 Static Maps 1280px centred on Google building centre, crop offset (150,200); white low-pitch metal roof, section edges read on a local-contrast image; confirmed with confirm-google.py (flat_roof)",
+ "notes": [
+  "Section A has a diagonal fold corner to corner; treated as two faces. If it is only a flashing joint, A takes more panels.",
+  "Block D (vents) treated as one obstruction. Dark oval on box F treated as an obstruction (stain, damage or an object). Antenna on the east part.",
+  "Pitches 1.7-4.9 deg: flush mount assumed. Panel makers often recommend at least 10 deg tilt for self-cleaning; tilt frames need row spacing and give fewer panels.",
+  "2026-10-28 rev 2: obstructions re-checked with find-obstructions.py after owner review; eaves checked with check-eaves.py."
+ ],
+ "result": {
+  "PORTRAIT": {
+   "A west (fold)": 2,
+   "A north (fold)": 4,
+   "B": 4,
+   "C": 4,
+   "E main skillion": 68,
+   "F box": 7
+  },
+  "LANDSCAPE": {
+   "A west (fold)": 2,
+   "A north (fold)": 3,
+   "B": 5,
+   "C": 2,
+   "E main skillion": 66,
+   "F box": 6
+  }
+ }
+}

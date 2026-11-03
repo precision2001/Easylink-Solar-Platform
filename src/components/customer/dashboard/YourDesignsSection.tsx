@@ -8,6 +8,8 @@ import {
 } from "./CustomerDashboardSkeletons";
 import { CustomDesignImageAction } from "./CustomDesignImageAction";
 import { DesignOptionCard } from "./DesignOptionCard";
+import { DesignOptionsCompare } from "./DesignOptionsCompare";
+import { useState } from "react";
 import {
   formatOptionPrice,
   type DesignOptionCard as DesignOptionCardData,
@@ -47,6 +49,7 @@ export function YourDesignsSection({
   hasCompletedDesignWizard = true,
 }: Props) {
   const selectedCount = selectedKey ? 1 : 0;
+  const [view, setView] = useState<"cards" | "compare">("cards");
   const needsDesignWizard = !loading && !hasCompletedDesignWizard;
 
   return (
@@ -94,6 +97,33 @@ export function YourDesignsSection({
           No design options are available yet.
         </p>
       ) : (
+        <>
+        <div role="tablist" aria-label="How to show your designs" className="flex gap-1 px-4 pt-4">
+          {(
+            [
+              ["cards", "Cards"],
+              ["compare", "Compare side by side"],
+            ] as const
+          ).map(([k, l]) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={view === k}
+              onClick={() => setView(k)}
+              className={`whitespace-nowrap rounded-full px-3 py-1 font-inter text-[12px] font-semibold transition ${
+                view === k ? "bg-white text-warm-black" : "border border-white/20 text-white/80 hover:border-white/40"
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        {view === "compare" ? (
+          <div className="pt-3">
+            <DesignOptionsCompare options={options} selectedKey={selectedKey} locked={locked} savingKey={savingKey} onSelect={onSelect} />
+          </div>
+        ) : (
         <div className="grid grid-cols-1 items-stretch gap-4 p-4 sm:grid-cols-2">
           {options.map((opt) => (
             <DesignOptionCard
@@ -112,11 +142,15 @@ export function YourDesignsSection({
                 savingsPerYr: formatSavings(opt.estimatedSavings),
                 outputKwh: formatOutput(opt.annualOutputKwh),
                 imageSrc: opt.imageSrc,
+                equipment: [opt.batteryKwh ? `${opt.batteryKwh} kWh battery` : opt.batteryKwh === 0 ? "No battery" : null, opt.inverterModel ?? null].filter(Boolean).join(" · ") || undefined,
+                afterStc: opt.priceAfterStc ? formatOptionPrice(opt.priceAfterStc) : undefined,
               }}
               imageAction={<CustomDesignImageAction option={opt} />}
             />
           ))}
         </div>
+        )}
+        </>
       )}
     </section>
   );

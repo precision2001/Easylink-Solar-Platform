@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   BATTERY_FACTORS,
   DEEMING_YEARS,
   QUOTE_DEFAULTS,
-  SAMPLE_PRICE_BOOK,
   ZONE_RATINGS,
   type Battery,
+  type EvCharger,
   type Extra,
   type Inverter,
   type Panel,
@@ -17,31 +17,33 @@ import {
   type Settings,
   auDate,
   batteryFactorFor,
+  batteryInstall,
   batteryStcs,
   deemingYearsFor,
+  itemPrice,
   money,
   panelStcEstimate,
   rate,
-  sellIncGst,
   tradePrice,
 } from "@/lib/pricing/quote-engine";
+import { priceBookLabel, useAdminPriceBook } from "@/lib/pricing/useAdminPriceBook";
 
 /**
- * Matches the Easylink Designer PricingBody mock at screen "book", in both
- * roles that artboard supports: DistPriceBook is role "operations" ("Price
- * book & rules"), InstRates is role "installer" ("My rates & margin").
+ * Price book for both roles. Operations (DistPriceBook) own the live book the
+ * pricing engine v2 prices every quote from. An installer (InstRates, "My
+ * rates & margin") sees that book at trade price and edits only what is
+ * theirs — their margin and installation rates — so cost columns, add/remove,
+ * the CER rules and publish stay on the operations screen.
  *
- * Operations own the book: EasyLink's supply and install costs, the margins,
- * the STC price and the CER rules, all editable and publishable. An installer
- * sees the published book at trade price and edits only what is theirs —
- * their labour rate per item, their margin and their job charges — so their
- * view drops the cost columns, the add/remove controls, and the rules and
- * publish panels entirely.
+ * The book is loaded from the backend (GET /api/admin/pricing/price-book) and
+ * operations save it with "Publish price book" (PUT). The website's customer
+ * prices use a published book straight away. Edits are a draft until published.
+ * The installer screen never publishes: those rates stay in the browser.
  *
- * The book is editable here and every derived column recomputes as you type:
- * trade price, installed inc GST, certificates and net installed. Edits are
- * draft-only and live in component state; publishing is not wired to anything,
- * because this app has no price book to publish yet.
+ * Costs are trade prices ex GST. Item price = cost × (1 + margin) × (1 + GST).
+ * Installation is EasyLink's rate, charged as entered (inc GST, no margin):
+ * panels per watt, inverter with panels, battery base + steps, EV charger,
+ * inverter swap; extras carry their own installation price.
  *
  * The STC columns are evaluated for one site — the quote tester's default zone
  * and install date — since certificates depend on both.
@@ -64,74 +66,53 @@ const SUB = "text-[12px] leading-[1.45] text-[#5B6B80]";
 const INPUT =
   "h-10 w-full min-w-0 box-border rounded-[10px] border border-[#CBD5E1] bg-white px-2.5 text-[14px] text-[#0F172A]";
 const CELL =
-  "h-8 w-[82px] box-border rounded-lg border border-[#CBD5E1] bg-white px-2 text-right text-[13px] tabular-nums text-[#0F172A]";
+  "h-8 w-[88px] box-border rounded-lg border border-[#CBD5E1] bg-white px-2 text-right text-[13px] tabular-nums text-[#0F172A]";
 const NAME =
-  "h-8 w-[200px] box-border rounded-lg border border-[#CBD5E1] bg-white px-2 text-[13px] text-[#0F172A]";
+  "h-8 w-[260px] box-border rounded-lg border border-[#CBD5E1] bg-white px-2 text-[13px] text-[#0F172A]";
+const SUPPLIER =
+  "h-8 w-[130px] box-border rounded-lg border border-[#CBD5E1] bg-white px-2 text-[13px] text-[#0F172A]";
 const BTN =
-  "inline-flex h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] border border-[#CBD5E1] bg-white px-3.5 text-[13px] font-semibold text-[#0F172A]";
+  "inline-flex h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] border border-[#CBD5E1] bg-white px-3.5 text-[13px] font-semibold text-[#0F172A] disabled:cursor-not-allowed disabled:opacity-50";
 const BTN_SM = "h-8 px-2.5 text-[12px]";
 
 export type BookRole = "operations" | "installer";
 
 /**
- * The installer's own margin and job charges. These sit on top of EasyLink
- * trade prices and are never set by EasyLink, so they live with the installer
- * rather than in the price book.
+ * The installer's own margin. It sits on top of EasyLink trade prices and is
+ * never written back to the published book.
  */
-type InstallerRates = {
-  margin: number;
-  jobFixed: number;
-  threePhase: number;
-  delivery: number;
-  /** Labour rate per price-book item id, defaulting to the book's own. */
-  perItem: Record<string, number>;
-};
+type InstallerRates = { margin: number };
 
-const INSTALLER_DEFAULTS: InstallerRates = {
-  margin: 20,
-  jobFixed: 1100,
-  threePhase: 450,
-  delivery: 150,
-  perItem: {},
-};
+const INSTALLER_DEFAULTS: InstallerRates = { margin: 20 };
 
-const INSTALLER_SETTING_FIELDS: [keyof InstallerRates, string, string][] = [
-  ["margin", "My margin on cost", "%"],
-  ["jobFixed", "Design, permits, metering", "$ my cost"],
-  ["threePhase", "Three-phase works", "$ my cost"],
-  ["delivery", "Delivery, supply only", "$ my cost"],
-];
+type NumericSetting = Exclude<keyof Settings, "supplyOnlyStc">;
 
-/** The settings grid, in the mock's order. */
-const SETTING_FIELDS: [keyof Settings, string, string][] = [
-  ["margin", "EasyLink margin on cost", "%"],
+const PRICING_FIELDS: [NumericSetting, string, string][] = [
+  ["margin", "EasyLink margin on equipment", "%"],
   ["trade", "Installer trade margin", "% on cost"],
   ["gst", "GST", "%"],
   ["stcPrice", "STC price passed on", "$ / STC"],
-  ["jobFixed", "Design, permits, metering", "$ cost"],
-  ["threePhase", "Three-phase works", "$ cost"],
-  ["delivery", "Delivery, supply only", "$ cost"],
+  ["delivery", "Delivery, supply only", "$ inc GST"],
   ["singleMax", "Single-phase inverter limit", "kW"],
   ["threeMax", "Three-phase inverter limit", "kW"],
-  ["dcac", "Max DC:AC ratio", "×"],
+  ["dcacHybrid", "DC:AC with hybrid or battery", "×"],
+  ["dcacStandard", "DC:AC string, no battery", "×"],
 ];
 
-type SectionKey = "panels" | "inverters" | "batteries" | "extras";
-type Row = Panel | Inverter | Battery | Extra;
-
-const PUBLISHED = "PB-2026-10 · published 17 Oct 2026";
-
-type LogEntry = { version: string; what: string; when: string };
-
-const HISTORY: LogEntry[] = [
-  {
-    version: "PB-2026-10",
-    what: "Battery factor 6.8 from 1 May 2026, tiered bands",
-    when: "17 Oct 2026 · Daniel Shaw",
-  },
-  { version: "PB-2026-09", what: "Hybrid inverter costs +4%", when: "12 Sep 2026 · Mark Kelly" },
-  { version: "PB-2026-07", what: "STC price $37.50 net", when: "3 Jul 2026 · Daniel Shaw" },
+const INSTALL_FIELDS: [NumericSetting, string, string][] = [
+  ["panelPerW", "Panels", "$ per watt"],
+  ["invWithPanels", "Inverter, with panels", "$ (0 = free)"],
+  ["batteryBase", "Battery, base price", "$"],
+  ["batteryBaseKwh", "Battery base covers up to", "kWh"],
+  ["batteryStep", "Battery, each step above", "$"],
+  ["batteryStepKwh", "Battery step size", "kWh"],
+  ["evInstall", "EV charger", "$"],
+  ["invSwap", "Inverter swap", "$"],
+  ["threePhase", "Three-phase works", "$ (0 = none)"],
 ];
+
+type SectionKey = "panels" | "inverters" | "batteries" | "evChargers" | "extras";
+type Row = Panel | Inverter | Battery | EvCharger | Extra;
 
 function Card({ label, children, bare }: { label: string; children: React.ReactNode; bare?: boolean }) {
   return (
@@ -151,71 +132,90 @@ function num(value: string): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
+function SettingsGrid({
+  fields,
+  s,
+  onChange,
+}: {
+  fields: [NumericSetting, string, string][];
+  s: Settings;
+  onChange: (key: NumericSetting, value: number) => void;
+}) {
+  return (
+    <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))" }}>
+      {fields.map(([key, label, unit]) => (
+        <label key={key} className="flex min-w-0 flex-col gap-1 text-[12px] font-semibold text-[#334155]">
+          <span>
+            {label} <span className={SUB}>({unit})</span>
+          </span>
+          <input
+            type="number"
+            step="any"
+            className={`${INPUT} tabular-nums`}
+            value={(s[key] as number | undefined) ?? 0}
+            onChange={(e) => onChange(key, num(e.target.value))}
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {}) {
   const ops = role === "operations";
-  const [pb, setPb] = useState<PriceBook>(SAMPLE_PRICE_BOOK);
+  const live = useAdminPriceBook();
+  const [pb, setPb] = useState<PriceBook>(live.book);
   const [mine, setMine] = useState<InstallerRates>(INSTALLER_DEFAULTS);
   const [draftCount, setDraftCount] = useState(0);
-  const [live, setLive] = useState(PUBLISHED);
-  const [log, setLog] = useState<LogEntry[]>(HISTORY);
-  const [effectiveFrom, setEffectiveFrom] = useState("2026-11-01");
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState("");
+
+  // A fresh load (first open, publish, discard) replaces the draft.
+  useEffect(() => {
+    setPb(live.book);
+    setDraftCount(0);
+  }, [live.book]);
 
   const s = pb.settings;
-  /**
-   * What each role pays and charges. Operations work from EasyLink cost and
-   * the EasyLink margin; an installer buys at trade price, uses their own
-   * labour rate and adds their own margin.
-   */
-  const unitSupply = (r: Row) => (ops ? r.supply : tradePrice(r.supply, s));
-  const unitInstall = (r: Row) => (ops ? r.install : (mine.perItem[r.id] ?? r.install));
-  const sellSettings: Settings = ops ? s : { ...s, margin: mine.margin };
-
-  const setMyRate = (id: string, value: number) => {
-    setMine((prev) => ({ ...prev, perItem: { ...prev.perItem, [id]: value } }));
-    setMsg("");
-  };
-  const setMySetting = (key: keyof InstallerRates, value: number) => {
-    setMine((prev) => ({ ...prev, [key]: value }));
-    setMsg("");
-  };
-
-  // Certificates depend on a site, so the STC columns are evaluated against
-  // the quote tester's default zone and install date.
+  /** Operations price from EasyLink cost and margin. An installer buys at trade price and adds their own margin. */
+  const priceSettings: Settings = ops ? s : { ...s, margin: mine.margin };
+  const unitCost = (row: Row) => (ops ? row.supply : tradePrice(row.supply, s));
   const { zone, date } = QUOTE_DEFAULTS;
   const years = deemingYearsFor(date);
   const factor = batteryFactorFor(date);
+  const canPublish = live.source !== "sample" && !live.loading;
 
-  /** Every edit bumps the draft count, which is what "not published" counts. */
   const draft = (next: PriceBook) => {
     setPb(next);
     setDraftCount((n) => n + 1);
-    setMsg("");
+    setMsg(null);
   };
 
-  const setSetting = (key: keyof Settings, value: number) =>
-    draft({ ...pb, settings: { ...s, [key]: value } });
+  const setSetting = (key: NumericSetting, value: number) => draft({ ...pb, settings: { ...s, [key]: value } });
 
-  const editRow = (key: SectionKey, index: number, field: string, value: string | number) =>
-    draft({
-      ...pb,
-      [key]: pb[key].map((r, i) => (i === index ? { ...r, [field]: value } : r)),
-    } as PriceBook);
+  const editRow = (key: SectionKey, id: string, field: string, value: string | number) =>
+    draft({ ...pb, [key]: (pb[key] as Row[]).map((r) => (r.id === id ? { ...r, [field]: value } : r)) } as PriceBook);
 
-  const removeRow = (key: SectionKey, index: number) =>
-    draft({ ...pb, [key]: pb[key].filter((_, i) => i !== index) } as PriceBook);
+  const removeRow = (key: SectionKey, id: string) =>
+    draft({ ...pb, [key]: (pb[key] as Row[]).filter((r) => r.id !== id) } as PriceBook);
 
-  /**
-   * Mints the new row's id here rather than inside the factory: ids derived
-   * from the row count stay unique within a section without reading the clock
-   * during render.
-   */
-  const addRow = (key: SectionKey, blank: (id: string) => Row) => {
-    const used = new Set(pb[key].map((r) => r.id));
-    let n = pb[key].length + 1;
-    let id = `${key[0]}${n}`;
-    while (used.has(id)) id = `${key[0]}${++n}`;
-    draft({ ...pb, [key]: [...pb[key], blank(id)] } as PriceBook);
+  const addRow = (key: SectionKey, blank: Row) => draft({ ...pb, [key]: [...(pb[key] as Row[]), blank] } as PriceBook);
+
+  /** EasyLink installation price for one of a row, inc GST. */
+  const installFor = (key: SectionKey, row: Row): { value: number; label?: string } => {
+    switch (key) {
+      case "panels":
+        return { value: (row as Panel).w * s.panelPerW };
+      case "inverters":
+        return s.invWithPanels ? { value: s.invWithPanels } : { value: 0, label: "Free with panels" };
+      case "batteries":
+        return { value: batteryInstall((row as Battery).kwh, s) };
+      case "evChargers":
+        return { value: s.evInstall };
+      default:
+        return { value: (row as Extra).install };
+    }
   };
 
   /** Certificates a row earns, or null where the item can't earn any. */
@@ -231,111 +231,113 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
     one: string;
     note: string;
     spec: (r: Row) => string;
-    /** Takes a fresh id so the factory stays pure — see addRow below. */
-    blank: (id: string) => Row;
+    blank: () => Row;
   }[] = [
     {
       key: "panels",
       title: "Panels",
       one: "panel",
-      note: "STCs per panel are indicative: a system’s total is rounded down once.",
+      note: "Installation at the per-watt rate. STCs per panel are indicative: a system’s total is rounded down once.",
       spec: (r) => `${(r as Panel).w} W`,
-      blank: (id) => ({ id, model: "New panel", w: 440, supply: 100, install: 85 }),
+      blank: () => ({ id: `p${Date.now()}`, model: "New panel", w: 440, supply: 100, sup: "" }),
     },
     {
       key: "inverters",
       title: "Inverters",
       one: "inverter",
-      note: "Inverters earn no STCs on their own.",
+      note: "Installed free with panels; an inverter swap uses the swap rate. Inverters earn no STCs.",
       spec: (r) => {
         const i = r as Inverter;
         return `${i.kind} · ${i.kw} kW · ${i.phase}-phase`;
       },
-      blank: (id) => ({
-        id,
-        kind: "Hybrid" as const,
-        model: "New inverter",
-        kw: 10,
-        phase: 1 as const,
-        supply: 2000,
-        install: 400,
-      }),
+      blank: () => ({ id: `i${Date.now()}`, kind: "Hybrid" as const, model: "New inverter", kw: 10, phase: 1 as const, supply: 2000, sup: "" }),
     },
     {
       key: "batteries",
       title: "Batteries",
       one: "battery",
-      note: "Battery STCs use usable kWh, tiered 100 / 60 / 15%, nothing above 50 kWh.",
-      spec: (r) => `${(r as Battery).kwh} kWh usable`,
-      blank: (id) => ({
-        id,
-        model: "New battery",
-        kwh: 10,
-        supply: 4300,
-        install: 1100,
-      }),
+      note: "Usable kWh, tiered 100 / 60 / 15%, nothing above 50 kWh. Packages marked “inverter built in” add no separate inverter.",
+      spec: (r) => {
+        const b = r as Battery;
+        return `${b.kwh} kWh usable${b.inv ? ` · inverter built in${b.invKw ? ` ${b.invKw} kW` : ""}` : ""}`;
+      },
+      blank: () => ({ id: `b${Date.now()}`, model: "New battery", kwh: 10, supply: 4300, sup: "" }),
+    },
+    {
+      key: "evChargers",
+      title: "EV chargers",
+      one: "EV charger",
+      note: "Installed at the EV charger rate. EV chargers earn no STCs.",
+      spec: (r) => {
+        const e = r as EvCharger;
+        return `${e.kw} kW · ${e.phase}-phase`;
+      },
+      blank: () => ({ id: `e${Date.now()}`, model: "New EV charger", kw: 7, phase: 1 as const, supply: 600, sup: "" }),
     },
     {
       key: "extras",
       title: "Extras and adders",
       one: "extra",
-      note: "Per-panel extras multiply by the panel count.",
+      note: "Installation price is charged as entered (inc GST). Per-panel extras multiply by the panel count.",
       spec: (r) => `per ${(r as Extra).per}`,
-      blank: (id) => ({
-        id,
-        label: "New extra",
-        per: "job" as const,
-        supply: 0,
-        install: 0,
-      }),
+      blank: () => ({ id: `x${Date.now()}`, label: "New extra", per: "job" as const, supply: 0, install: 0 }),
     },
   ];
 
-  const publish = () => {
-    const version = "PB-2026-11";
-    const plural = draftCount === 1 ? "" : "s";
-    setLive(`${version} · takes effect ${auDate(effectiveFrom)}`);
-    setLog((prev) => [
-      {
-        version,
-        what: `${draftCount} change${plural} · margin ${s.margin}%, trade ${s.trade}%, STC ${rate(s.stcPrice)}`,
-        when: "Today · Daniel Shaw",
-      },
-      ...prev,
-    ]);
-    setDraftCount(0);
-    setMsg(
-      `${version} published. Installers see the new trade prices from ${auDate(effectiveFrom)}; quotes already sent keep their old prices.`,
-    );
+  const needle = filter.trim().toLowerCase();
+  const matches = (r: Row) => {
+    if (!needle) return true;
+    const text = [(r as Panel).model ?? (r as Extra).label, r.sup, r.sku].filter(Boolean).join(" ").toLowerCase();
+    return text.includes(needle);
   };
 
-  const discard = () => {
-    setPb(SAMPLE_PRICE_BOOK);
-    setDraftCount(0);
-    setMsg("Draft discarded.");
+  const total = useMemo(
+    () => pb.panels.length + pb.inverters.length + pb.batteries.length + pb.evChargers.length + pb.extras.length,
+    [pb],
+  );
+
+  const publish = async () => {
+    setSaving(true);
+    try {
+      const saved = await live.save(pb);
+      const when = saved.updatedAt ? new Date(saved.updatedAt).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" }) : "now";
+      setMsg({ tone: "ok", text: `Price book published ${when}. New website quotes use it straight away.` });
+    } catch (e) {
+      setMsg({ tone: "err", text: e instanceof Error ? e.message : "Couldn't publish the price book." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const discard = async () => {
+    await live.reload();
+    setMsg({ tone: "ok", text: "Draft discarded — showing the published book." });
   };
 
   return (
     <div className="flex min-h-full flex-col text-[#0F172A]">
       {ops ? (
-      <header className="flex flex-wrap items-center gap-3 border-b border-[#E3E8EF] bg-white px-8 py-3.5">
-        <nav aria-label="Breadcrumb" className="flex-grow text-[13px] text-[#5B6B80]">
-          <Link href="/master/quote-tester" className="text-[#5B6B80] hover:underline">
-            Pricing engine
-          </Link>{" "}
-          <span aria-hidden="true">/</span>{" "}
-          <span className="font-semibold text-[#0F172A]">Price book &amp; rules</span>
-        </nav>
-        <span className="rounded-full bg-[#DBEAFE] px-2.5 py-[3px] text-[12px] font-bold text-[#1E40AF]">
-          Sample price book
-        </span>
-        <span
-          className="rounded-full px-2.5 py-[3px] text-[12px] font-bold"
-          style={{ background: SUNRISE, color: SUN_INK }}
-        >
-          Pricing engine
-        </span>
-      </header>
+        <header className="flex flex-wrap items-center gap-3 border-b border-[#E3E8EF] bg-white px-8 py-3.5">
+          <nav aria-label="Breadcrumb" className="flex-grow text-[13px] text-[#5B6B80]">
+            <Link href="/master/quote-tester" className="text-[#5B6B80] hover:underline">
+              Pricing engine
+            </Link>{" "}
+            <span aria-hidden="true">/</span> <span className="font-semibold text-[#0F172A]">Price book &amp; rules</span>
+          </nav>
+          <span
+            className="rounded-full px-2.5 py-[3px] text-[12px] font-bold"
+            style={
+              live.source === "sample"
+                ? { background: "#FEF3C7", color: "#92400E" }
+                : { background: "#DCFCE7", color: "#166534" }
+            }
+          >
+            {priceBookLabel(live.source, live.updatedAt, live.loading)}
+          </span>
+          <span className="rounded-full px-2.5 py-[3px] text-[12px] font-bold" style={{ background: SUNRISE, color: SUN_INK }}>
+            Pricing engine v2
+          </span>
+        </header>
       ) : null}
 
       <div className="flex w-full max-w-[1440px] flex-col gap-[18px] px-8 pb-14 pt-6">
@@ -346,16 +348,16 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
             </h1>
             <p className="mb-0 mt-1 text-[13px] text-[#5B6B80]">
               {ops
-                ? "Supply and install costs for every item, margins, STC price and the CER rules the engine uses"
-                : "Your labour rates and margin on top of EasyLink trade prices. Every quote you price uses these."}
+                ? `Trade costs from your suppliers, margins, EasyLink installation rates and the CER rules every quote uses · ${total} items`
+                : `EasyLink trade prices, your installation rates and your margin · ${total} items. Costs and the published book stay with EasyLink.`}
             </p>
           </div>
           <span className="rounded-full bg-[#0B1A2E] px-2.5 py-[3px] text-[11px] font-bold text-white">
             {ops
               ? draftCount
-                ? "Draft · not yet published"
+                ? `Draft · ${draftCount} change${draftCount === 1 ? "" : "s"} not published`
                 : "No unpublished changes"
-              : "Only your team sees this"}
+              : "Your rates stay on this screen"}
           </span>
           {ops ? (
             <>
@@ -373,120 +375,122 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
           )}
         </div>
 
+        {live.source === "sample" && !live.loading ? (
+          <div role="alert" className="rounded-[12px] bg-[#FEF3C7] px-3.5 py-[11px] text-[14px] font-semibold text-[#92400E]">
+            {ops
+              ? `Couldn't load the live price book (${live.error}). Showing sample prices; publishing is off. Sign in as an admin and try again.`
+              : `Couldn't load the published price book (${live.error}). Showing sample trade prices.`}
+          </div>
+        ) : null}
+
         {msg ? (
           <div
             role="status"
-            className="rounded-[12px] bg-[#DCFCE7] px-3.5 py-[11px] text-[14px] font-semibold text-[#166534]"
+            className="rounded-[12px] px-3.5 py-[11px] text-[14px] font-semibold"
+            style={msg.tone === "ok" ? { background: "#DCFCE7", color: "#166534" } : { background: "#FEE2E2", color: "#991B1B" }}
           >
-            {msg}
+            {msg.text}
           </div>
         ) : null}
 
         {/* ------------------------------------------------- settings */}
-        <Card label="Settings">
+        {ops ? (
+          <Card label="Settings">
+            <div className="flex flex-wrap items-baseline gap-2.5">
+              <h2 className="m-0 flex-grow text-[16px] font-bold">Pricing settings</h2>
+              <span className={SUB}>
+                STC columns use Zone {zone}, install {auDate(date)} ({years} deeming yrs, battery factor {factor}).
+              </span>
+            </div>
+            <SettingsGrid fields={PRICING_FIELDS} s={s} onChange={setSetting} />
+            <label className="flex cursor-pointer items-start gap-2.5 text-[13px] leading-[1.4] text-[#334155]">
+              <input
+                type="checkbox"
+                checked={s.supplyOnlyStc}
+                onChange={(e) => draft({ ...pb, settings: { ...s, supplyOnlyStc: e.target.checked } })}
+                className="mt-px size-[18px] shrink-0 accent-[#F68A0A]"
+              />
+              <span>Allow STCs on supply-only jobs (the customer&rsquo;s own accredited installer creates them)</span>
+            </label>
+          </Card>
+        ) : (
+          <Card label="My margin">
+            <div className="flex flex-wrap items-baseline gap-2.5">
+              <h2 className="m-0 flex-grow text-[16px] font-bold">My margin</h2>
+              <span className={SUB}>
+                Added on top of EasyLink trade prices. Trade prices come from the published book. STC columns use Zone {zone}, install{" "}
+                {auDate(date)} ({years} deeming yrs, battery factor {factor}).
+              </span>
+            </div>
+            <label className="flex min-w-0 max-w-[280px] flex-col gap-1 text-[12px] font-semibold text-[#334155]">
+              <span>
+                My margin on equipment <span className={SUB}>(%)</span>
+              </span>
+              <input
+                type="number"
+                step="any"
+                className={`${INPUT} tabular-nums`}
+                value={mine.margin}
+                onChange={(e) => setMine({ margin: num(e.target.value) })}
+              />
+            </label>
+          </Card>
+        )}
+
+        <Card label="Installation rates">
           <div className="flex flex-wrap items-baseline gap-2.5">
-            <h2 className="m-0 flex-grow text-[16px] font-bold">
-              {ops ? "Pricing settings" : "My margin and job charges"}
-            </h2>
+            <h2 className="m-0 flex-grow text-[16px] font-bold">{ops ? "Installation rates" : "My installation rates"}</h2>
             <span className={SUB}>
-              STC columns use Zone {zone}, install {auDate(date)} ({years} deeming yrs, battery
-              factor {factor}). STC price {rate(s.stcPrice)} set by EasyLink.
-              {ops ? null : " Trade prices come from price book PB-2026-10."}
+              Charged to the customer as entered, inc GST, no margin. Check: 19 × 440 W ={" "}
+              {money(19 * 440 * s.panelPerW)} · 13.5 kWh battery = {money(batteryInstall(13.5, s))} · 40 kWh ={" "}
+              {money(batteryInstall(40, s))}
             </span>
           </div>
-          <div
-            className="grid gap-3"
-            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))" }}
-          >
-            {ops
-              ? SETTING_FIELDS.map(([key, label, unit]) => (
-                  <label
-                    key={key}
-                    className="flex min-w-0 flex-col gap-1 text-[12px] font-semibold text-[#334155]"
-                  >
-                    <span>
-                      {label} <span className={SUB}>({unit})</span>
-                    </span>
-                    <input
-                      type="number"
-                      step="any"
-                      className={`${INPUT} tabular-nums`}
-                      value={s[key] as number}
-                      onChange={(e) => setSetting(key, num(e.target.value))}
-                    />
-                  </label>
-                ))
-              : INSTALLER_SETTING_FIELDS.map(([key, label, unit]) => (
-                  <label
-                    key={key}
-                    className="flex min-w-0 flex-col gap-1 text-[12px] font-semibold text-[#334155]"
-                  >
-                    <span>
-                      {label} <span className={SUB}>({unit})</span>
-                    </span>
-                    <input
-                      type="number"
-                      step="any"
-                      className={`${INPUT} tabular-nums`}
-                      value={mine[key] as number}
-                      onChange={(e) => setMySetting(key, num(e.target.value))}
-                    />
-                  </label>
-                ))}
-          </div>
-          {ops ? (
-          <label className="flex cursor-pointer items-start gap-2.5 text-[13px] leading-[1.4] text-[#334155]">
-            <input
-              type="checkbox"
-              checked={s.supplyOnlyStc}
-              onChange={(e) =>
-                draft({ ...pb, settings: { ...s, supplyOnlyStc: e.target.checked } })
-              }
-              className="mt-px size-[18px] shrink-0 accent-[#F68A0A]"
-            />
-            <span>
-              Allow STCs on supply-only jobs (the customer&rsquo;s own accredited installer creates
-              them)
-            </span>
-          </label>
-          ) : null}
+          <SettingsGrid fields={INSTALL_FIELDS} s={s} onChange={setSetting} />
         </Card>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <label className="flex min-w-0 flex-[0_1_420px] flex-col gap-1 text-[12px] font-semibold text-[#334155]">
+            <span>Find an item</span>
+            <input
+              type="search"
+              className={INPUT}
+              placeholder="Model, supplier or SKU — e.g. Sigenergy, SBR"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          </label>
+        </div>
 
         {/* ------------------------------------------------- the book */}
         {sections.map((sec) => {
-          const rows = pb[sec.key];
+          const all = pb[sec.key] as Row[];
+          const rows = all.filter(matches);
           const nameKey = sec.key === "extras" ? "label" : "model";
           return (
             <Card bare key={sec.key} label={sec.title}>
               <div className="flex flex-wrap items-center gap-2.5 px-[18px] py-3.5">
-                <h2 className="m-0 text-[16px] font-bold">{sec.title}</h2>
+                <h2 className="m-0 text-[16px] font-bold">
+                  {sec.title} <span className={SUB}>({needle ? `${rows.length} of ${all.length}` : all.length})</span>
+                </h2>
                 <span className={`${SUB} flex-grow`}>{sec.note}</span>
                 {ops ? (
-                  <button
-                    type="button"
-                    className={`${BTN} ${BTN_SM}`}
-                    onClick={() => addRow(sec.key, sec.blank)}
-                  >
+                  <button type="button" className={`${BTN} ${BTN_SM}`} onClick={() => addRow(sec.key, sec.blank())}>
                     Add {sec.one}
                   </button>
                 ) : null}
               </div>
-              <div className="overflow-x-auto">
-                <table
-                  className={`w-full border-collapse ${ops ? "min-w-[980px]" : "min-w-[860px]"}`}
-                >
-                  <thead>
+              <div className="max-h-[560px] overflow-auto">
+                <table className={`w-full border-collapse ${ops ? "min-w-[1180px]" : "min-w-[860px]"}`}>
+                  <thead className="sticky top-0 z-[1]">
                     <tr>
                       <th className={`${TH} text-left`}>Item</th>
+                      {ops ? <th className={`${TH} text-left`}>Supplier</th> : null}
                       <th className={`${TH} text-left`}>Spec</th>
-                      {ops ? (
-                        <>
-                          <th className={`${TH} text-right`}>Supply cost</th>
-                          <th className={`${TH} text-right`}>Install cost</th>
-                        </>
-                      ) : null}
+                      {ops ? <th className={`${TH} text-right`}>Cost ex GST</th> : null}
                       <th className={`${TH} text-right`}>Trade price</th>
-                      {ops ? null : <th className={`${TH} text-right`}>My install rate</th>}
+                      <th className={`${TH} text-right`}>Item price</th>
+                      <th className={`${TH} text-right`}>Installation</th>
                       <th className={`${TH} text-right`}>Installed inc GST</th>
                       <th className={`${TH} text-right`}>STCs</th>
                       <th className={`${TH} text-right`}>Net installed</th>
@@ -494,12 +498,11 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r, i) => {
+                    {rows.map((r) => {
                       const stcs = stcsFor(sec.key, r);
-                      const installed = sellIncGst(
-                        unitSupply(r) + unitInstall(r),
-                        sellSettings,
-                      );
+                      const inst = installFor(sec.key, r);
+                      const item = itemPrice(unitCost(r), priceSettings);
+                      const installed = item + inst.value;
                       const net = installed - (stcs ?? 0) * s.stcPrice;
                       const name = (r as Panel & Extra)[nameKey as "model"] ?? "";
                       return (
@@ -510,74 +513,66 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
                                 aria-label="Name"
                                 className={NAME}
                                 value={name}
-                                onChange={(e) => editRow(sec.key, i, nameKey, e.target.value)}
+                                title={r.sku ? `SKU ${r.sku}${r.src ? ` · ${r.src}` : ""}` : r.src}
+                                onChange={(e) => editRow(sec.key, r.id, nameKey, e.target.value)}
                               />
                             ) : (
-                              <strong className="font-semibold">{name}</strong>
+                              <strong className="font-semibold" title={r.sku ? `SKU ${r.sku}` : undefined}>
+                                {name}
+                              </strong>
                             )}
                           </td>
+                          {ops ? (
+                            <td className={TD}>
+                              <input
+                                aria-label="Supplier"
+                                className={SUPPLIER}
+                                value={r.sup ?? ""}
+                                onChange={(e) => editRow(sec.key, r.id, "sup", e.target.value)}
+                              />
+                            </td>
+                          ) : null}
                           <td className={`${TD} ${SUB}`}>{sec.spec(r)}</td>
                           {ops ? (
-                            <>
-                              <td className={`${TD} ${NUM}`}>
-                                <input
-                                  type="number"
-                                  step="any"
-                                  aria-label="Supply cost"
-                                  className={CELL}
-                                  value={r.supply}
-                                  onChange={(e) =>
-                                    editRow(sec.key, i, "supply", num(e.target.value))
-                                  }
-                                />
-                              </td>
-                              <td className={`${TD} ${NUM}`}>
-                                <input
-                                  type="number"
-                                  step="any"
-                                  aria-label="Install cost"
-                                  className={CELL}
-                                  value={r.install}
-                                  onChange={(e) =>
-                                    editRow(sec.key, i, "install", num(e.target.value))
-                                  }
-                                />
-                              </td>
-                            </>
-                          ) : null}
-                          <td className={`${TD} ${NUM}`}>{money(tradePrice(r.supply, s))}</td>
-                          {ops ? null : (
                             <td className={`${TD} ${NUM}`}>
                               <input
                                 type="number"
                                 step="any"
-                                aria-label="My install rate"
+                                aria-label="Cost ex GST"
                                 className={CELL}
-                                value={unitInstall(r)}
-                                onChange={(e) => setMyRate(r.id, num(e.target.value))}
+                                value={r.supply}
+                                onChange={(e) => editRow(sec.key, r.id, "supply", num(e.target.value))}
                               />
                             </td>
-                          )}
+                          ) : null}
+                          <td className={`${TD} ${NUM}`}>{money(tradePrice(r.supply, s))}</td>
+                          <td className={`${TD} ${NUM}`}>{money(item)}</td>
+                          <td className={`${TD} ${NUM}`}>
+                            {ops && sec.key === "extras" ? (
+                              <input
+                                type="number"
+                                step="any"
+                                aria-label="Installation inc GST"
+                                className={CELL}
+                                value={(r as Extra).install}
+                                onChange={(e) => editRow(sec.key, r.id, "install", num(e.target.value))}
+                              />
+                            ) : (
+                              (inst.label ?? rate(inst.value))
+                            )}
+                          </td>
                           <td className={`${TD} ${NUM}`}>{money(installed)}</td>
-                          <td
-                            className={`${TD} ${NUM}`}
-                            style={{ background: stcs === null ? undefined : SUN_SOFT }}
-                          >
-                            {stcs === null
-                              ? DASH
-                              : sec.key === "panels"
-                                ? stcs.toFixed(2)
-                                : String(stcs)}
+                          <td className={`${TD} ${NUM}`} style={{ background: stcs === null ? undefined : SUN_SOFT }}>
+                            {stcs === null ? DASH : sec.key === "panels" ? stcs.toFixed(2) : String(stcs)}
                           </td>
                           <td className={`${TD} ${NUM}`}>{stcs === null ? DASH : money(net)}</td>
                           {ops ? (
                             <td className={TD}>
-                              {/* The EV charger is wired to the EV system type, so it can't go. */}
-                              {r.id !== "ev" && rows.length > 1 ? (
+                              {all.length > 1 ? (
                                 <button
                                   type="button"
                                   className={`${BTN} ${BTN_SM} text-[#991B1B]`}
-                                  onClick={() => removeRow(sec.key, i)}
+                                  onClick={() => removeRow(sec.key, r.id)}
                                 >
                                   Remove
                                 </button>
@@ -594,14 +589,9 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
           );
         })}
 
-        {/* ------------------------------------------------- rules + publish */}
-        {/* EasyLink owns the CER rules and the published book, so an installer
-            sees neither panel: their screen ends with their own rates. */}
+        {/* EasyLink owns the CER rules and the published book, so an installer sees neither. */}
         {ops ? (
-        <div
-          className="grid items-start gap-4"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}
-        >
+        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
           <Card label="STC rules">
             <div className="flex flex-wrap items-baseline gap-2.5">
               <h2 className="m-0 flex-grow text-[16px] font-bold">STC rules in force</h2>
@@ -610,9 +600,8 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
               </span>
             </div>
             <span className={SUB}>
-              Solar STCs = &lfloor;array kW × zone rating × deeming years&rfloor;. Battery STCs =
-              &lfloor;tiered usable kWh × factor&rfloor;, locked on the installation date. Check the
-              battery factor each January and July.
+              Solar STCs = &lfloor;array kW × zone rating × deeming years&rfloor;. Battery STCs = &lfloor;tiered usable kWh ×
+              factor&rfloor;, locked on the installation date. Check the battery factor each January and July.
             </span>
 
             <div className="grid grid-cols-2 gap-3">
@@ -631,7 +620,6 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
                   <div
                     key={year}
                     className="flex justify-between text-[13px]"
-                    // The install year in play is called out.
                     style={{ fontWeight: Number(year) === Number(date.slice(0, 4)) ? 700 : 400 }}
                   >
                     <span>Installed in {year}</span>
@@ -642,20 +630,14 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
             </div>
 
             <span className={EYE}>Battery STC factor by installation date</span>
-            <div
-              className="grid gap-1.5"
-              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}
-            >
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
               {BATTERY_FACTORS.map(([from, to, value]) => {
                 const current = date >= from && date <= to;
                 return (
                   <div
                     key={from}
                     className="rounded-[10px] px-2.5 py-2 text-[12px]"
-                    style={{
-                      border: `1px solid ${current ? SUN : BORDER}`,
-                      background: current ? SUN_SOFT : "#FFFFFF",
-                    }}
+                    style={{ border: `1px solid ${current ? SUN : BORDER}`, background: current ? SUN_SOFT : "#FFFFFF" }}
                   >
                     <span className={SUB}>
                       {auDate(from)} &ndash; {auDate(to)}
@@ -668,73 +650,46 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
             </div>
 
             <span className={SUB}>
-              Usable kWh bands: first 14 kWh at 100%, 14&ndash;28 kWh at 60%, 28&ndash;50 kWh at
-              15%, nothing above 50 kWh. Batteries under 5 kWh usable get none. Battery-only jobs
-              need existing solar on site. Inverter swaps and EV chargers earn no STCs.
+              Usable kWh bands: first 14 kWh at 100%, 14&ndash;28 kWh at 60%, 28&ndash;50 kWh at 15%, nothing above 50 kWh.
+              Batteries under 5 kWh usable get none. Battery-only jobs need existing solar on site. Inverter swaps and EV chargers
+              earn no STCs.
             </span>
           </Card>
 
           <Card label="Publish">
-            <h2 className="m-0 text-[16px] font-bold">Publish to installers</h2>
+            <h2 className="m-0 text-[16px] font-bold">Publish price book</h2>
             <span className={SUB}>
-              Installers quote from the published book: they see trade prices (EasyLink cost + trade
-              margin), never EasyLink cost or margin. Drafts change nothing until published.
+              Publishing saves this book to the pricing engine. The website&rsquo;s Designs page and every new quote price from it
+              straight away; customers only ever see customer prices, never costs, margins or suppliers.
             </span>
             <div className="grid grid-cols-2 gap-2.5">
               <div className="rounded-[10px] bg-[#F8FAFC] p-3">
-                <span className={SUB}>Live for installers</span>
+                <span className={SUB}>Live now</span>
                 <br />
-                <strong>{live}</strong>
+                <strong>{priceBookLabel(live.source, live.updatedAt, live.loading)}</strong>
               </div>
               <div className="rounded-[10px] bg-[#F8FAFC] p-3">
                 <span className={SUB}>This draft</span>
                 <br />
                 <strong>
-                  {draftCount
-                    ? `${draftCount} change${draftCount === 1 ? "" : "s"} not published`
-                    : "No changes yet"}
+                  {draftCount ? `${draftCount} change${draftCount === 1 ? "" : "s"} not published` : "No changes yet"}
                 </strong>
               </div>
             </div>
-            <label className="flex min-w-0 flex-col gap-1 text-[12px] font-semibold text-[#334155]">
-              <span>Takes effect</span>
-              <input
-                type="date"
-                className={INPUT}
-                value={effectiveFrom}
-                onChange={(e) => {
-                  if (e.target.value) setEffectiveFrom(e.target.value);
-                }}
-              />
-            </label>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 className={`${BTN} border-0 font-bold`}
                 style={{ background: SUNRISE, color: SUN_INK }}
+                disabled={!canPublish || saving || draftCount === 0}
                 onClick={publish}
               >
-                Publish price book
+                {saving ? "Publishing…" : "Publish price book"}
               </button>
-              <button type="button" className={BTN} onClick={discard}>
+              <button type="button" className={BTN} disabled={live.loading || saving || draftCount === 0} onClick={discard}>
                 Discard draft
               </button>
             </div>
-            <span className={SUB}>
-              Publishing is not wired up yet — this screen edits a draft in your browser only.
-            </span>
-
-            <span className={EYE}>History</span>
-            {log.map((h) => (
-              <div
-                key={h.version + h.when}
-                className="flex gap-2.5 border-b border-[#EEF2F6] py-1.5 text-[13px]"
-              >
-                <strong className="min-w-[110px]">{h.version}</strong>
-                <span className="flex-grow">{h.what}</span>
-                <span className={SUB}>{h.when}</span>
-              </div>
-            ))}
           </Card>
         </div>
         ) : null}

@@ -5,7 +5,9 @@ import {
 import {
   generateProposalPdfBlob,
   downloadPdfBlob,
+  type ProposalPdfLinks,
 } from "@/lib/proposal/generateProposalPdf";
+import { buildShareUrl, createShareLink } from "@/lib/customers/referrals";
 import { designToProposalPayload } from "@/lib/customers/custom-design";
 import type { CustomerDesign } from "@/lib/customers/designs";
 
@@ -39,10 +41,32 @@ export function designToProposalState(
   };
 }
 
+/**
+ * A signed-in customer has a referral code and a shareable link for this
+ * design, so the PDF's referral QR points a friend straight at it. Best
+ * effort: if the share link can't be made, the PDF still builds without it.
+ */
+async function referralLinksFor(
+  design: CustomerDesign,
+): Promise<ProposalPdfLinks> {
+  try {
+    const link = await createShareLink(design.id);
+    return {
+      referralCode: link.referralCode || undefined,
+      referralUrl: buildShareUrl(link),
+    };
+  } catch {
+    return {};
+  }
+}
+
 export async function buildDesignProposalPdf(
   design: CustomerDesign,
 ): Promise<Blob> {
-  return generateProposalPdfBlob(designToProposalState(design));
+  return generateProposalPdfBlob(
+    designToProposalState(design),
+    await referralLinksFor(design),
+  );
 }
 
 export function proposalFileName(design: CustomerDesign): string {

@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "react-toastify";
 import {
   forwardRef,
   useCallback,
@@ -10,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { GoogleMap, OverlayView, Polygon } from "@react-google-maps/api";
+import { GoogleMap, OverlayView, Polygon, Polyline } from "@react-google-maps/api";
 import Icon from "@/components/ui/Icons";
 import { useGoogleMaps } from "@/components/providers/GoogleMapsProvider";
 import {
@@ -22,6 +23,7 @@ import { useSolarEstimate } from "@/hooks/useSolarEstimate";
 import { useSolarLayers, type SolarLayerType } from "@/hooks/useSolarLayers";
 import { useBuildingFootprint } from "@/hooks/useBuildingFootprint";
 import { useCadastralParcel } from "@/hooks/useCadastralParcel";
+import { useRoofSnapshot } from "@/hooks/useRoofSnapshot";
 import type { GeoTiffOverlay } from "@/utils/geotiff";
 import {
   extractRoofOutlinesFromMask,
@@ -29,8 +31,26 @@ import {
   type RoofOutline,
 } from "@/utils/roofMaskContour";
 import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
+import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
+import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
+import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
+import { bestSquareRoof, rankSquareReadings, type SquareReading } from "@/lib/designer/squareRoof";
+import { keepPanelsClear } from "@/lib/designer/panelClearance";
+import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
+import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
+import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
+import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
+import { StreetViewThumb } from "./StreetViewThumb";
+import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
+import {
+  DESIGN_RULES,
+  inverterSizingFor,
+  roofPitchDegrees,
+  type PanelOrientation,
+} from "@/lib/designer/designRules";
 import { mergeProposalData } from "@/lib/store/designProposalSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
+import { compressCanvasSnapshot } from "@/lib/images/compress-browser";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -38,7 +58,7 @@ const MAP_CONTAINER: React.CSSProperties = {
   borderRadius: "25px",
 };
 
-const ACTIVE_LAYERS: SolarLayerType[] = ["rgb", "mask"];
+const ACTIVE_LAYERS: SolarLayerType[] = ["rgb", "mask", "dsm"];
 
 /** Hard cap on Google Maps Polygon instances for generated panels (perf). Keep ≥ typical “panels that fit” so the map matches the left-panel count. */
 const MAX_MAP_SOLAR_PANEL_POLYGONS = 1500;
@@ -97,12 +117,21 @@ function panelCorners(
   widthM: number,
   orientation: "PORTRAIT" | "LANDSCAPE",
   rotationDegrees = 0,
+  /** Roof pitch: the up-slope side looks shorter from above by cos(pitch). */
+  slopeDegrees = 0,
 ): google.maps.LatLngLiteral[] {
   const metersPerLat = 111320;
   const metersPerLng = 111320 * Math.cos((center.lat * Math.PI) / 180);
 
-  const halfHeightMeters = (orientation === "LANDSCAPE" ? widthM : heightM) / 2;
-  const halfWidthMeters = (orientation === "LANDSCAPE" ? heightM : widthM) / 2;
+  // Same convention as the packer (panelLayout.ts): portrait = long side up
+  // the slope, whichever field the data source calls height — otherwise a
+  // swapped height/width draws every panel turned 90° from where it was packed.
+  const longSide = Math.max(heightM, widthM);
+  const shortSide = Math.min(heightM, widthM);
+  const halfHeightMeters =
+    ((orientation === "LANDSCAPE" ? shortSide : longSide) / 2) *
+    Math.cos((slopeDegrees * Math.PI) / 180);
+  const halfWidthMeters = (orientation === "LANDSCAPE" ? longSide : shortSide) / 2;
   const angle = (rotationDegrees * Math.PI) / 180;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
@@ -122,249 +151,6 @@ function panelCorners(
   });
 }
 
-type PlanarPoint = { x: number; y: number; lat: number; lng: number };
-type PlanarXY = { x: number; y: number };
-
-function toPlanarPoint(
-  point: { lat: number; lng: number },
-  refLat: number,
-): PlanarPoint {
-  const scaleX = 111320 * Math.cos((refLat * Math.PI) / 180);
-  const scaleY = 111320;
-  return {
-    x: point.lng * scaleX,
-    y: point.lat * scaleY,
-    lat: point.lat,
-    lng: point.lng,
-  };
-}
-
-function planarBounds(points: PlanarXY[]) {
-  return points.reduce(
-    (bounds, point) => ({
-      minX: Math.min(bounds.minX, point.x),
-      maxX: Math.max(bounds.maxX, point.x),
-      minY: Math.min(bounds.minY, point.y),
-      maxY: Math.max(bounds.maxY, point.y),
-    }),
-    {
-      minX: Number.POSITIVE_INFINITY,
-      maxX: Number.NEGATIVE_INFINITY,
-      minY: Number.POSITIVE_INFINITY,
-      maxY: Number.NEGATIVE_INFINITY,
-    },
-  );
-}
-
-function planarToLatLng(
-  point: PlanarXY,
-  refLat: number,
-): google.maps.LatLngLiteral {
-  const scaleX = 111320 * Math.cos((refLat * Math.PI) / 180);
-  const scaleY = 111320;
-
-  return {
-    lat: point.y / scaleY,
-    lng: point.x / scaleX,
-  };
-}
-
-function centroidPlanar(points: PlanarXY[]): PlanarXY {
-  return {
-    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
-    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
-  };
-}
-
-function rotatePlanarPoint(
-  point: PlanarXY,
-  center: PlanarXY,
-  angleRadians: number,
-): PlanarXY {
-  const cos = Math.cos(angleRadians);
-  const sin = Math.sin(angleRadians);
-  const dx = point.x - center.x;
-  const dy = point.y - center.y;
-
-  return {
-    x: center.x + dx * cos - dy * sin,
-    y: center.y + dx * sin + dy * cos,
-  };
-}
-
-/**
- * Angle (degrees) of the longest edge of the polygon in planar metre space.
- */
-function longestEdgeAngleDegrees(polygon: google.maps.LatLngLiteral[]): number {
-  if (polygon.length < 2) return 0;
-  const avgLat = polygon.reduce((s, p) => s + p.lat, 0) / polygon.length;
-  let best = 0;
-  let bestLen = 0;
-  for (let i = 0; i < polygon.length; i++) {
-    const a = toPlanarPoint(polygon[i], avgLat);
-    const b = toPlanarPoint(polygon[(i + 1) % polygon.length], avgLat);
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    if (len > bestLen) {
-      bestLen = len;
-      best = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-    }
-  }
-  return best;
-}
-
-/**
- * Compute X-spans of the polygon at a given scanline Y by intersecting every
- * edge.  Returns sorted pairs {left, right}. For concave polygons there may
- * be more than one span per row.
- */
-function polygonXSpansAtY(
-  polygon: PlanarXY[],
-  y: number,
-): { left: number; right: number }[] {
-  const xs: number[] = [];
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const yi = polygon[i].y;
-    const yj = polygon[j].y;
-    if ((yi <= y && yj > y) || (yj <= y && yi > y)) {
-      const t = (y - yi) / (yj - yi);
-      xs.push(polygon[i].x + t * (polygon[j].x - polygon[i].x));
-    }
-  }
-  xs.sort((a, b) => a - b);
-  const spans: { left: number; right: number }[] = [];
-  for (let k = 0; k + 1 < xs.length; k += 2) {
-    spans.push({ left: xs[k], right: xs[k + 1] });
-  }
-  return spans;
-}
-
-function generatePanelsForRoofPolygon(
-  polygon: google.maps.LatLngLiteral[],
-  panelDimensions: { heightM: number; widthM: number },
-  segmentIndex: number,
-  /** Force every panel on this roof to one orientation; omit to auto-pick whichever fits more panels. */
-  orientationOverride?: "LANDSCAPE" | "PORTRAIT",
-): SolarPanel[] {
-  if (polygon.length < 3) return [];
-
-  const avgLat = polygon.reduce((s, p) => s + p.lat, 0) / polygon.length;
-  const polygonXY = polygon.map((p) => {
-    const pp = toPlanarPoint(p, avgLat);
-    return { x: pp.x, y: pp.y };
-  });
-  const centroid = centroidPlanar(polygonXY);
-
-  const rowAngleDeg = longestEdgeAngleDegrees(polygon);
-  const rowAngleRad = (rowAngleDeg * Math.PI) / 180;
-
-  const rotPoly = polygonXY.map((p) =>
-    rotatePlanarPoint(p, centroid, -rowAngleRad),
-  );
-  const bounds = planarBounds(rotPoly);
-
-  const gapM = 0.08;
-  const ROW_OFFSET_SAMPLES = 12;
-
-  const panelW = (landscape: boolean) =>
-    landscape
-      ? Math.max(panelDimensions.heightM, panelDimensions.widthM)
-      : Math.min(panelDimensions.heightM, panelDimensions.widthM);
-
-  const panelH = (landscape: boolean) =>
-    landscape
-      ? Math.min(panelDimensions.heightM, panelDimensions.widthM)
-      : Math.max(panelDimensions.heightM, panelDimensions.widthM);
-
-  const toSolarPanel = (
-    x: number,
-    y: number,
-    orientation: "PORTRAIT" | "LANDSCAPE",
-  ): SolarPanel => {
-    const center = rotatePlanarPoint({ x, y }, centroid, rowAngleRad);
-    return {
-      center: planarToLatLng(center, avgLat),
-      orientation,
-      rotationDegrees: rowAngleDeg,
-      segmentIndex,
-      yearlyEnergyDcKwh: 0,
-    };
-  };
-
-  /**
-   * For a row centred at height `y`, compute the *usable* X-spans by
-   * intersecting the polygon at the panel's top and bottom edges, then
-   * greedily pack panels left-to-right within each span:
-   *  1. The first panel is placed flush against the left boundary.
-   *  2. Each subsequent panel starts at (previous panel right edge + gap).
-   *  3. A panel is placed only when the remaining distance to the right
-   *     boundary >= panelWidth, guaranteeing no overlap with the border.
-   */
-  const fillRow = (
-    y: number,
-    pw: number,
-    ph: number,
-    orientation: "PORTRAIT" | "LANDSCAPE",
-  ): SolarPanel[] => {
-    const halfH = ph / 2;
-    const topSpans = polygonXSpansAtY(rotPoly, y + halfH);
-    const botSpans = polygonXSpansAtY(rotPoly, y - halfH);
-
-    const usableSpans: { left: number; right: number }[] = [];
-    for (const top of topSpans) {
-      for (const bot of botSpans) {
-        const left = Math.max(top.left, bot.left);
-        const right = Math.min(top.right, bot.right);
-        if (right - left >= pw) {
-          usableSpans.push({ left, right });
-        }
-      }
-    }
-
-    const panels: SolarPanel[] = [];
-    for (const span of usableSpans) {
-      let x = span.left + pw / 2;
-      while (x + pw / 2 <= span.right + 1e-6) {
-        panels.push(toSolarPanel(x, y, orientation));
-        x += pw + gapM;
-      }
-    }
-    return panels;
-  };
-
-  let bestPanels: SolarPanel[] = [];
-
-  const orientationsToTry = orientationOverride
-    ? [orientationOverride === "LANDSCAPE"]
-    : [true, false];
-
-  for (const isLandscape of orientationsToTry) {
-    const pw = panelW(isLandscape);
-    const ph = panelH(isLandscape);
-    const orientation: "PORTRAIT" | "LANDSCAPE" = isLandscape
-      ? "LANDSCAPE"
-      : "PORTRAIT";
-    const yStep = ph + gapM;
-
-    for (let s = 0; s < ROW_OFFSET_SAMPLES; s++) {
-      const yOffset = (s / ROW_OFFSET_SAMPLES) * yStep;
-      const generated: SolarPanel[] = [];
-
-      for (
-        let y = bounds.minY + ph / 2 + yOffset;
-        y + ph / 2 <= bounds.maxY + 1e-6;
-        y += yStep
-      ) {
-        generated.push(...fillRow(y, pw, ph, orientation));
-      }
-
-      if (generated.length > bestPanels.length) {
-        bestPanels = generated;
-      }
-    }
-  }
-
-  return bestPanels;
-}
 
 /* ── Imperative overlay hook ─────────────────────────────────── */
 
@@ -428,6 +214,7 @@ function useImperativePanels(
           panelDimensions.widthM,
           panel.orientation,
           panel.rotationDegrees,
+          panel.slopeDegrees,
         ),
         strokeColor: "#FFF176",
         strokeWeight: 0.8,
@@ -506,11 +293,9 @@ function useImperativeRoofOutline(
 
 /* ── Roof-polygon editing helpers ───────────────────────────── */
 
-/** `undefined` = auto-pick whichever orientation fits the most panels. */
 type RoofPolygon = {
   id: number;
   paths: google.maps.LatLngLiteral[];
-  orientation?: "LANDSCAPE" | "PORTRAIT";
 };
 
 function makeDefaultPolygon(
@@ -897,11 +682,32 @@ export const DesignsSolarPanelStepContent = forwardRef<
   );
   const [isGeneratingPanels, setIsGeneratingPanels] = useState(false);
   const [hasInitializedRoof, setHasInitializedRoof] = useState(false);
+  /** One orientation for every panel on every roof — never mixed. */
+  const [panelOrientation, setPanelOrientation] = useState<PanelOrientation>(
+    DESIGN_RULES.defaultOrientation,
+  );
+  /** Beautify Design: panels in aligned, symmetric blocks instead of the most that fit. */
+  const [beautified, setBeautified] = useState(false);
+  /**
+   * Side walls of an attached (terrace) house: the roof is cut to the strip
+   * between its two party walls. Terraces share one roof and one land lot
+   * can hold several houses (24 Derwent St, Glebe), so the walls are marked
+   * by hand: two clicks along one wall, one click on the other.
+   */
+  const [wallClicks, setWallClicks] = useState<google.maps.LatLngLiteral[] | null>(null);
+  /** Relook roof: the confirmed readings of this roof, best first, and which one is shown. */
+  const [relook, setRelook] = useState<{ readings: SquareReading[]; index: number } | null>(null);
+  const [sideWalls, setSideWalls] = useState<{
+    lines: [google.maps.LatLngLiteral, google.maps.LatLngLiteral][];
+    widthM: number;
+    roofsBefore: google.maps.LatLngLiteral[][];
+  } | null>(null);
 
   const { data, loading, error, retry } = useSolarEstimate(selectedLocation);
   const {
     rgb: rgbOverlay,
     mask: maskOverlay,
+    dsm: dsmRaster,
     loading: layersLoading,
     error: layersError,
     retry: layersRetry,
@@ -910,6 +716,39 @@ export const DesignsSolarPanelStepContent = forwardRef<
   const cadastralParcel = useCadastralParcel(selectedLocation);
 
   const maskRaster = maskOverlay?.raster ?? null;
+
+  /**
+   * Zoom-in roof analysis — the starting point for every roof: Google's
+   * satellite image at zoom 21 (~3 cm pixels) around the pin, with the roof
+   * found by its colour and traced (see roofSnapshot.ts). Its mask fits the
+   * eaves and its brightness finds the hips, ridges and valleys.
+   */
+  // The land lot keeps the roof finder off the neighbours' roofs; wait for it.
+  const parcelRing = cadastralParcel.data?.ring ?? null;
+  const roofSnapshot = useRoofSnapshot(
+    selectedLocation ?? null,
+    maskRaster,
+    layersLoading || cadastralParcel.loading,
+    dsmRaster,
+    parcelRing,
+  );
+  const snapshotOutlines = useMemo((): LatLngRing[] | null => {
+    const found = roofSnapshot.analysis?.outlines;
+    if (!found || found.length === 0) return null;
+    // Roof-line rule: straight lines along / square to the main walls (and
+    // 45° hips), shared corners; then eaves fitted to the zoomed roof edge.
+    // Square-walled hip roof, confirmed by Google's roof segments: the outline
+    // drawn along the walls (as by hand — 25 Gilbert St, Colyton).
+    const squared = roofSnapshot.analysis?.squared;
+    const sq = !data?.estimated ? bestSquareRoof(squared, data?.roofSegments, roofSnapshot.analysis?.luma ?? null) : null;
+    if (sq) return [sq.ring];
+    const straight = regularizeRoofOutlines(found.map((o) => o.ring));
+    const mask = roofSnapshot.analysis!.mask;
+    return regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, mask).ring));
+  }, [roofSnapshot.analysis, data?.estimated, data?.roofSegments]);
+  /** Roof edge and brightness to check lines against — the zoomed image when found, else Google Solar's layers. */
+  const lineMask = roofSnapshot.analysis?.mask ?? maskRaster;
+  const lineLuma = roofSnapshot.analysis?.luma ?? rgbOverlay?.luma ?? null;
 
   /**
    * Every roof section traced from the mask, largest first — a large
@@ -923,10 +762,16 @@ export const DesignsSolarPanelStepContent = forwardRef<
   }, [maskRaster, selectedLocation]);
 
   const roofMaskOutlines = useMemo((): LatLngRing[] | null => {
-    return maskTracedOutlines.length > 0
-      ? maskTracedOutlines.map((o) => o.ring)
-      : null;
-  }, [maskTracedOutlines]);
+    if (maskTracedOutlines.length === 0) return null;
+    const rings = maskTracedOutlines.map((o) => o.ring);
+    // Google's mask joins houses built close together: keep only what lies
+    // on this property's lot (134 Old Canterbury Rd, Summer Hill).
+    if (!parcelRing) return rings;
+    const clipped = rings
+      .map((r) => clipRingToConvexPolygon(r, parcelRing))
+      .filter((r) => r.length >= 3 && ringAreaM2(r) >= 4);
+    return clipped.length > 0 ? clipped : rings;
+  }, [maskTracedOutlines, parcelRing]);
 
   /**
    * True once the mask trace covers enough of Google's own whole-roof figure
@@ -1031,10 +876,12 @@ export const DesignsSolarPanelStepContent = forwardRef<
     : footprintOutline;
 
   /** True when the starting shape is a real trace of the roof, not a footprint or rectangle guess. */
-  const initialRoofIsTraced = Boolean(!trustedFootprintOutline && maskIsGood);
+  const initialRoofIsTraced = Boolean(snapshotOutlines || (!trustedFootprintOutline && maskIsGood));
 
   /** Best roof outline available right now — null while still waiting on a source that could still beat the next fallback. */
   const bestAvailableOutlines = useMemo((): LatLngRing[] | null => {
+    // Zoom and image analysis first: the roof as it looks in the image.
+    if (snapshotOutlines) return snapshotOutlines;
     if (trustedFootprintOutline) return [trustedFootprintOutline];
     if (maskIsGood) return roofMaskOutlines as LatLngRing[];
     // Google's real match disagreed with the footprint and the mask trace
@@ -1052,6 +899,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     footprintOutline,
     maskIsGood,
     roofMaskOutlines,
+    snapshotOutlines,
     trustedFootprintOutline,
   ]);
 
@@ -1066,6 +914,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
     // runs once per address, locked in wrong permanently even after the
     // slower data arrives and would have corrected it.
     if (footprint.loading || cadastralParcel.loading || loading) return null;
+    // Wait for the zoom-in analysis before falling back to a footprint or box.
+    if (roofSnapshot.loading) return null;
     if (bestAvailableOutlines) return bestAvailableOutlines;
     if (boundingBoxNearPin) return [boundingBoxToPolygon(boundingBoxNearPin)];
     if (layersLoading) return null;
@@ -1077,6 +927,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     footprint.loading,
     layersLoading,
     loading,
+    roofSnapshot.loading,
     selectedLocation,
   ]);
 
@@ -1105,6 +956,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
     setEditingRoofs([]);
     setSelectedRoofId(null);
     setHasInitializedRoof(false);
+    setSideWalls(null);
+    setWallClicks(null);
+    setRelook(null);
   }
 
   useEffect(() => {
@@ -1174,6 +1028,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     generatedPanels: null as SolarPanel[] | null,
     polygonTotalAreaM2: null as number | null,
     panelCountInput: "",
+    panelOrientation: DESIGN_RULES.defaultOrientation as PanelOrientation,
   });
   const screenshotFromStoreRef = useRef<string | null>(null);
   const didHydrateFromReduxRef = useRef(false);
@@ -1188,8 +1043,15 @@ export const DesignsSolarPanelStepContent = forwardRef<
       generatedPanels,
       polygonTotalAreaM2,
       panelCountInput,
+      panelOrientation,
     };
-  }, [savedRoofs, generatedPanels, polygonTotalAreaM2, panelCountInput]);
+  }, [
+    savedRoofs,
+    generatedPanels,
+    polygonTotalAreaM2,
+    panelCountInput,
+    panelOrientation,
+  ]);
 
   useEffect(() => {
     screenshotFromStoreRef.current =
@@ -1212,11 +1074,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
       return;
     }
     if (didHydrateFromReduxRef.current) return;
+    // A stored design with no roof and no panels (an empty save, or a draft
+    // from before the roof was traced) has nothing to restore. Restoring it
+    // left the page out of edit mode with no roof, so the green Save Roof
+    // button never showed (134 Old Canterbury Rd, 29 Oct 2026); start the
+    // editor with the roof found instead.
+    if (
+      solarDesignFromStore.savedRoofs.length === 0 &&
+      (solarDesignFromStore.generatedPanels?.length ?? 0) === 0
+    ) {
+      return;
+    }
     didHydrateFromReduxRef.current = true;
     setSavedRoofs(solarDesignFromStore.savedRoofs);
     setGeneratedPanels(solarDesignFromStore.generatedPanels);
     setPolygonTotalAreaM2(solarDesignFromStore.polygonTotalAreaM2);
     setPanelCountInput(solarDesignFromStore.panelCountInput);
+    setPanelOrientation(
+      solarDesignFromStore.panelOrientation ?? DESIGN_RULES.defaultOrientation,
+    );
     setHasInitializedRoof(true);
     setIsEditing(false);
   }, [selectedLocation, solarDesignFromStore]);
@@ -1283,6 +1159,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
   const handleEditClick = useCallback(() => {
     if (!selectedLocation) return;
     setIsEditing(true);
+    setBeautified(false);
+    setWallClicks(null);
     if (savedRoofs.length > 0) {
       // Already-saved shapes — the installer confirmed these (or drew them)
       // before, so there's nothing new to flag.
@@ -1347,39 +1225,377 @@ export const DesignsSolarPanelStepContent = forwardRef<
     });
   }, [selectedRoofId]);
 
-  /** Cycles the selected roof's panel orientation: auto → landscape → portrait → auto. */
-  const handleRotatePanels = useCallback(() => {
-    if (selectedRoofId === null) return;
-    setEditingRoofs((prev) =>
-      prev.map((r) => {
-        if (r.id !== selectedRoofId) return r;
-        const next =
-          r.orientation === undefined
-            ? "LANDSCAPE"
-            : r.orientation === "LANDSCAPE"
-              ? "PORTRAIT"
-              : undefined;
-        return { ...r, orientation: next };
-      }),
-    );
-  }, [selectedRoofId]);
+  /**
+   * Roof-line finder: faces come from Google's height model when it covers
+   * the roof (each face with its own pitch and slope direction), straightened
+   * so neighbouring faces share corners. Without usable height data, falls
+   * back to the standard hip split of each outline.
+   */
+  const facesFor = useCallback(
+    (paths: google.maps.LatLngLiteral[][]) => {
+      // Square-walled hip roof confirmed by Google's segments: hips and valleys
+      // computed from the walls, exactly — no correcting needed.
+      // Faces by trigonometry from the walls (hip or gable at each end), kept
+      // only when Google's roof data confirms them; every hip, valley and
+      // ridge is then checked against the lines seen in the image.
+      const reading =
+        paths.length === 1 && !data?.estimated
+          ? rankSquareReadings([paths[0]], data?.roofSegments, roofSnapshot.analysis?.luma ?? null, relook ? { maxShareDiff: 0.15, minSeen: 0.2 } : {})[0]
+          : undefined;
+      if (reading) {
+        const obstructions: RoofObstruction[] = roofSnapshot.analysis
+          ? findRoofObstructions(roofSnapshot.analysis.luma, reading.faces.map((f) => f.ring))
+          : [];
+        return { source: "square-hip" as const, faces: reading.faces, interiorChecks: reading.lines, moved: 0, obstructions, gables: reading.gables.length };
+      }
+      const detected = detectRoofFaces(dsmRaster, paths, maskRaster);
+      const source = detected && detected.length > 0 ? ("height-model" as const) : ("assumed-hip" as const);
+      let faces: { ring: google.maps.LatLngLiteral[]; eaveDeg: number; pitchDeg?: number; azimuthDeg?: number }[];
+      if (detected && detected.length > 0) {
+        const rings = regularizeRoofOutlines(detected.map((f) => f.ring));
+        faces = detected.map((f, i) => ({
+          ring: rings[i],
+          eaveDeg: f.eaveDeg,
+          pitchDeg: f.pitchDeg,
+          azimuthDeg: f.azimuthDeg,
+        }));
+        // The height model is coarse (0.5 m) and leaves gaps: fill the faces
+        // out to the roof outline on the zoomed image's 3 cm grid, each with
+        // rows along its own eave.
+        const snap = roofSnapshot.analysis;
+        if (snap) faces = fillFacesOnRoofs(faces, paths, snap.mask, snap.metresPerPixel);
+      } else {
+        faces = splitRoofsIntoFaces(paths).map((f) => ({ ring: f.ring, eaveDeg: f.eaveDeg }));
+      }
+      // Correct the lines against the zoomed image: faces meet the eaves
+      // exactly, and hips / ridges / valleys move onto the edges seen in it.
+      const corrected = correctInteriorLines(faces, paths, lineLuma);
+      // Obstructions and steps (vents, whirlybirds, antennas, level
+      // differences) found on the zoomed image inside the faces; the packer
+      // keeps 100 mm clear of each and packs around them.
+      const obstructions: RoofObstruction[] = roofSnapshot.analysis
+        ? findRoofObstructions(roofSnapshot.analysis.luma, corrected.faces.map((f) => f.ring))
+        : [];
+      return { source, faces: corrected.faces, interiorChecks: corrected.checks, moved: corrected.moved, obstructions };
+    },
+    [dsmRaster, lineLuma, maskRaster, roofSnapshot.analysis, data?.estimated, data?.roofSegments, relook],
+  );
 
-  const selectedRoofOrientation = useMemo(
-    () => editingRoofs.find((r) => r.id === selectedRoofId)?.orientation,
-    [editingRoofs, selectedRoofId],
+  const savedFaceSet = useMemo(() => facesFor(savedRoofs), [facesFor, savedRoofs]);
+
+  /** The faces the panels sit on, in a plain serialisable shape, saved with the design for the proposal drawing. */
+  const facesForProposal = useCallback(
+    (paths: google.maps.LatLngLiteral[][]) => {
+      if (paths.length === 0) return undefined;
+      try {
+        return facesFor(paths).faces.map((f) => {
+          const face = f as { ring: google.maps.LatLngLiteral[]; pitchDeg?: number; azimuthDeg?: number };
+          return {
+            ring: face.ring.map((p) => ({ lat: p.lat, lng: p.lng })),
+            pitchDeg: face.pitchDeg,
+            azimuthDeg: face.azimuthDeg,
+          };
+        });
+      } catch {
+        return undefined;
+      }
+    },
+    [facesFor],
+  );
+  const savedFaces = savedFaceSet.faces;
+
+  /**
+   * Every roof line of the saved design, checked against Google's imagery:
+   * eaves against the roof mask, hips/valleys/ridges against the image.
+   */
+  const lineChecks = useMemo((): LineCheck[] => {
+    if (savedRoofs.length === 0) return [];
+    const eaves = savedRoofs.flatMap((ring) => fitEavesToMask(ring, lineMask).checks);
+    return [...eaves, ...savedFaceSet.interiorChecks];
+  }, [lineMask, savedFaceSet.interiorChecks, savedRoofs]);
+
+  const lineCheckSummary = useMemo(() => {
+    const checked = lineChecks.filter((c) => c.status !== "no-data");
+    const ok = checked.filter((c) => c.status === "confirmed" || c.status === "adjusted");
+    return { total: lineChecks.length, checked: checked.length, ok: ok.length };
+  }, [lineChecks]);
+
+  /** Google's area-weighted roof pitch, or the 22.5° default when there's no real data. */
+  const roofPitchDeg = useMemo(
+    () => roofPitchDegrees(data?.roofSegments, data?.estimated),
+    [data?.estimated, data?.roofSegments],
+  );
+
+  /** Packs every roof with the design's single orientation, the 100 mm setback and the roof pitch. */
+  const layoutPanels = useCallback(
+    (
+      paths: google.maps.LatLngLiteral[][],
+      orientation: PanelOrientation,
+      beautify = false,
+    ): SolarPanel[] | null => {
+      if (!data?.panelDimensions) return null;
+      // Face rule: find each roof's faces (height model, else hip split) and
+      // pack them one at a time, so no panel crosses a hip, valley or ridge.
+      const { faces, obstructions } = facesFor(paths);
+      // Alignment rule: rows parallel to the main walls — the longest edge of
+      // the largest roof outline, not whichever face happens to come first.
+      const largest = paths.reduce<google.maps.LatLngLiteral[] | null>(
+        (best, p) => (p.length >= 3 && (!best || ringAreaM2(p) > ringAreaM2(best)) ? p : best),
+        null,
+      );
+      const axis = largest ? longestEdgeAngleDegrees(largest) : undefined;
+      const layoutOptions = { orientation, pitchDeg: roofPitchDeg, obstructions: obstructions.map((o) => o.ring) };
+      const packed = beautify
+        ? beautifyPanelsForFaces(faces, data.panelDimensions, layoutOptions, axis)
+        : generatePanelsForFaces(faces, data.panelDimensions, layoutOptions, axis);
+      // Basic rule, checked last whatever packed them: every panel inside one
+      // face and the roof outline, 100 mm clear of every roof line.
+      return dedupeSolarPanels(
+        keepPanelsClear(packed, faces.map((f) => f.ring), paths, data.panelDimensions, { clearM: DESIGN_RULES.edgeSetbackM }),
+      );
+    },
+    [data?.panelDimensions, facesFor, roofPitchDeg],
+  );
+
+  /**
+   * Writes the design to Redux, after the map has repainted so the
+   * screenshot used in proposals shows the new panels.
+   */
+  const persistSolarDesign = useCallback(
+    (
+      paths: google.maps.LatLngLiteral[][],
+      panels: SolarPanel[] | null,
+      totalAreaM2: number,
+      orientation: PanelOrientation,
+    ) => {
+      const pin = selectedLocation;
+      if (!pin) return;
+      const pathsSnapshot = paths.map((p) => [...p]);
+      const panelSnap = panelCountInputRef.current;
+
+      const captureAndPersist = async () => {
+        let dataUrl: string | null = null;
+        try {
+          if (mapCaptureRef.current) {
+            const { default: html2canvas } = await import("html2canvas");
+            const canvas = await html2canvas(mapCaptureRef.current, {
+              scale: 1,
+              useCORS: true,
+              logging: false,
+              backgroundColor: "#1a1d29",
+            });
+            // JPEG within the snapshot budget (lib/images/policy.ts): a PNG
+            // of satellite imagery is ~1 MB and was over the web server's
+            // request limit, so designs failed to save.
+            dataUrl = compressCanvasSnapshot(canvas);
+          }
+        } catch {
+          dataUrl = null;
+        }
+        dispatch(
+          mergeProposalData({
+            solarDesign: {
+              pinLat: pin.lat,
+              pinLng: pin.lng,
+              savedRoofs: pathsSnapshot,
+              generatedPanels: panels,
+              polygonTotalAreaM2: totalAreaM2,
+              panelCountInput: panelSnap,
+              mapScreenshotDataUrl: dataUrl,
+              panelOrientation: orientation,
+              panelDimensions: data?.panelDimensions,
+              roofFaces: facesForProposal(pathsSnapshot),
+            },
+          }),
+        );
+      };
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.setTimeout(() => {
+            void captureAndPersist();
+          }, 280);
+        });
+      });
+    },
+    [dispatch, selectedLocation, data?.panelDimensions, facesForProposal],
+  );
+
+  /**
+   * Panel counts for both orientations on the saved roofs, so the toggle can
+   * show what switching would give before the customer clicks it.
+   */
+  const orientationCounts = useMemo((): Record<
+    PanelOrientation,
+    number
+  > | null => {
+    if (isEditing || savedRoofs.length === 0 || !data?.panelDimensions) {
+      return null;
+    }
+    return {
+      PORTRAIT: layoutPanels(savedRoofs, "PORTRAIT")?.length ?? 0,
+      LANDSCAPE: layoutPanels(savedRoofs, "LANDSCAPE")?.length ?? 0,
+    };
+  }, [data?.panelDimensions, isEditing, layoutPanels, savedRoofs]);
+
+  /**
+   * Switches the whole design between portrait and landscape. While editing,
+   * the choice applies on Save; once roofs are saved, panels re-lay straight
+   * away.
+   */
+  const handleOrientationChange = useCallback(
+    (next: PanelOrientation) => {
+      if (next === panelOrientation) return;
+      setPanelOrientation(next);
+      if (isEditing || savedRoofs.length === 0) return;
+      const panels = layoutPanels(savedRoofs, next, beautified);
+      setGeneratedPanels(panels);
+      persistSolarDesign(savedRoofs, panels, polygonTotalAreaM2 ?? 0, next);
+    },
+    [
+      beautified,
+      isEditing,
+      layoutPanels,
+      panelOrientation,
+      persistSolarDesign,
+      polygonTotalAreaM2,
+      savedRoofs,
+    ],
+  );
+
+  /** Beautify on/off: re-lays the saved roofs in aligned blocks, or back to the most that fit. */
+  const handleBeautifyToggle = useCallback(() => {
+    if (isEditing || savedRoofs.length === 0) return;
+    const next = !beautified;
+    const panels = layoutPanels(savedRoofs, panelOrientation, next);
+    setBeautified(next);
+    setGeneratedPanels(panels);
+    setPanelCountInput("");
+    persistSolarDesign(savedRoofs, panels, polygonTotalAreaM2 ?? 0, panelOrientation);
+  }, [beautified, isEditing, layoutPanels, panelOrientation, persistSolarDesign, polygonTotalAreaM2, savedRoofs]);
+
+  /** Re-lays panels on new saved roofs (after the side walls cut them). */
+  const applyRoofs = useCallback(
+    (roofs: google.maps.LatLngLiteral[][]) => {
+      setSavedRoofs(roofs);
+      let area = 0;
+      for (const r of roofs) area += ringAreaM2(r);
+      setPolygonTotalAreaM2(area);
+      const panels = layoutPanels(roofs, panelOrientation, beautified);
+      setGeneratedPanels(panels);
+      setPanelCountInput("");
+      persistSolarDesign(roofs, panels, area, panelOrientation);
+    },
+    [beautified, layoutPanels, panelOrientation, persistSolarDesign],
+  );
+
+  const handleSideWallsButton = useCallback(() => {
+    if (sideWalls) {
+      // Remove the walls: back to the roof as it was.
+      const before = sideWalls.roofsBefore;
+      setSideWalls(null);
+      setWallClicks(null);
+      applyRoofs(before);
+      return;
+    }
+    setWallClicks((c) => (c ? null : []));
+  }, [applyRoofs, sideWalls]);
+
+  /**
+   * Relook roof: draws the roof again in other readings (other edge and
+   * colour settings, hip or gable at each end), keeps those Google's roof
+   * data confirms, and shows them best first — the reading whose hips,
+   * valleys and ridges the image shows most — one more per press.
+   */
+  const handleRelook = useCallback(() => {
+    const analysis = roofSnapshot.analysis;
+    if (!analysis || data?.estimated) {
+      toast.info("Relook needs the zoomed roof image and Google's roof data, which aren't available here. Use Edit to mark the roof.");
+      return;
+    }
+    let state = relook;
+    if (!state) {
+      const rings = [...(savedRoofs.length === 1 ? [savedRoofs[0]] : []), ...(analysis.relook?.() ?? [])];
+      const readings = rankSquareReadings(rings, data?.roofSegments, analysis.luma, { maxShareDiff: 0.15, minSeen: 0.2 });
+      if (readings.length === 0) {
+        toast.info("No other reading of this roof matches Google's roof data. Use Edit to mark the roof by hand.");
+        return;
+      }
+      state = { readings, index: -1 };
+    }
+    const key = (r: google.maps.LatLngLiteral[]) => r.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join(";");
+    const current = savedRoofs.length === 1 ? key(savedRoofs[0]) : "";
+    let next = (state.index + 1) % state.readings.length;
+    if (state.readings.length > 1 && key(state.readings[next].ring) === current) next = (next + 1) % state.readings.length;
+    setRelook({ readings: state.readings, index: next });
+    setSideWalls(null);
+    setWallClicks(null);
+    applyRoofs([state.readings[next].ring]);
+  }, [applyRoofs, data?.estimated, data?.roofSegments, relook, roofSnapshot.analysis, savedRoofs]);
+
+  const handleMapClick = useCallback(
+    (e: google.maps.MapMouseEvent) => {
+      if (!wallClicks || !e.latLng) return;
+      const pts = [...wallClicks, { lat: e.latLng.lat(), lng: e.latLng.lng() }];
+      if (pts.length < 3) {
+        setWallClicks(pts);
+        return;
+      }
+      setWallClicks(null);
+      // Wall 1 through the first two clicks; wall 2 parallel through the third.
+      const ref = pts[0];
+      const mL = 111320 * Math.cos((ref.lat * Math.PI) / 180);
+      const xy = (p: google.maps.LatLngLiteral) => ({ x: (p.lng - ref.lng) * mL, y: (p.lat - ref.lat) * 111320 });
+      const ll = (p: { x: number; y: number }) => ({ lat: ref.lat + p.y / 111320, lng: ref.lng + p.x / mL });
+      const a = xy(pts[0]), b = xy(pts[1]), c = xy(pts[2]);
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 0.5) return;
+      const u = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+      const n = { x: -u.y, y: u.x };
+      const w = (c.x - a.x) * n.x + (c.y - a.y) * n.y;
+      if (Math.abs(w) < 1) return;
+      const far = 80;
+      const p = (t: number, s: number) => ll({ x: a.x + n.x * t + u.x * s, y: a.y + n.y * t + u.y * s });
+      const strip: google.maps.LatLngLiteral[] = [p(0, -far), p(0, far), p(w, far), p(w, -far)];
+      const before = sideWalls?.roofsBefore ?? savedRoofs;
+      const clipped = before
+        .map((r) => clipRingToConvexPolygon(r, strip))
+        .filter((r) => r.length >= 3 && ringAreaM2(r) >= 2);
+      if (clipped.length === 0) return;
+      setSideWalls({
+        lines: [
+          [p(0, -far), p(0, far)],
+          [p(w, -far), p(w, far)],
+        ],
+        widthM: Math.abs(w),
+        roofsBefore: before,
+      });
+      applyRoofs(clipped);
+    },
+    [applyRoofs, savedRoofs, sideWalls, wallClicks],
   );
 
   const handleSave = useCallback(() => {
-    /* Read final paths from imperative polygon refs (user may have dragged vertices) */
-    const currentPaths = getCurrentEditingPaths();
-    /* Pair each path with its roof's orientation override before filtering, so indices stay aligned. */
-    const validRoofs = editingRoofs
-      .map((roof, index) => ({
-        path: currentPaths[index],
-        orientation: roof.orientation,
-      }))
-      .filter((r) => r.path.length >= 3);
-    const validPaths = validRoofs.map((r) => r.path);
+    /* Read final paths from imperative polygon refs (user may have dragged vertices),
+       then apply the roof-line rule: straight edges at 0/45/90° to the main
+       walls, corners at line intersections, shared corners between roofs. */
+    const straightened = regularizeRoofOutlines(
+      getCurrentEditingPaths().filter((p) => p.length >= 3),
+    );
+    // Roof-line check: fit each eave onto Google's roof mask (moved when the
+    // real edge is more than 100 mm away), then straighten again.
+    // A square-walled hip roof confirmed by Google keeps the border drawn
+    // along its walls: fitting it to the rough roof trace pushed the east
+    // eave of 25 Gilbert St out onto the patio.
+    const squareConfirmed =
+      straightened.length === 1 &&
+      !data?.estimated &&
+      rankSquareReadings([straightened[0]], data?.roofSegments, roofSnapshot.analysis?.luma ?? null).length > 0;
+    const validPaths = lineMask && !squareConfirmed
+      ? regularizeRoofOutlines(
+          straightened.map((ring) => fitEavesToMask(ring, lineMask).ring),
+        )
+      : straightened;
     setSavedRoofs(validPaths);
 
     if (validPaths.length === 0) {
@@ -1400,6 +1616,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
               polygonTotalAreaM2: null,
               panelCountInput: panelCountInputRef.current,
               mapScreenshotDataUrl: null,
+              panelOrientation,
             },
           }),
         );
@@ -1418,21 +1635,12 @@ export const DesignsSolarPanelStepContent = forwardRef<
     let panelsToPersist: SolarPanel[] | null = null;
     setIsGeneratingPanels(true);
     try {
-      if (data?.panelDimensions) {
-        panelsToPersist = dedupeSolarPanels(
-          validRoofs.flatMap((roof, index) =>
-            generatePanelsForRoofPolygon(
-              roof.path,
-              data.panelDimensions,
-              index,
-              roof.orientation,
-            ),
-          ),
-        );
-        setGeneratedPanels(panelsToPersist);
-      } else {
-        setGeneratedPanels(null);
-      }
+      setBeautified(false);
+      // New roofs drawn: the side-wall cut (if any) is part of them now.
+      setSideWalls(null);
+      setWallClicks(null);
+      panelsToPersist = layoutPanels(validPaths, panelOrientation);
+      setGeneratedPanels(panelsToPersist);
     } finally {
       setIsGeneratingPanels(false);
     }
@@ -1442,57 +1650,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
     setEditingRoofs([]);
     setSelectedRoofId(null);
 
-    const pathsSnapshot = validPaths.map((p) => [...p]);
-    const totalAreaSnapshot = totalArea;
-    const pin = selectedLocation;
-    const panelSnap = panelCountInputRef.current;
-
-    const captureAndPersist = async () => {
-      let dataUrl: string | null = null;
-      try {
-        if (mapCaptureRef.current) {
-          const { default: html2canvas } = await import("html2canvas");
-          const canvas = await html2canvas(mapCaptureRef.current, {
-            scale: 1,
-            useCORS: true,
-            logging: false,
-            backgroundColor: "#1a1d29",
-          });
-          dataUrl = canvas.toDataURL("image/png");
-        }
-      } catch {
-        dataUrl = null;
-      }
-      if (!pin) return;
-      dispatch(
-        mergeProposalData({
-          solarDesign: {
-            pinLat: pin.lat,
-            pinLng: pin.lng,
-            savedRoofs: pathsSnapshot,
-            generatedPanels: panelsToPersist,
-            polygonTotalAreaM2: totalAreaSnapshot,
-            panelCountInput: panelSnap,
-            mapScreenshotDataUrl: dataUrl,
-          },
-        }),
-      );
-    };
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.setTimeout(() => {
-          void captureAndPersist();
-        }, 280);
-      });
-    });
+    persistSolarDesign(validPaths, panelsToPersist, totalArea, panelOrientation);
   }, [
-    data?.panelDimensions,
+    data?.estimated,
+    data?.roofSegments,
     dispatch,
-    editingRoofs,
     getCurrentEditingPaths,
+    layoutPanels,
+    lineMask,
+    panelOrientation,
+    persistSolarDesign,
     selectedLocation,
   ]);
+
+  /** Inverter and phase needs for the panels currently selected, under the oversizing and export rules. */
+  const inverterSizing = useMemo(() => {
+    const watts = data?.panelCapacityWatts ?? 0;
+    if (!watts || !selectedPanelCount) return null;
+    return inverterSizingFor(selectedPanelCount, watts);
+  }, [data?.panelCapacityWatts, selectedPanelCount]);
 
   const mapCenter = selectedLocation ?? DESIGNS_LOCATION_STEP.defaultCenter;
   const mapZoom = selectedLocation ? DESIGNS_LOCATION_STEP.defaultZoom : 14;
@@ -1527,10 +1703,13 @@ export const DesignsSolarPanelStepContent = forwardRef<
     data?.panelDimensions,
     showPanels,
   );
+  // Preview outline before editing: only the traced roof, once the zoom-in
+  // analysis has finished. Google's building box is never drawn as a
+  // rectangle here (it flashed up while loading, before the real outline).
   useImperativeRoofOutline(
     mapReady,
-    bestAvailableOutlines,
-    boundingBoxNearPin,
+    roofSnapshot.loading ? null : bestAvailableOutlines,
+    undefined,
     showPanels && !isEditing && savedRoofs.length === 0,
   );
 
@@ -1597,20 +1776,27 @@ export const DesignsSolarPanelStepContent = forwardRef<
               polygonTotalAreaM2: solarPersistRef.current.polygonTotalAreaM2,
               panelCountInput: solarPersistRef.current.panelCountInput,
               mapScreenshotDataUrl: screenshotFromStoreRef.current,
+              panelOrientation: solarPersistRef.current.panelOrientation,
+              panelDimensions: data?.panelDimensions,
+              roofFaces: facesForProposal(solarPersistRef.current.savedRoofs),
             },
           }),
         );
       },
     }),
-    [dispatch, proposalMetrics, selectedLocation],
+    [dispatch, proposalMetrics, selectedLocation, data?.panelDimensions, facesForProposal],
   );
 
   return (
-    <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-1 flex-col justify-center px-4 py-6 sm:px-8 sm:py-8 lg:px-[81px] lg:py-8">
-      <div className="mx-auto grid w-full max-w-[1278px] grid-cols-1 gap-5 lg:grid-cols-[591fr_649fr] lg:items-stretch lg:gap-[58px]">
+    // Desktop: both windows stay inside the screen at one height; when the
+    // notes under the metrics grow (after Save Roof), the left window scrolls
+    // inside itself instead of pushing the page — the map window and its
+    // buttons never leave the screen (2A Delhi St, 31 Oct 2026).
+    <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-1 flex-col justify-center px-4 py-6 sm:px-8 sm:py-8 lg:h-full lg:min-h-0 lg:px-[81px] lg:py-[clamp(12px,3vh,32px)]">
+      <div className="mx-auto grid w-full max-w-[1278px] grid-cols-1 gap-5 lg:h-full lg:max-h-[min(640px,100%)] lg:min-h-0 lg:grid-cols-[591fr_649fr] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch lg:gap-[58px]">
         {/* ── Left panel ── */}
-        <div className="flex w-full min-w-0 items-center rounded-[46px] border-[3px] border-design-accent-cyan bg-linear-to-r from-yellow-lemon to-orange-amber px-6 py-8 shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] sm:px-10 sm:py-10 lg:h-full lg:px-[30px] lg:py-[30px]">
-          <div className="mx-auto flex w-full max-w-[514px] flex-col items-center gap-6 sm:gap-[32px]">
+        <div className="flex w-full min-w-0 items-center rounded-[46px] border-[3px] border-design-accent-cyan bg-linear-to-r from-yellow-lemon to-orange-amber px-6 py-8 shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] sm:px-10 sm:py-10 lg:h-full lg:min-h-0 lg:overflow-hidden lg:px-[30px] lg:py-[24px]">
+          <div className="mx-auto flex w-full max-w-[514px] flex-col items-center gap-6 sm:gap-[32px] lg:max-h-full lg:gap-[20px] lg:overflow-y-auto lg:overscroll-contain lg:px-1 lg:py-1 lg:[scrollbar-width:thin] lg:[scrollbar-color:rgba(11,42,74,0.45)_transparent]">
             {/* Title + description */}
             <div className="flex max-w-[498px] flex-col items-center gap-[10px] text-center">
               <h2
@@ -1673,6 +1859,66 @@ export const DesignsSolarPanelStepContent = forwardRef<
               ))}
             </div>
 
+            {inverterSizing && !isEditing && (
+              <div className="w-full rounded-[10px] bg-white/80 px-4 py-3 font-inter text-[12px] leading-[1.45] text-ink">
+                <p className="font-semibold">
+                  {inverterSizing.arrayKw.toFixed(1)} kW of panels ·{" "}
+                  {panelOrientation === "PORTRAIT" ? "portrait" : "landscape"}{" "}
+                  on every roof · {Math.round(DESIGN_RULES.edgeSetbackM * 1000)} mm
+                  edge setback · {Math.round(roofPitchDeg)}° pitch
+                  {data?.estimated ? " (assumed)" : ""}
+                </p>
+                <p>
+                  Hybrid inverter or battery: from{" "}
+                  {inverterSizing.minInverterKwHybridOrBattery.toFixed(1)} kW (
+                  {Math.round(DESIGN_RULES.dcAcRatioHybridOrBattery * 100)}% sizing),{" "}
+                  {inverterSizing.phasesHybridOrBattery === 1
+                    ? "single phase"
+                    : "three phase"}
+                  .
+                </p>
+                <p>
+                  Standard inverter, no battery: from{" "}
+                  {inverterSizing.minInverterKwStandard.toFixed(1)} kW (
+                  {Math.round(DESIGN_RULES.dcAcRatioStandard * 100)}% STC
+                  limit),{" "}
+                  {inverterSizing.phasesStandard === 1
+                    ? "single phase"
+                    : "three phase"}
+                  .
+                </p>
+                <p className="text-ink/60">
+                  200% needs an inverter rated for it. Export up to {DESIGN_RULES.exportLimitKwPerPhase} kW per
+                  phase.
+                </p>
+              </div>
+            )}
+
+            {!isEditing && lineCheckSummary.total > 0 && (
+              <p className="w-full rounded-[10px] bg-white/80 px-4 py-2 text-center font-inter text-[12px] font-medium text-ink">
+                {roofSnapshot.analysis ? "Roof found by zooming into Google's satellite image. " : ""}
+                {savedFaceSet.source === "square-hip"
+                  ? `${savedFaces.length} roof faces drawn from the walls by trigonometry (${
+                      "gables" in savedFaceSet && savedFaceSet.gables ? `${savedFaceSet.gables} gable end${savedFaceSet.gables > 1 ? "s" : ""}, rest hipped` : "hip roof"
+                    }), confirmed by Google's roof data; ${savedFaceSet.interiorChecks.filter((c) => c.status === "confirmed").length} of ${savedFaceSet.interiorChecks.length} hips, valleys and ridges seen in the image. `
+                  : savedFaceSet.source === "height-model"
+                    ? `${savedFaces.length} roof faces found from Google's height data. `
+                    : "Roof faces assumed (no usable height data) — check on site. "}
+                {savedFaceSet.moved > 0 ? `${savedFaceSet.moved} roof lines moved onto the edges in the image. ` : ""}
+                {sideWalls ? `Attached house: roof limited to its side walls (${sideWalls.widthM.toFixed(1)} m wide). ` : ""}
+                {savedFaceSet.obstructions.length > 0
+                  ? `${savedFaceSet.obstructions.filter((o) => o.kind === "spot").length} possible vents, fans or antennas and ${
+                      savedFaceSet.obstructions.filter((o) => o.kind === "step").length
+                    } level differences or shadow bands found and packed around (orange boxes) — check on site. `
+                  : ""}
+                {lineCheckSummary.checked === 0
+                  ? "Roof lines not checked — Google imagery isn't available for this roof. Confirm on site."
+                  : `${lineCheckSummary.ok} of ${lineCheckSummary.total} roof lines confirmed against Google imagery (±${Math.round(
+                      DESIGN_RULES.roofLineToleranceM * 1000,
+                    )} mm). Dashed orange lines need checking on site.`}
+              </p>
+            )}
+
             {data?.estimated && (
               <p className="w-full rounded-[10px] bg-white/70 px-4 py-2 text-center font-inter text-[12px] font-medium text-ink/70">
                 Google Solar imagery is not available for this location yet.
@@ -1688,20 +1934,22 @@ export const DesignsSolarPanelStepContent = forwardRef<
               </p>
             )}
 
-            {(loading || layersLoading || isGeneratingPanels) && (
+            {(loading || layersLoading || roofSnapshot.loading || isGeneratingPanels) && (
               <p className="animate-pulse font-inter text-[14px] font-medium text-white/80">
                 {isGeneratingPanels
                   ? "Saving roof and generating solar panels..."
                   : layersLoading
                     ? "Loading roof imagery..."
-                    : "Analysing solar potential..."}
+                    : roofSnapshot.loading
+                      ? "Zooming in and finding the roof lines..."
+                      : "Analysing solar potential..."}
               </p>
             )}
           </div>
         </div>
 
         {/* ── Right panel: map ── */}
-        <div className="w-full min-w-0 overflow-hidden rounded-[28px] border-[3px] border-design-accent-cyan shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] lg:h-full">
+        <div className="w-full min-w-0 overflow-hidden rounded-[28px] border-[3px] border-design-accent-cyan shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] lg:h-full lg:min-h-0">
           {/* Outer wrapper: overlays (RGB/Panels/Save) sit outside capture ref */}
           <div className="relative aspect-[649/525] h-full w-full min-h-[280px] overflow-hidden rounded-[25px] lg:aspect-auto lg:min-h-0">
             {/* Capture target = satellite map + roof/panel overlays only (no UI chrome) */}
@@ -1716,7 +1964,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
                     center={mapCenter}
                     zoom={mapZoom}
                     onLoad={onMapLoad}
+                    onClick={handleMapClick}
                     options={{
+                      draggableCursor: wallClicks ? "crosshair" : undefined,
                       disableDefaultUI: true,
                       zoomControl: false,
                       mapTypeId: "satellite",
@@ -1783,6 +2033,114 @@ export const DesignsSolarPanelStepContent = forwardRef<
                         );
                       })}
 
+                    {/* Roof lines (view mode): solid amber = confirmed against
+                        Google's imagery, dashed orange = check on site. */}
+                    {!!mapReady &&
+                      !isEditing &&
+                      lineChecks.map((line, idx) => {
+                        const ok = line.status === "confirmed" || line.status === "adjusted";
+                        return (
+                          <Polyline
+                            key={`line-${idx}`}
+                            path={[line.a, line.b]}
+                            options={
+                              ok
+                                ? {
+                                    strokeColor: "#FBBF24",
+                                    strokeOpacity: 0.95,
+                                    strokeWeight: line.kind === "eave" ? 2 : 1.4,
+                                    clickable: false,
+                                    zIndex: 7,
+                                  }
+                                : {
+                                    strokeColor: "#FB923C",
+                                    strokeOpacity: 0,
+                                    clickable: false,
+                                    zIndex: 7,
+                                    icons: [
+                                      {
+                                        icon: {
+                                          path: "M 0,-1 0,1",
+                                          strokeOpacity: 1,
+                                          strokeColor: "#FB923C",
+                                          strokeWeight: 2,
+                                          scale: 2,
+                                        },
+                                        offset: "0",
+                                        repeat: "8px",
+                                      },
+                                    ],
+                                  }
+                            }
+                          />
+                        );
+                      })}
+
+                    {/* Side walls of an attached house (marked by hand) */}
+                    {!!mapReady &&
+                      sideWalls?.lines.map((line, idx) => (
+                        <Polyline
+                          key={`wall-${idx}`}
+                          path={line}
+                          options={{ strokeColor: "#EF4444", strokeOpacity: 1, strokeWeight: 3, clickable: false, zIndex: 9 }}
+                        />
+                      ))}
+                    {!!mapReady &&
+                      wallClicks?.map((pt, idx) => (
+                        <Polygon
+                          key={`wallpt-${idx}`}
+                          paths={[0, 1, 2, 3].map((k) => ({
+                            lat: pt.lat + 0.000004 * Math.sin((k * Math.PI) / 2),
+                            lng: pt.lng + 0.000005 * Math.cos((k * Math.PI) / 2),
+                          }))}
+                          options={{ fillColor: "#EF4444", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 1, clickable: false, zIndex: 11 }}
+                        />
+                      ))}
+                    {!!mapReady && wallClicks && wallClicks.length === 2 ? (
+                      <Polyline
+                        path={wallClicks}
+                        options={{ strokeColor: "#EF4444", strokeOpacity: 1, strokeWeight: 3, clickable: false, zIndex: 9 }}
+                      />
+                    ) : null}
+
+                    {/* Obstructions and steps found on the zoomed image (view mode) */}
+                    {!!mapReady &&
+                      !isEditing &&
+                      savedFaceSet.obstructions.map((o, idx) => (
+                        <Polygon
+                          key={`obs-${idx}`}
+                          paths={o.ring}
+                          options={{
+                            fillColor: "#FB923C",
+                            fillOpacity: 0.15,
+                            strokeColor: "#FB923C",
+                            strokeOpacity: 1,
+                            strokeWeight: 1.5,
+                            clickable: false,
+                            zIndex: 8,
+                          }}
+                        />
+                      ))}
+
+                    {/* Every roof face with its own border (view mode): eaves,
+                        hips, valleys and ridges; panels keep 100 mm inside. */}
+                    {!!mapReady &&
+                      !isEditing &&
+                      savedFaces.map((face, idx) => (
+                        <Polygon
+                          key={`face-${idx}`}
+                          paths={face.ring}
+                          options={{
+                            fillOpacity: 0,
+                            strokeColor: "#FBBF24",
+                            strokeOpacity: 0.95,
+                            strokeWeight: 1.6,
+                            clickable: false,
+                            zIndex: 7,
+                          }}
+                        />
+                      ))}
+
                     {/* Saved roof outlines (view mode) */}
                     {!!mapReady &&
                       !isEditing &&
@@ -1802,6 +2160,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
                         />
                       ))}
                   </GoogleMap>
+                  {selectedLocation ? (
+                    <StreetViewThumb lat={selectedLocation.lat} lng={selectedLocation.lng} />
+                  ) : null}
                 </>
               ) : (
                 <div className="flex h-full min-h-[280px] items-center justify-center rounded-[25px] bg-[linear-gradient(135deg,rgba(48,54,71,0.98)_0%,rgba(33,36,47,0.98)_100%)]">
@@ -1813,31 +2174,16 @@ export const DesignsSolarPanelStepContent = forwardRef<
             </div>
 
             {/* Top-right controls — excluded from proposal screenshot */}
-            <div className="pointer-events-auto absolute right-[14px] top-[14px] z-10 flex items-center gap-[8px]">
+            <div className="pointer-events-auto absolute left-[14px] right-[14px] top-[14px] z-10 flex flex-wrap items-center justify-end gap-[8px]">
               <LayerToggle active={activeLayer} onChange={setActiveLayer} />
+              <OrientationToggle
+                value={panelOrientation}
+                counts={orientationCounts}
+                disabled={isGeneratingPanels || !data?.panelDimensions}
+                onChange={handleOrientationChange}
+              />
               {isEditing ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={handleRotatePanels}
-                    disabled={isGeneratingPanels || selectedRoofId === null}
-                    aria-label="Rotate the selected roof's panels (landscape / portrait)"
-                    title={`Panel orientation: ${
-                      selectedRoofOrientation === "LANDSCAPE"
-                        ? "Landscape"
-                        : selectedRoofOrientation === "PORTRAIT"
-                          ? "Portrait"
-                          : "Auto"
-                    } — click to cycle`}
-                    className="flex h-[33px] items-center gap-[6px] rounded-[6px] bg-white/90 px-[14px] font-inter text-[13px] font-semibold tracking-[-0.1504px] text-[#2094F3] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <Icon name="RotateCw" className="size-[14px]" />
-                    {selectedRoofOrientation === "LANDSCAPE"
-                      ? "Landscape"
-                      : selectedRoofOrientation === "PORTRAIT"
-                        ? "Portrait"
-                        : "Auto"}
-                  </button>
                   <button
                     type="button"
                     onClick={handleAddRoof}
@@ -1880,6 +2226,46 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   </button>
                 </>
               ) : (
+                <>
+                <button
+                  type="button"
+                  onClick={handleRelook}
+                  disabled={savedRoofs.length === 0 || !roofSnapshot.analysis}
+                  title="Draw the roof again: other readings of its edges, hips and gables, checked against Google's roof data and the image"
+                  className="h-[33px] rounded-[6px] bg-[linear-gradient(126deg,#FFEF62_0%,#F78D00_100%)] px-[12px] font-inter text-[13px] font-semibold tracking-[-0.1504px] text-[#152238] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {relook ? `Relook roof (${relook.index + 1}/${relook.readings.length})` : "Relook roof"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSideWallsButton}
+                  disabled={savedRoofs.length === 0}
+                  aria-pressed={Boolean(wallClicks) || Boolean(sideWalls)}
+                  title="Attached (terrace) house: mark its two side walls so panels stay on this house"
+                  className={`h-[33px] rounded-[6px] px-[12px] font-inter text-[13px] font-semibold tracking-[-0.1504px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                    wallClicks ? "bg-[#EF4444] text-white" : "bg-white/90 text-[#DC2626] hover:bg-white"
+                  }`}
+                >
+                  {sideWalls ? "Remove side walls" : wallClicks ? "Cancel walls" : "Side walls"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBeautifyToggle}
+                  disabled={!(generatedPanels && generatedPanels.length > 0)}
+                  aria-pressed={beautified}
+                  title={
+                    generatedPanels && generatedPanels.length > 0
+                      ? beautified
+                        ? "Back to the most panels that fit"
+                        : "Arrange the panels in neat, aligned blocks"
+                      : "Place panels on the roof first"
+                  }
+                  className={`beautify-btn h-[33px] rounded-[6px] px-[16px] font-inter text-[13px] font-extrabold tracking-[0.2px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    beautified ? "bg-black/80 ring-2 ring-[#F5C542]" : "bg-black/60 hover:bg-black/75"
+                  }`}
+                >
+                  <span className="beautify-glitter">✦ Beautify</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleEditClick}
@@ -1888,8 +2274,19 @@ export const DesignsSolarPanelStepContent = forwardRef<
                 >
                   {DESIGNS_SOLAR_PANEL_STEP.mapActions.primary}
                 </button>
+                </>
               )}
             </div>
+
+            {wallClicks ? (
+              <div className="pointer-events-none absolute bottom-[14px] left-1/2 z-10 -translate-x-1/2">
+                <p className="whitespace-nowrap rounded-[8px] bg-black/70 px-4 py-2 font-inter text-[12px] font-medium text-white backdrop-blur-sm">
+                  {wallClicks.length < 2
+                    ? `Click ${wallClicks.length === 0 ? "two points" : "a second point"} along one side wall (use Street View: front fence line)`
+                    : "Now click one point on the other side wall"}
+                </p>
+              </div>
+            ) : null}
 
             {/* Edit mode instruction hint — excluded from screenshot */}
             {isEditing && (
@@ -1908,6 +2305,75 @@ export const DesignsSolarPanelStepContent = forwardRef<
 });
 
 /* ── Sub-components ──────────────────────────────────────────── */
+
+/** Small outline of a panel, upright for portrait and on its side for landscape. */
+function PanelGlyph({ orientation }: { orientation: PanelOrientation }) {
+  return (
+    <span
+      aria-hidden
+      className={`inline-block rounded-[2px] border-[1.5px] border-current ${
+        orientation === "PORTRAIT" ? "h-[13px] w-[8px]" : "h-[8px] w-[13px]"
+      }`}
+    />
+  );
+}
+
+function OrientationToggle({
+  value,
+  counts,
+  disabled,
+  onChange,
+}: {
+  value: PanelOrientation;
+  /** Panels that fit in each orientation on the saved roofs; null while editing. */
+  counts: Record<PanelOrientation, number> | null;
+  disabled: boolean;
+  onChange: (v: PanelOrientation) => void;
+}) {
+  const options: { value: PanelOrientation; label: string }[] = [
+    { value: "PORTRAIT", label: "Portrait" },
+    { value: "LANDSCAPE", label: "Landscape" },
+  ];
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Panel orientation for every roof"
+      className="flex overflow-hidden rounded-[6px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]"
+    >
+      {options.map((opt) => {
+        const active = value === opt.value;
+        const count = counts?.[opt.value];
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={disabled}
+            onClick={() => onChange(opt.value)}
+            title={
+              count !== undefined
+                ? `${opt.label}: ${count} panels fit on the saved roofs`
+                : `${opt.label} panels on every roof (applies when you save)`
+            }
+            className={`flex h-[33px] items-center gap-[6px] px-[11px] font-inter text-[12px] font-semibold tracking-[-0.1px] transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              active
+                ? "bg-white text-[#2094F3]"
+                : "bg-white/60 text-[#333] hover:bg-white/80"
+            }`}
+          >
+            <PanelGlyph orientation={opt.value} />
+            {opt.label}
+            {count !== undefined && (
+              <span className="tabular-nums opacity-70">{count}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function LayerToggle({
   active,

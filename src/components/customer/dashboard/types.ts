@@ -20,4 +20,8 @@ export type DesignOption = {
   savingsPerYr: string;
   outputKwh: string;
   imageSrc: string;
+  /** e.g. "13.5 kWh battery · Fronius Primo 5.0" */
+  equipment?: string;
+  /** Price after the STC discount, formatted. */
+  afterStc?: string;
 };

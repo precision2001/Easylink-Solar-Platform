@@ -13,7 +13,8 @@ export type ProductCategoryKey =
   | "solar-panels"
   | "inverters"
   | "ev-chargers"
-  | "heat-pumps";
+  | "heat-pumps"
+  | "portable-power";
 
 export type ProductCategory = {
   key: ProductCategoryKey;
@@ -50,6 +51,15 @@ export type Product = {
   model: string;
   rating: number;
   hasDatasheet?: boolean;
+  /** Manufacturer datasheet (PDF) from the EasyLink catalogue, when known. */
+  datasheetUrl?: string;
+  /** Product photo from the image library (1000 px WebP) and its 400 px thumbnail. */
+  imageUrl?: string;
+  imageThumbUrl?: string;
+  /** On the CEC approved list (panels, inverters, batteries). */
+  cecApproved?: boolean;
+  /** Price is an estimate, not from the supplier price book. */
+  priceEstimate?: boolean;
   inStock?: boolean;
   features: string[];
   price: number;

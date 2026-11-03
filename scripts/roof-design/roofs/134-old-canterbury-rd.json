@@ -1,0 +1,270 @@
+{
+ "pts": {
+  "NW": [
+   58.5,
+   109.5
+  ],
+  "NE": [
+   323.5,
+   109.5
+  ],
+  "SE": [
+   323.5,
+   684
+  ],
+  "SW": [
+   58.5,
+   684
+  ],
+  "RN": [
+   191,
+   242
+  ],
+  "RS": [
+   191,
+   551.5
+  ]
+ },
+ "faces": [
+  {
+   "name": "North hip end",
+   "v": [
+    "NW",
+    "NE",
+    "RN"
+   ],
+   "ring": [
+    [
+     58.5,
+     109.5
+    ],
+    [
+     323.5,
+     109.5
+    ],
+    [
+     191,
+     242
+    ]
+   ],
+   "bearing": 0,
+   "pitch": 34.8
+  },
+  {
+   "name": "West",
+   "v": [
+    "NW",
+    "RN",
+    "RS",
+    "SW"
+   ],
+   "ring": [
+    [
+     58.5,
+     109.5
+    ],
+    [
+     191,
+     242
+    ],
+    [
+     191,
+     551.5
+    ],
+    [
+     58.5,
+     684
+    ]
+   ],
+   "bearing": 270,
+   "pitch": 28.7
+  },
+  {
+   "name": "East",
+   "v": [
+    "NE",
+    "SE",
+    "RS",
+    "RN"
+   ],
+   "ring": [
+    [
+     323.5,
+     109.5
+    ],
+    [
+     323.5,
+     684
+    ],
+    [
+     191,
+     551.5
+    ],
+    [
+     191,
+     242
+    ]
+   ],
+   "bearing": 90,
+   "pitch": 33.9
+  },
+  {
+   "name": "South hip end",
+   "v": [
+    "SW",
+    "RS",
+    "SE"
+   ],
+   "ring": [
+    [
+     58.5,
+     684
+    ],
+    [
+     191,
+     551.5
+    ],
+    [
+     323.5,
+     684
+    ]
+   ],
+   "bearing": 180,
+   "pitch": 32.4
+  }
+ ],
+ "obstructions": [
+  [
+   [
+    140,
+    100
+   ],
+   [
+    210,
+    100
+   ],
+   [
+    210,
+    138
+   ],
+   [
+    140,
+    138
+   ]
+  ]
+ ],
+ "obstruction_names": [
+  "white objects at the north eave (vents?)"
+ ],
+ "scale_m_per_px": 0.030980066405023706,
+ "center_latlng": [
+  -33.895291199999996,
+  151.14100670000002
+ ],
+ "center_px": [
+  220,
+  420
+ ],
+ "axis_deg": 0,
+ "google_segments": [
+  {
+   "pitch": 32.4,
+   "azimuth": 177,
+   "areaM2": 20.0,
+   "px": [
+    202.7,
+    669.0
+   ]
+  },
+  {
+   "pitch": 25.4,
+   "azimuth": 188,
+   "areaM2": 0.5,
+   "px": [
+    367.0,
+    678.4
+   ]
+  },
+  {
+   "pitch": 28.7,
+   "azimuth": 268,
+   "areaM2": 66.3,
+   "px": [
+    126.6,
+    415.0
+   ]
+  },
+  {
+   "pitch": 33.9,
+   "azimuth": 88,
+   "areaM2": 69.1,
+   "px": [
+    271.6,
+    414.3
+   ]
+  },
+  {
+   "pitch": 27.0,
+   "azimuth": 271,
+   "areaM2": 2.7,
+   "px": [
+    362.9,
+    555.5
+   ]
+  },
+  {
+   "pitch": 34.8,
+   "azimuth": 360,
+   "areaM2": 17.0,
+   "px": [
+    198.8,
+    169.9
+   ]
+  },
+  {
+   "pitch": 32.6,
+   "azimuth": 281,
+   "areaM2": 0.1,
+   "px": [
+    377.2,
+    114.9
+   ]
+  },
+  {
+   "pitch": 17.0,
+   "azimuth": 287,
+   "areaM2": 1.4,
+   "px": [
+    387.3,
+    79.4
+   ]
+  }
+ ],
+ "google_excluded": {
+  "1": "sliver on the neighbour (0.5 m2)",
+  "4": "neighbour's roof",
+  "6": "neighbour's roof",
+  "7": "neighbour's roof"
+ },
+ "image": "134-old-canterbury-rd.png",
+ "streetview": "134-old-canterbury-rd-streetview.jpg (2024-07)",
+ "result": {
+  "PORTRAIT": {
+   "North hip end": 2,
+   "West": 21,
+   "East": 21,
+   "South hip end": 4
+  },
+  "LANDSCAPE": {
+   "North hip end": 4,
+   "West": 21,
+   "East": 26,
+   "South hip end": 5
+  }
+ },
+ "notes": [
+  "Dark brown tiles: check-eaves.py needs --rg 12 (default 35 is for terracotta).",
+  "Street View: two-storey, hip end to the street (confirms south hip, no gable).",
+  "White objects at the north eave (vents?) - check on site."
+ ]
+}

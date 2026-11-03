@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
-import { DM_Sans, Inter, Outfit, Source_Sans_3 } from "next/font/google";
+import localFont from "next/font/local";
 import { EasylinkAiChatbot } from "@/components/ai-chat/EasylinkAiChatbot";
+import { AiEventCapture } from "@/components/ai/AiEventCapture";
 import { ClarityAnalytics } from "@/components/analytics/ClarityAnalytics";
+import { CartDrawer } from "@/components/cart/CartDrawer";
 import { ReduxProvider } from "@/components/providers/ReduxProvider";
 import { ToastProvider } from "@/components/providers/ToastProvider";
 import { TopProgressBar } from "@/components/providers/TopProgressBar";
@@ -12,28 +14,36 @@ import "./globals.css";
 // next/font, but nothing in the app actually set its font-family to them
 // (`--font-sans`/`--font-mono` in globals.css now resolve to Source Sans and
 // the system mono stack) — two webfont families nobody was rendering with.
-const sourceSans = Source_Sans_3({
+// Fonts ship with the site (latin, variable weight; SIL Open Font License)
+// instead of next/font/google, which downloads them from Google at build
+// time. Those downloads failed now and then on the build servers, and a
+// failed download failed the whole deploy.
+const sourceSans = localFont({
+  src: "./fonts/source-sans-3-latin-wght-normal.woff2",
   variable: "--font-source-sans",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"],
+  weight: "200 900",
+  display: "swap",
 });
 
-const outfit = Outfit({
+const outfit = localFont({
+  src: "./fonts/outfit-latin-wght-normal.woff2",
   variable: "--font-outfit",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: "100 900",
+  display: "swap",
 });
 
-const inter = Inter({
+const inter = localFont({
+  src: "./fonts/inter-latin-wght-normal.woff2",
   variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: "100 900",
+  display: "swap",
 });
 
-const dmSans = DM_Sans({
-  subsets: ["latin"],
+const dmSans = localFont({
+  src: "./fonts/dm-sans-latin-wght-normal.woff2",
   variable: "--font-dm-sans",
-  weight: ["400", "500", "600", "700"],
+  weight: "100 1000",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -55,7 +65,9 @@ export default function RootLayout({
         <ReduxProvider>
           <TopProgressBar />
           {children}
+          <CartDrawer />
           <EasylinkAiChatbot />
+          <AiEventCapture />
           <ToastProvider />
         </ReduxProvider>
         <ClarityAnalytics />

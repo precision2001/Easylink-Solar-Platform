@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { equipmentRows } from "./generateProposalPdf";
+import { resolveLinks } from "./loadProposalDocument";
 import {
   DESIGN_PROPOSAL_DEFAULTS,
   emptyEquipmentItems,
@@ -53,5 +54,28 @@ describe("equipmentRows", () => {
     });
 
     expect(rows.map(([label]) => label)).toEqual(["Solar panels"]);
+  });
+});
+
+describe("resolveLinks", () => {
+  const origin = "https://easylinksolar.com.au";
+
+  it("falls back to the portal and public designer when there are no links", () => {
+    const c = resolveLinks({}, origin);
+    expect(c.portalUrl).toBe("https://easylinksolar.com.au/customers/design");
+    expect(c.portalLabel).toBe("easylinksolar.com.au/customers/design");
+    expect(c.referralCode).toBeNull();
+    expect(c.referralUrl).toBe("https://easylinksolar.com.au/designs");
+  });
+
+  it("uses the customer's referral code and share link when given", () => {
+    const c = resolveLinks({ referralCode: "ALEX1", referralUrl: `${origin}/shared/tok?ref=ALEX1` }, origin);
+    expect(c.referralCode).toBe("ALEX1");
+    expect(c.referralUrl).toBe(`${origin}/shared/tok?ref=ALEX1`);
+  });
+
+  it("builds a signup link from a code alone", () => {
+    const c = resolveLinks({ referralCode: "A B" }, origin);
+    expect(c.referralUrl).toBe(`${origin}/customers/auth?ref=A%20B`);
   });
 });

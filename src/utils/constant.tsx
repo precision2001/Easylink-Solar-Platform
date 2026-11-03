@@ -5,6 +5,7 @@ export const LANDING_NAV_ITEMS = [
   { label: "Customers", link: "/customers" },
   { label: "Installers", link: "/installers/landing" },
   { label: "Design Platform", link: "/designs" },
+  { label: "Ready Deals", link: "/ready-deals" },
   { label: "Services", link: "/services" },
   { label: "About Us", link: "/about-us" },
 ] as const;
@@ -1504,8 +1505,9 @@ export type MasterProductCategoryId =
   | "panels"
   | "inverters"
   | "batteries"
-  | "racking"
-  | "equipment";
+  | "ev-chargers"
+  | "heat-pumps"
+  | "portable-power";
 
 export const MASTER_PRODUCT_CATEGORIES: {
   id: MasterProductCategoryId;
@@ -1515,9 +1517,23 @@ export const MASTER_PRODUCT_CATEGORIES: {
   { id: "panels", label: "Panels" },
   { id: "inverters", label: "Inverters" },
   { id: "batteries", label: "Batteries" },
-  { id: "racking", label: "Racking" },
-  { id: "equipment", label: "Equipment" },
+  { id: "ev-chargers", label: "EV Chargers" },
+  { id: "heat-pumps", label: "Heat Pumps" },
+  { id: "portable-power", label: "Portable Power" },
 ];
+
+/** Live product category (backend `Product.category`) for each admin catalogue tab. */
+export const MASTER_PRODUCT_CATEGORY_BACKEND: Record<
+  Exclude<MasterProductCategoryId, "all">,
+  string
+> = {
+  panels: "Solar Panel",
+  inverters: "Inverter",
+  batteries: "Battery",
+  "ev-chargers": "EV Charger",
+  "heat-pumps": "Heat Pump",
+  "portable-power": "Portable Power",
+};
 
 export type MasterProductRowIcon =
   | "Sun"
@@ -1526,9 +1542,10 @@ export type MasterProductRowIcon =
   | "Wrench"
   | "Package";
 
+/** @deprecated Sample rows from the original mock; the catalogue panel now reads live products. */
 export type MasterProductCatalogRow = {
   id: string;
-  category: Exclude<MasterProductCategoryId, "all">;
+  category: string;
   name: string;
   subtitle: string;
   sku: string;
@@ -2333,6 +2350,9 @@ export const LANDING_FOOTER_COLUMNS: LandingFooterColumn[] = [
   {
     title: "Support",
     items: [
+      { label: "How it works", href: "/how-it-works" },
+      { label: "Ready Deals", href: "/ready-deals" },
+      { label: "Ready Sites (installers)", href: "/ready-sites" },
       { label: "FAQs", href: "/faqs" },
       { label: "Warranty", href: "/warranty" },
       { label: "Contact Us", href: "/contact-us" },
@@ -3476,6 +3496,7 @@ export const FAQS_PAGE = {
 /** Customer portal — shared nav & page copy (Figma Final Designs 1725:*) */
 export type CustomerPortalNavKey =
   | "dashboard"
+  | "project"
   | "designs"
   | "maintenance"
   | "messages"
@@ -3487,6 +3508,7 @@ export const CUSTOMER_PORTAL = {
   title: "My Solar Portal",
   nav: [
     { href: "/customers/dashboard", label: "Dashboard", key: "dashboard" as const },
+    { href: "/customers/project", label: "My Project", key: "project" as const },
     { href: "/customers/design", label: "My Design", key: "designs" as const },
     {
       href: "/customers/solar-maintenance",
