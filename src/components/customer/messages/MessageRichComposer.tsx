@@ -66,7 +66,38 @@ type Props = {
   onStartCall?: () => void;
   callDisabled?: boolean;
   callInProgress?: boolean;
+  /**
+   * "portal" restyles the composer for the redesigned customer portal (larger
+   * touch targets, portal colours). Behaviour is identical; defaults to the
+   * original look used by the installer screens.
+   */
+  appearance?: "classic" | "portal";
 };
+
+const COMPOSER_LOOKS = {
+  classic: {
+    classic: true,
+    root: "flex flex-col gap-3 border-t border-warm-border pt-3",
+    textarea:
+      "min-h-[76px] w-full resize-y rounded-lg border border-warm-border bg-white p-3 font-dm-sans text-sm font-normal leading-[21px] text-warm-ink placeholder:text-warm-gray/50 focus:outline-none focus:ring-2 focus:ring-brand-blue/30 disabled:cursor-not-allowed disabled:opacity-60",
+    tool: "flex size-[22px] items-center justify-center rounded text-warm-gray hover:bg-black/4 disabled:cursor-not-allowed disabled:opacity-40",
+    toolIcon: "size-3",
+    words: "font-dm-sans text-[11px] font-normal leading-[16.5px] text-warm-gray",
+    send: "inline-flex h-7 min-w-[76px] items-center justify-center gap-2 rounded-lg font-dm-sans text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50",
+    call: "inline-flex h-7 min-w-[76px] items-center justify-center gap-1 rounded-lg border border-warm-border bg-white px-3 font-dm-sans text-[11px] font-medium text-warm-ink hover:bg-cream-50 disabled:cursor-not-allowed disabled:opacity-50",
+  },
+  portal: {
+    classic: false,
+    root: "flex flex-col gap-2",
+    textarea:
+      "min-h-[72px] w-full resize-y rounded-[14px] border border-[#CBD5E1] bg-white px-3.5 py-3 text-[15px] leading-[1.5] text-[#0F172A] placeholder:text-[#7A8AA0] focus-visible:border-[#0B1A2E] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0B1A2E]/10 disabled:cursor-not-allowed disabled:bg-[#F4F6FA] disabled:opacity-70",
+    tool: "flex size-11 items-center justify-center rounded-[12px] text-[#5B6B80] hover:bg-[#F4F6FA] hover:text-[#0F172A] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB] disabled:cursor-not-allowed disabled:opacity-40",
+    toolIcon: "size-4",
+    words: "hidden text-[12.5px] text-[#5B6B80] sm:inline",
+    send: "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[13px] bg-[#F68A0A] px-5 text-[14.5px] font-bold text-[#3B1D00] hover:bg-[#FF9A1F] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50",
+    call: "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[13px] border border-[#CBD5E1] bg-white px-4 text-[14.5px] font-bold text-[#0F172A] hover:border-[#64748B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50",
+  },
+} as const;
 
 export function MessageRichComposer({
   placeholder = "Type your message...",
@@ -77,7 +108,9 @@ export function MessageRichComposer({
   onStartCall,
   callDisabled = false,
   callInProgress = false,
+  appearance = "classic",
 }: Props) {
+  const look = COMPOSER_LOOKS[appearance];
   const [draft, setDraft] = useState("");
   const words = useMemo(() => countWords(draft), [draft]);
 
@@ -261,7 +294,7 @@ export function MessageRichComposer({
   }, [draft, disabled, onSend, sending]);
 
   return (
-    <div className="flex flex-col gap-3 border-t border-warm-border pt-3">
+    <div className={look.root}>
       <input
         ref={imageInputRef}
         type="file"
@@ -295,8 +328,8 @@ export function MessageRichComposer({
         rows={3}
         placeholder={placeholder}
         disabled={disabled}
-        className="min-h-[76px] w-full resize-y rounded-lg border border-warm-border bg-white p-3 font-dm-sans text-sm font-normal leading-[21px] text-warm-ink placeholder:text-warm-gray/50 focus:outline-none focus:ring-2 focus:ring-brand-blue/30 disabled:cursor-not-allowed disabled:opacity-60"
-        style={{ fontVariationSettings: "'opsz' 9" }}
+        className={look.textarea}
+        style={look.classic ? { fontVariationSettings: "'opsz' 9" } : undefined}
       />
 
       <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -307,9 +340,9 @@ export function MessageRichComposer({
             title="Bold"
             disabled={toolsDisabled}
             onClick={handleBold}
-            className="flex size-[22px] items-center justify-center rounded text-warm-gray hover:bg-black/4 disabled:cursor-not-allowed disabled:opacity-40"
+            className={look.tool}
           >
-            <Icon name="Bold" className="size-3" />
+            <Icon name="Bold" className={look.toolIcon} />
           </button>
           <button
             type="button"
@@ -317,9 +350,9 @@ export function MessageRichComposer({
             title="Italic"
             disabled={toolsDisabled}
             onClick={handleItalic}
-            className="flex size-[22px] items-center justify-center rounded text-warm-gray hover:bg-black/4 disabled:cursor-not-allowed disabled:opacity-40"
+            className={look.tool}
           >
-            <Icon name="Italic" className="size-3" />
+            <Icon name="Italic" className={look.toolIcon} />
           </button>
           <button
             type="button"
@@ -327,9 +360,9 @@ export function MessageRichComposer({
             title="Link"
             disabled={toolsDisabled}
             onClick={handleLink}
-            className="flex size-[22px] items-center justify-center rounded text-warm-gray hover:bg-black/4 disabled:cursor-not-allowed disabled:opacity-40"
+            className={look.tool}
           >
-            <Icon name="Link" className="size-3" />
+            <Icon name="Link" className={look.toolIcon} />
           </button>
           <button
             type="button"
@@ -337,9 +370,9 @@ export function MessageRichComposer({
             title="Image"
             disabled={toolsDisabled || !chatUploadBase}
             onClick={() => imageInputRef.current?.click()}
-            className="flex size-[22px] items-center justify-center rounded text-warm-gray hover:bg-black/4 disabled:cursor-not-allowed disabled:opacity-40"
+            className={look.tool}
           >
-            <Icon name="Image" className="size-3" />
+            <Icon name="Image" className={look.toolIcon} />
           </button>
           <button
             type="button"
@@ -347,9 +380,9 @@ export function MessageRichComposer({
             title="Attachment"
             disabled={toolsDisabled || !chatUploadBase}
             onClick={() => attachInputRef.current?.click()}
-            className="flex size-[22px] items-center justify-center rounded text-warm-gray hover:bg-black/4 disabled:cursor-not-allowed disabled:opacity-40"
+            className={look.tool}
           >
-            <Icon name="Attach" className="size-3" />
+            <Icon name="Attach" className={look.toolIcon} />
           </button>
           <div className="relative">
             <button
@@ -360,9 +393,9 @@ export function MessageRichComposer({
               title="Emoji"
               disabled={toolsDisabled}
               onClick={() => setEmojiOpen((o) => !o)}
-              className="flex size-[22px] items-center justify-center rounded text-warm-gray hover:bg-black/4 disabled:cursor-not-allowed disabled:opacity-40"
+              className={look.tool}
             >
-              <Icon name="Emoji" className="size-3" />
+              <Icon name="Emoji" className={look.toolIcon} />
             </button>
             {emojiOpen ? (
               <div
@@ -389,8 +422,8 @@ export function MessageRichComposer({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           <span
-            className="font-dm-sans text-[11px] font-normal leading-[16.5px] text-warm-gray"
-            style={{ fontVariationSettings: "'opsz' 9" }}
+            className={look.words}
+            style={look.classic ? { fontVariationSettings: "'opsz' 9" } : undefined}
           >
             {words} words
           </span>
@@ -398,24 +431,28 @@ export function MessageRichComposer({
             type="button"
             disabled={disabled || sending || !draft.trim()}
             onClick={handleSend}
-            className="inline-flex h-7 min-w-[76px] items-center justify-center gap-2 rounded-lg font-dm-sans text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            style={{
-              fontVariationSettings: "'opsz' 14",
-              backgroundImage:
-                "linear-gradient(162deg, rgb(32, 148, 243) 2.36%, rgb(23, 207, 207) 97.64%)",
-            }}
+            className={look.send}
+            style={
+              look.classic
+                ? {
+                    fontVariationSettings: "'opsz' 14",
+                    backgroundImage:
+                      "linear-gradient(162deg, rgb(32, 148, 243) 2.36%, rgb(23, 207, 207) 97.64%)",
+                  }
+                : undefined
+            }
           >
-            <Icon name="Send" className="size-3" />
+            <Icon name="Send" className={look.toolIcon} />
             Send
           </button>
           <button
             type="button"
             disabled={disabled || callDisabled || callInProgress}
             onClick={() => onStartCall?.()}
-            className="inline-flex h-7 min-w-[76px] items-center justify-center gap-1 rounded-lg border border-warm-border bg-white px-3 font-dm-sans text-[11px] font-medium text-warm-ink hover:bg-cream-50 disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ fontVariationSettings: "'opsz' 14" }}
+            className={look.call}
+            style={look.classic ? { fontVariationSettings: "'opsz' 14" } : undefined}
           >
-            <Icon name="Phone" className="size-3" />
+            <Icon name="Phone" className={look.toolIcon} />
             {callInProgress ? "In call" : "Phone"}
           </button>
         </div>

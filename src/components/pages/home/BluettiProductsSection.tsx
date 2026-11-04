@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 
 const categories = [
   "Portable Power Station",
@@ -105,7 +106,8 @@ export function BluettiProductsSection() {
                   <span className="font-source-sans text-xl font-bold text-ink">
                     {p.price}
                   </span>
-                  <button
+                  <Link
+                    href="/bluetti"
                     className="rounded-[10px] px-3 py-2 text-xs font-semibold text-white shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1)]"
                     style={{
                       backgroundImage:
@@ -113,7 +115,7 @@ export function BluettiProductsSection() {
                     }}
                   >
                     Buy Now
-                  </button>
+                  </Link>
                 </div>
               </div>
             </div>

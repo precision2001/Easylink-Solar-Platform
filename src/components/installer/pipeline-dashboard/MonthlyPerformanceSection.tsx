@@ -17,11 +17,12 @@ const MonthlyPerformanceChartClient = dynamic(
   },
 );
 
-type MonthlyMetricMode = "revenue" | "profit" | "installs";
+type MonthlyMetricMode = "revenue" | "installs";
 
+// No "Profit" mode: the backend's monthly profit is revenue × 0.22, a fixed
+// margin rather than a measured figure, so it is not charted.
 const MODES: { key: MonthlyMetricMode; label: string }[] = [
   { key: "revenue", label: "Revenue" },
-  { key: "profit", label: "Profit" },
   { key: "installs", label: "Installs" },
 ];
 

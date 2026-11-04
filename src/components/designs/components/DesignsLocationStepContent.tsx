@@ -16,6 +16,7 @@ import {
   type DesignsMapLocation,
 } from "@/utils/constant";
 import { useAppSelector } from "@/lib/store/hooks";
+import { locationStepError } from "@/lib/designs/locationStep";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -41,6 +42,8 @@ export type DesignsLocationStepHandle = {
     location: DesignsMapLocation | null;
     parcelBounds: { sw: DesignsMapLocation; ne: DesignsMapLocation } | null;
   };
+  /** Shows the inline message and returns false when the step can't be left yet. */
+  validate: () => boolean;
 };
 
 export const DesignsLocationStepContent = forwardRef<
@@ -71,12 +74,31 @@ export const DesignsLocationStepContent = forwardRef<
       : null,
   );
 
+  // A saved design's address + pin counts as chosen; typing clears it until
+  // a suggestion is picked or the pin's reverse geocode lands.
+  const [addressConfirmed, setAddressConfirmed] = useState(
+    () =>
+      Boolean(storedCustomer.address?.trim()) &&
+      storedCustomer.mapLat != null &&
+      storedCustomer.mapLng != null,
+  );
+  const [locationError, setLocationError] = useState<string | null>(null);
+
   useImperativeHandle(ref, () => ({
     getValues: () => ({
       address: selectedAddress,
       location: selectedLocation,
       parcelBounds: selectedParcelBounds,
     }),
+    validate: () => {
+      const error = locationStepError({
+        address: selectedAddress,
+        location: selectedLocation,
+        addressConfirmed,
+      });
+      setLocationError(error);
+      return error === null;
+    },
   }));
 
   const { isLoaded } = useGoogleMaps();
@@ -112,6 +134,8 @@ export const DesignsLocationStepContent = forwardRef<
       geocoder.geocode({ location: latLng }, (results, status) => {
         if (status === google.maps.GeocoderStatus.OK && results?.[0]) {
           setSelectedAddress(results[0].formatted_address);
+          setAddressConfirmed(true);
+          setLocationError(null);
         }
       });
     },
@@ -291,6 +315,7 @@ export const DesignsLocationStepContent = forwardRef<
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       setSelectedAddress(value);
+      setAddressConfirmed(false);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => fetchSuggestions(value), 300);
     },
@@ -323,6 +348,8 @@ export const DesignsLocationStepContent = forwardRef<
                 },
                 DESIGNS_LOCATION_STEP.defaultZoom,
               );
+              setAddressConfirmed(true);
+              setLocationError(null);
             }
           },
         );
@@ -347,6 +374,8 @@ export const DesignsLocationStepContent = forwardRef<
             },
             DESIGNS_LOCATION_STEP.defaultZoom,
           );
+          setAddressConfirmed(true);
+          setLocationError(null);
           // A tight per-premise box, when Google returns one — narrower than
           // the building, roughly the parcel. Attached/terrace buildings
           // share one continuous roofline from above, so the building-
@@ -433,6 +462,8 @@ export const DesignsLocationStepContent = forwardRef<
                         if (suggestions.length > 0) setIsOpen(true);
                       }}
                       placeholder={DESIGNS_LOCATION_STEP.inputPlaceholder}
+                      aria-invalid={locationError ? true : undefined}
+                      aria-describedby={locationError ? "designs-location-error" : undefined}
                       autoComplete="off"
                       data-clarity-mask="true"
                       className="h-full flex-1 border-0 bg-transparent font-inter text-[12px] font-medium tracking-[-0.1668px] text-[#191919] outline-none placeholder:text-[#878787]"
@@ -466,6 +497,15 @@ export const DesignsLocationStepContent = forwardRef<
                   </ul>
                 )}
               </div>
+              {locationError ? (
+                <p
+                  id="designs-location-error"
+                  role="alert"
+                  className="rounded-[8px] bg-white/90 px-3 py-2 font-inter text-[13px] font-medium leading-snug text-[#B42318]"
+                >
+                  {locationError}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>

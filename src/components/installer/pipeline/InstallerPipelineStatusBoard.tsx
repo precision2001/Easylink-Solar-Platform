@@ -3,44 +3,34 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  INSTALLER_LEAD_STATUSES,
   fetchInstallerLeads,
   formatPersonName,
   type InstallerLeadSummary,
 } from "@/lib/installers/leads";
+import {
+  PIPELINE_STAGES,
+  PIPELINE_STAGE_LABEL,
+  installerLeadStage,
+  stageTotals as countStages,
+} from "@/components/installer/pipeline/pipelineStages";
 
 /**
  * Pipeline status, matching the Easylink Designer "Pipeline status" artboard
  * (Pipeline.dc.html): per-stage counts above a stages table, with a board
  * view behind the same toggle.
  *
- * The artboard names eight sales stages (New lead → Payment completed). The
- * leads API tracks seven of its own (NEW → WON/LOST), and they are not the
- * same set — there is no "Site assessment", "Installing" or "Payment
- * completed" behind it, and nothing in the artboard corresponds to LOST. The
- * columns here are therefore the statuses the API actually returns, so every
- * cell reflects a real lead rather than an invented stage.
+ * Columns are the eight sales stages (New lead → Payment completed) from the
+ * lead's `stage`, the same pipeline Operations works in Quotes & Leads, so
+ * both portals agree on where a job is. Lost leads are left out of the
+ * leads list by the backend; if one does arrive, only its own stage cell is
+ * marked "Lost".
  */
 
-const STAGE_LABELS: Record<string, string> = {
-  NEW: "New lead",
-  CONTACTED: "Contacted",
-  QUALIFIED: "Qualified",
-  PROPOSAL_SENT: "Proposal sent",
-  NEGOTIATION: "Negotiation",
-  WON: "Won",
-  LOST: "Lost",
-};
-
-const STAGES = [...INSTALLER_LEAD_STATUSES];
+const STAGES = PIPELINE_STAGES;
 
 const DONE = { bg: "#166534", fg: "#FFFFFF" };
 const CURRENT = { bg: "#F68A0A", fg: "#3B1D00" };
 const LOST_TONE = { bg: "#991B1B", fg: "#FFFFFF" };
-
-function stageIndex(status: string) {
-  return STAGES.indexOf(status as (typeof STAGES)[number]);
-}
 
 function systemLabel(lead: InstallerLeadSummary) {
   const parts = [
@@ -94,15 +84,7 @@ export function InstallerPipelineStatusBoard() {
     [leads, owner],
   );
 
-  const stageTotals = useMemo(
-    () =>
-      STAGES.map((stage) => ({
-        stage,
-        label: STAGE_LABELS[stage] ?? stage,
-        count: shown.filter((lead) => lead.status === stage).length,
-      })),
-    [shown],
-  );
+  const stageTotals = useMemo(() => countStages(shown), [shown]);
 
   if (error) {
     return (
@@ -208,7 +190,7 @@ export function InstallerPipelineStatusBoard() {
           aria-label="Stages table"
           className="overflow-x-auto rounded-[14px] border border-[#E3E8EF] bg-white"
         >
-          <table className="w-full min-w-[1100px] border-collapse text-[13px]">
+          <table className="w-full min-w-[1200px] border-collapse text-[13px]">
             <thead>
               <tr>
                 <th className="border-b border-[#E3E8EF] bg-[#F8FAFC] p-3 text-left text-[12px] font-bold text-[#475569]">
@@ -219,14 +201,14 @@ export function InstallerPipelineStatusBoard() {
                     key={stage}
                     className="border-b border-l border-[#E3E8EF] bg-[#F8FAFC] p-3 text-left text-[12px] font-bold text-[#475569]"
                   >
-                    {STAGE_LABELS[stage] ?? stage}
+                    {PIPELINE_STAGE_LABEL[stage]}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {shown.map((lead) => {
-                const at = stageIndex(lead.status);
+                const at = STAGES.indexOf(installerLeadStage(lead));
                 const isLost = lead.status === "LOST";
                 return (
                   <tr key={lead.id}>
@@ -243,7 +225,7 @@ export function InstallerPipelineStatusBoard() {
                       // A lost lead marks only its own cell: the stages it
                       // passed through are not an achievement to show as done.
                       const tone = isLost
-                        ? stage === "LOST"
+                        ? i === at
                           ? LOST_TONE
                           : null
                         : i < at
@@ -252,13 +234,13 @@ export function InstallerPipelineStatusBoard() {
                             ? CURRENT
                             : null;
                       const label = isLost
-                        ? stage === "LOST"
+                        ? i === at
                           ? "Lost"
                           : ""
                         : i < at
                           ? "Done"
                           : i === at
-                            ? (STAGE_LABELS[stage] ?? stage)
+                            ? PIPELINE_STAGE_LABEL[stage]
                             : "";
                       return (
                         <td
@@ -286,16 +268,18 @@ export function InstallerPipelineStatusBoard() {
         </section>
       ) : (
         <section aria-label="Board" className="overflow-x-auto">
-          <div className="grid min-w-[1200px] grid-cols-7 gap-2.5">
+          <div className="grid min-w-[1360px] grid-cols-8 gap-2.5">
             {STAGES.map((stage) => {
-              const items = shown.filter((lead) => lead.status === stage);
+              const items = shown.filter(
+                (lead) => installerLeadStage(lead) === stage,
+              );
               return (
                 <div
                   key={stage}
                   className="flex min-h-[240px] flex-col gap-2 rounded-xl bg-[#EEF2F6] p-2.5"
                 >
                   <span className="text-[12px] font-bold text-[#334155]">
-                    {STAGE_LABELS[stage] ?? stage} · {items.length}
+                    {PIPELINE_STAGE_LABEL[stage]} · {items.length}
                   </span>
                   {items.map((lead) => (
                     <div

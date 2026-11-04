@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ForgotPasswordForm } from "@/components/pages/forgot-password/ForgotPasswordForm";
 import { FooterSection } from "@/components/modules/LandingFooter";
 import { Header } from "@/components/modules/LandingHero";
+
+export const metadata: Metadata = {
+  title: "Forgot password | EasyLink Solar",
+  robots: { index: false, follow: false },
+};
 
 export default function ForgotPasswordPage() {
   return (

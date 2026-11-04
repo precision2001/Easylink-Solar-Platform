@@ -8,8 +8,16 @@ type ApiEnvelope<T> = {
 
 export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "CANCELLED" | "REFUNDED";
 
+/**
+ * Mirrors the backend's PaymentKind enum. AD_QUOTE is a fixed-price website
+ * package bought from the pricing cards; it lands on a customer's history when
+ * they bought it signed in.
+ */
+export type PaymentKind = "SERVICE" | "PRODUCT_ORDER" | "AD_QUOTE";
+
 export type CustomerPayment = {
   id: string;
+  provider: string;
   installerId: string | null;
   customerId: string | null;
   status: PaymentStatus;
@@ -20,14 +28,14 @@ export type CustomerPayment = {
   description: string;
   customerEmail: string;
   customerName: string;
-  stripeSessionId: string;
+  stripeSessionId: string | null;
   stripePaymentIntentId: string | null;
   receiptUrl: string | null;
   failureMessage: string | null;
   paidAt: string | null;
   createdAt: string;
   updatedAt: string;
-  kind: "SERVICE" | "PRODUCT_ORDER";
+  kind: PaymentKind;
   productId: string | null;
   quantity: number | null;
 };

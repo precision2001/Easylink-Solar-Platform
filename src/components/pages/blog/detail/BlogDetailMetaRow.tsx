@@ -20,10 +20,12 @@ export function BlogDetailMetaRow({
         <Icon name="Calendar" className="size-[13.988px] shrink-0" />
         {dateLabel}
       </span>
-      <span className="inline-flex items-center gap-[5.99px] font-source-sans text-[12px] font-medium leading-normal text-blog-detail-meta">
-        <Icon name="Clock" className="size-[13.988px] shrink-0" />
-        {readTimeLabel}
-      </span>
+      {readTimeLabel ? (
+        <span className="inline-flex items-center gap-[5.99px] font-source-sans text-[12px] font-medium leading-normal text-blog-detail-meta">
+          <Icon name="Clock" className="size-[13.988px] shrink-0" />
+          {readTimeLabel}
+        </span>
+      ) : null}
     </div>
   );
 }

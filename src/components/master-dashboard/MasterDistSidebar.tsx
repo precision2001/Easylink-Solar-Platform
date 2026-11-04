@@ -6,7 +6,7 @@ import { usePortalLogout } from "@/hooks/usePortalLogout";
 
 /**
  * Admin/operations sidebar, matching the Easylink Designer DistNav artboard:
- * the same groups, order, icons and count badges, plus its animated
+ * the same groups, order and icons, plus its animated
  * "glitter" icons (a traced stroke + twinkling sparks, see `.el-nav` in
  * globals.css).
  *
@@ -63,6 +63,7 @@ type NavItem = {
   icon: keyof typeof ICONS;
   /** `undefined` = no page behind it yet; the row renders but doesn't navigate. */
   href?: string;
+  /** A count beside the label. Only set it from live data, never a fixed number. */
   badge?: string;
 };
 
@@ -79,7 +80,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { key: "overview", label: "Overview", icon: "home", href: "/master/dashboard" },
       { key: "sales", label: "Sales dashboard", icon: "grid", href: "/master/sales" },
-      { key: "quotes", label: "Quotes & Leads", icon: "file", href: "/master/quotes-leads", badge: "12" },
+      { key: "quotes", label: "Quotes & Leads", icon: "file", href: "/master/quotes-leads" },
       { key: "insights", label: "Insights · Clarity", icon: "eye" },
     ],
   },
@@ -87,7 +88,7 @@ const GROUPS: NavGroup[] = [
     title: "Installer network",
     tag: "new",
     items: [
-      { key: "dispatch", label: "Dispatch", icon: "send", href: "/master/dispatch", badge: "2" },
+      { key: "dispatch", label: "Dispatch", icon: "send", href: "/master/dispatch" },
       { key: "jobs", label: "Jobs & Installs", icon: "box", href: "/master/jobs" },
       { key: "journeys", label: "Job journeys", icon: "route", href: "/master/job-journeys" },
       {
@@ -95,7 +96,6 @@ const GROUPS: NavGroup[] = [
         label: "Handover review",
         icon: "check",
         href: "/master/handover-review",
-        badge: "3",
       },
       {
         key: "payouts",
@@ -103,7 +103,7 @@ const GROUPS: NavGroup[] = [
         icon: "receipt",
         href: "/master/installer-payouts",
       },
-      { key: "installers", label: "Installers", icon: "tool", href: "/master/installers", badge: "1" },
+      { key: "installers", label: "Installers", icon: "tool", href: "/master/installers" },
     ],
   },
   {
@@ -119,7 +119,7 @@ const GROUPS: NavGroup[] = [
     tag: "new",
     items: [
       { key: "aiControl", label: "AI control centre", icon: "spark", href: "/master/ai-control" },
-      { key: "aiJourneys", label: "Live journeys", icon: "route", href: "/master/live-journeys", badge: "41" },
+      { key: "aiJourneys", label: "Live journeys", icon: "route", href: "/master/live-journeys" },
       { key: "aiApprovals", label: "AI approvals", icon: "check", href: "/master/ai-approvals" },
       { key: "aiDecisions", label: "Decision records", icon: "file", href: "/master/ai-decisions" },
       { key: "aiScreens", label: "Build a screen", icon: "layers", href: "/master/ai-screens" },
@@ -141,7 +141,6 @@ const GROUPS: NavGroup[] = [
         label: "Live fleet & alerts",
         icon: "pulse",
         href: "/master/fleet-live",
-        badge: "5",
       },
       { key: "drone", label: "Drone flights", icon: "drone", href: "/master/drone-flights" },
       { key: "vpp", label: "VPP trading", icon: "bolt", href: "/master/vpp-trading" },
@@ -185,7 +184,7 @@ const GROUPS: NavGroup[] = [
       { key: "calls", label: "Calls", icon: "phone", href: "/master/calls" },
       { key: "campaigns", label: "Campaigns", icon: "send", href: "/master/campaigns" },
       { key: "lists", label: "Contact lists", icon: "upload", href: "/master/contact-lists" },
-      { key: "inbox", label: "Inbox", icon: "chat", badge: "6", href: "/master/inbox" },
+      { key: "inbox", label: "Inbox", icon: "chat", href: "/master/inbox" },
     ],
   },
   {
@@ -196,7 +195,7 @@ const GROUPS: NavGroup[] = [
       { key: "aInstallers", label: "Installer accounts", icon: "tool", href: "/master/installer-accounts" },
       { key: "aCustomers", label: "Customers", icon: "users", href: "/master/projects" },
       { key: "aPartners", label: "Partners & suppliers", icon: "truck", href: "/master/admin/partners" },
-      { key: "aApprovals", label: "Approvals", icon: "check", badge: "3", href: "/master/admin/approvals" },
+      { key: "aApprovals", label: "Approvals", icon: "check", href: "/master/admin/approvals" },
       { key: "aPlans", label: "Memberships & plans", icon: "crown", href: "/master/admin/plans" },
       { key: "aStaff", label: "Staff & roles", icon: "key", href: "/master/admin/staff" },
       { key: "aAudit", label: "Audit log", icon: "list", href: "/master/admin/audit" },

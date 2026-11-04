@@ -56,7 +56,33 @@ export function fetchAfterpayConfig(): Promise<AfterpayConfig> {
   return inFlight;
 }
 
-/** True when `amountMinor` is inside Afterpay's range and Afterpay is usable. */
+let zipInFlight: Promise<AfterpayConfig> | null = null;
+
+/** Zip's availability and the order range it is offered for. Same shape as Afterpay's. */
+export function fetchZipConfig(): Promise<AfterpayConfig> {
+  if (zipInFlight) return zipInFlight;
+
+  const base = backendBaseUrl();
+  if (!base) return Promise.resolve(UNAVAILABLE);
+
+  zipInFlight = fetch(`${base}/payments/zip/config`)
+    .then(async (res) => {
+      if (!res.ok) return UNAVAILABLE;
+      const json = (await res.json().catch(() => ({}))) as { data?: Partial<AfterpayConfig> };
+      const data = json.data;
+      if (!data || typeof data.configured !== "boolean") return UNAVAILABLE;
+      return {
+        configured: data.configured,
+        min: typeof data.min === "number" ? data.min : null,
+        max: typeof data.max === "number" ? data.max : null,
+      };
+    })
+    .catch(() => UNAVAILABLE);
+
+  return zipInFlight;
+}
+
+/** True when `amountMinor` is inside the provider's range and it is usable. */
 export function isAfterpayPayable(
   config: AfterpayConfig | null,
   amountMinor: number,

@@ -1,16 +1,25 @@
 "use client";
 
 import Icon, { IconType } from "@/components/ui/Icons";
-import type { InstallerPipelineAnalytics } from "@/lib/installers/analytics";
+import {
+  measuredSecondaryKpis,
+  type InstallerPipelineAnalytics,
+} from "@/lib/installers/analytics";
 
 export function PipelineSecondaryKpiRow({
   kpis,
 }: {
   kpis: InstallerPipelineAnalytics["secondaryKpis"];
 }) {
+  // Net profit is a fixed-margin estimate on the backend, not a measurement.
+  const shown = measuredSecondaryKpis(kpis);
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {kpis.map((item) => (
+    <div
+      className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${
+        shown.length === 3 ? "xl:grid-cols-3" : "xl:grid-cols-4"
+      }`}
+    >
+      {shown.map((item) => (
         <div
           key={item.title}
           className="flex items-start gap-3 rounded-lg border border-warm-border bg-white px-4 py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"

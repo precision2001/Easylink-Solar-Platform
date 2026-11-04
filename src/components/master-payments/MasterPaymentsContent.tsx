@@ -7,6 +7,7 @@ import Icon from "@/components/ui/Icons";
 import {
   fetchAllPayments,
   markPaymentPaidOut,
+  refundPayment,
   type MasterPayment,
   type PaymentKind,
   type PaymentStatus,
@@ -108,6 +109,8 @@ function buildStatCards(payments: MasterPayment[]): StatCard[] {
   ];
 }
 
+const PROVIDER_LABEL: Record<string, string> = { stripe: "Card", afterpay: "Afterpay", zip: "Zip" };
+
 export function MasterPaymentsContent() {
   const [payments, setPayments] = useState<MasterPayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,6 +121,10 @@ export function MasterPaymentsContent() {
   const [payoutTarget, setPayoutTarget] = useState<MasterPayment | null>(null);
   const [payoutNote, setPayoutNote] = useState("");
   const [payoutSubmitting, setPayoutSubmitting] = useState(false);
+  const [refundTarget, setRefundTarget] = useState<MasterPayment | null>(null);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundSubmitting, setRefundSubmitting] = useState(false);
 
   const load = useCallback(async (signal: { cancelled: boolean }) => {
     setLoading(true);
@@ -177,13 +184,37 @@ export function MasterPaymentsContent() {
     }
   }
 
+  async function confirmRefund() {
+    if (!refundTarget || !refundReason.trim()) return;
+    const amount = refundAmount.trim() ? Number(refundAmount) : undefined;
+    const remaining = refundTarget.amount - refundTarget.amountRefunded;
+    if (amount !== undefined && (!Number.isFinite(amount) || amount <= 0 || amount > remaining)) {
+      toast.error(`Enter an amount up to ${remaining.toFixed(2)}.`);
+      return;
+    }
+    setRefundSubmitting(true);
+    try {
+      const updated = await refundPayment(refundTarget.id, { amount, reason: refundReason.trim() });
+      setPayments((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      toast.success("Refund sent.");
+      setRefundTarget(null);
+      setRefundAmount("");
+      setRefundReason("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not refund this payment");
+    } finally {
+      setRefundSubmitting(false);
+    }
+  }
+
   return (
     <main className="mx-auto max-w-[1440px] space-y-6 px-5 py-6">
       <div>
         <h1 className="font-inter text-[20px] font-bold text-warm-ink">Payments</h1>
         <p className="mt-1 font-dm-sans text-sm text-warm-gray">
-          Every Stripe payment across the platform — customer product orders and
-          installer service charges. Mark a paid service charge as &ldquo;paid
+          Every payment across the platform by card, Afterpay and Zip — customer
+          product orders and installer service charges. Refund Afterpay and Zip
+          payments here so this list stays correct. Mark a paid service charge as &ldquo;paid
           out&rdquo; once you have transferred the installer&apos;s share.
         </p>
       </div>
@@ -277,7 +308,7 @@ export function MasterPaymentsContent() {
           <table className="w-full min-w-[880px] border-collapse">
             <thead>
               <tr className="border-b border-warm-border bg-cream-50 text-left">
-                {["Customer", "Installer", "Kind", "Amount", "Status", "Payout", "Date", ""].map(
+                {["Customer", "Installer", "Kind", "Paid with", "Amount", "Status", "Payout", "Date", ""].map(
                   (heading) => (
                     <th
                       key={heading}
@@ -312,6 +343,12 @@ export function MasterPaymentsContent() {
                       <span className="rounded-full bg-cream-50 px-2 py-0.5 font-dm-sans text-[11px] font-semibold text-warm-ink">
                         {KIND_LABEL[payment.kind]}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 font-dm-sans text-sm text-warm-ink">
+                      {PROVIDER_LABEL[payment.provider] ?? payment.provider}
+                      {payment.zipReceiptNumber ? (
+                        <div className="text-xs text-warm-gray">Receipt {payment.zipReceiptNumber}</div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 font-dm-sans text-sm font-semibold text-warm-ink">
                       {formatAmount(payment)}
@@ -355,6 +392,15 @@ export function MasterPaymentsContent() {
                           Mark Paid Out
                         </button>
                       ) : null}
+                      {(payment.provider === "afterpay" || payment.provider === "zip") && payment.status === "PAID" ? (
+                        <button
+                          type="button"
+                          onClick={() => setRefundTarget(payment)}
+                          className="ml-2 rounded-lg border border-warm-border px-3 py-1.5 font-dm-sans text-xs font-semibold text-warm-ink hover:bg-cream-50"
+                        >
+                          Refund
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );
@@ -387,7 +433,7 @@ export function MasterPaymentsContent() {
             </h2>
             <p className="mt-1 font-dm-sans text-sm text-warm-gray">
               Confirms {formatAmount(payoutTarget)} has been transferred to the
-              installer outside Stripe (e.g. bank transfer). This only records the
+              installer outside the payment provider (e.g. bank transfer). This only records the
               payout — it does not move money.
             </p>
             <label className="mt-3 block">
@@ -420,6 +466,74 @@ export function MasterPaymentsContent() {
                 className="rounded-lg bg-brand-blue px-4 py-2 font-dm-sans text-sm font-bold text-white hover:opacity-90 disabled:opacity-60"
               >
                 {payoutSubmitting ? "Saving…" : "Confirm paid out"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {refundTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              if (!refundSubmitting) setRefundTarget(null);
+            }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Refund payment"
+            className="relative z-[1] w-full max-w-[420px] rounded-xl border border-warm-border bg-white p-5 shadow-lg"
+          >
+            <h2 className="font-inter text-[15px] font-bold text-warm-ink">
+              Refund {PROVIDER_LABEL[refundTarget.provider]} payment?
+            </h2>
+            <p className="mt-1 font-dm-sans text-sm text-warm-gray">
+              This sends real money back to {refundTarget.customerName || refundTarget.customerEmail} and can&apos;t be undone.
+              {" "}{formatAmount({ amount: refundTarget.amount - refundTarget.amountRefunded, currency: refundTarget.currency })} can be refunded.
+            </p>
+            <label className="mt-3 block">
+              <span className="mb-1.5 block font-dm-sans text-xs font-semibold uppercase tracking-wide text-warm-gray">
+                Amount (blank for the full balance)
+              </span>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={refundAmount}
+                onChange={(e) => setRefundAmount(e.target.value)}
+                className="w-full rounded-lg border border-warm-border bg-cream-50 px-3 py-2 font-dm-sans text-sm text-warm-ink outline-none focus:border-brand-blue"
+              />
+            </label>
+            <label className="mt-3 block">
+              <span className="mb-1.5 block font-dm-sans text-xs font-semibold uppercase tracking-wide text-warm-gray">
+                Reason
+              </span>
+              <input
+                type="text"
+                maxLength={200}
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                className="w-full rounded-lg border border-warm-border bg-cream-50 px-3 py-2 font-dm-sans text-sm text-warm-ink outline-none focus:border-brand-blue"
+              />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRefundTarget(null)}
+                disabled={refundSubmitting}
+                className="rounded-lg border border-warm-border px-4 py-2 font-dm-sans text-sm font-medium text-warm-ink hover:bg-cream-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmRefund()}
+                disabled={refundSubmitting || !refundReason.trim()}
+                className="rounded-lg bg-brand-blue px-4 py-2 font-dm-sans text-sm font-bold text-white hover:opacity-90 disabled:opacity-60"
+              >
+                {refundSubmitting ? "Refunding…" : "Refund"}
               </button>
             </div>
           </div>

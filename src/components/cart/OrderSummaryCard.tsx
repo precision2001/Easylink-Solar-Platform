@@ -73,6 +73,12 @@ export function OrderSummaryCard({ order, compact = false }: { order: Order; com
             {order.deliveryFee > 0 ? money(order.deliveryFee, order.currency) : order.fulfilment === "PICKUP" ? "Free" : "Included"}
           </dd>
         </div>
+        {order.paymentFee ? (
+          <div className="flex justify-between">
+            <dt className="text-warm-gray">Payment fee</dt>
+            <dd className="text-warm-ink">{money(order.paymentFee, order.currency)}</dd>
+          </div>
+        ) : null}
         <div className="flex justify-between">
           <dt className="font-semibold text-warm-ink">Total (incl. GST)</dt>
           <dd className="font-inter text-[15px] font-bold text-warm-ink">{money(order.total, order.currency)}</dd>

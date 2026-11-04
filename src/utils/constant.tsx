@@ -2341,10 +2341,7 @@ export const LANDING_FOOTER_COLUMNS: LandingFooterColumn[] = [
     title: "Products",
     items: [
       { label: "EP2000", href: "/bluetti" },
-      { label: "EP760", href: "#" },
-      { label: "BLUETTI Elite 30 V2", href: "#" },
-      { label: "Solar Panels", href: "#" },
-      { label: "Accessories", href: "#" },
+      { label: "Solar Panels", href: "/products" },
     ],
   },
   {
@@ -2365,18 +2362,7 @@ export const LANDING_FOOTER_COLUMNS: LandingFooterColumn[] = [
     items: [
       { label: "About Us", href: "/about-us" },
       { label: "Web Design & Development", href: "/services" },
-      { label: "Careers", href: "#" },
-      { label: "Projects", href: "#" },
-      { label: "Partners", href: "#" },
       { label: "Blog", href: "/blog" },
-    ],
-  },
-  {
-    title: "Legal",
-    items: [
-      { label: "Privacy Policy", href: "#" },
-      { label: "Terms of Service", href: "#" },
-      { label: "Cookie Policy", href: "#" },
     ],
   },
 ];
@@ -2683,10 +2669,13 @@ export type BlogDetailContent = {
   featuredImageSrc: string;
   featuredImageAlt: string;
   bodyParagraphs: readonly string[];
-  featuredQuote: BlogDetailFeaturedQuote;
+  /** Only present when the post's own data supplies it. */
+  featuredQuote?: BlogDetailFeaturedQuote;
   industryLeadersHeading: string;
+  /** Empty unless the post's own data supplies quotes. */
   leaderQuotes: readonly BlogDetailLeaderQuote[];
-  contact: BlogDetailContact;
+  /** Only present when the post's own data supplies a media contact. */
+  contact?: BlogDetailContact;
   shareLabel: string;
   relatedHeading: string;
   relatedSubtitle: string;
@@ -2694,126 +2683,20 @@ export type BlogDetailContent = {
   relatedViewAllLabel: string;
 };
 
-export const BLOG_DETAIL_DEFAULT: BlogDetailContent = {
-  breadcrumbTitle: "Australia's 2035 Energy Path",
-  categoryLabel: "Industry News",
-  dateLabel: "18 Sep 2025",
-  readTimeLabel: "8 min read",
-  title:
-    "Wind, solar, hydro and storage powering Australia's path to 2035",
-  attributionName: "Clean Energy Council",
-  attributionRole: "Media Release",
-  leadParagraph:
-    "The Clean Energy Council welcomes today's announcement by the Federal Government and Climate Change Authority in setting Australia's next emissions reduction target. These targets are essential to give investors and communities the confidence that Australia is serious about delivering on its climate commitments.",
-  featuredImageSrc: "/images/home/solar-panel-design.png",
-  featuredImageAlt: "Solar panels installed on a residential rooftop",
-  bodyParagraphs: [
-    "The electricity sector has already done much of the heavy lifting, abating around one-third of its projected emissions over the past decade through the rollout of renewable energy projects. This transformation is proof that clean energy is not only cutting pollution but also driving a jobs and investment boom across regional Australia.",
-    "Australia's clean energy industry is absolutely committed to achieving the nation's renewable energy goals by 2035. The transformation already underway shows what's possible: in just eight years, Australia has more than doubled the amount of renewable energy in the system, from 17 per cent renewables in 2017 to just over 40 per cent in 2025. With critical mass now within reach, every new project makes the next one faster and easier, unlocking momentum that will accelerate Australia's clean energy build-out.",
-    "The world is building renewables at an extraordinary pace. In April of this year, China added as much solar as Australia has in its entire history and, with global supply chains now delivering wind and solar at scale, the technology is cheaper and more accessible than ever.",
-    "The clean energy industry is fully committed to doing its part to meet this new target. Renewable energy, backed by firming and storage, is delivering clean, reliable and affordable power for Australian families and businesses. At the same time, the sector is creating tens of thousands of jobs, strengthening regional economies, and attracting tens of billions of dollars in private capital.",
-    "Today's decision sets the direction for the next chapter of Australia's energy transformation. With clear targets and the right policy settings, we can accelerate the shift to a modern energy system, continue to cut emissions, and ensure Australian workers, businesses and communities share in the benefits of the transition.",
-  ],
-  featuredQuote: {
-    quote:
-      "We've done this before, and we can do it again. Australia has more than doubled the renewables in our energy system in less than a decade, and there's no reason we can't go the rest of the way.",
-    name: "Brett Wickham",
-    role: "Interim CEO, Clean Energy Council",
-    avatarSrc: "/images/logo.webp",
-    avatarAlt: "Brett Wickham",
-  },
-  industryLeadersHeading: "Industry Leaders Speak Out",
-  leaderQuotes: [
-    {
-      paragraphs: [
-        "The technology is proven, the investment is lined up, and the projects are ready for approval. This is absolutely achievable, if we stay the course. Every wind farm, every solar project, every big battery makes the next one easier. We're hitting critical mass now, and momentum is on our side.",
-        "With clear policy settings, strong investor appetite and projects rolling out across the nation, we are confident the sector can deliver the next big leap and ensure Australia's energy future is clean, reliable and affordable.",
-      ],
-      attribution: "Brett Wickham, Interim CEO, CEC",
-    },
-    {
-      paragraphs: [
-        "Iberdrola Australia is committed to the energy transition, with billions of dollars already invested, combining our global expertise and local know-how to deliver onshore, offshore and transmission projects. We look forward to playing our part in achieving the emissions reduction targets in a way that maximises the benefits to all – particularly regional Australians whose communities host the clean energy infrastructure.",
-      ],
-      attribution: "Ross Rolfe AO, CEO, Iberdrola Australia",
-    },
-    {
-      paragraphs: [
-        "Potentia Energy has a strong pipeline across all major technologies and the backing of committed shareholders. We are fully focused on scaling up Australia's clean energy future — driving innovation, delivering projects, and ensuring reliable, affordable renewables power the nation forward.",
-      ],
-      attribution: "Werther Esposito, CEO, Potentia Energy",
-    },
-    {
-      paragraphs: [
-        "RES is committed to Australia's energy transition, with projects in solar, wind, and storage well underway. The skills, the supply chains, and the will are all there to make clean energy the backbone of our electricity system by 2035.",
-      ],
-      attribution: "Matt Rebeck, CEO, RES Australia",
-    },
-    {
-      paragraphs: [
-        "Achieving great things requires ambitious goals. Australia has the resources, people and policy to get the job done. Squadron Energy is ready to get on with the job of building the power system of the future by replacing ageing, high emissions coal generation with clean renewable energy.",
-      ],
-      attribution: "Rob Wheals, CEO, Squadron Energy",
-    },
-    {
-      paragraphs: [
-        "ACCIONA Energia has no doubt Australia can deliver one of the world's most ambitious clean energy transformations. The technology is proven, the projects are ready, and our teams are committed to making it happen.",
-      ],
-      attribution: "Gavin Reymond, Managing Director, ACCIONA Energia",
-    },
-    {
-      paragraphs: [
-        "The Australian Government's new climate target represents an important step toward a net zero future and sends a clear signal of intent about the role Australia can play in the global energy transition. The announcement provides confidence to industry about the Government's ambition for the renewable energy sector in Australia. While decarbonising the energy sector is an opportunity to drive innovation and boost local industry, it is important to remember strong collaboration across government, industry and communities will be required to meet the emissions goals.",
-      ],
-      attribution: "Jackie Brown, Country Chair, GE Vernova Australia",
-    },
-    {
-      paragraphs: [
-        "SolarEdge, a leading PV inverter manufacturer, has first-hand experience in witnessing the tremendous growth in the Australian distributed energy resources sector over the past 15 years. Having an ambitious target is an essential confidence-building mechanism for Australia and demonstrates serious climate commitment delivery. Clear targets and the right policy settings will accelerate the transition to a modern, digital energy system, decarbonise the energy sector, cut emissions, and ensure Australia shares the benefits of the transition. We wholeheartedly support today's decision that sets the direction for the next phase of Australia's energy evolution.",
-      ],
-      attribution:
-        "James Sturch, Technical Director - International Markets, SolarEdge Technologies",
-    },
-    {
-      paragraphs: [
-        "As a pioneer in battery storage and virtual power plant solutions, Sonnen sees every day how households and businesses are proving that clean energy works. With batteries, solar, and smart energy systems in place, Australians are demonstrating that reliable and affordable clean power can be built from the ground up.",
-      ],
-      attribution: "Leo Kukarin, Head of Technical Operations, Sonnen Australia",
-    },
-    {
-      paragraphs: [
-        "Goldwind Australia strongly supports the government's emissions targets. We are focused on delivering innovative, competitive wind and BESS-integrated renewable projects that will help Australia reach them. We are turning world-class wind resources into clean and reliable power, while providing jobs and economic benefits to our regional communities.",
-      ],
-      attribution: "Ning Chen, Chief Executive Officer, Goldwind Australia",
-    },
-    {
-      paragraphs: [
-        "Atmos Renewables already manages more than 1.6GW of clean energy assets in Australia and we are here for the long haul. We have the people, systems and experience to operate at scale. We welcome the government's ambitious plans and look forward to doing our part to help achieve them.",
-      ],
-      attribution: "Nigel Baker, Chief Executive, Atmos Renewables",
-    },
-  ],
-  contact: {
-    heading: "For more information or to arrange an interview:",
-    name: "Liam Straughan",
-    role: "Clean Energy Council Media Officer",
-    phone: "+61 409 470 683",
-    emailLabel: "Email the media team",
-    emailHref: "mailto:media@cleanenergycouncil.org.au",
-  },
+/**
+ * Layout labels shared by every blog detail page. Article-specific content
+ * (quotes, media contacts) must come from the post's own backend data — never
+ * from a template — so nothing is attributed to people who didn't say it.
+ */
+export const BLOG_DETAIL_LABELS = {
+  readTimeLabel: "",
+  industryLeadersHeading: "What others are saying",
   shareLabel: "Share this article:",
-  relatedHeading: "Latest Updates",
+  relatedHeading: "Latest updates",
   relatedSubtitle: "More news from the renewable energy sector",
   relatedViewAllHref: "/blog",
   relatedViewAllLabel: "VIEW ALL POSTS",
-};
-
-export function getBlogDetailContent(blogId: string): BlogDetailContent | null {
-  if (!getBlogPostById(blogId)) {
-    return null;
-  }
-  return BLOG_DETAIL_DEFAULT;
-}
+} as const;
 
 /** Public firmware information page (`/firmware`) */
 export const FIRMWARE_PAGE = {
@@ -3521,46 +3404,6 @@ export const CUSTOMER_PORTAL = {
     { href: "/customers/profile", label: "Profile", key: "profile" as const },
   ],
   dashboard: {
-    welcome: {
-      journeyPercent: 67,
-      systemKw: "6.6 kW",
-      savingsYr: "$1,840/yr",
-      nextStep: "Installation",
-    },
-    kpis: [
-      {
-        id: "system-size",
-        label: "System Size",
-        value: "6.6 kW",
-        sublabel: "16 panels",
-        icon: "Light" as const,
-        iconTintClass: "customer-kpi-icon-navy",
-      },
-      {
-        id: "annual-output",
-        label: "Annual Output",
-        value: "9,636 kWh",
-        sublabel: "projected",
-        icon: "LightCheck" as const,
-        iconTintClass: "customer-kpi-icon-orange",
-      },
-      {
-        id: "est-savings",
-        label: "Est. Savings",
-        value: "$1,840/yr",
-        sublabel: "per year",
-        icon: "Dollar" as const,
-        iconTintClass: "customer-kpi-icon-green",
-      },
-      {
-        id: "total-price",
-        label: "Total Price",
-        value: "$8,500",
-        sublabel: "inc. installation",
-        icon: "Shop" as const,
-        iconTintClass: "customer-kpi-icon-navy",
-      },
-    ],
     designOptions: [
       {
         id: "a",
@@ -3616,11 +3459,6 @@ export const CUSTOMER_PORTAL = {
       { id: "t6", title: "System Live", dateLabel: null },
     ],
     defaultTimelineActiveIndex: 4,
-    installer: {
-      initials: "SM",
-      companyName: "SolarMax Pro",
-      subtitle: "Verified Partner",
-    },
   },
   products: {
     title: "Solar Products",
@@ -4277,15 +4115,9 @@ export const SERVICES_PAGE = {
     contact: {
       title: "Prefer to talk first?",
       items: [
-        { id: "phone", iconId: "Phone" as const, label: "+61 2 9099 5815", href: "tel:61290995815" },
+        { id: "phone", iconId: "Phone" as const, label: "+61 2 9099 5815", href: "tel:+61290995815" },
         { id: "email", iconId: "Mail" as const, label: "sales@easylinkplus.com", href: "mailto:sales@easylinkplus.com" },
         { id: "address", iconId: "Pin" as const, label: "Sydney Australia, Mexico, India", href: null },
-      ],
-      social: [
-        { id: "linkedin", label: "LinkedIn", href: "#" },
-        { id: "facebook", label: "Facebook", href: "#" },
-        { id: "x", label: "X", href: "#" },
-        { id: "github", label: "GitHub", href: "#" },
       ],
     },
   },

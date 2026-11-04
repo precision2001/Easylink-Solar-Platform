@@ -39,32 +39,40 @@ export function BlogDetailArticleSection({ content }: Props) {
         ))}
       </div>
 
-      <div className="mt-[48px]">
-        <BlogDetailFeaturedQuote quote={content.featuredQuote} />
-      </div>
+      {content.featuredQuote ? (
+        <div className="mt-[48px]">
+          <BlogDetailFeaturedQuote quote={content.featuredQuote} />
+        </div>
+      ) : null}
 
-      <h2 className="mt-[48px] font-source-sans text-[20px] font-bold leading-normal text-blog-detail-body sm:text-[24px]">
-        {content.industryLeadersHeading}
-      </h2>
+      {content.leaderQuotes.length > 0 ? (
+        <>
+          <h2 className="mt-[48px] font-source-sans text-[20px] font-bold leading-normal text-blog-detail-body sm:text-[24px]">
+            {content.industryLeadersHeading}
+          </h2>
 
-      <ul className="mt-[24px] flex flex-col gap-[24px]">
-        {content.leaderQuotes.map((quote) => (
-          <li key={quote.attribution}>
-            <BlogDetailLeaderQuoteCard quote={quote} />
-          </li>
-        ))}
-      </ul>
+          <ul className="mt-[24px] flex flex-col gap-[24px]">
+            {content.leaderQuotes.map((quote) => (
+              <li key={quote.attribution}>
+                <BlogDetailLeaderQuoteCard quote={quote} />
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
 
       <div className="mt-[48px] border-t border-blog-detail-divider pt-[33.036px]">
-        <p className="font-inter text-[14px] font-bold leading-[20px] tracking-[-0.1504px] text-blog-detail-ends-label">
-          ENDS
-        </p>
-        <div className="mt-[26.173px]">
-          <BlogDetailContactCard contact={content.contact} />
-        </div>
-        <div className="mt-[26.173px]">
-          <BlogDetailShareBar label={content.shareLabel} />
-        </div>
+        {content.contact ? (
+          <>
+            <p className="font-inter text-[14px] font-bold leading-[20px] tracking-[-0.1504px] text-blog-detail-ends-label">
+              ENDS
+            </p>
+            <div className="mt-[26.173px] mb-[26.173px]">
+              <BlogDetailContactCard contact={content.contact} />
+            </div>
+          </>
+        ) : null}
+        <BlogDetailShareBar label={content.shareLabel} title={content.title} />
       </div>
     </article>
   );

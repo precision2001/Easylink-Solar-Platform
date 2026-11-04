@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { toast } from "react-toastify";
 
-const contactItems = [
-  { label: "Mobile", value: "04 818 575 08" },
-  { label: "Phone", value: "+61 2 9070 1201" },
-  { label: "Email", value: "sales@easylinksolar.com.au" },
+const contactItems: { label: string; value: string; href?: string }[] = [
+  { label: "Mobile", value: "04 818 575 08", href: "tel:+61481857508" },
+  { label: "Phone", value: "+61 2 9070 1201", href: "tel:+61290701201" },
+  { label: "Email", value: "sales@easylinksolar.com.au", href: "mailto:sales@easylinksolar.com.au" },
   { label: "Website", value: "www.easylinksolar.com.au" },
 ];
 
@@ -218,7 +219,16 @@ export function SendUsAndPartnerSection() {
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                       {item.label}
                     </p>
-                    <p className="font-semibold text-slate-800">{item.value}</p>
+                    {item.href ? (
+                      <a
+                        href={item.href}
+                        className="font-semibold text-slate-800 underline-offset-2 hover:text-cyan-600 hover:underline"
+                      >
+                        {item.value}
+                      </a>
+                    ) : (
+                      <p className="font-semibold text-slate-800">{item.value}</p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -260,12 +270,12 @@ export function SendUsAndPartnerSection() {
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              className="cursor-pointer mt-6 rounded-xl bg-cyan-400 px-7 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
+            <Link
+              href="/installers/landing"
+              className="mt-6 inline-block cursor-pointer rounded-xl bg-cyan-400 px-7 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
             >
               Become a Partner
-            </button>
+            </Link>
           </div>
         </div>
       </div>

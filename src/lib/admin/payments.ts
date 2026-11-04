@@ -20,6 +20,8 @@ export type MasterPayout = {
 
 export type MasterPayment = {
   id: string;
+  provider: string;
+  zipReceiptNumber: string | null;
   installerId: string | null;
   customerId: string | null;
   status: PaymentStatus;
@@ -30,7 +32,7 @@ export type MasterPayment = {
   description: string;
   customerEmail: string;
   customerName: string;
-  stripeSessionId: string;
+  stripeSessionId: string | null;
   stripePaymentIntentId: string | null;
   receiptUrl: string | null;
   failureMessage: string | null;
@@ -73,6 +75,19 @@ export async function fetchAllPayments(filters?: {
     `/api/admin/payments${qs ? `?${qs}` : ""}`,
   );
   return readEnvelope<MasterPayment[]>(res, "Could not load payments");
+}
+
+/** Refunds a direct Afterpay or Zip payment. Omit `amount` for the full balance. */
+export async function refundPayment(
+  id: string,
+  input: { amount?: number; reason: string },
+): Promise<MasterPayment> {
+  const res = await fetchWithInstallerSession(`/api/admin/payments/${encodeURIComponent(id)}/refund`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return readEnvelope<MasterPayment>(res, "Could not refund this payment");
 }
 
 /** Marks a paid SERVICE payment as paid out to its installer (manual/ledger payout). */

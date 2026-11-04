@@ -14,6 +14,37 @@ export type LeadStage =
   | "INSTALLING"
   | "PAYMENT_COMPLETED";
 
+/**
+ * The eight sales stages in order, with the wording the backend serves in
+ * `/leads/pipeline/meta` (`modules/leads/lead-pipeline.ts` STAGE_LABEL). For
+ * screens that don't load the meta, such as the installer pipeline board.
+ */
+export const LEAD_STAGES: readonly LeadStage[] = [
+  "NEW_LEAD",
+  "APPOINTMENT",
+  "SITE_ASSESSMENT",
+  "DESIGNING",
+  "PROPOSAL_SENT",
+  "DEPOSIT_PAID",
+  "INSTALLING",
+  "PAYMENT_COMPLETED",
+];
+
+export const LEAD_STAGE_LABEL: Record<LeadStage, string> = {
+  NEW_LEAD: "New lead",
+  APPOINTMENT: "Appointment",
+  SITE_ASSESSMENT: "Site assessment",
+  DESIGNING: "Designing",
+  PROPOSAL_SENT: "Proposal sent",
+  DEPOSIT_PAID: "Deposit paid",
+  INSTALLING: "Installing",
+  PAYMENT_COMPLETED: "Payment completed",
+};
+
+export function isLeadStage(value: unknown): value is LeadStage {
+  return typeof value === "string" && (LEAD_STAGES as readonly string[]).includes(value);
+}
+
 export type TaskKind = "CALLBACK" | "SITE_VISIT" | "TASK";
 
 export type NextAction = {
@@ -245,6 +276,8 @@ export function sourceKind(source: string | null): { label: string; icon: "sun" 
   if (s.includes("referral")) return { label: "Referral", icon: "users" };
   if (s.startsWith("design platform")) return { label: "Design", icon: "sun" };
   if (s.startsWith("contact form")) return { label: "Contact form", icon: "mail" };
+  // Staff-entered "New lead" sources: an inbound call isn't the dialler.
+  if (s === "phone call") return { label: "Phone call", icon: "phone" };
   if (/dial|call/.test(s)) return { label: "Dialler", icon: "phone" };
   if (s.includes("partner")) return { label: "Partner", icon: "link" };
   return { label: source ? source.split(/ [—·] /)[0]!.slice(0, 22) : "Other", icon: "link" };

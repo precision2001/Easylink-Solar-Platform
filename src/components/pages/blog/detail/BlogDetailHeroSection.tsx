@@ -36,9 +36,11 @@ export function BlogDetailHeroSection({ content }: Props) {
             <p className="font-source-sans text-[18px] font-bold leading-normal tracking-[-0.4395px] text-blog-detail-attribution-name">
               {content.attributionName}
             </p>
-            <p className="mt-[8px] font-source-sans text-[14px] font-normal leading-normal tracking-[-0.1504px] text-blog-detail-attribution-role">
-              {content.attributionRole}
-            </p>
+            {content.attributionRole ? (
+              <p className="mt-[8px] font-source-sans text-[14px] font-normal leading-normal tracking-[-0.1504px] text-blog-detail-attribution-role">
+                {content.attributionRole}
+              </p>
+            ) : null}
           </div>
         </div>
       </div>

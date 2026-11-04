@@ -586,6 +586,16 @@ export const DesignsProposalStepContent = forwardRef<
       ? `${(computedTotalPrice / yearlySavingsNum).toFixed(1)} yrs`
       : proposal.summary.payback;
 
+  /**
+   * Savings and payback only mean something once the pricing engine has
+   * priced this design — until then show a neutral placeholder rather than
+   * whatever is in the store (an estimate, an older saved figure or a default).
+   */
+  const pricedFigure = (value: string) => {
+    if (computedTotalPrice != null && value) return value;
+    return pricingLoading ? "Calculating…" : "—";
+  };
+
   const netSavings25yr = useMemo(() => {
     const { rows } = buildFinancialProjectionFromProposal(
       {
@@ -654,8 +664,8 @@ export const DesignsProposalStepContent = forwardRef<
         <div className="grid shrink-0 grid-cols-2 gap-[clamp(6px,1vw,12px)] lg:grid-cols-4">
           <ProposalStatCard label="System Size" value={proposal.summary.systemSize} variant="cyan" />
           <ProposalStatCard label="Total Panels" value={proposal.summary.totalPanels} variant="gold" />
-          <ProposalStatCard label="Yearly Savings" value={proposal.summary.yearlySavings} variant="cyan" />
-          <ProposalStatCard label="Payback" value={proposal.summary.payback} variant="gold" />
+          <ProposalStatCard label="Yearly Savings" value={pricedFigure(formatAud(savings.yearlySavings))} variant="cyan" />
+          <ProposalStatCard label="Payback" value={pricedFigure(computedPayback)} variant="gold" />
         </div>
 
         {/* Row 1: panel tier and battery side by side (the placement the owner chose). */}

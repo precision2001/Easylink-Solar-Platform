@@ -14,6 +14,11 @@ import {
   setInstallerSessionCookies,
 } from "@/lib/auth/installer-cookies";
 import { isAccessTokenExpired } from "@/lib/auth/middleware-session";
+import {
+  ADMIN_ACCESS_COOKIE,
+  ADMIN_REFRESH_COOKIE,
+  setAdminSessionCookies,
+} from "@/lib/auth/admin-cookies";
 import { SSO_ALLOWED_ORIGINS } from "@/lib/auth/portal-paths";
 import { safeReturnTarget } from "@/lib/auth/return-path";
 import { requestBackendSsoCode } from "@/lib/customers/sso-issue-backend";
@@ -206,11 +211,39 @@ async function handleInstallerProtected(
   return installerLoginRedirect(request, pathname);
 }
 
+/**
+ * The operations portal's data calls use the admin session. Keep it renewed
+ * on navigation like the other portals; the page gate itself is unchanged.
+ */
+async function handleMasterProtected(request: NextRequest): Promise<NextResponse> {
+  const access = request.cookies.get(ADMIN_ACCESS_COOKIE)?.value;
+  const refresh = request.cookies.get(ADMIN_REFRESH_COOKIE)?.value;
+  const gate = await handleInstallerProtected(request);
+  if (!refresh || (access && !isAccessTokenExpired(access))) return gate;
+  if (gate.headers.get("location")) return gate;
+  const outcome = await executeTokenRefresh(refresh);
+  if (outcome.ok) {
+    setAdminSessionCookies(gate, { accessToken: outcome.accessToken, refreshToken: outcome.refreshToken });
+  }
+  return gate;
+}
+
+/** Exactly "/customers" or "/customers/" — not anything beneath it. */
+export function isPublicCustomersLanding(pathname: string): boolean {
+  return pathname === "/customers" || pathname === "/customers/";
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/customers/auth")) {
     return handleCustomerAuthPage(request);
+  }
+
+  // The bare /customers page is the public customer marketing page; only the
+  // portal routes beneath it need a session.
+  if (isPublicCustomersLanding(pathname)) {
+    return NextResponse.next();
   }
 
   if (pathname.startsWith("/customers")) {
@@ -226,7 +259,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   if (pathname.startsWith("/master")) {
-    return handleInstallerProtected(request);
+    return handleMasterProtected(request);
   }
 
   return NextResponse.next();

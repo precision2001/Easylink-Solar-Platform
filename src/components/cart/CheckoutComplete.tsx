@@ -10,9 +10,9 @@ import { fetchBuyerSession, refreshMyOrder, type Order } from "@/lib/cart/orders
 const GRADIENT = "linear-gradient(121.47deg, rgb(32, 148, 243) 0%, rgb(23, 207, 207) 100%)";
 
 /**
- * Stripe's success page. The webhook usually marks the order paid within a
- * second or two; until then this asks the backend to read the session from
- * Stripe directly, a few times, before settling on what it sees.
+ * The page buyers return to after paying. Afterpay and Zip are settled before
+ * the redirect. A Stripe webhook usually lands within a second or two; until
+ * then this asks the backend to read the session from Stripe a few times.
  */
 export function CheckoutComplete() {
   const orderId = useSearchParams().get("order");
@@ -76,7 +76,7 @@ export function CheckoutComplete() {
       {order ? <OrderSummaryCard order={order} /> : null}
       {order?.status === "PENDING_PAYMENT" ? (
         <p className="text-center font-dm-sans text-[12px] text-warm-gray">
-          Still showing as awaiting payment? Stripe can take a minute — it will update in your order history, and you&apos;ll get an email.
+          Still showing as awaiting payment? This can take a minute — it will update in your order history, and you&apos;ll get an email.
         </p>
       ) : null}
       <div className="flex flex-wrap justify-center gap-3">

@@ -1,46 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import classNames from "classnames";
-import { CustomerDashboardHeader } from "@/components/customer/dashboard/CustomerDashboardHeader";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { askEasylinkAi } from "@/components/ai-chat/EasylinkAiChatbot";
+import { CustomerOrdersPanel } from "@/components/customer/payments/CustomerOrdersPanel";
+import { PaymentsList } from "@/components/customer/payments/PaymentsList";
+import { usePayLaterOptions, waysToPayLabel } from "@/components/customer/payments/usePayLaterOptions";
+import { CustomerPortalShell, PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { PortalIcon } from "@/components/customer/portal/PortalIcon";
+import { ButtonLink, EmptyNote, Panel, Skeleton } from "@/components/customer/portal/PortalParts";
 import {
-  CUSTOMER_PAYMENT_STATUS_LABELS,
-  fetchCustomerPayments,
-  formatPaymentAmount,
-  type CustomerPayment,
-  type PaymentStatus,
-} from "@/lib/customers/payments";
-import { useAppSelector } from "@/lib/store/hooks";
-import { MyOrders } from "@/components/cart/MyOrders";
-
-const STATUS_STYLES: Record<PaymentStatus, string> = {
-  PAID: "bg-emerald-500/10 text-emerald-700",
-  PENDING: "bg-amber-500/10 text-amber-700",
-  FAILED: "bg-danger/10 text-danger",
-  CANCELLED: "bg-warm-black/5 text-warm-gray",
-  REFUNDED: "bg-brand-blue/10 text-brand-blue",
-};
-
-const KIND_LABEL: Record<CustomerPayment["kind"], string> = {
-  SERVICE: "Installer service",
-  PRODUCT_ORDER: "Product order",
-};
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("en-AU", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return iso;
-  }
-}
+  formatMoney,
+  formatPaymentDate,
+  paymentDate,
+  paymentTitle,
+  summarisePayments,
+  type PaymentsSummary,
+} from "@/lib/customers/payment-view";
+import { fetchCustomerPayments, type CustomerPayment } from "@/lib/customers/payments";
 
 export function CustomerPaymentsPageView() {
-  const user = useAppSelector((s) => s.customerAuth.user);
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,9 +30,7 @@ export function CustomerPaymentsPageView() {
       const data = await fetchCustomerPayments({ limit: 100 });
       if (!signal.cancelled) setPayments(data);
     } catch (err) {
-      if (!signal.cancelled) {
-        setError(err instanceof Error ? err.message : "Could not load your payments");
-      }
+      if (!signal.cancelled) setError(err instanceof Error ? err.message : "Could not load your payments");
     } finally {
       if (!signal.cancelled) setLoading(false);
     }
@@ -68,113 +44,146 @@ export function CustomerPaymentsPageView() {
     };
   }, [load]);
 
+  // Newest first, by the date the customer cares about.
+  const sorted = useMemo(() => [...payments].sort((a, b) => paymentDate(b).localeCompare(paymentDate(a))), [payments]);
+  const summary = useMemo(() => summarisePayments(payments), [payments]);
+
   return (
-    <div className="customer-page-bg flex min-h-screen flex-col">
-      <CustomerDashboardHeader
-        firstName={user?.firstName}
-        lastName={user?.lastName}
-        activeNav="payments"
+    <CustomerPortalShell active="payments">
+      <PortalPageHeader
+        eyebrow="Buy and pay"
+        title="Payments"
+        intro="Everything you've paid EasyLink or your installer, with receipts. Ask EasyLink AI about any line."
       />
 
-      <main className="mx-auto flex w-full max-w-[1024px] flex-1 flex-col gap-5 px-4 py-6 md:px-6">
-        <div>
-          <h1 className="font-inter text-lg font-bold customer-text-on-dark">
-            Payment History
-          </h1>
-          <p className="mt-1 font-dm-sans text-sm customer-text-muted">
-            Every payment linked to your account — products you&apos;ve bought
-            directly, and any charge from your installer.
-          </p>
-        </div>
+      <SummaryCard summary={summary} loading={loading} hasPayments={payments.length > 0} />
 
+      <Panel title="Payment history" meta={!loading && !error && payments.length ? `${payments.length} ${payments.length === 1 ? "payment" : "payments"}, newest first` : undefined}>
         {loading ? (
-          <div className="rounded-2xl border border-dashed border-warm-border bg-white px-6 py-12 text-center">
-            <p className="font-dm-sans text-sm text-warm-gray">Loading your payments…</p>
+          <div className="flex flex-col gap-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-[64px]" />
+            ))}
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-dashed border-danger/30 bg-danger/5 px-6 py-12 text-center">
-            <p className="font-inter text-sm font-semibold text-danger">
-              Could not load your payments
-            </p>
-            <p className="mt-1 font-dm-sans text-xs text-warm-gray">{error}</p>
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] bg-[#FEE2E2] p-4">
+            <div className="flex flex-col gap-0.5">
+              <p className="m-0 text-[14.5px] font-bold text-[#991B1B]">We couldn&apos;t load your payments</p>
+              <p className="m-0 text-[13.5px] text-[#7F1D1D]">{error}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void load({ cancelled: false })}
+              className="min-h-[44px] rounded-[12px] border border-[#FCA5A5] bg-white px-4 text-[14px] font-bold text-[#991B1B] hover:border-[#991B1B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+            >
+              Try again
+            </button>
           </div>
         ) : payments.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-warm-border bg-white px-6 py-12 text-center">
-            <p className="font-inter text-sm font-semibold text-warm-ink">
-              No payments yet
-            </p>
-            <p className="mt-1 font-dm-sans text-xs text-warm-gray">
-              Anything you buy from the Products page, or pay your installer,
-              will show up here.
-            </p>
-          </div>
+          <EmptyNote icon="payments" title="No payments yet">
+            When you buy products here or your installer bills you, the payment and its receipt show up on this page straight away.
+          </EmptyNote>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-warm-border bg-white">
-            <table className="w-full min-w-[720px] border-collapse">
-              <thead>
-                <tr className="border-b border-warm-border bg-cream-50 text-left">
-                  {["Description", "Type", "Amount", "Status", "Date", ""].map((heading) => (
-                    <th
-                      key={heading}
-                      className="px-4 py-2.5 font-dm-sans text-[11px] font-semibold uppercase tracking-wide text-warm-gray"
-                    >
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((payment) => (
-                  <tr key={payment.id} className="border-b border-warm-border last:border-0">
-                    <td className="px-4 py-3 font-dm-sans text-sm font-medium text-warm-ink">
-                      {payment.description}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-full bg-cream-50 px-2 py-0.5 font-dm-sans text-[11px] font-semibold text-warm-ink">
-                        {KIND_LABEL[payment.kind]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-dm-sans text-sm font-semibold text-warm-ink">
-                      {formatPaymentAmount(payment)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={classNames(
-                          "rounded-full px-2 py-0.5 font-dm-sans text-[10px] font-semibold uppercase tracking-wide",
-                          STATUS_STYLES[payment.status],
-                        )}
-                      >
-                        {CUSTOMER_PAYMENT_STATUS_LABELS[payment.status]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-dm-sans text-xs text-warm-gray">
-                      {formatDate(payment.paidAt ?? payment.createdAt)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {payment.receiptUrl ? (
-                        <a
-                          href={payment.receiptUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-dm-sans text-xs font-semibold text-brand-blue underline"
-                        >
-                          Receipt
-                        </a>
-                      ) : (
-                        <span className="font-dm-sans text-xs text-warm-gray">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaymentsList payments={sorted} />
         )}
+      </Panel>
 
-        <div className="rounded-2xl border border-warm-border bg-cream-50 p-4">
-          <MyOrders portal="customer" />
-        </div>
-      </main>
-    </div>
+      <CustomerOrdersPanel />
+    </CustomerPortalShell>
   );
+}
+
+/** The one bold card on this screen: what has been paid and what is still open. */
+function SummaryCard({ summary, loading, hasPayments }: { summary: PaymentsSummary; loading: boolean; hasPayments: boolean }) {
+  const pending = summary.pending[0];
+  const { afterpay, zip } = usePayLaterOptions();
+  return (
+    <section aria-labelledby="pay-summary" className="relative overflow-hidden rounded-[22px] bg-[#0B1A2E] p-6 text-white sm:p-7">
+      <svg aria-hidden="true" className="pointer-events-none absolute -right-14 -top-16 h-[220px] w-[220px] text-[#F68A0A] opacity-[0.14]" viewBox="0 0 200 200">
+        <circle cx="100" cy="100" r="34" fill="currentColor" />
+        {Array.from({ length: 12 }, (_, i) => {
+          const a = (i * Math.PI) / 6;
+          return <line key={i} x1={r2(100 + Math.cos(a) * 50)} y1={r2(100 + Math.sin(a) * 50)} x2={r2(100 + Math.cos(a) * 82)} y2={r2(100 + Math.sin(a) * 82)} stroke="currentColor" strokeWidth="8" strokeLinecap="round" />;
+        })}
+      </svg>
+
+      <div className="relative grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-end">
+        <div className="flex flex-col gap-2">
+          <p className="m-0 flex items-center gap-2 text-[13px] font-bold text-[#FFE866]">
+            <PortalIcon name="dollar" size={16} />
+            Total paid
+          </p>
+          {loading ? (
+            <Skeleton className="h-14 w-56 bg-white/10" />
+          ) : (
+            <>
+              <h2 id="pay-summary" className="m-0 font-source-sans text-[40px] font-extrabold leading-[1.05] tabular-nums sm:text-[48px]">
+                {formatMoney(summary.totalPaid, summary.currency)}
+              </h2>
+              <p className="m-0 text-[14.5px] leading-[1.5] text-[#C9D6EA]">
+                {summary.paidCount > 0
+                  ? `Across ${summary.paidCount} ${summary.paidCount === 1 ? "payment" : "payments"}, incl. GST${summary.refunded > 0 ? `, after ${formatMoney(summary.refunded, summary.currency)} refunded` : ""}.`
+                  : "Nothing paid yet. Payments show here as soon as you check out."}
+              </p>
+            </>
+          )}
+          <div className="mt-2 flex flex-wrap gap-2.5">
+            <button
+              type="button"
+              onClick={() =>
+                askEasylinkAi(
+                  hasPayments
+                    ? `Summarise my payments: ${formatMoney(summary.totalPaid, summary.currency)} paid so far${summary.pendingTotal > 0 ? ` and ${formatMoney(summary.pendingTotal, summary.currency)} awaiting payment` : ""}. What's left to pay for my solar?`
+                    : "How do payments work with EasyLink, and when would I pay a deposit?",
+                )
+              }
+              className="inline-flex min-h-[46px] items-center gap-2 rounded-[13px] bg-[#F68A0A] px-[18px] text-[14.5px] font-bold text-[#3B1D00] hover:bg-[#FF9A1F] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFE866]"
+            >
+              <PortalIcon name="spark" size={18} />
+              {hasPayments ? "Ask AI about my payments" : "How payments work"}
+            </button>
+            <ButtonLink href="/customers/products" variant="ghost-dark">
+              Shop products
+            </ButtonLink>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1 rounded-[16px] bg-white/[0.07] p-4">
+            <span className="text-[13px] text-[#C9D6EA]">Awaiting payment</span>
+            {loading ? (
+              <Skeleton className="h-7 w-24 bg-white/10" />
+            ) : pending ? (
+              <>
+                <span className="text-[22px] font-extrabold tabular-nums text-[#FFE866]">{formatMoney(summary.pendingTotal, summary.currency)}</span>
+                <span className="text-[13px] leading-[1.45] text-[#C9D6EA]">
+                  {summary.pending.length > 1 ? `${summary.pending.length} payments, latest ` : ""}
+                  {paymentTitle(pending)}, started {formatPaymentDate(paymentDate(pending))}. Just paid? It can take a minute to confirm.
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-[22px] font-extrabold text-white">Nothing</span>
+                <span className="text-[13px] leading-[1.45] text-[#C9D6EA]">You&apos;re all paid up.</span>
+              </>
+            )}
+          </div>
+          <div className="flex flex-col gap-1 rounded-[16px] bg-white/[0.07] p-4">
+            <span className="text-[13px] text-[#C9D6EA]">Ways to pay</span>
+            <span className="text-[17px] font-bold leading-[1.3] text-white">{waysToPayLabel(afterpay, zip)}</span>
+            <span className="text-[13px] leading-[1.45] text-[#C9D6EA]">
+              {afterpay?.configured || zip?.configured
+                ? "Cards go through Stripe. Pay-later options show at checkout when your order fits their limits."
+                : "Cards go through Stripe, and you get an emailed receipt."}
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Rounded so server and browser render identical SVG coordinates (no hydration mismatch). */
+function r2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

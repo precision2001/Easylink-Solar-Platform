@@ -331,6 +331,10 @@ export function DesignsHeroSection({
       }
     }
     if (activeScreen === "address") {
+      // The solar step needs a real address with map coordinates.
+      if (locationStepRef.current && !locationStepRef.current.validate()) {
+        return;
+      }
       const loc = locationStepRef.current?.getValues();
       if (loc) {
         const pin: Partial<{
@@ -352,7 +356,7 @@ export function DesignsHeroSection({
         dispatch(
           mergeProposalData({
             customer: {
-              address: loc.address || "42 Bondi Rd, Bondi, NSW 2026",
+              address: loc.address,
               ...pin,
             },
           }),

@@ -33,6 +33,16 @@ export type Warehouse = {
   sortOrder: number;
 };
 
+export type BnplOption = {
+  available: boolean;
+  min: number | null;
+  max: number | null;
+  /** The provider fee the buyer covers, and the total including it. */
+  fee: number;
+  total: number;
+};
+export type CartPaymentMethod = "card" | "afterpay" | "zip";
+
 export type CartQuote = {
   currency: string;
   lines: {
@@ -47,6 +57,8 @@ export type CartQuote = {
     priceEstimate: boolean;
   }[];
   unavailable: string[];
+  /** Instalment options for this total. Installer accounts pay by card only. */
+  paymentOptions?: { afterpay: BnplOption; zip: BnplOption };
   warehouse: Warehouse | null;
   subtotal: number;
   deliveryFee: number;
@@ -69,6 +81,7 @@ export type Order = {
   currency: string;
   subtotal: number;
   deliveryFee: number;
+  paymentFee?: number;
   total: number;
   items: {
     id: string;
@@ -82,7 +95,7 @@ export type Order = {
     quantity: number;
     lineTotal: number;
   }[];
-  payment: { id: string; status: string; receiptUrl: string | null } | null;
+  payment: { id: string; provider: string; status: string; receiptUrl: string | null; zipReceiptNumber?: string | null } | null;
   nextStatuses: OrderStatus[];
   paidAt: string | null;
   createdAt: string;
@@ -178,6 +191,7 @@ export type CheckoutForm = {
   state?: AuState;
   postcode?: string;
   notes?: string;
+  paymentMethod?: CartPaymentMethod;
 };
 
 export async function startCheckout(

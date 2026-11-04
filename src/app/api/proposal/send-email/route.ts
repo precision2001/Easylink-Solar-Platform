@@ -1,10 +1,35 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { z } from "zod";
+import {
+  clientIpFrom,
+  createRateLimiter,
+  isSameOriginRequest,
+} from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
 
-const MAX_PDF_BYTES = 8 * 1024 * 1024;
+/**
+ * The browser compresses the email copy to about 900 KB (EMAIL_PDF_MAX_BYTES);
+ * this leaves headroom for a copy that couldn't be squeezed that far.
+ */
+const MAX_PDF_BYTES = 3 * 1024 * 1024;
+
+const HOUR_MS = 60 * 60 * 1000;
+/** Per visitor IP — a customer re-downloading a few times is fine. */
+const ipLimiter = createRateLimiter({ limit: 5, windowMs: HOUR_MS });
+/** Per recipient address, so one inbox can't be flooded from many IPs. */
+const recipientLimiter = createRateLimiter({ limit: 3, windowMs: HOUR_MS });
+
+function tooManyRequests(retryAfterMs: number) {
+  return NextResponse.json(
+    { message: "Too many proposal emails. Please try again later." },
+    {
+      status: 429,
+      headers: { "Retry-After": String(Math.max(1, Math.ceil(retryAfterMs / 1000))) },
+    },
+  );
+}
 
 const bodySchema = z.object({
   to: z.string().email(),
@@ -26,6 +51,14 @@ function firstWordName(fullName: string): string {
 }
 
 export async function POST(request: Request) {
+  // Only the site's own proposal modal may send these.
+  if (!isSameOriginRequest(request.headers, request.url)) {
+    return NextResponse.json({ message: "Forbidden." }, { status: 403 });
+  }
+
+  const ipCheck = ipLimiter.check(clientIpFrom(request.headers));
+  if (!ipCheck.allowed) return tooManyRequests(ipCheck.retryAfterMs);
+
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -41,6 +74,15 @@ export async function POST(request: Request) {
   let filename: string;
   let dearName: string | undefined;
   let buffer: Buffer;
+
+  // Refuse oversized bodies before reading them (base64 JSON is ~4/3 the size).
+  const declaredLength = Number(request.headers.get("content-length") ?? 0);
+  if (declaredLength > Math.ceil((MAX_PDF_BYTES * 4) / 3) + 64 * 1024) {
+    return NextResponse.json(
+      { message: "The proposal PDF is too large to email. Download it and send it as a link instead." },
+      { status: 413 },
+    );
+  }
 
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("multipart/form-data")) {
@@ -94,6 +136,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "PDF file is too small or empty." }, { status: 400 });
   }
 
+  // Only PDFs may be attached.
+  if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-") {
+    return NextResponse.json({ message: "The attachment must be a PDF." }, { status: 400 });
+  }
+
   // The browser compresses the email copy to about 1.5 MB; this is a backstop well
   // under what mail providers accept, so an oversized file fails clearly here.
   if (buffer.length > MAX_PDF_BYTES) {
@@ -102,6 +149,9 @@ export async function POST(request: Request) {
       { status: 413 },
     );
   }
+
+  const recipientCheck = recipientLimiter.check(to.trim().toLowerCase());
+  if (!recipientCheck.allowed) return tooManyRequests(recipientCheck.retryAfterMs);
 
   const salutation = dearName?.trim()
     ? dearName.trim()
