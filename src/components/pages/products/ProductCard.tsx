@@ -16,7 +16,7 @@ import {
 import {
   fetchZipConfig,
   isZipPayable,
-  methodPriceMinor,
+  methodLineTotalMinor,
   type ZipConfig,
 } from "@/lib/public/zipConfig";
 import type {
@@ -95,8 +95,8 @@ export function ProductCard({
 
   const totalMinor = Math.round(product.price * 100) * quantity;
   const unitMinor = Math.round(product.price * 100);
-  const afterpayTotalMinor = methodPriceMinor(unitMinor, afterpay?.pricePercent ?? 0) * quantity;
-  const zipTotalMinor = methodPriceMinor(unitMinor, zip?.pricePercent ?? 0) * quantity;
+  const afterpayTotalMinor = methodLineTotalMinor(unitMinor, quantity, afterpay);
+  const zipTotalMinor = methodLineTotalMinor(unitMinor, quantity, zip);
   const afterpayAvailable = inStock && isAfterpayPayable(afterpay, afterpayTotalMinor);
   const zipAvailable = inStock && isZipPayable(zip, zipTotalMinor);
   const formatAud = (minor: number) =>

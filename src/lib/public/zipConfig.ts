@@ -29,6 +29,7 @@ export type ZipConfig = {
   sandbox: boolean;
   /** The percentage built into Zip sale prices. */
   pricePercent: number;
+  priceFixedMinor: number;
 };
 
 const UNAVAILABLE: ZipConfig = {
@@ -37,6 +38,7 @@ const UNAVAILABLE: ZipConfig = {
   max: null,
   sandbox: false,
   pricePercent: 0,
+  priceFixedMinor: 0,
 };
 
 function backendBaseUrl(): string | null {
@@ -70,6 +72,7 @@ export function fetchZipConfig(): Promise<ZipConfig> {
         max: typeof data.max === "number" ? data.max : null,
         sandbox: data.sandbox === true,
         pricePercent: typeof data.pricePercent === "number" ? data.pricePercent : 0,
+        priceFixedMinor: typeof data.priceFixedMinor === "number" ? data.priceFixedMinor : 0,
       };
     })
     // Zip being unreachable must never break the catalogue — it just means
@@ -82,6 +85,17 @@ export function fetchZipConfig(): Promise<ZipConfig> {
 /** A price in minor units at the sale price for this payment method. */
 export function methodPriceMinor(baseMinor: number, pricePercent: number): number {
   return pricePercent > 0 ? Math.round(baseMinor / (1 - pricePercent / 100)) : baseMinor;
+}
+
+/** Matches the backend: the fixed fee is carried once across the line's units. */
+export function methodLineTotalMinor(
+  unitMinor: number,
+  quantity: number,
+  option: { pricePercent: number; priceFixedMinor: number } | null,
+): number {
+  const percent = option?.pricePercent ?? 0;
+  const extra = Math.ceil(methodPriceMinor(option?.priceFixedMinor ?? 0, percent) / quantity);
+  return (methodPriceMinor(unitMinor, percent) + extra) * quantity;
 }
 
 /** True when `amountMinor` is inside Zip's range and Zip is usable. */
