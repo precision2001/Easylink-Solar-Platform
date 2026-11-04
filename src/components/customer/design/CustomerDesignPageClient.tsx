@@ -1,38 +1,26 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import {
-  buildShareUrl,
-  createShareLink,
-  fetchReferralOverview,
-  type ReferralOverview,
-} from "@/lib/customers/referrals";
-import { CustomerDashboardHeader } from "@/components/customer/dashboard/CustomerDashboardHeader";
+import { CustomerPortalShell, PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { PortalIcon } from "@/components/customer/portal/PortalIcon";
+import { ButtonLink, EmptyNote, Panel, Skeleton } from "@/components/customer/portal/PortalParts";
 import { DesignComparisonTable } from "@/components/customer/design/DesignComparisonTable";
-import { ReferralProgramCard } from "@/components/customer/design/ReferralProgramCard";
-import { SelectedDesignPanel } from "@/components/customer/design/SelectedDesignPanel";
-import { ShareJourneyCard } from "@/components/customer/design/ShareJourneyCard";
-import { YourEquipmentSection } from "@/components/customer/design/YourEquipmentSection";
+import { DesignEquipmentList } from "@/components/customer/design/DesignEquipmentList";
+import { DesignMapPreviewImage } from "@/components/customer/design/DesignMapPreviewImage";
+import { DesignSpecSheet } from "@/components/customer/design/DesignSpecSheet";
+import { ShareAndEarnPanel } from "@/components/customer/design/ShareAndEarnPanel";
 import {
   buildComparisonTable,
-  buildDesignSpecs,
-  buildEquipmentCards,
-  buildPerformanceEstimates,
   designMapScreenshotUrl,
   designStatusLabel,
   formatDesignUpdatedAt,
-  formatSavingsLabel,
   pickPrimaryDesign,
 } from "@/lib/customers/customer-design-view";
-import {
-  fetchCustomerDesigns,
-  isCustomerEditableDesign,
-  type CustomerDesign,
-} from "@/lib/customers/designs";
-import { useAppSelector } from "@/lib/store/hooks";
-import Icon from "@/components/ui/Icons";
+import { fetchDesignOptions, type DesignOptions } from "@/lib/customers/design-options";
+import { buildDesignSpecSheet, optionForDesign } from "@/lib/customers/design-spec-sheet";
+import { fetchCustomerDesigns, isCustomerEditableDesign, type CustomerDesign } from "@/lib/customers/designs";
+import { buildShareUrl, createShareLink, fetchReferralOverview, type ReferralOverview } from "@/lib/customers/referrals";
 
 type Props = {
   /**
@@ -48,14 +36,12 @@ type Props = {
   initialReferrals: ReferralOverview | null;
 };
 
-export function CustomerDesignPageClient({
-  initialDesigns,
-  initialReferrals,
-}: Props) {
-  const user = useAppSelector((s) => s.customerAuth.user);
-  const [designs, setDesigns] = useState<CustomerDesign[]>(
-    initialDesigns ?? [],
-  );
+const actionBtn =
+  "inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[13px] px-[18px] text-[14.5px] font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB] disabled:cursor-not-allowed disabled:opacity-60";
+
+/** "My design": the customer's selected system, its proposal, and sharing. */
+export function CustomerDesignPageClient({ initialDesigns, initialReferrals }: Props) {
+  const [designs, setDesigns] = useState<CustomerDesign[]>(initialDesigns ?? []);
   const [loading, setLoading] = useState(initialDesigns === null);
   const [error, setError] = useState<string | null>(null);
   const designsPrimedByServer = useRef(initialDesigns !== null);
@@ -63,32 +49,40 @@ export function CustomerDesignPageClient({
   useEffect(() => {
     if (designsPrimedByServer.current) return;
     let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await fetchCustomerDesigns({ limit: 20 });
-        if (!cancelled) setDesigns(data);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load designs");
-          setDesigns([]);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
+    setLoading(true);
+    setError(null);
+    fetchCustomerDesigns({ limit: 20 })
+      .then((data) => !cancelled && setDesigns(data))
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to load designs");
+        setDesigns([]);
+      })
+      .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const primaryDesign = useMemo(() => pickPrimaryDesign(designs), [designs]);
+  // Design options carry the price after STCs for the stored design. Optional:
+  // without them the spec sheet falls back to what the design itself holds.
+  const [options, setOptions] = useState<DesignOptions | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchDesignOptions()
+      .then((d) => live && setOptions(d))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
+  const primaryDesign = useMemo(() => pickPrimaryDesign(designs), [designs]);
   const canEdit = primaryDesign ? isCustomerEditableDesign(primaryDesign) : false;
+  const sheet = useMemo(
+    () => (primaryDesign ? buildDesignSpecSheet(primaryDesign, optionForDesign(options, primaryDesign.id)) : null),
+    [primaryDesign, options],
+  );
 
   const [pdfBusy, setPdfBusy] = useState(false);
 
@@ -100,16 +94,11 @@ export function CustomerDesignPageClient({
     if (!primaryDesign || pdfBusy) return;
     setPdfBusy(true);
     try {
-      // Loaded on demand: the generator pulls in jsPDF (~380 KB), which is
-      // dead weight for every visitor who never presses these two buttons.
-      const { downloadDesignProposalPdf } = await import(
-        "@/lib/customers/design-pdf"
-      );
+      // Loaded on demand: the generator pulls in jsPDF (~380 KB).
+      const { downloadDesignProposalPdf } = await import("@/lib/customers/design-pdf");
       await downloadDesignProposalPdf(primaryDesign);
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Could not generate your PDF",
-      );
+      toast.error(err instanceof Error ? err.message : "Could not generate your PDF");
     } finally {
       setPdfBusy(false);
     }
@@ -122,15 +111,11 @@ export function CustomerDesignPageClient({
     const viewer = window.open("", "_blank", "noopener,noreferrer");
     setPdfBusy(true);
     try {
-      const { viewDesignProposalPdf } = await import(
-        "@/lib/customers/design-pdf"
-      );
+      const { viewDesignProposalPdf } = await import("@/lib/customers/design-pdf");
       await viewDesignProposalPdf(primaryDesign, viewer);
     } catch (err) {
       viewer?.close();
-      toast.error(
-        err instanceof Error ? err.message : "Could not open your PDF",
-      );
+      toast.error(err instanceof Error ? err.message : "Could not open your PDF");
     } finally {
       setPdfBusy(false);
     }
@@ -140,25 +125,18 @@ export function CustomerDesignPageClient({
     () =>
       designs.length
         ? buildComparisonTable(
-            [...designs].sort(
-              (a, b) =>
-                new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-            ),
+            [...designs].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
             primaryDesign?.id ?? null,
           )
         : { columns: [], rows: [] },
     [designs, primaryDesign?.id],
   );
 
-  // Referral totals and the share link are both real now. The share token is
+  // Referral totals and the share link are both real. The share token is
   // minted on demand for the design on screen, so nothing is publicly reachable
   // until the customer opens this page.
-  const [referrals, setReferrals] = useState<ReferralOverview | null>(
-    initialReferrals,
-  );
-  const [referralsLoading, setReferralsLoading] = useState(
-    initialReferrals === null,
-  );
+  const [referrals, setReferrals] = useState<ReferralOverview | null>(initialReferrals);
+  const [referralsLoading, setReferralsLoading] = useState(initialReferrals === null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const referralsPrimedByServer = useRef(initialReferrals !== null);
@@ -167,7 +145,6 @@ export function CustomerDesignPageClient({
     try {
       setReferrals(await fetchReferralOverview());
     } catch {
-      // Non-fatal: the card renders its empty state.
       setReferrals(null);
     } finally {
       setReferralsLoading(false);
@@ -185,112 +162,153 @@ export function CustomerDesignPageClient({
       setShareUrl(null);
       return;
     }
-
     let cancelled = false;
     setShareLoading(true);
-
     createShareLink(primaryDesignId)
-      .then((link) => {
-        if (!cancelled) setShareUrl(buildShareUrl(link));
-      })
-      .catch(() => {
-        if (!cancelled) setShareUrl(null);
-      })
-      .finally(() => {
-        if (!cancelled) setShareLoading(false);
-      });
-
+      .then((link) => !cancelled && setShareUrl(buildShareUrl(link)))
+      .catch(() => !cancelled && setShareUrl(null))
+      .finally(() => !cancelled && setShareLoading(false));
     return () => {
       cancelled = true;
     };
   }, [primaryDesignId]);
 
-  return (
-    <div className="customer-page-bg flex min-h-screen flex-col">
-      <CustomerDashboardHeader
-        firstName={user?.firstName}
-        lastName={user?.lastName}
-        activeNav="designs"
-      />
+  const locked = primaryDesign ? !canEdit : false;
+  const editHref = primaryDesign ? `/designs?designId=${encodeURIComponent(primaryDesign.id)}` : "/designs";
 
-      <main className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-4 px-4 py-5 md:gap-5 md:px-5">
-        {loading ? (
-          <div className="customer-card-bg customer-cream-card-border rounded-[10px] border p-8 text-center font-dm-sans text-sm customer-text-subtle">
-            Loading your designs…
+  return (
+    <CustomerPortalShell active="designs">
+      {loading ? (
+        <>
+          <Skeleton className="h-[76px] max-w-[520px]" />
+          <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
+            <Skeleton className="h-[520px]" />
+            <Skeleton className="h-[520px]" />
           </div>
-        ) : error ? (
-          <div className="customer-card-bg customer-cream-card-border rounded-[10px] border p-8 text-center font-dm-sans text-sm text-red-400">
-            {error}
-          </div>
-        ) : !primaryDesign ? (
-          <div className="customer-card-bg customer-cream-card-border rounded-[10px] border p-8 text-center font-dm-sans text-sm customer-text-subtle">
-            No solar designs yet. Your installer will add designs here once they are
-            ready.
-          </div>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="font-dm-sans text-xs customer-text-subtle">
-                {canEdit
-                  ? "Open the design builder to change this design."
-                  : "This design has been approved, so it is now read-only. Contact your installer to request a change."}
-              </p>
-              {canEdit ? (
-                <Link
-                  href={`/designs?designId=${encodeURIComponent(primaryDesign.id)}`}
-                  className="flex items-center gap-1.5 rounded-lg border border-warm-border bg-white px-3 py-1.5 font-dm-sans text-xs font-semibold text-warm-ink hover:bg-cream-50"
-                >
-                  <Icon name="Pencil" className="size-3.5" />
-                  Edit design
-                </Link>
+        </>
+      ) : error ? (
+        <>
+          <PortalPageHeader title="My design" />
+          <EmptyNote icon="design" title="We couldn't load your design">
+            {error}. Refresh the page to try again, or message us if it keeps happening.
+          </EmptyNote>
+        </>
+      ) : !primaryDesign || !sheet ? (
+        <>
+          <PortalPageHeader title="My design" intro="Your solar system, its proposal and your savings, all in one place." />
+          <Panel>
+            <EmptyNote icon="design" title="No design yet">
+              Design your system in about five minutes: find your roof, tell us your bill, and see your savings and price straight away. It appears here as soon as you save it.
+            </EmptyNote>
+            <div>
+              <ButtonLink href="/designs" icon="arrow">
+                Design my system
+              </ButtonLink>
+            </div>
+          </Panel>
+        </>
+      ) : (
+        <>
+          <PortalPageHeader
+            eyebrow={`${designStatusLabel(primaryDesign)} · updated ${formatDesignUpdatedAt(primaryDesign.updatedAt)}`}
+            title={sheet.title}
+            intro={
+              canEdit
+                ? "This is the system we'll quote. You can change it in the design builder until it's approved."
+                : "Your design is approved and locked in. To change anything, message us and your installer will update it."
+            }
+            actions={
+              canEdit ? (
+                <ButtonLink href={editHref} variant="quiet" icon="edit">
+                  Edit in builder
+                </ButtonLink>
+              ) : (
+                <ButtonLink href="/customers/messages" variant="quiet" icon="messages">
+                  Ask for a change
+                </ButtonLink>
+              )
+            }
+          />
+
+          <div className="grid items-start gap-5 lg:grid-cols-[1.2fr_1fr]">
+            <div className="flex min-w-0 flex-col gap-5">
+            <section aria-label="Your roof layout and proposal" className="flex flex-col overflow-hidden rounded-[22px] border border-[#E2E8F0] bg-white">
+              <div className="relative aspect-[4/3] w-full bg-[#E8EDF3]">
+                <DesignMapPreviewImage
+                  src={designMapScreenshotUrl(primaryDesign)}
+                  alt={`Roof layout for ${sheet.title}`}
+                  sizes="(min-width: 1024px) 55vw, 100vw"
+                  priority
+                />
+                <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+                  {locked ? (
+                    <span className="flex items-center gap-1.5 rounded-full bg-[#0B1A2E] px-3 py-1.5 text-[13px] font-bold text-white">
+                      <PortalIcon name="lock" size={14} />
+                      Approved and locked
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-white/95 px-3 py-1.5 text-[13px] font-bold text-[#0B1A2E]">{designStatusLabel(primaryDesign)}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-col gap-4 p-5 sm:p-6">
+                <div className="flex flex-col gap-1">
+                  <h2 className="m-0 text-[17px] font-bold text-[#0F172A]">Your proposal</h2>
+                  <p className="m-0 text-[14px] leading-[1.5] text-[#475569]">
+                    The full proposal with your roof layout, equipment, savings and price. The same document your installer sees.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2.5">
+                  <button type="button" onClick={() => void handleDownloadPdf()} disabled={pdfBusy} className={`${actionBtn} bg-[#F68A0A] text-[#3B1D00] hover:bg-[#FF9A1F]`}>
+                    <PortalIcon name="download" size={18} />
+                    {pdfBusy ? "Preparing…" : "Download proposal"}
+                  </button>
+                  <button type="button" onClick={() => void handleViewPdf()} disabled={pdfBusy} className={`${actionBtn} border border-[#CBD5E1] bg-white text-[#0F172A] hover:border-[#64748B]`}>
+                    View PDF
+                  </button>
+                  <a href="#share" className={`${actionBtn} text-[#1D4ED8] no-underline hover:underline`}>
+                    <PortalIcon name="share" size={17} />
+                    Share my design
+                  </a>
+                </div>
+                {locked ? (
+                  <p className="m-0 flex items-start gap-2 rounded-[12px] bg-[#F4F6FA] px-3.5 py-3 text-[13.5px] leading-[1.5] text-[#475569]">
+                    <PortalIcon name="lock" size={16} className="mt-0.5 shrink-0 text-[#0B1A2E]" />
+                    Approved designs can&rsquo;t be edited in the builder, so the quote and the install always match.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+              {primaryDesign.customerNotes ? (
+                <Panel title="Your notes for the installer">
+                  <p className="m-0 whitespace-pre-wrap text-[14.5px] leading-[1.55] text-[#334155]">{primaryDesign.customerNotes}</p>
+                </Panel>
               ) : null}
             </div>
 
-            <SelectedDesignPanel
-              title={primaryDesign.title}
-              lastUpdated={formatDesignUpdatedAt(primaryDesign.updatedAt)}
-              savingsLabel={formatSavingsLabel(primaryDesign)}
-              statusLabel={designStatusLabel(primaryDesign)}
-              statusApproved={primaryDesign.status === "COMPLETED"}
-              designSpecs={buildDesignSpecs(primaryDesign)}
-              performanceEstimates={buildPerformanceEstimates(primaryDesign)}
-              mapImageSrc={designMapScreenshotUrl(primaryDesign)}
-              onViewPdf={() => void handleViewPdf()}
-              onDownloadPdf={() => void handleDownloadPdf()}
-              pdfBusy={pdfBusy}
-            />
+            <DesignSpecSheet sheet={sheet} locked={locked} />
+          </div>
 
-            {primaryDesign.customerNotes ? (
-              <section className="customer-card-bg customer-cream-card-border rounded-[10px] border p-4">
-                <p className="font-dm-sans text-[10px] font-semibold uppercase tracking-wide customer-text-muted">
-                  Your notes for the installer
-                </p>
-                <p className="mt-1.5 whitespace-pre-wrap font-dm-sans text-sm customer-text-on-dark">
-                  {primaryDesign.customerNotes}
-                </p>
-              </section>
-            ) : null}
+          <DesignEquipmentList design={primaryDesign} />
+        </>
+      )}
 
-            <YourEquipmentSection cards={buildEquipmentCards(primaryDesign)} />
-          </>
-        )}
+      {!loading ? (
+        <ShareAndEarnPanel
+          shareUrl={shareUrl}
+          shareLoading={shareLoading}
+          canShareDesign={Boolean(primaryDesign)}
+          overview={referrals}
+          loading={referralsLoading}
+          onInvited={() => void loadReferrals()}
+        />
+      ) : null}
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5">
-          <ShareJourneyCard shareUrl={shareUrl} loading={shareLoading} />
-          <ReferralProgramCard
-            overview={referrals}
-            loading={referralsLoading}
-            onInvited={() => void loadReferrals()}
-          />
-        </div>
-
-        {designs.length > 1 ? (
-          <DesignComparisonTable
-            designs={comparison.columns}
-            rows={comparison.rows}
-          />
-        ) : null}
-      </main>
-    </div>
+      {designs.length > 1 ? <DesignComparisonTable
+          designs={comparison.columns}
+          // The comparison sums each design's equipment; say so, so it isn't read as the after-STC price above.
+          rows={comparison.rows.map((r) => (r.feature === "Price" ? { ...r, feature: "Equipment total" } : r))}
+        /> : null}
+    </CustomerPortalShell>
   );
 }
