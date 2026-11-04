@@ -13,7 +13,10 @@ const GENERIC =
 export const PREVIEW_SCREENS: Record<string, string> = {
   "/installers/dashboard/ai-assistant": GENERIC,
   "/installers/dashboard/sales": GENERIC,
-  "/installers/dashboard/pipeline-status": GENERIC,
+  "/installers/dashboard/overview":
+    "This overview isn’t connected to your account yet. The jobs, figures and charts on it are examples, not your data.",
+  "/installers/dashboard/solar-designer":
+    "The installer solar designer isn’t connected to your customers yet. The customer, roof and quote shown are examples — don’t send them to customers.",
   "/installers/dashboard/job-offers": GENERIC,
   "/installers/dashboard/handover-packs": GENERIC,
   "/installers/dashboard/payouts":

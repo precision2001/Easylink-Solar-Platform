@@ -157,3 +157,18 @@ export async function fetchInstallerPipelineAnalytics(): Promise<InstallerPipeli
   }
   return json.data;
 }
+
+/**
+ * Secondary KPIs the backend derives from a fixed margin rather than measures
+ * (Net profit is won value × 0.22). Hidden until there is a real source, so
+ * the dashboard never presents a formula as a result.
+ */
+const ESTIMATED_SECONDARY_KPIS = new Set(["net profit"]);
+
+export function measuredSecondaryKpis(
+  kpis: InstallerPipelineAnalytics["secondaryKpis"],
+): InstallerPipelineAnalytics["secondaryKpis"] {
+  return kpis.filter(
+    (kpi) => !ESTIMATED_SECONDARY_KPIS.has(kpi.title.trim().toLowerCase()),
+  );
+}

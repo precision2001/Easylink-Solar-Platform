@@ -27,6 +27,8 @@ export type InstallerLeadSummary = {
   customerPhone?: string | null;
   address?: string | null;
   status: string;
+  /** Sales stage (NEW_LEAD … PAYMENT_COMPLETED); the backend defaults it to NEW_LEAD. */
+  stage?: string | null;
   projectPhase?: string | null;
   notes?: string | null;
   estimatedValue?: number | null;

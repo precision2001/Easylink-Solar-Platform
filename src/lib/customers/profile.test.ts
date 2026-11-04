@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizePhone, profileDiff, splitPersonName } from "./profile";
+import {
+  formatAccountDate,
+  normalizePhone,
+  profileDiff,
+  splitPersonName,
+} from "./profile";
 
 describe("splitPersonName", () => {
   it("splits on the first word", () => {
@@ -85,5 +90,23 @@ describe("profileDiff", () => {
     expect(
       profileDiff(current, { name: "Ryan Ben", phoneNumber: "61417119217" }),
     ).toEqual({});
+  });
+});
+
+describe("formatAccountDate", () => {
+  it("formats an ISO timestamp as an Australian short date", () => {
+    expect(formatAccountDate("2026-01-15T03:12:00.000Z")).toBe("15 Jan 2026");
+  });
+
+  it("uses Sydney time, not UTC, for the calendar day", () => {
+    // 20:00 UTC on 14 Jan is 07:00 on 15 Jan in Sydney (AEDT).
+    expect(formatAccountDate("2026-01-14T20:00:00.000Z")).toBe("15 Jan 2026");
+  });
+
+  it("returns null for missing or invalid values", () => {
+    expect(formatAccountDate(undefined)).toBeNull();
+    expect(formatAccountDate(null)).toBeNull();
+    expect(formatAccountDate("")).toBeNull();
+    expect(formatAccountDate("not a date")).toBeNull();
   });
 });

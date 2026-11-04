@@ -27,10 +27,14 @@ describe("previewNoticeFor", () => {
     }
   });
 
-  it("doesn't match a different screen that shares a prefix", () => {
-    // "/pipeline" (real analytics) must not pick up "/pipeline-status".
+  it("labels the overview and solar designer, which still show examples", () => {
+    expect(previewNoticeFor("/installers/dashboard/overview")).toBeDefined();
+    expect(previewNoticeFor("/installers/dashboard/solar-designer")).toBeDefined();
+  });
+
+  it("leaves the pipeline screens alone — both read real leads", () => {
     expect(previewNoticeFor("/installers/dashboard/pipeline")).toBeUndefined();
-    expect(previewNoticeFor("/installers/dashboard/pipeline-status")).toBeDefined();
+    expect(previewNoticeFor("/installers/dashboard/pipeline-status")).toBeUndefined();
   });
 
   it("handles no route", () => {

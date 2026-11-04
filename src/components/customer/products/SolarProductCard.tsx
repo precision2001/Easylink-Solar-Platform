@@ -7,15 +7,11 @@ import Icon from "@/components/ui/Icons";
 
 type Props = {
   product: SolarProduct;
-  favorited: boolean;
-  onToggleFavorite: () => void;
   onAdd: () => void;
 };
 
 export function SolarProductCard({
   product,
-  favorited,
-  onToggleFavorite,
   onAdd,
 }: Props) {
   const catLabel = [product.category.replace("-", " "), product.brand]
@@ -59,18 +55,6 @@ export function SolarProductCard({
             Best Seller
           </span>
         ) : null}
-        <button
-          type="button"
-          aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
-          onClick={onToggleFavorite}
-          className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-white/80 hover:bg-white"
-        >
-          <Icon
-            name="ProductHeart"
-            className={`size-4 shrink-0 text-black ${favorited ? "opacity-100" : "opacity-70"}`}
-            aria-hidden
-          />
-        </button>
       </div>
 
       <div className="flex flex-1 flex-col px-3 pb-3 pt-4">

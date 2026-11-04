@@ -17,11 +17,18 @@ import {
 } from "@/lib/customers/design-options";
 import { useAppSelector } from "@/lib/store/hooks";
 import { currentStepIndex, formatMilestoneDate } from "@/lib/project-journey";
-import { CUSTOMER_PORTAL } from "@/utils/constant";
+import { buildCustomerDashboardSummary } from "@/lib/customers/dashboard-summary";
+import type { IconType } from "@/components/ui/Icons";
+
+const KPI_ICONS: Record<string, { icon: IconType; tint: string }> = {
+  "system-size": { icon: "Light", tint: "customer-kpi-icon-navy" },
+  "annual-output": { icon: "LightCheck", tint: "customer-kpi-icon-orange" },
+  "est-savings": { icon: "Dollar", tint: "customer-kpi-icon-green" },
+  "total-price": { icon: "Shop", tint: "customer-kpi-icon-navy" },
+};
 
 export default function CustomerDashboardPage() {
   const user = useAppSelector((s) => s.customerAuth.user);
-  const { dashboard } = CUSTOMER_PORTAL;
 
   const [activeNav, setActiveNav] = useState<"dashboard" | "designs">(
     "dashboard",
@@ -98,6 +105,13 @@ export default function CustomerDashboardPage() {
 
   const timelineActiveIndex = journey ? currentStepIndex(journey) : 0;
 
+  const summary = buildCustomerDashboardSummary({
+    journey,
+    journeyLoading,
+    designOptions,
+    designsLoading: optionsLoading,
+  });
+
   return (
     <div className="customer-page-bg flex min-h-screen flex-col">
       <CustomerDashboardHeader
@@ -108,22 +122,20 @@ export default function CustomerDashboardPage() {
 
       <main className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-4 px-4 py-5 md:px-5">
         <DashboardWelcomeBanner
-          firstName={user?.firstName?.trim() || "James"}
-          journeyPercent={dashboard.welcome.journeyPercent}
-          systemKw={dashboard.welcome.systemKw}
-          savingsYr={dashboard.welcome.savingsYr}
-          nextStep={dashboard.welcome.nextStep}
+          firstName={user?.firstName}
+          progressLabel={summary.progressLabel}
+          stats={summary.stats}
         />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {dashboard.kpis.map((kpi) => (
+          {summary.kpis.map((kpi) => (
             <DashboardKpiCard
               key={kpi.id}
               label={kpi.label}
               value={kpi.value}
               sublabel={kpi.sublabel}
-              icon={kpi.icon}
-              iconTintClass={kpi.iconTintClass}
+              icon={KPI_ICONS[kpi.id].icon}
+              iconTintClass={KPI_ICONS[kpi.id].tint}
             />
           ))}
         </div>
@@ -153,11 +165,9 @@ export default function CustomerDashboardPage() {
                   : undefined
               }
               footer={
-                <TimelineInstallerCard
-                  initials={dashboard.installer.initials}
-                  companyName={dashboard.installer.companyName}
-                  subtitle={dashboard.installer.subtitle}
-                />
+                // The customer journey response carries no assigned installer
+                // yet, so this shows the neutral "once booked" note.
+                <TimelineInstallerCard installer={null} />
               }
             />
           }

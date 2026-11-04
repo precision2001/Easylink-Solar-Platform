@@ -11,7 +11,6 @@ import {
   CUSTOMER_PORTAL,
   type CustomerPortalNavKey,
 } from "@/utils/constant";
-import Icon from "../../ui/Icons";
 
 type Props = {
   firstName?: string | null;
@@ -89,13 +88,6 @@ export function CustomerDashboardHeader({
 
         <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3 md:gap-4">
           {headerAccessory}
-          <button
-            type="button"
-            aria-label="Search"
-            className="flex size-8 items-center justify-center rounded-full customer-text-on-dark hover:bg-white/5"
-          >
-            <Icon name="Search" className="size-[18px] customer-nav-muted" />
-          </button>
           <CartButton tone="dark" className="size-8" />
           <DashboardNotificationBell mode="customer" />
           <button

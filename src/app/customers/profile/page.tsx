@@ -6,7 +6,6 @@ import { CustomerAvatar } from "@/components/customer/CustomerAvatar";
 import { CustomerDashboardHeader } from "@/components/customer/dashboard/CustomerDashboardHeader";
 import { CustomerEditProfileModal } from "@/components/customer/profile/CustomerEditProfileModal";
 import { CustomerPanelCard } from "@/components/customer/profile/CustomerPanelCard";
-import { PreferenceToggle } from "@/components/customer/profile/PreferenceToggle";
 import { ProfileContactField } from "@/components/customer/profile/ProfileContactField";
 import { ProfileDocumentRow } from "@/components/customer/profile/ProfileDocumentRow";
 import { ProfileEntityRow } from "@/components/customer/profile/ProfileEntityRow";
@@ -19,7 +18,12 @@ import {
   formatDocumentSize,
   type CustomerDocument,
 } from "@/lib/customers/documents";
-import { profileDiff, updateCustomerProfile } from "@/lib/customers/profile";
+import {
+  fetchCustomerProfile,
+  formatAccountDate,
+  profileDiff,
+  updateCustomerProfile,
+} from "@/lib/customers/profile";
 
 export default function CustomerProfilePage() {
   const dispatch = useAppDispatch();
@@ -50,9 +54,29 @@ export default function CustomerProfilePage() {
     return () => controller.abort();
   }, []);
 
-  // No profile fetch here on purpose: the customer layout's
+  // No full profile fetch here on purpose: the customer layout's
   // `useHydrateCustomerUser` already fills the store whenever it's empty, so
   // doing it again here just fired a second identical request on every visit.
+  // The one exception is `createdAt`: the sign-in payload leaves it out, so a
+  // user who arrived through sign-in needs one lookup to show "Account created".
+  const needsCreatedAt = Boolean(user && !user.createdAt);
+  useEffect(() => {
+    if (!needsCreatedAt) return;
+    let cancelled = false;
+    void fetchCustomerProfile()
+      .then((profile) => {
+        if (cancelled || !profile?.createdAt || !user) return;
+        dispatch(setUser({ ...user, createdAt: profile.createdAt }));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // Only re-run when the need changes, not on every user object identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsCreatedAt, dispatch]);
+
+  const accountCreated = formatAccountDate(user?.createdAt);
 
   const displayName = useMemo(() => {
     const fn = user?.firstName?.trim();
@@ -60,27 +84,24 @@ export default function CustomerProfilePage() {
     if (fn && ln) return `${fn} ${ln}`;
     if (fn) return fn;
     if (ln) return ln;
-    return "James Wilson";
+    return user ? "Your profile" : "Loading…";
   }, [user]);
 
-  const email = user?.email ?? "james.wilson@email.com";
-  const phone =
-    user?.phone?.trim() || (user ? "Not provided" : "0412 345 678");
-  const address =
-    user?.address?.trim() ||
-    (user ? "Not provided" : "42 Bondi Rd, Bondi, NSW 2026");
+  const email = user?.email ?? "—";
+  const phone = user?.phone?.trim() || (user ? "Not provided" : "—");
+  const address = user?.address?.trim() || (user ? "Not provided" : "—");
 
   const editInitial = useMemo(
     () => ({
       name:
         [user?.firstName?.trim(), user?.lastName?.trim()]
           .filter(Boolean)
-          .join(" ") || displayName,
+          .join(" "),
       phone: user?.phone?.trim() ?? "",
       address: user?.address?.trim() ?? "",
-      email: user?.email ?? email,
+      email: user?.email ?? "",
     }),
-    [displayName, email, user],
+    [user],
   );
 
   const handleSaveProfile = useCallback(
@@ -115,14 +136,6 @@ export default function CustomerProfilePage() {
     [dispatch, savingProfile, user],
   );
 
-  const [prefs, setPrefs] = useState({
-    emailNotifications: true,
-    smsAlerts: true,
-    projectUpdates: true,
-    marketingEmails: false,
-    productAlerts: false,
-  });
-
   return (
     <div className="flex min-h-screen flex-col">
       <CustomerDashboardHeader
@@ -134,7 +147,7 @@ export default function CustomerProfilePage() {
       <main className="customer-panel-bg flex-1 px-4 py-5 md:px-5">
         <div className="mx-auto grid w-full max-w-[1440px] grid-cols-1 items-stretch gap-6 md:grid-cols-2 lg:grid-cols-3">
           <CustomerPanelCard
-            title="My Profile"
+            title="My profile"
             icon={
               <Icon
                 name="User"
@@ -175,7 +188,7 @@ export default function CustomerProfilePage() {
                   className="mt-1 font-dm-sans text-[11px] font-normal leading-[16.5px] text-warm-gray"
                   style={{ fontVariationSettings: "'opsz' 9" }}
                 >
-                  Solar Customer
+                  Solar customer
                 </p>
               </div>
             </div>
@@ -218,7 +231,7 @@ export default function CustomerProfilePage() {
           </CustomerPanelCard>
 
           <CustomerPanelCard
-            title="Account Details"
+            title="Account details"
             icon={
               <Icon
                 name="Shield"
@@ -228,67 +241,30 @@ export default function CustomerProfilePage() {
             }
           >
             <div className="flex flex-col gap-3">
+              {accountCreated ? (
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span
+                    className="font-dm-sans text-warm-gray"
+                    style={{ fontVariationSettings: "'opsz' 9" }}
+                  >
+                    Account created
+                  </span>
+                  <span
+                    className="font-dm-sans font-medium text-warm-ink"
+                    style={{ fontVariationSettings: "'opsz' 14" }}
+                  >
+                    {accountCreated}
+                  </span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span
                   className="font-dm-sans text-warm-gray"
                   style={{ fontVariationSettings: "'opsz' 9" }}
                 >
-                  Account Created
-                </span>
-                <span
-                  className="font-dm-sans font-medium text-warm-ink"
-                  style={{ fontVariationSettings: "'opsz' 14" }}
-                >
-                  15 Jan 2026
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span
-                  className="font-dm-sans text-warm-gray"
-                  style={{ fontVariationSettings: "'opsz' 9" }}
-                >
-                  Last Login
-                </span>
-                <span
-                  className="font-dm-sans font-medium text-warm-ink"
-                  style={{ fontVariationSettings: "'opsz' 14" }}
-                >
-                  4 Mar 2026
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span
-                  className="font-dm-sans text-warm-gray"
-                  style={{ fontVariationSettings: "'opsz' 9" }}
-                >
-                  Account Status
+                  Account status
                 </span>
                 <StatusBadge>Active</StatusBadge>
-              </div>
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span
-                  className="font-dm-sans text-warm-gray"
-                  style={{ fontVariationSettings: "'opsz' 9" }}
-                >
-                  2FA
-                </span>
-                <StatusBadge>Enabled</StatusBadge>
-              </div>
-            </div>
-
-            <div className="mt-4 border-t customer-cream-card-border pt-4">
-              <p
-                className="font-dm-sans text-[9px] font-normal uppercase leading-[13.5px] tracking-[0.3px] text-warm-gray"
-                style={{ fontVariationSettings: "'opsz' 9" }}
-              >
-                Assigned Installer
-              </p>
-              <div className="mt-2">
-                <ProfileEntityRow
-                  initialsOverride="SM"
-                  title="SolarMax Pro"
-                  subtitle="CEC Accredited · Sydney, NSW"
-                />
               </div>
             </div>
 
@@ -311,65 +287,18 @@ export default function CustomerProfilePage() {
           </CustomerPanelCard>
 
           <CustomerPanelCard
-            title="Preferences"
+            title="Documents"
             icon={
               <Icon
-                name="Bell"
+                name="FileText"
                 className="size-4 shrink-0 text-black"
                 aria-hidden
               />
             }
           >
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex shrink-0 flex-col gap-3">
-                <PreferenceToggle
-                  id="pref-email"
-                  label="Email Notifications"
-                  checked={prefs.emailNotifications}
-                  onChange={(v) =>
-                    setPrefs((p) => ({ ...p, emailNotifications: v }))
-                  }
-                />
-                <PreferenceToggle
-                  id="pref-sms"
-                  label="SMS Alerts"
-                  checked={prefs.smsAlerts}
-                  onChange={(v) => setPrefs((p) => ({ ...p, smsAlerts: v }))}
-                />
-                <PreferenceToggle
-                  id="pref-project"
-                  label="Project Updates"
-                  checked={prefs.projectUpdates}
-                  onChange={(v) =>
-                    setPrefs((p) => ({ ...p, projectUpdates: v }))
-                  }
-                />
-                <PreferenceToggle
-                  id="pref-marketing"
-                  label="Marketing Emails"
-                  checked={prefs.marketingEmails}
-                  onChange={(v) =>
-                    setPrefs((p) => ({ ...p, marketingEmails: v }))
-                  }
-                />
-                <PreferenceToggle
-                  id="pref-product"
-                  label="Product Alerts"
-                  checked={prefs.productAlerts}
-                  onChange={(v) =>
-                    setPrefs((p) => ({ ...p, productAlerts: v }))
-                  }
-                />
-              </div>
-
-              <div className="mt-4 flex min-h-0 flex-1 flex-col border-t customer-cream-card-border pt-4">
-                <p
-                  className="shrink-0 font-dm-sans text-[9px] font-normal uppercase leading-[13.5px] tracking-[0.3px] text-warm-gray"
-                  style={{ fontVariationSettings: "'opsz' 9" }}
-                >
-                  Documents
-                </p>
-                <div className="relative mt-3 min-h-0 flex-1">
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="relative min-h-0 flex-1">
                   <div
                     className="customer-cream-scroll flex h-full min-h-[7.5rem] max-h-[min(220px,36vh)] flex-col gap-3 overflow-y-auto overscroll-y-contain pr-1 lg:max-h-none"
                     role="region"

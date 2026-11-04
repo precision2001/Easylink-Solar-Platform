@@ -1,20 +1,19 @@
 import Icon from "../../ui/Icons";
 
 type Props = {
-  firstName: string;
-  journeyPercent: number;
-  systemKw: string;
-  savingsYr: string;
-  nextStep: string;
+  /** Omitted until the profile loads; the greeting then reads "Welcome back!". */
+  firstName?: string | null;
+  /** E.g. "Your solar journey is 40% complete", or an empty-state hint. */
+  progressLabel: string;
+  stats: { label: string; value: string }[];
 };
 
 export function DashboardWelcomeBanner({
   firstName,
-  journeyPercent,
-  systemKw,
-  savingsYr,
-  nextStep,
+  progressLabel,
+  stats,
 }: Props) {
+  const name = firstName?.trim();
   return (
     <section className="customer-welcome-banner flex w-full flex-col gap-4 rounded-[14px] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:px-6">
       <div className="flex min-w-0 items-center gap-4">
@@ -23,18 +22,18 @@ export function DashboardWelcomeBanner({
         </div>
         <div className="min-w-0">
           <h1 className="font-inter text-xl font-bold leading-[30px] tracking-[-0.45px] text-warm-black">
-            Welcome back, {firstName}!
+            {name ? `Welcome back, ${name}!` : "Welcome back!"}
           </h1>
           <p className="mt-0.5 font-inter text-xs font-normal leading-[18px] text-warm-black/65">
-            Your solar journey is {journeyPercent}% complete
+            {progressLabel}
           </p>
         </div>
       </div>
 
       <div className="flex flex-wrap items-start gap-4 sm:justify-end md:gap-10">
-        <StatBlock label="Selected System" value={systemKw} />
-        <StatBlock label="Est. Savings" value={savingsYr} />
-        <StatBlock label="Next Step" value={nextStep} />
+        {stats.map((stat) => (
+          <StatBlock key={stat.label} label={stat.label} value={stat.value} />
+        ))}
       </div>
     </section>
   );

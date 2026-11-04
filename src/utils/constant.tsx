@@ -3404,46 +3404,6 @@ export const CUSTOMER_PORTAL = {
     { href: "/customers/profile", label: "Profile", key: "profile" as const },
   ],
   dashboard: {
-    welcome: {
-      journeyPercent: 67,
-      systemKw: "6.6 kW",
-      savingsYr: "$1,840/yr",
-      nextStep: "Installation",
-    },
-    kpis: [
-      {
-        id: "system-size",
-        label: "System Size",
-        value: "6.6 kW",
-        sublabel: "16 panels",
-        icon: "Light" as const,
-        iconTintClass: "customer-kpi-icon-navy",
-      },
-      {
-        id: "annual-output",
-        label: "Annual Output",
-        value: "9,636 kWh",
-        sublabel: "projected",
-        icon: "LightCheck" as const,
-        iconTintClass: "customer-kpi-icon-orange",
-      },
-      {
-        id: "est-savings",
-        label: "Est. Savings",
-        value: "$1,840/yr",
-        sublabel: "per year",
-        icon: "Dollar" as const,
-        iconTintClass: "customer-kpi-icon-green",
-      },
-      {
-        id: "total-price",
-        label: "Total Price",
-        value: "$8,500",
-        sublabel: "inc. installation",
-        icon: "Shop" as const,
-        iconTintClass: "customer-kpi-icon-navy",
-      },
-    ],
     designOptions: [
       {
         id: "a",
@@ -3499,11 +3459,6 @@ export const CUSTOMER_PORTAL = {
       { id: "t6", title: "System Live", dateLabel: null },
     ],
     defaultTimelineActiveIndex: 4,
-    installer: {
-      initials: "SM",
-      companyName: "SolarMax Pro",
-      subtitle: "Verified Partner",
-    },
   },
   products: {
     title: "Solar Products",

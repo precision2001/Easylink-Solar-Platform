@@ -73,6 +73,13 @@ describe("sourceKind", () => {
     expect(sourceKind("Dialler").icon).toBe("phone");
     expect(sourceKind(null).label).toBe("Other");
   });
+
+  it("labels the New lead form's sources as entered", () => {
+    expect(sourceKind("Phone call")).toEqual({ label: "Phone call", icon: "phone" });
+    expect(sourceKind("Walk-in").label).toBe("Walk-in");
+    expect(sourceKind("Referral").label).toBe("Referral");
+    expect(sourceKind("Website").label).toBe("Website");
+  });
 });
 
 describe("ago and compactAud", () => {
@@ -89,5 +96,16 @@ describe("ago and compactAud", () => {
     expect(compactAud(48_200)).toBe("$48k");
     expect(compactAud(1_200_000)).toBe("$1.2m");
     expect(compactAud(2_000_000)).toBe("$2m");
+  });
+});
+
+describe("lead stages", () => {
+  it("lists all eight stages with labels, and recognises them", async () => {
+    const { LEAD_STAGES, LEAD_STAGE_LABEL, isLeadStage } = await import("./leads-pipeline");
+    expect(LEAD_STAGES).toHaveLength(8);
+    expect(LEAD_STAGE_LABEL.PAYMENT_COMPLETED).toBe("Payment completed");
+    expect(isLeadStage("DEPOSIT_PAID")).toBe(true);
+    expect(isLeadStage("WON")).toBe(false);
+    expect(isLeadStage(undefined)).toBe(false);
   });
 });

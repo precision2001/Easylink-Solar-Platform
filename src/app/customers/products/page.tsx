@@ -7,10 +7,11 @@ import { CategoryFilterChips } from "@/components/customer/products/CategoryFilt
 import { SelectedDesignProductsSection } from "@/components/customer/products/SelectedDesignProductsSection";
 import { SolarProductCard } from "@/components/customer/products/SolarProductCard";
 import type { SolarProduct } from "@/components/customer/products/types";
-import {
-  fetchPublicProducts,
-  selectedDesignProductsFromCatalog,
-} from "@/lib/public/products";
+import { fetchPublicProducts } from "@/lib/public/products";
+import { fetchCustomerDesigns } from "@/lib/customers/designs";
+import { pickPrimaryDesign } from "@/lib/customers/customer-design-view";
+import { designProductSummaryItems } from "@/lib/customers/design-products";
+import type { DesignSummaryItem } from "@/components/customer/products/types";
 import { useAppSelector } from "@/lib/store/hooks";
 import { addLineToCart } from "@/components/cart/AddToCartButton";
 import { MyOrders } from "@/components/cart/MyOrders";
@@ -21,7 +22,9 @@ export default function SolarProductsPage() {
   const [products, setProducts] = useState<SolarProduct[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterValue>("all");
-  const [favorites, setFavorites] = useState<Set<string>>(() => new Set());
+  const [selectedDesignProducts, setSelectedDesignProducts] = useState<
+    DesignSummaryItem[]
+  >([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,24 +40,29 @@ export default function SolarProductsPage() {
     };
   }, []);
 
+  // The customer's own design equipment. Any failure just leaves the section
+  // hidden; the catalogue above is still usable.
+  useEffect(() => {
+    let cancelled = false;
+    fetchCustomerDesigns({ limit: 20 })
+      .then((designs) => {
+        if (!cancelled) {
+          setSelectedDesignProducts(
+            designProductSummaryItems(pickPrimaryDesign(designs)),
+          );
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const filteredProducts = useMemo(() => {
     if (filter === "all") return products;
     return products.filter((p) => p.category === filter);
   }, [filter, products]);
 
-  const selectedDesignProducts = useMemo(
-    () => selectedDesignProductsFromCatalog(products),
-    [products],
-  );
-
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   return (
     <div className="customer-page-bg flex min-h-screen flex-col">
@@ -90,8 +98,6 @@ export default function SolarProductsPage() {
               <SolarProductCard
                 key={product.id}
                 product={product}
-                favorited={favorites.has(product.id)}
-                onToggleFavorite={() => toggleFavorite(product.id)}
                 onAdd={() =>
                   addLineToCart({
                     productId: product.id,
@@ -108,7 +114,9 @@ export default function SolarProductsPage() {
           </div>
         )}
 
-        <SelectedDesignProductsSection items={selectedDesignProducts} />
+        {selectedDesignProducts.length > 0 ? (
+          <SelectedDesignProductsSection items={selectedDesignProducts} />
+        ) : null}
 
         <div className="customer-cream-card-bg customer-cream-card-border rounded-[10px] border p-4">
           <MyOrders portal="customer" />

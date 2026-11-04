@@ -1,7 +1,5 @@
-import Image from "next/image";
 import { CustomerSectionHeader } from "@/components/customer/CustomerSectionHeader";
 import type { DesignSummaryItem } from "./types";
-import { productsAssets } from "./productsAssets";
 import Icon from "@/components/ui/Icons";
 
 type Props = {
@@ -13,7 +11,7 @@ export function SelectedDesignProductsSection({ items }: Props) {
     <section className="customer-cream-card-bg customer-cream-card-border overflow-hidden rounded-[10px] border">
       <CustomerSectionHeader
         variant="cream"
-        title="Products in Your Selected Design"
+        title="Products in your selected design"
         icon={
           <Icon
             name="CheckCircle"
@@ -49,20 +47,6 @@ export function SelectedDesignProductsSection({ items }: Props) {
                 {item.detail}
               </p>
             </div>
-            <button
-              type="button"
-              className="flex shrink-0 items-center gap-1 font-dm-sans text-[10px] font-semibold leading-[15px] text-orange-amber"
-              style={{ fontVariationSettings: "'opsz' 14" }}
-            >
-              View Details
-              <Image
-                src={productsAssets.externalLink}
-                alt=""
-                width={12}
-                height={12}
-                unoptimized
-              />
-            </button>
           </div>
         ))}
       </div>
