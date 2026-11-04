@@ -1,70 +1,49 @@
-import { CustomerSectionHeader } from "@/components/customer/CustomerSectionHeader";
+import { PortalIcon } from "@/components/customer/portal/PortalIcon";
+import { Panel } from "@/components/customer/portal/PortalParts";
 import type { ComparisonRow, DesignColumn } from "./designConstants";
 
-type Props = {
-  designs: DesignColumn[];
-  rows: ComparisonRow[];
-};
-
-export function DesignComparisonTable({ designs, rows }: Props) {
-  const selectedIndex = designs.findIndex((d) => d.selected);
-  const colIdx = selectedIndex >= 0 ? selectedIndex : 0;
-
+/** Every saved design side by side; the selected one is highlighted. Scrolls inside its box on phones. */
+export function DesignComparisonTable({ designs, rows }: { designs: DesignColumn[]; rows: ComparisonRow[] }) {
   return (
-    <section className="customer-cream-card-bg customer-cream-card-border overflow-hidden rounded-[10px] border">
-      <CustomerSectionHeader variant="cream" title="Compare All Designs" />
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse text-left">
+    <Panel title="Compare your designs" meta={`${designs.length} saved`}>
+      <div className="-mx-1 overflow-x-auto px-1" tabIndex={0} role="region" aria-label="Design comparison">
+        <table className="w-full min-w-[560px] border-collapse text-left text-[14px]">
           <thead>
-            <tr className="border-b customer-cream-card-border">
-              <th className="sticky left-0 z-10 bg-cream-50 px-4 py-2.5 font-dm-sans text-[9px] font-bold uppercase leading-[13.5px] tracking-[0.3px] text-warm-gray">
-                Feature
+            <tr>
+              <th scope="col" className="sticky left-0 z-10 bg-white py-2.5 pr-4 text-[13px] font-semibold text-[#5B6B80]">
+                <span className="sr-only">Feature</span>
               </th>
               {designs.map((d) => (
                 <th
                   key={d.id}
-                  className={`px-3 py-2.5 text-center font-dm-sans text-[9px] font-bold uppercase leading-[13.5px] tracking-[0.3px] ${
-                    d.selected ? "text-orange-amber" : "text-warm-gray"
-                  }`}
+                  scope="col"
+                  className={`px-3 py-2.5 text-[14px] font-bold ${d.selected ? "rounded-t-[12px] bg-[#FFF4D6] text-[#7A3E00]" : "text-[#0F172A]"}`}
                 >
-                  {d.label}
-                  {d.selected ? " ✓" : ""}
+                  <span className="flex items-center gap-1.5">
+                    {d.selected ? <PortalIcon name="check" size={15} /> : null}
+                    {d.label}
+                  </span>
+                  {d.selected ? <span className="block text-[12px] font-semibold">Selected</span> : null}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => {
-              const rowBg = i % 2 === 1 ? "bg-cream-225" : "bg-cream-50";
-              return (
-                <tr
-                  key={row.feature}
-                  className={`border-b border-cream-300 ${rowBg}`}
-                >
-                  <td
-                    className={`sticky left-0 z-10 px-4 py-2.5 font-dm-sans text-[11px] font-normal capitalize leading-[16.5px] text-warm-gray ${rowBg}`}
-                  >
-                    {row.feature}
+            {rows.map((row) => (
+              <tr key={row.feature} className="border-t border-[#EEF2F6]">
+                <th scope="row" className="sticky left-0 z-10 bg-white py-2.5 pr-4 text-[13.5px] font-medium text-[#5B6B80]">
+                  {row.feature}
+                </th>
+                {row.values.map((cell, j) => (
+                  <td key={`${row.feature}-${j}`} className={`px-3 py-2.5 tabular-nums ${designs[j]?.selected ? "bg-[#FFF4D6] font-bold text-[#0F172A]" : "text-[#334155]"}`}>
+                    {cell}
                   </td>
-                  {row.values.map((cell, j) => (
-                    <td
-                      key={`${row.feature}-${j}`}
-                      className={`px-3 py-2.5 text-center font-dm-sans text-[11px] leading-[16.5px] text-warm-gray ${
-                        j === colIdx
-                          ? "font-semibold text-warm-ink"
-                          : "font-medium"
-                      }`}
-                      style={{ fontVariationSettings: "'opsz' 14" }}
-                    >
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
-    </section>
+    </Panel>
   );
 }

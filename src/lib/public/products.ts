@@ -47,7 +47,8 @@ function toSolarProduct(product: BackendProduct): SolarProduct {
     id: product.id,
     category: normalizeCategory(product.category),
     name: product.name,
-    rating: product.rating ?? 4.7,
+    // No reviews means no rating; never show an invented score.
+    rating: product.rating ?? undefined,
     reviewCount: product.reviewCount ?? 0,
     price: formatPrice(product.retailPrice ?? product.basePrice),
     priceValue: product.retailPrice ?? product.basePrice,

@@ -1,28 +1,20 @@
 "use client";
 
-import { CustomerDashboardHeader } from "@/components/customer/dashboard/CustomerDashboardHeader";
-import { PortalRealtimeMessagesPanel } from "@/components/messages/PortalRealtimeMessagesPanel";
-import { fetchWithCustomerSession } from "@/lib/customers/customer-fetch-client";
+import { CustomerPortalShell, PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { CustomerMessagesView } from "@/components/customer/portal/CustomerMessagesView";
 import { useAppSelector } from "@/lib/store/hooks";
 
 export default function CustomerMessagesPage() {
   const user = useAppSelector((s) => s.customerAuth.user);
 
   return (
-    <div className="customer-page-bg flex min-h-screen flex-col">
-      <CustomerDashboardHeader
-        firstName={user?.firstName}
-        lastName={user?.lastName}
-        activeNav="messages"
+    <CustomerPortalShell active="messages">
+      <PortalPageHeader
+        eyebrow="Stay in touch"
+        title="Messages"
+        intro="Talk to your installer about your job. Send photos, files or start a call, and see replies the moment they arrive."
       />
-
-      <main className="mx-auto flex w-full max-w-[1440px] min-h-0 flex-1 flex-col gap-4 px-4 py-5 md:gap-5 md:px-5">
-        <PortalRealtimeMessagesPanel
-          portal="customer"
-          sessionFetch={fetchWithCustomerSession}
-          user={user}
-        />
-      </main>
-    </div>
+      <CustomerMessagesView user={user} />
+    </CustomerPortalShell>
   );
 }

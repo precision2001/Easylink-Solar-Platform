@@ -10,7 +10,8 @@ export type SolarProduct = {
   id: string;
   category: SolarProductCategory;
   name: string;
-  rating: number;
+  /** Only set when the catalogue has a real rating. */
+  rating?: number;
   reviewCount: number;
   price: string;
   /** The same price as a number, for the cart (which re-prices server-side). */

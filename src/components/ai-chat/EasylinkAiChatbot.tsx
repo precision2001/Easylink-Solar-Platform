@@ -19,6 +19,15 @@ const ChatMessageMarkdown = dynamic(
   { ssr: false },
 );
 
+/** Window event other components dispatch to open the assistant with a question. */
+export const ASK_EVENT = "easylink-ai:ask";
+
+/** Open the EasyLink AI panel, optionally sending a question straight away. */
+export function askEasylinkAi(question?: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { question } }));
+}
+
 type ChatRole = "user" | "assistant";
 
 type ChatTurn = { role: ChatRole; content: string };
@@ -186,12 +195,25 @@ export function EasylinkAiChatbot() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, open]);
 
-  async function send() {
-    const text = input.trim();
+  // Any screen can hand the assistant a question (the portal's "Ask EasyLink
+  // AI" bar): it opens the panel and sends it as if typed here.
+  const sendRef = useRef<(text: string) => void>(() => undefined);
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      const q = (e as CustomEvent<{ question?: string }>).detail?.question?.trim();
+      setOpen(true);
+      if (q) sendRef.current(q);
+    };
+    window.addEventListener(ASK_EVENT, onAsk);
+    return () => window.removeEventListener(ASK_EVENT, onAsk);
+  }, []);
+
+  async function send(override?: string) {
+    const text = (override ?? input).trim();
     if (!text || busy) return;
 
     setError(null);
-    setInput("");
+    if (override === undefined) setInput("");
     setBusy(true);
 
     const nextMessages: ChatTurn[] = [
@@ -254,6 +276,8 @@ export function EasylinkAiChatbot() {
       setBusy(false);
     }
   }
+
+  sendRef.current = (text: string) => void send(text);
 
   return (
     <>
