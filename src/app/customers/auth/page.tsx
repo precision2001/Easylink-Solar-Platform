@@ -1,18 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AuthCard } from "@/components/ui/auth/AuthCard";
-import { AuthDivider } from "@/components/ui/auth/AuthDivider";
-import { AuthField } from "@/components/ui/auth/AuthField";
-import {
-  AuthGhostButton,
-  AuthPrimaryButton,
-} from "@/components/ui/auth/AuthButtons";
-import Icon from "@/components/ui/Icons";
 import {
   signInSchema,
   signUpSchema,
@@ -34,9 +25,26 @@ import {
   CUSTOMER_HOME_PATH,
   SSO_ALLOWED_ORIGINS,
 } from "@/lib/auth/portal-paths";
-import { DesignTopBar } from "../../../components/modules/DesignTopBar";
+import {
+  PORTAL_LINK_SENT_FALLBACK,
+  postPortalLink,
+} from "@/lib/customers/portal-link-client";
+import { PortalIcon, type PortalIconName } from "@/components/customer/portal/PortalIcon";
+import {
+  AuthIcon,
+  BrandLink,
+  Field,
+  Notice,
+  PRIMARY_BUTTON,
+  QUIET_BUTTON,
+  RevealButton,
+  Spinner,
+  SunMotif,
+  TEXT_LINK,
+} from "@/components/customer/auth/AuthBits";
 
 type Mode = "signin" | "signup";
+type Method = "password" | "link";
 
 /**
  * Any in-app page is a valid place to come back to — a signed-out Buy click on
@@ -114,12 +122,202 @@ async function completeReturn(target: string) {
   }
 }
 
+/* -------------------------------------------------------------- layout */
+
+const BENEFITS: { icon: PortalIconName; title: string; body: string }[] = [
+  {
+    icon: "design",
+    title: "See your design and savings",
+    body: "Your panel layout, battery, price after rebates and estimated yearly savings.",
+  },
+  {
+    icon: "project",
+    title: "Track your installation",
+    body: "Every step from site visit to switch-on, updated as your job moves.",
+  },
+  {
+    icon: "spark",
+    title: "Ask EasyLink AI any time",
+    body: "Plain answers about your design, rebates, payments and install date.",
+  },
+];
+
+function BrandPanel() {
+  return (
+    <aside className="relative overflow-hidden bg-[#0B1A2E] text-white lg:sticky lg:top-0 lg:h-screen">
+      {/* A sunrise low on the horizon; the one bold thing on this screen. */}
+      <SunMotif className="absolute -right-12 -top-16 size-[140px] text-[#F68A0A] opacity-[0.18] lg:-bottom-44 lg:-right-40 lg:top-auto lg:size-[500px] lg:opacity-[0.16]" />
+
+      <div className="relative flex flex-col gap-3 px-4 pb-5 pt-3 sm:px-6 lg:h-full lg:justify-between lg:gap-10 lg:px-12 lg:py-10 xl:px-16">
+        <div className="lg:hidden">
+          <BrandLink compact />
+        </div>
+        <div className="hidden lg:block">
+          <BrandLink />
+        </div>
+
+        <div className="flex flex-col gap-8">
+          <p className="m-0 max-w-[460px] font-source-sans text-[22px] font-extrabold leading-[1.2] tracking-[-0.01em] sm:text-[26px] lg:text-[40px] lg:leading-[1.12]">
+            Your solar, from design to switch-on, in one place
+          </p>
+
+          <ul className="m-0 hidden max-w-[440px] list-none flex-col gap-5 p-0 lg:flex">
+            {BENEFITS.map((b) => (
+              <li key={b.title} className="flex items-start gap-4">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-white/[0.08] text-[#FFE866]">
+                  <PortalIcon name={b.icon} size={21} />
+                </span>
+                <span className="flex flex-col gap-1">
+                  <span className="text-[16px] font-bold text-white">{b.title}</span>
+                  <span className="text-[14.5px] leading-[1.5] text-[#C9D6EA]">{b.body}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <span aria-hidden="true" className="hidden lg:block" />
+      </div>
+    </aside>
+  );
+}
+
+function CardHeading({ title, intro }: { title: string; intro: string }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h1 className="m-0 font-source-sans text-[28px] font-extrabold leading-[1.15] tracking-[-0.01em] text-[#0F172A]">
+        {title}
+      </h1>
+      <p className="m-0 text-[15px] leading-[1.5] text-[#475569]">{intro}</p>
+    </div>
+  );
+}
+
+function OrDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 text-[13px] font-medium text-[#5B6B80]" role="separator" aria-label={label}>
+      <span className="h-px flex-1 bg-[#E2E8F0]" />
+      <span aria-hidden="true">{label}</span>
+      <span className="h-px flex-1 bg-[#E2E8F0]" />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------- sign in */
+
+const METHODS: { key: Method; label: string; icon: "key" | "mail" }[] = [
+  { key: "password", label: "Password", icon: "key" },
+  { key: "link", label: "Email me a link", icon: "mail" },
+];
+
+function MethodSwitch({ method, onChange }: { method: Method; onChange: (m: Method) => void }) {
+  return (
+    <div role="radiogroup" aria-label="How do you want to sign in?" className="grid grid-cols-2 gap-1 rounded-[14px] bg-[#EEF2F7] p-1">
+      {METHODS.map((m) => {
+        const on = m.key === method;
+        return (
+          <button
+            key={m.key}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(m.key)}
+            className={`flex min-h-[44px] items-center justify-center gap-2 rounded-[11px] px-2 text-[14px] font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB] ${
+              on ? "bg-white text-[#0F172A] shadow-[0_1px_3px_rgba(15,23,42,0.12)]" : "text-[#475569] hover:text-[#0F172A]"
+            }`}
+          >
+            <AuthIcon name={m.icon} size={17} className={on ? "text-[#F68A0A]" : ""} />
+            {m.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+type FormError = { message: string; suggested?: { label: string; url: string } | null };
+
+/** Passwordless path: the same endpoint the /portal-link page uses to send a fresh link. */
+function EmailLinkForm({ email, onEmailChange }: { email: string; onEmailChange: (v: string) => void }) {
+  const [sending, setSending] = useState(false);
+  const [fieldError, setFieldError] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [sent, setSent] = useState<string>();
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError(undefined);
+    const parsed = signInSchema.shape.email.safeParse(email.trim());
+    if (!parsed.success) {
+      setFieldError(parsed.error.issues[0]?.message ?? "Enter a valid email address");
+      return;
+    }
+    setFieldError(undefined);
+    setSending(true);
+    try {
+      const { ok, json } = await postPortalLink({ action: "request", email: parsed.data });
+      if (!ok) {
+        setError(json.message || "Couldn't send a link just now. Please try again.");
+        return;
+      }
+      setSent(json.message || PORTAL_LINK_SENT_FALLBACK);
+    } catch {
+      setError("Could not reach the sign-in service. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Notice tone="good" title="Check your email">
+          {sent} The link signs you in once and opens your design.
+        </Notice>
+        <p className="m-0 text-[14px] leading-[1.5] text-[#475569]">
+          Sent to <span className="font-semibold text-[#0F172A]">{email.trim()}</span>. Not there after a few minutes? Check your junk folder.
+        </p>
+        <button type="button" onClick={() => setSent(undefined)} className={QUIET_BUTTON}>
+          <AuthIcon name="refresh" size={18} />
+          Use a different email or resend
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      <p className="m-0 text-[14px] leading-[1.5] text-[#475569]">
+        No password needed. We&apos;ll email you a secure link that signs you straight in. Handy if you started with our online design tool.
+      </p>
+      <Field
+        label="Email"
+        type="email"
+        inputMode="email"
+        autoComplete="email"
+        placeholder="you@example.com.au"
+        value={email}
+        onChange={(e) => onEmailChange(e.target.value)}
+        error={fieldError}
+      />
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      <button type="submit" disabled={sending} className={PRIMARY_BUTTON}>
+        {sending ? <Spinner /> : <AuthIcon name="mail" size={18} />}
+        {sending ? "Sending your link…" : "Email me a sign-in link"}
+      </button>
+    </form>
+  );
+}
+
 function SignInForm({ onSwitchMode }: { onSwitchMode: () => void }) {
   const searchParams = useSearchParams();
   const dispatch = useAppDispatch();
   const [showPassword, setShowPassword] = useState(false);
   const [checkingExistingSession, setCheckingExistingSession] =
     useState(false);
+  const [method, setMethod] = useState<Method>("password");
+  const [linkEmail, setLinkEmail] = useState("");
+  const [formError, setFormError] = useState<FormError | null>(null);
 
   // An SSO handoff (e.g. from easylinkplus.com's "Get Free Quote") should
   // skip straight past the login form if this browser is already signed in
@@ -153,13 +351,28 @@ function SignInForm({ onSwitchMode }: { onSwitchMode: () => void }) {
     register,
     handleSubmit,
     setError,
+    getValues,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<SignInFormData>({
     resolver: zodResolver(signInSchema),
     defaultValues: { email: "", password: "", remember: false },
   });
 
+  /** Carry a typed email across, so switching method never means retyping it. */
+  function changeMethod(next: Method) {
+    if (next === method) return;
+    if (next === "link") {
+      const typed = getValues("email");
+      if (typed) setLinkEmail(typed);
+    } else if (linkEmail && !getValues("email")) {
+      setValue("email", linkEmail);
+    }
+    setMethod(next);
+  }
+
   const onSubmit = async (data: SignInFormData) => {
+    setFormError(null);
     try {
       const response = await fetch("/api/customers/login", {
         method: "POST",
@@ -198,10 +411,12 @@ function SignInForm({ onSwitchMode }: { onSwitchMode: () => void }) {
 
         const mismatch = result?.portalMismatch;
         if (mismatch?.suggested) {
+          const message =
+            result?.message ??
+            `Your account cannot sign in via the ${mismatch.portal} login portal.`;
+          setFormError({ message, suggested: mismatch.suggested });
           toast.error(
-            (result?.message ??
-              `Your account cannot sign in via the ${mismatch.portal} login portal.`) +
-              ` Click here to go to the ${mismatch.suggested.label} login.`,
+            message + ` Click here to go to the ${mismatch.suggested.label} login.`,
             {
               autoClose: 8000,
               onClick: () => {
@@ -210,9 +425,9 @@ function SignInForm({ onSwitchMode }: { onSwitchMode: () => void }) {
             },
           );
         } else {
-          toast.error(
-            result?.message ?? "Unable to sign you in. Please try again.",
-          );
+          const message = result?.message ?? "Unable to sign you in. Please try again.";
+          setFormError({ message });
+          toast.error(message);
         }
         return;
       }
@@ -233,121 +448,104 @@ function SignInForm({ onSwitchMode }: { onSwitchMode: () => void }) {
       const target = safeCustomerFrom(searchParams.get("from"));
       void completeReturn(target);
     } catch {
-      toast.error("Unable to reach the login service. Please try again.");
+      const message = "Unable to reach the login service. Please try again.";
+      setFormError({ message });
+      toast.error(message);
     }
   };
 
   if (checkingExistingSession) {
     return (
-      <div className="flex min-h-[240px] w-full items-center justify-center px-[32px] py-[20px] font-source-sans text-[14px] text-(--color-auth-subtle-70)">
+      <div role="status" className="flex min-h-[260px] flex-col items-center justify-center gap-3 text-[15px] font-semibold text-[#475569]">
+        <Spinner className="size-6 text-[#F68A0A]" />
         Signing you in…
       </div>
     );
   }
 
-  return (
-    <div className="flex h-full w-full items-center justify-center px-[32px] py-[20px]">
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        noValidate
-        className="flex w-[579px] max-w-full flex-col gap-[32px]"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col gap-[4px] pr-[64px]">
-            <p className="font-source-sans text-[24px] font-bold leading-[36px] tracking-[0.5px] text-auth-title">
-              Welcome Back
-            </p>
-            <p className="font-source-sans text-[14px] font-medium leading-[20px] tracking-[-0.1504px] text-(--color-auth-subtle-70)">
-              Sign in to your customer account
-            </p>
-          </div>
-          <div>
-            <Image
-              src="/images/solarDesignLogo.png"
-              alt="Solar Design Logo"
-              width={54}
-              height={54}
-            />
-          </div>
-        </div>
+  const passwordField = register("password");
 
-        <div className="flex flex-col gap-[10px]">
-          <AuthField
-            icon={<Icon name="User" />}
-            placeholder="Email"
-            inputClassName="text-[16px] tracking-[-0.3125px]"
+  return (
+    <div className="flex flex-col gap-6">
+      <CardHeading title="Sign in" intro="Welcome back. Pick how you'd like to sign in." />
+      <MethodSwitch method={method} onChange={changeMethod} />
+
+      {method === "link" ? (
+        <EmailLinkForm email={linkEmail} onEmailChange={setLinkEmail} />
+      ) : (
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
+          <Field
+            label="Email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="you@example.com.au"
             error={errors.email?.message}
             {...register("email")}
           />
-          <AuthField
-            icon={<Icon name="Lock" />}
-            placeholder="Password"
+          <Field
+            label="Password"
             type={showPassword ? "text" : "password"}
-            inputClassName="text-[16px] tracking-[-0.3125px]"
+            autoComplete="current-password"
             error={errors.password?.message}
-            right={
-              <button
-                type="button"
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                onClick={() => setShowPassword((x) => !x)}
-                className="text-auth-placeholder"
-              >
-                <Icon name="Eye" />
-              </button>
-            }
-            {...register("password")}
+            right={<RevealButton shown={showPassword} onToggle={() => setShowPassword((x) => !x)} />}
+            {...passwordField}
           />
 
-          <div className="flex h-[20px] items-center justify-between px-[4px]">
-            <label className="flex items-center gap-[8px]">
+          <div className="-my-1 flex flex-wrap items-center justify-between gap-x-4">
+            <label className="flex min-h-[44px] cursor-pointer items-center gap-2.5 text-[14px] font-medium text-[#334155]">
               <input
                 type="checkbox"
                 {...register("remember")}
-                className="size-[16px] accent-auth-outline"
+                className="size-[18px] rounded accent-[#0B1A2E] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
               />
-              <span className="font-source-sans text-[14px] font-medium leading-[20px] tracking-[-0.1504px] text-(--color-auth-subtle-70)">
-                Remember me
-              </span>
+              Remember me
             </label>
-            <Link
-              href="/forgot-password?role=CUSTOMER"
-              className="font-source-sans text-[14px] font-medium leading-[20px] tracking-[-0.1504px] text-(--color-auth-subtle-60) underline"
-            >
+            <Link href="/forgot-password?role=CUSTOMER" className={TEXT_LINK}>
               Forgot password?
             </Link>
           </div>
 
-          <AuthPrimaryButton
-            icon={<Icon name="ArrowRight" />}
-            label={isSubmitting ? "Signing in..." : "Sign In"}
-            borderVariant="gradient"
-            type="submit"
-          />
+          {formError ? (
+            <Notice tone="error">
+              {formError.message}
+              {formError.suggested ? (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => navigateWithSessionRefresh(formError.suggested!.url)}
+                    className="font-bold text-[#1D4ED8] underline underline-offset-2"
+                  >
+                    Go to the {formError.suggested.label} login
+                  </button>
+                </>
+              ) : null}
+            </Notice>
+          ) : null}
 
-          <Link
-            href="/portal-link"
-            className="text-center font-source-sans text-[14px] font-medium leading-[20px] text-(--color-auth-subtle-60) underline"
-          >
-            No password? Email me a sign-in link
-          </Link>
+          <button type="submit" disabled={isSubmitting} className={PRIMARY_BUTTON}>
+            {isSubmitting ? <Spinner /> : null}
+            {isSubmitting ? "Signing in…" : "Sign in"}
+            {isSubmitting ? null : <PortalIcon name="arrow" size={18} />}
+          </button>
+        </form>
+      )}
 
-          <AuthDivider label="or" />
-
-          <div className="flex justify-center">
-            <AuthGhostButton
-              label="Create an Account"
-              width={187.235}
-              onClick={onSwitchMode}
-            />
-          </div>
-        </div>
-      </form>
+      <OrDivider label="New to EasyLink?" />
+      <button type="button" onClick={onSwitchMode} className={QUIET_BUTTON}>
+        Create an account
+      </button>
     </div>
   );
 }
 
+/* -------------------------------------------------------------- sign up */
+
 function SignUpForm({ onSwitchMode }: { onSwitchMode: () => void }) {
   const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [created, setCreated] = useState<string | null>(null);
   // `?ref=` arrives on links shared by existing customers, so the referrer gets
   // credit. Never rendered as a field — it just rides along with the signup.
   const searchParams = useSearchParams();
@@ -377,6 +575,7 @@ function SignUpForm({ onSwitchMode }: { onSwitchMode: () => void }) {
   });
 
   const onSubmit = async (data: SignUpFormData) => {
+    setFormError(null);
     try {
       const response = await fetch("/api/customers/signup", {
         method: "POST",
@@ -409,9 +608,9 @@ function SignUpForm({ onSwitchMode }: { onSwitchMode: () => void }) {
           }
         }
 
-        toast.error(
-          result?.message ?? "Unable to create your account right now.",
-        );
+        const message = result?.message ?? "Unable to create your account right now.";
+        setFormError(message);
+        toast.error(message);
         return;
       }
 
@@ -427,148 +626,140 @@ function SignUpForm({ onSwitchMode }: { onSwitchMode: () => void }) {
         searchParams.get("from") || searchParams.get("ref"),
       );
 
-      toast.success(
+      const message =
         result?.message ??
-          (hasReturnContext
-            ? "Account created — check your email to verify it, then sign in here to continue."
-            : "Account created successfully. You can now sign in."),
-      );
+        (hasReturnContext
+          ? "Account created — check your email to verify it, then sign in here to continue."
+          : "Account created successfully. You can now sign in.");
+      toast.success(message);
 
       if (hasReturnContext) {
         onSwitchMode();
+      } else {
+        setCreated(message);
       }
     } catch {
-      toast.error("Unable to reach the signup service. Please try again.");
+      const message = "Unable to reach the signup service. Please try again.";
+      setFormError(message);
+      toast.error(message);
     }
   };
 
+  const passwordField = register("password");
+
+  if (created) {
+    return (
+      <div className="flex flex-col gap-6">
+        <CardHeading title="Account created" intro="Sign in to open your portal." />
+        <Notice tone="good" title="Your account is ready">
+          {created}
+        </Notice>
+        <button type="button" onClick={onSwitchMode} className={PRIMARY_BUTTON}>
+          Go to sign in
+          <PortalIcon name="arrow" size={18} />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="px-[32px] py-[20px]">
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        noValidate
-        className="mx-auto flex w-[435px] max-w-full flex-col gap-[20px]"
-      >
-        <div className="flex flex-col gap-[4px] pr-[64px]">
-          <p className="font-source-sans text-[24px] font-extrabold leading-[36px] tracking-[0.5px] text-auth-title">
-            Create Account
-          </p>
-          <p className="font-source-sans text-[14px] font-bold leading-[20px] tracking-[-0.1504px] text-(--color-auth-subtle-70)">
-            Fill in your details to get started
-          </p>
+    <div className="flex flex-col gap-6">
+      <CardHeading
+        title="Create your account"
+        intro="Use the address where your solar will be installed, so your design and quote match your home."
+      />
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="First name" autoComplete="given-name" error={errors.firstName?.message} {...register("firstName")} />
+          <Field label="Last name" autoComplete="family-name" error={errors.lastName?.message} {...register("lastName")} />
         </div>
+        <Field
+          label="Mobile number"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          placeholder="0412 345 678"
+          error={errors.phone?.message}
+          {...register("phone")}
+        />
+        <Field
+          label="Email"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          placeholder="you@example.com.au"
+          error={errors.email?.message}
+          {...register("email")}
+        />
+        <Field
+          label="Password"
+          type={showPassword ? "text" : "password"}
+          autoComplete="new-password"
+          hint="At least 6 characters."
+          error={errors.password?.message}
+          right={<RevealButton shown={showPassword} onToggle={() => setShowPassword((x) => !x)} />}
+          {...passwordField}
+        />
+        <Field
+          label="Installation address"
+          autoComplete="street-address"
+          placeholder="12 Example Street, Parramatta NSW 2150"
+          error={errors.address?.message}
+          {...register("address")}
+        />
 
-        <div className="flex flex-col gap-[12px]">
-          <AuthField
-            icon={<Icon name="User" />}
-            placeholder="John"
-            error={errors.firstName?.message}
-            {...register("firstName")}
-          />
-          <AuthField
-            icon={<Icon name="User" />}
-            placeholder="Doe"
-            error={errors.lastName?.message}
-            {...register("lastName")}
-          />
-          <AuthField
-            icon={<Icon name="Phone" />}
-            placeholder="+1 234 567 8900"
-            type="tel"
-            error={errors.phone?.message}
-            {...register("phone")}
-          />
-          <AuthField
-            icon={<Icon name="Mail" />}
-            placeholder="john@example.com"
-            type="email"
-            error={errors.email?.message}
-            {...register("email")}
-          />
-          <AuthField
-            icon={<Icon name="Lock" />}
-            placeholder="Min 6 characters"
-            type={showPassword ? "text" : "password"}
-            error={errors.password?.message}
-            right={
-              <button
-                type="button"
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                onClick={() => setShowPassword((x) => !x)}
-                className="text-auth-placeholder"
-              >
-                <Icon name="Eye" />
-              </button>
-            }
-            {...register("password")}
-          />
-          <AuthField
-            icon={<Icon name="Pin" />}
-            placeholder="123 Main St"
-            error={errors.address?.message}
-            {...register("address")}
-          />
+        {formError ? <Notice tone="error">{formError}</Notice> : null}
 
-          <AuthPrimaryButton
-            icon={<Icon name="UserPlus" />}
-            label={isSubmitting ? "Signing up..." : "Sign Up"}
-            type="submit"
-          />
-
-          <AuthDivider label="already have an account?" />
-
-          <div className="flex justify-center">
-            <AuthGhostButton
-              label="Login"
-              width={178.535}
-              onClick={onSwitchMode}
-            />
-          </div>
-        </div>
+        <button type="submit" disabled={isSubmitting} className={PRIMARY_BUTTON}>
+          {isSubmitting ? <Spinner /> : null}
+          {isSubmitting ? "Creating your account…" : "Create account"}
+        </button>
       </form>
+
+      <OrDivider label="Already have an account?" />
+      <button type="button" onClick={onSwitchMode} className={QUIET_BUTTON}>
+        Sign in
+      </button>
     </div>
   );
 }
 
+/* -------------------------------------------------------------- page */
+
 export default function CustomerAuthPage() {
   const [mode, setMode] = useState<Mode>("signin");
 
-  const cardSize = useMemo(() => {
-    if (mode === "signin") {
-      return "w-[min(490px,calc(100%-40px))]";
-    }
-    return "w-[min(490px,calc(100%-40px))]";
-  }, [mode]);
-
   return (
-    <main className="relative min-h-screen overflow-hidden bg-void">
-      <div className="absolute inset-0">
-        <Image
-          src="/images/home/login-background.png"
-          alt=""
-          fill
-          className="object-cover"
-          priority
-        />
-      </div>
-      <DesignTopBar />
+    <main className="min-h-screen bg-[#F4F6FA] font-inter text-[#0F172A] lg:grid lg:grid-cols-[minmax(400px,5fr)_7fr]">
+      <BrandPanel />
 
-      <div className="relative z-10 flex min-h-[calc(100vh-92px)] items-center justify-center px-5">
-        <AuthCard className={cardSize}>
-          <Suspense
-            fallback={
-              <div className="flex min-h-[240px] items-center justify-center px-[32px] py-[20px] font-source-sans text-[14px] text-(--color-auth-subtle-70)">
-                Loading…
-              </div>
-            }
-          >
-            {mode === "signin" ? (
-              <SignInForm onSwitchMode={() => setMode("signup")} />
-            ) : (
-              <SignUpForm onSwitchMode={() => setMode("signin")} />
-            )}
-          </Suspense>
-        </AuthCard>
+      <div className="flex flex-col items-center px-4 pb-12 pt-6 sm:px-6 sm:pt-10 lg:justify-center lg:py-12">
+        <div className="flex w-full max-w-[480px] flex-col gap-4">
+          <section className="rounded-[22px] border border-[#E2E8F0] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:p-8">
+            <Suspense
+              fallback={
+                <div role="status" className="flex min-h-[260px] items-center justify-center gap-3 text-[15px] text-[#475569]">
+                  <Spinner className="size-5 text-[#F68A0A]" />
+                  Loading…
+                </div>
+              }
+            >
+              {mode === "signin" ? (
+                <SignInForm onSwitchMode={() => setMode("signup")} />
+              ) : (
+                <SignUpForm onSwitchMode={() => setMode("signin")} />
+              )}
+            </Suspense>
+          </section>
+
+          <p className="m-0 flex flex-wrap items-center justify-center gap-x-1.5 text-center text-[14px] text-[#475569]">
+            Haven&apos;t designed your system yet?
+            <Link href="/designs" className={`${TEXT_LINK} gap-1`}>
+              Design my system
+              <PortalIcon name="arrow" size={16} />
+            </Link>
+          </p>
+        </div>
       </div>
     </main>
   );
