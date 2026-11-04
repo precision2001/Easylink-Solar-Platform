@@ -1,7 +1,10 @@
 import { buildBackendUrl } from "@/lib/customers/backend";
 import {
-  BLOG_DETAIL_DEFAULT,
+  BLOG_DETAIL_LABELS,
+  type BlogDetailContact,
   type BlogDetailContent,
+  type BlogDetailFeaturedQuote,
+  type BlogDetailLeaderQuote,
   type BlogPost,
 } from "@/utils/constant";
 
@@ -28,8 +31,72 @@ type BackendBlogPost = {
   content?: {
     breadcrumbTitle?: string;
     body?: string[];
+    attributionRole?: string | null;
+    featuredQuote?: unknown;
+    industryLeadersHeading?: string | null;
+    leaderQuotes?: unknown;
+    contact?: unknown;
   } | null;
 };
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** Featured quote from the post's own data, or undefined. Requires quote + name. */
+export function parseFeaturedQuote(value: unknown): BlogDetailFeaturedQuote | undefined {
+  const raw = asRecord(value);
+  if (!raw) return undefined;
+  const quote = nonEmptyString(raw.quote);
+  const name = nonEmptyString(raw.name);
+  if (!quote || !name) return undefined;
+  return {
+    quote,
+    name,
+    role: nonEmptyString(raw.role) ?? "",
+    avatarSrc: nonEmptyString(raw.avatarSrc) ?? "/images/logo.webp",
+    avatarAlt: nonEmptyString(raw.avatarAlt) ?? name,
+  };
+}
+
+/** Leader quotes from the post's own data; malformed entries are dropped. */
+export function parseLeaderQuotes(value: unknown): BlogDetailLeaderQuote[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const raw = asRecord(item);
+    if (!raw) return [];
+    const attribution = nonEmptyString(raw.attribution);
+    const paragraphs = Array.isArray(raw.paragraphs)
+      ? raw.paragraphs.map(nonEmptyString).filter((p): p is string => p !== null)
+      : [];
+    if (!attribution || paragraphs.length === 0) return [];
+    return [{ attribution, paragraphs }];
+  });
+}
+
+/** Media contact from the post's own data, or undefined. Requires a name and a phone or email. */
+export function parseContact(value: unknown): BlogDetailContact | undefined {
+  const raw = asRecord(value);
+  if (!raw) return undefined;
+  const name = nonEmptyString(raw.name);
+  const phone = nonEmptyString(raw.phone) ?? "";
+  const emailHref = nonEmptyString(raw.emailHref) ?? "";
+  if (!name || (!phone && !emailHref)) return undefined;
+  return {
+    heading: nonEmptyString(raw.heading) ?? "For more information:",
+    name,
+    role: nonEmptyString(raw.role) ?? "",
+    phone,
+    emailLabel: nonEmptyString(raw.emailLabel) ?? "Email",
+    emailHref,
+  };
+}
 
 function publicUrl(frontendPath: string, backendPath: string) {
   if (typeof window !== "undefined") return frontendPath;
@@ -75,13 +142,20 @@ export function toBlogDetailContent(post: BackendBlogPost): BlogDetailContent {
     : [card.excerpt];
 
   return {
-    ...BLOG_DETAIL_DEFAULT,
+    ...BLOG_DETAIL_LABELS,
     breadcrumbTitle: post.content?.breadcrumbTitle ?? card.title,
     categoryLabel: card.category,
     dateLabel: card.dateLabel,
-    readTimeLabel: post.readTimeLabel ?? BLOG_DETAIL_DEFAULT.readTimeLabel,
+    readTimeLabel: post.readTimeLabel ?? BLOG_DETAIL_LABELS.readTimeLabel,
     title: card.title,
     attributionName: card.authorName,
+    attributionRole: nonEmptyString(post.content?.attributionRole) ?? "",
+    featuredQuote: parseFeaturedQuote(post.content?.featuredQuote),
+    industryLeadersHeading:
+      nonEmptyString(post.content?.industryLeadersHeading) ??
+      BLOG_DETAIL_LABELS.industryLeadersHeading,
+    leaderQuotes: parseLeaderQuotes(post.content?.leaderQuotes),
+    contact: parseContact(post.content?.contact),
     leadParagraph: body[0] ?? card.excerpt,
     featuredImageSrc: card.thumbnailImageSrc,
     featuredImageAlt: card.thumbnailImageAlt,

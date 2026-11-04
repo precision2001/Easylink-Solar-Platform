@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import Icon, { type IconType } from "@/components/ui/Icons";
 import { RainbowButton } from "@/components/ui/RainbowButton";
-import { LANDING_FOOTER_COLUMNS } from "@/utils/constant";
+import { LANDING_ENERGY_CTA, LANDING_FOOTER_COLUMNS } from "@/utils/constant";
 
 export type FooterCustomCta = {
   title: string;
@@ -77,12 +77,14 @@ export function FooterSection({
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <RainbowButton
+                href={LANDING_ENERGY_CTA.primary.href}
                 shape="rounded"
                 className="bg-linear-to-r from-fuchsia-500 to-red-400 px-7 py-3 text-sm font-semibold text-white"
               >
                 Get Your Quote
               </RainbowButton>
               <RainbowButton
+                href={LANDING_ENERGY_CTA.secondary.href}
                 shape="rounded"
                 className="px-7 py-3 text-sm font-semibold text-slate-900"
               >
@@ -142,18 +144,11 @@ export function FooterSection({
         </div>
 
         <div className="mt-12 flex flex-col items-center gap-4 border-t border-slate-200 pt-6 text-center text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:text-left lg:px-6">
-          <p className="leading-relaxed">© 2025 EasyLink Solar. All rights reserved.</p>
-          <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 sm:justify-end">
-            <a href="#" className="transition hover:text-slate-700">
-              Privacy
-            </a>
-            <a href="#" className="transition hover:text-slate-700">
-              Terms
-            </a>
-            <a href="#" className="transition hover:text-slate-700">
-              Cookies
-            </a>
-          </div>
+          <p className="leading-relaxed">
+            © {new Date().getFullYear()} EasyLink Solar. All rights reserved.
+          </p>
+          {/* TODO: add Privacy policy, Terms of service and Cookie policy links (here and as a
+              "Legal" footer column) once the owner supplies the legal text and the pages exist. */}
         </div>
       </div>
     </footer>

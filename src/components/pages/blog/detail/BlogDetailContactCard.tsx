@@ -15,22 +15,28 @@ export function BlogDetailContactCard({ contact }: Props) {
         <p className="font-source-sans text-[14px] font-bold leading-normal tracking-[-0.1504px] text-blog-detail-grad-text">
           {contact.name}
         </p>
-        <p className="font-source-sans text-[14px] font-normal leading-normal tracking-[-0.1504px] text-blog-detail-grad-text">
-          {contact.role}
-        </p>
-        <a
-          href={`tel:${contact.phone.replace(/\s/g, "")}`}
-          className="font-source-sans text-[14px] font-semibold leading-normal tracking-[-0.1504px] text-blog-detail-accent"
-        >
-          {contact.phone}
-        </a>
-        <a
-          href={contact.emailHref}
-          className="inline-flex items-center gap-[8px] font-source-sans text-[14px] font-semibold leading-normal tracking-[-0.1504px] text-blog-detail-accent"
-        >
-          <Icon name="Mail" className="size-[15.986px] shrink-0" />
-          {contact.emailLabel}
-        </a>
+        {contact.role ? (
+          <p className="font-source-sans text-[14px] font-normal leading-normal tracking-[-0.1504px] text-blog-detail-grad-text">
+            {contact.role}
+          </p>
+        ) : null}
+        {contact.phone ? (
+          <a
+            href={`tel:${contact.phone.replace(/\s/g, "")}`}
+            className="font-source-sans text-[14px] font-semibold leading-normal tracking-[-0.1504px] text-blog-detail-accent"
+          >
+            {contact.phone}
+          </a>
+        ) : null}
+        {contact.emailHref ? (
+          <a
+            href={contact.emailHref}
+            className="inline-flex items-center gap-[8px] font-source-sans text-[14px] font-semibold leading-normal tracking-[-0.1504px] text-blog-detail-accent"
+          >
+            <Icon name="Mail" className="size-[15.986px] shrink-0" />
+            {contact.emailLabel}
+          </a>
+        ) : null}
       </div>
     </div>
   );

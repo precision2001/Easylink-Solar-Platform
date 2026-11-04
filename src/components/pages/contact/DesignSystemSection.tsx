@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import rightArrow from "@/components/ui/Icons/rightArrow.svg";
 
 export function DesignSystemSection() {
@@ -23,8 +24,8 @@ export function DesignSystemSection() {
                 Get a customized solar and battery configuration tailored to
                 your specific energy needs.
               </p>
-              <button
-                type="button"
+              <Link
+                href="/designs"
                 className="flex items-center gap-2 cursor-pointer mt-8 rounded-xl bg-linear-to-r from-fuchsia-500 to-red-400 px-2 py-3 text-sm font-semibold text-white"
               >
                 <Image
@@ -40,7 +41,7 @@ export function DesignSystemSection() {
                   width={17}
                   height={17}
                 />
-              </button>
+              </Link>
             </div>
           </div>
         </div>

@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { ServicesReveal } from "@/components/pages/services/ServicesReveal";
 import { ServicesRippleLink } from "@/components/pages/services/ServicesRippleLink";
 import Icon from "@/components/ui/Icons";
@@ -84,24 +82,6 @@ export function ServicesFinalCtaSection() {
                     </li>
                   );
                 })}
-              </ul>
-            </div>
-
-            <div className="flex flex-col gap-4">
-              <h3 className="font-outfit text-base font-semibold leading-6 text-white">
-                Follow us
-              </h3>
-              <ul className="flex flex-wrap gap-3">
-                {finalCta.contact.social.map((social) => (
-                  <li key={social.id}>
-                    <Link
-                      href={social.href}
-                      className="svc-glass svc-focusable-dark inline-flex items-center rounded-xl px-4 py-2 font-inter text-sm font-medium text-svc-dark-body transition hover:bg-svc-glass-strong hover:text-white"
-                    >
-                      {social.label}
-                    </Link>
-                  </li>
-                ))}
               </ul>
             </div>
           </div>
