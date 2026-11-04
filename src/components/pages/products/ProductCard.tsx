@@ -13,6 +13,11 @@ import {
   isAfterpayPayable,
   type AfterpayConfig,
 } from "@/lib/public/afterpayConfig";
+import {
+  fetchZipConfig,
+  isZipPayable,
+  type ZipConfig,
+} from "@/lib/public/zipConfig";
 import type {
   Product,
   ProductBadge,
@@ -73,12 +78,27 @@ export function ProductCard({
     };
   }, []);
 
+  // Zip is offered on the same terms. Its range is far wider than
+  // Afterpay's — Zip Money reaches $50,000 — so for most panels and
+  // batteries Zip is the option that actually qualifies.
+  const [zip, setZip] = useState<ZipConfig | null>(null);
+  useEffect(() => {
+    let active = true;
+    void fetchZipConfig().then((c) => {
+      if (active) setZip(c);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const totalMinor = Math.round(product.price * 100) * quantity;
   const afterpayAvailable = inStock && isAfterpayPayable(afterpay, totalMinor);
+  const zipAvailable = inStock && isZipPayable(zip, totalMinor);
 
   // Card purchases go through the cart (several products, one warehouse);
   // "Pay in 4" stays a single-product Afterpay checkout.
-  async function handleBuyNow(paymentMethod: "afterpay") {
+  async function handleBuyNow(paymentMethod: "afterpay" | "zip") {
     setBuying(true);
     try {
       const session = await createProductCheckout({
@@ -87,7 +107,9 @@ export function ProductCard({
         paymentMethod,
       });
       toast.info(
-        paymentMethod === "afterpay" ? "Redirecting to Afterpay…" : "Redirecting to checkout…",
+        paymentMethod === "afterpay"
+          ? "Redirecting to Afterpay…"
+          : "Redirecting to Zip…",
       );
       window.location.assign(session.checkoutUrl);
     } catch (err) {
@@ -278,6 +300,18 @@ export function ProductCard({
                 className="flex h-9 shrink-0 items-center justify-center rounded-full bg-[#b2fce4] px-3 text-[12px] font-semibold text-warm-ink shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Pay in 4
+              </button>
+            ) : null}
+            {zipAvailable ? (
+              <button
+                type="button"
+                disabled={buying}
+                aria-label="Pay with Zip"
+                title="Own it now, pay later with Zip"
+                onClick={() => void handleBuyNow("zip")}
+                className="flex h-9 shrink-0 items-center justify-center rounded-full bg-[#1a0dab] px-3 text-[12px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Zip
               </button>
             ) : null}
           </div>

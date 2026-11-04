@@ -27,6 +27,7 @@ const PAY_OPTIONS: {
 }[] = [
   { id: "card", label: "Card", blurb: "Pay in full — Visa, Mastercard, Amex" },
   { id: "afterpay", label: "Afterpay", blurb: "4 interest-free instalments" },
+  { id: "zip", label: "Zip", blurb: "Own it now, pay later" },
 ];
 
 function formatMoney(amount: number, currency: string): string {
@@ -46,10 +47,11 @@ function formatMoney(amount: number, currency: string): string {
  * The Google button itself hands us a signed ID token; we send that straight
  * to the backend, which verifies it and creates the Checkout session.
  *
- * Afterpay runs through the same Stripe Checkout, so the flow is unchanged —
- * the chosen method only decides which payment screen Stripe opens on. It is
- * offered only for packages inside Afterpay's order-value limits, which the
- * backend reports (this site holds price *labels*, not the real amounts).
+ * Afterpay and Zip are DIRECT integrations on Easylink's own merchant
+ * accounts, so choosing either redirects to that provider's site rather than
+ * to Stripe. Each is offered only for packages inside that provider's
+ * order-value limits, which the backend reports (this site holds price
+ * *labels*, not the real amounts).
  */
 export function PricingCheckoutModal({ tierId, tierName, priceLabel, onClose }: Props) {
   const buttonHostRef = useRef<HTMLDivElement>(null);
@@ -119,22 +121,39 @@ export function PricingCheckoutModal({ tierId, tierName, priceLabel, onClose }: 
 
   const tier = tiers?.tiers.find((t) => t.id === tierId) ?? null;
   const afterpayAvailable = tier?.afterpayEligible ?? false;
+  const zipAvailable = tier?.zipEligible ?? false;
   const limits = tiers?.afterpayLimits ?? null;
+  const zipLimits = tiers?.zipLimits ?? null;
   const currency = tiers?.currency ?? "AUD";
 
   // Only meaningful once the tiers have loaded — before that we show nothing
-  // rather than guess at why Afterpay is missing.
-  const afterpayNote =
-    tier && !afterpayAvailable && limits
-      ? `Afterpay is available on orders between ${formatMoney(
-          limits.min,
+  // rather than guess at why an option is missing.
+  const unavailableNote = (
+    name: string,
+    range: { min: number; max: number } | null,
+  ): string | null =>
+    range
+      ? `${name} is available on orders between ${formatMoney(
+          range.min,
           currency,
-        )} and ${formatMoney(limits.max, currency)}, so it can't be used for this package.`
+        )} and ${formatMoney(range.max, currency)}, so it can't be used for this package.`
       : null;
 
-  const options = PAY_OPTIONS.filter(
-    (option) => option.id !== "afterpay" || afterpayAvailable,
-  );
+  // Both notes can apply at once, so they are collected rather than
+  // short-circuited: a buyer told only about Afterpay would be left
+  // wondering where Zip went.
+  const notes = tier
+    ? [
+        afterpayAvailable ? null : unavailableNote("Afterpay", limits),
+        zipAvailable ? null : unavailableNote("Zip", zipLimits),
+      ].filter((note): note is string => note !== null)
+    : [];
+
+  const options = PAY_OPTIONS.filter((option) => {
+    if (option.id === "afterpay") return afterpayAvailable;
+    if (option.id === "zip") return zipAvailable;
+    return true;
+  });
 
   return (
     <div
@@ -228,18 +247,23 @@ export function PricingCheckoutModal({ tierId, tierName, priceLabel, onClose }: 
           </fieldset>
         ) : null}
 
-        {afterpayNote ? (
-          <p className="mt-3 font-inter text-[13px] leading-5 text-svc-muted">
-            {afterpayNote}
+        {notes.map((note) => (
+          <p
+            key={note}
+            className="mt-3 font-inter text-[13px] leading-5 text-svc-muted"
+          >
+            {note}
           </p>
-        ) : null}
+        ))}
 
         <p className="mt-4 font-dm-sans text-sm leading-6 text-svc-body">
           Sign in with Google to confirm who to send the receipt and project
           updates to, then you&apos;ll go straight to
           {method === "afterpay"
             ? " Afterpay to approve your four instalments."
-            : " Stripe's secure checkout to pay."}
+            : method === "zip"
+              ? " Zip to approve your payment plan."
+              : " Stripe's secure checkout to pay."}
         </p>
 
         {error ? (
@@ -254,7 +278,9 @@ export function PricingCheckoutModal({ tierId, tierName, priceLabel, onClose }: 
             <p className="font-dm-sans text-sm text-svc-muted">
               {method === "afterpay"
                 ? "Redirecting to Afterpay…"
-                : "Redirecting to Stripe secure checkout…"}
+                : method === "zip"
+                  ? "Redirecting to Zip…"
+                  : "Redirecting to Stripe secure checkout…"}
             </p>
           ) : null}
         </div>

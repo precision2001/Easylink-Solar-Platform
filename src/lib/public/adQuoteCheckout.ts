@@ -60,11 +60,12 @@ async function readEnvelope<T>(res: Response, fallback: string): Promise<T> {
 }
 
 /**
- * How the buyer chose to pay. "card" goes through Stripe Checkout; "afterpay"
- * is a DIRECT Afterpay integration against Easylink's own merchant account,
- * which redirects to Afterpay's site rather than to Stripe.
+ * How the buyer chose to pay. "card" goes through Stripe Checkout;
+ * "afterpay" and "zip" are DIRECT integrations against Easylink's own
+ * merchant accounts, redirecting to those providers' sites rather than to
+ * Stripe.
  */
-export type AdQuotePaymentMethod = "auto" | "card" | "afterpay";
+export type AdQuotePaymentMethod = "auto" | "card" | "afterpay" | "zip";
 
 export type AdQuoteTier = {
   id: AdQuoteTierId;
@@ -72,11 +73,18 @@ export type AdQuoteTier = {
   amount: number;
   /** False when the package price falls outside Afterpay's order-value limits. */
   afterpayEligible: boolean;
+  /**
+   * False when the price falls outside Zip's published range. True is a
+   * weaker promise than Afterpay's: Zip publishes no per-merchant limits, so
+   * an eligible package can still be declined on the shopper's own credit.
+   */
+  zipEligible: boolean;
 };
 
 export type AdQuoteTiers = {
   currency: string;
   afterpayLimits: { min: number; max: number } | null;
+  zipLimits: { min: number; max: number } | null;
   tiers: AdQuoteTier[];
 };
 
