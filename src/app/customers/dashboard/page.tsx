@@ -96,7 +96,7 @@ export default function CustomerDashboardPage() {
             {Array.from({ length: 12 }, (_, i) => {
               const a = (i * Math.PI) / 6;
               return (
-                <line key={i} x1={100 + Math.cos(a) * 50} y1={100 + Math.sin(a) * 50} x2={100 + Math.cos(a) * 82} y2={100 + Math.sin(a) * 82} stroke="currentColor" strokeWidth="8" strokeLinecap="round" />
+                <line key={i} x1={Math.round(100 + Math.cos(a) * 50)} y1={Math.round(100 + Math.sin(a) * 50)} x2={Math.round(100 + Math.cos(a) * 82)} y2={Math.round(100 + Math.sin(a) * 82)} stroke="currentColor" strokeWidth="8" strokeLinecap="round" />
               );
             })}
           </svg>
