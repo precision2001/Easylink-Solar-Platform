@@ -37,8 +37,10 @@ export type BnplOption = {
   available: boolean;
   min: number | null;
   max: number | null;
-  /** The provider fee the buyer covers, and the total including it. */
-  fee: number;
+  /** The sale prices when paying this way. */
+  lines: { productId: string; unitPrice: number; lineTotal: number }[];
+  subtotal: number;
+  deliveryFee: number;
   total: number;
 };
 export type CartPaymentMethod = "card" | "afterpay" | "zip";

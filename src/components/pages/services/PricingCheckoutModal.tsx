@@ -266,6 +266,13 @@ export function PricingCheckoutModal({ tierId, tierName, priceLabel, onClose }: 
               : " Stripe's secure checkout to pay."}
         </p>
 
+        {tier && method !== "card" ? (
+          <p className="mt-2 font-dm-sans text-sm font-semibold text-svc-body">
+            {method === "zip" ? "Zip" : "Afterpay"} price:{" "}
+            {new Intl.NumberFormat("en-AU", { style: "currency", currency }).format(method === "zip" ? tier.zipAmount : tier.afterpayAmount)}
+          </p>
+        ) : null}
+
         {error ? (
           <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-dm-sans text-sm text-red-800">
             {error}

@@ -27,6 +27,8 @@ export type ZipConfig = {
    * mode" notice out of a live storefront.
    */
   sandbox: boolean;
+  /** The percentage built into Zip sale prices. */
+  pricePercent: number;
 };
 
 const UNAVAILABLE: ZipConfig = {
@@ -34,6 +36,7 @@ const UNAVAILABLE: ZipConfig = {
   min: null,
   max: null,
   sandbox: false,
+  pricePercent: 0,
 };
 
 function backendBaseUrl(): string | null {
@@ -66,6 +69,7 @@ export function fetchZipConfig(): Promise<ZipConfig> {
         min: typeof data.min === "number" ? data.min : null,
         max: typeof data.max === "number" ? data.max : null,
         sandbox: data.sandbox === true,
+        pricePercent: typeof data.pricePercent === "number" ? data.pricePercent : 0,
       };
     })
     // Zip being unreachable must never break the catalogue — it just means
@@ -73,6 +77,11 @@ export function fetchZipConfig(): Promise<ZipConfig> {
     .catch(() => UNAVAILABLE);
 
   return inFlight;
+}
+
+/** A price in minor units at the sale price for this payment method. */
+export function methodPriceMinor(baseMinor: number, pricePercent: number): number {
+  return pricePercent > 0 ? Math.round(baseMinor / (1 - pricePercent / 100)) : baseMinor;
 }
 
 /** True when `amountMinor` is inside Zip's range and Zip is usable. */

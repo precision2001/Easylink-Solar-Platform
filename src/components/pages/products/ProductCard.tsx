@@ -16,6 +16,7 @@ import {
 import {
   fetchZipConfig,
   isZipPayable,
+  methodPriceMinor,
   type ZipConfig,
 } from "@/lib/public/zipConfig";
 import type {
@@ -93,8 +94,13 @@ export function ProductCard({
   }, []);
 
   const totalMinor = Math.round(product.price * 100) * quantity;
-  const afterpayAvailable = inStock && isAfterpayPayable(afterpay, totalMinor);
-  const zipAvailable = inStock && isZipPayable(zip, totalMinor);
+  const unitMinor = Math.round(product.price * 100);
+  const afterpayTotalMinor = methodPriceMinor(unitMinor, afterpay?.pricePercent ?? 0) * quantity;
+  const zipTotalMinor = methodPriceMinor(unitMinor, zip?.pricePercent ?? 0) * quantity;
+  const afterpayAvailable = inStock && isAfterpayPayable(afterpay, afterpayTotalMinor);
+  const zipAvailable = inStock && isZipPayable(zip, zipTotalMinor);
+  const formatAud = (minor: number) =>
+    new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(minor / 100);
 
   // Card purchases go through the cart (several products, one warehouse);
   // "Pay in 4" stays a single-product Afterpay checkout.
@@ -315,6 +321,12 @@ export function ProductCard({
               </button>
             ) : null}
           </div>
+          {afterpayAvailable && afterpayTotalMinor !== totalMinor ? (
+            <p className="mt-2 text-right font-dm-sans text-[11px] text-warm-gray">Afterpay price {formatAud(afterpayTotalMinor)}</p>
+          ) : null}
+          {zipAvailable && zipTotalMinor !== totalMinor ? (
+            <p className="mt-1 text-right font-dm-sans text-[11px] text-warm-gray">Zip price {formatAud(zipTotalMinor)}</p>
+          ) : null}
         </div>
       </div>
     </article>
