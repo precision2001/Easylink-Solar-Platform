@@ -15,6 +15,9 @@ import type { PipelineLead, RoofDesignSummary } from "@/lib/admin/leads-pipeline
  */
 export const AUTO_DESIGN_FROM = new Date("2026-11-05T00:00:00+11:00");
 
+/** Designs made before this came from an earlier server copy of the steps; they are redone. */
+export const PLATFORM_PIPELINE_FROM = new Date("2026-11-05T19:30:00+11:00");
+
 export function autoDesignEligible(lead: Pick<PipelineLead, "createdAt">): boolean {
   const t = new Date(lead.createdAt).getTime();
   return Number.isFinite(t) && t >= AUTO_DESIGN_FROM.getTime();
@@ -24,8 +27,9 @@ export function roofDesignNeeded(lead: Pick<PipelineLead, "address" | "roofDesig
   const address = lead.address?.trim();
   if (!address) return false;
   const d = lead.roofDesign;
-  // Not designed yet, or the address has changed since.
-  return !d || d.address.trim() !== address;
+  // Not designed yet, the address has changed since, or designed before the
+  // designer followed the Design Platform's steps exactly (5 Nov, evening).
+  return !d || d.address.trim() !== address || new Date(d.updatedAt).getTime() < PLATFORM_PIPELINE_FROM.getTime();
 }
 
 export async function requestRoofDesign(leadId: string): Promise<RoofDesignSummary> {

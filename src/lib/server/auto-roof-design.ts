@@ -7,9 +7,10 @@ import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
-import { findRoofObstructions } from "@/lib/designer/roofObstructions";
+import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
 import { keepPanelsClear, panelCornersLatLng } from "@/lib/designer/panelClearance";
-import { bestSquareRoof } from "@/lib/designer/squareRoof";
+import { bestSquareRoof, rankSquareReadings } from "@/lib/designer/squareRoof";
+import { extractRoofOutlinesFromMask } from "@/utils/roofMaskContour";
 import { DESIGN_RULES, roofPitchDegrees } from "@/lib/designer/designRules";
 import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
 
@@ -121,53 +122,179 @@ type Design = {
   obstructions: LatLng[][];
   panels: SolarPanel[];
   orientation: "PORTRAIT" | "LANDSCAPE";
+  dims: { heightM: number; widthM: number };
+  /** The roof came from Google's mask or building box, not a traced roof (the page's "check the roof" flag). */
+  needsVerification: boolean;
 };
 
-function design(snap: RoofSnapshotAnalysis, estimate: SolarEstimateResult | undefined, dsm: GeoTiffRaster | null, mask: GeoTiffRaster | null): Design | null {
-  const segments = estimate && !estimate.estimated ? estimate.roofSegments : null;
-  const bestSq = bestSquareRoof(snap.squared, segments, snap.luma);
-  const outline = bestSq
-    ? [bestSq.ring]
-    : regularizeRoofOutlines(regularizeRoofOutlines(snap.outlines.map((o) => o.ring)).map((r) => fitEavesToMask(r, snap.mask).ring));
-  if (!outline.length || outline.every((r) => r.length < 3)) return null;
+/*
+ * Everything below follows DesignsSolarPanelStepContent step for step, with
+ * the same library calls; the page's own private helpers are copied here
+ * unchanged (clip to the lot, area, de-duplicate) so the Design Platform's
+ * file is never edited for this.
+ */
+const MIN_MASK_COVERAGE_FRACTION = 0.5; // page: MIN_MASK_COVERAGE_FRACTION
+const MAX_BOUNDING_BOX_DISTANCE_M = 80; // page: MAX_BOUNDING_BOX_DISTANCE_M
 
-  const hip = bestSq?.faces ?? null;
-  const detected = hip ? null : detectRoofFaces(dsm, outline, mask);
-  let faces: { ring: LatLng[]; eaveDeg: number; pitchDeg?: number; azimuthDeg?: number }[] = hip
-    ? hip
-    : detected
-      ? (() => {
-          const rings = regularizeRoofOutlines(detected.map((f) => f.ring));
-          return detected.map((f, i) => ({ ring: rings[i], eaveDeg: f.eaveDeg, pitchDeg: f.pitchDeg, azimuthDeg: f.azimuthDeg }));
-        })()
-      : splitRoofsIntoFaces(outline).map((f) => ({ ring: f.ring, eaveDeg: f.eaveDeg }));
-  if (detected) faces = fillFacesOnRoofs(faces, outline, snap.mask, snap.metresPerPixel);
-  const corrected = hip ? { faces: hip } : correctInteriorLines(faces, outline, snap.luma);
-  const faceRings = corrected.faces.map((f) => f.ring);
+function ringSignedArea(ring: LatLng[]): number {
+  let sum = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    sum += a.lng * b.lat - b.lng * a.lat;
+  }
+  return sum / 2;
+}
 
-  const largest = outline.reduce((b, r) => (ringAreaM2(r) > ringAreaM2(b) ? r : b), outline[0]);
-  const axis = longestEdgeAngleDegrees(largest);
-  const obstructions = findRoofObstructions(snap.luma, faceRings).map((o) => o.ring);
+function clipRingToConvexPolygon(subject: LatLng[], clip: LatLng[]): LatLng[] {
+  if (subject.length < 3 || clip.length < 3) return [];
+  const ccw = ringSignedArea(clip) > 0;
+  const inside = (p: LatLng, a: LatLng, b: LatLng) => {
+    const cross = (b.lng - a.lng) * (p.lat - a.lat) - (b.lat - a.lat) * (p.lng - a.lng);
+    return ccw ? cross >= 0 : cross <= 0;
+  };
+  const intersection = (p1: LatLng, p2: LatLng, a: LatLng, b: LatLng): LatLng => {
+    const denom = (p1.lng - p2.lng) * (a.lat - b.lat) - (p1.lat - p2.lat) * (a.lng - b.lng);
+    if (Math.abs(denom) < 1e-15) return p2;
+    const t = ((p1.lng - a.lng) * (a.lat - b.lat) - (p1.lat - a.lat) * (a.lng - b.lng)) / denom;
+    return { lng: p1.lng + t * (p2.lng - p1.lng), lat: p1.lat + t * (p2.lat - p1.lat) };
+  };
+  let output = subject;
+  for (let i = 0; i < clip.length; i++) {
+    if (output.length === 0) break;
+    const a = clip[i], b = clip[(i + 1) % clip.length];
+    const input = output;
+    output = [];
+    for (let j = 0; j < input.length; j++) {
+      const curr = input[j], prev = input[(j - 1 + input.length) % input.length];
+      const currIn = inside(curr, a, b), prevIn = inside(prev, a, b);
+      if (currIn) {
+        if (!prevIn) output.push(intersection(prev, curr, a, b));
+        output.push(curr);
+      } else if (prevIn) output.push(intersection(prev, curr, a, b));
+    }
+  }
+  return output;
+}
+
+function dedupeSolarPanels(panels: SolarPanel[]): SolarPanel[] {
+  const seen = new Set<string>();
+  return panels.filter((p) => {
+    const k = [p.segmentIndex, p.center.lat.toFixed(7), p.center.lng.toFixed(7), p.orientation, (p.rotationDegrees ?? 0).toFixed(2)].join(":");
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function distanceM(a: LatLng, b: LatLng): number {
+  const dLat = (b.lat - a.lat) * 111_320, dLng = (b.lng - a.lng) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
+  return Math.sqrt(dLat * dLat + dLng * dLng);
+}
+
+/** Page: `snapshotOutlines` — the roof as traced in the zoomed image. */
+function snapshotOutlines(snap: RoofSnapshotAnalysis | null, estimate: SolarEstimateResult | undefined): LatLng[][] | null {
+  const found = snap?.outlines;
+  if (!snap || !found || found.length === 0) return null;
+  const sq = !estimate?.estimated ? bestSquareRoof(snap.squared, estimate?.roofSegments, snap.luma ?? null) : null;
+  if (sq) return [sq.ring];
+  const straight = regularizeRoofOutlines(found.map((o) => o.ring));
+  return regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, snap.mask).ring));
+}
+
+/** Page: `initialRoofPolygons` (snapshot, else Google's mask on the lot, else Google's building box). */
+function initialRoofs(
+  snap: RoofSnapshotAnalysis | null,
+  estimate: SolarEstimateResult | undefined,
+  mask: GeoTiffRaster | null,
+  parcel: LatLng[] | null,
+  pin: LatLng,
+): { rings: LatLng[][]; traced: boolean } | null {
+  const fromSnap = snapshotOutlines(snap, estimate);
+  if (fromSnap) return { rings: fromSnap, traced: true };
+  if (mask) {
+    const traced = extractRoofOutlinesFromMask(mask);
+    if (traced.length) {
+      let rings = traced.map((o) => o.ring);
+      if (parcel) {
+        const clipped = rings.map((r) => clipRingToConvexPolygon(r, parcel)).filter((r) => r.length >= 3 && ringAreaM2(r) >= 4);
+        if (clipped.length) rings = clipped;
+      }
+      const whole = estimate?.wholeRoofAreaM2;
+      const covers = !whole || traced.reduce((s, o) => s + o.areaM2, 0) >= whole * MIN_MASK_COVERAGE_FRACTION;
+      if (covers) return { rings, traced: true };
+    }
+  }
+  const box = estimate?.boundingBox;
+  if (box && distanceM(pin, { lat: (box.ne.lat + box.sw.lat) / 2, lng: (box.ne.lng + box.sw.lng) / 2 }) <= MAX_BOUNDING_BOX_DISTANCE_M) {
+    return {
+      rings: [[{ lat: box.ne.lat, lng: box.sw.lng }, { lat: box.ne.lat, lng: box.ne.lng }, { lat: box.sw.lat, lng: box.ne.lng }, { lat: box.sw.lat, lng: box.sw.lng }]],
+      traced: false,
+    };
+  }
+  return null;
+}
+
+function design(
+  snap: RoofSnapshotAnalysis | null,
+  estimate: SolarEstimateResult | undefined,
+  dsm: GeoTiffRaster | null,
+  mask: GeoTiffRaster | null,
+  parcel: LatLng[] | null,
+  pin: LatLng,
+): Design | null {
+  const initial = initialRoofs(snap, estimate, mask, parcel, pin);
+  if (!initial) return null;
+
+  // Page: handleSave — roof-line rule, then eaves fitted to the roof edge
+  // unless Google confirms a square-walled hip roof.
+  const lineMask = snap?.mask ?? mask;
+  const lineLuma = snap?.luma ?? null;
+  const straightened = regularizeRoofOutlines(initial.rings.filter((p) => p.length >= 3));
+  const squareConfirmed =
+    straightened.length === 1 && !estimate?.estimated && rankSquareReadings([straightened[0]], estimate?.roofSegments, lineLuma).length > 0;
+  const paths = lineMask && !squareConfirmed
+    ? regularizeRoofOutlines(straightened.map((ring) => fitEavesToMask(ring, lineMask).ring))
+    : straightened;
+  if (!paths.length) return null;
+
+  // Page: facesFor (no Relook).
+  let faces: { ring: LatLng[]; eaveDeg: number; pitchDeg?: number; azimuthDeg?: number }[];
+  let obstructions: RoofObstruction[];
+  const reading = paths.length === 1 && !estimate?.estimated ? rankSquareReadings([paths[0]], estimate?.roofSegments, lineLuma, {})[0] : undefined;
+  if (reading) {
+    faces = reading.faces;
+    obstructions = snap ? findRoofObstructions(snap.luma, reading.faces.map((f) => f.ring)) : [];
+  } else {
+    const detected = detectRoofFaces(dsm, paths, mask);
+    if (detected && detected.length > 0) {
+      const rings = regularizeRoofOutlines(detected.map((f) => f.ring));
+      faces = detected.map((f, i) => ({ ring: rings[i], eaveDeg: f.eaveDeg, pitchDeg: f.pitchDeg, azimuthDeg: f.azimuthDeg }));
+      if (snap) faces = fillFacesOnRoofs(faces, paths, snap.mask, snap.metresPerPixel);
+    } else {
+      faces = splitRoofsIntoFaces(paths).map((f) => ({ ring: f.ring, eaveDeg: f.eaveDeg }));
+    }
+    faces = correctInteriorLines(faces, paths, lineLuma).faces;
+    obstructions = snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)) : [];
+  }
+
+  // Page: layoutPanels — the design's default orientation, Google's panel
+  // size, the roof pitch, rows along the largest roof's main walls.
+  const dims = estimate?.panelDimensions ?? AUTO_PANEL.dims;
+  const orientation = DESIGN_RULES.defaultOrientation;
+  const largest = paths.reduce<LatLng[] | null>((best, p) => (p.length >= 3 && (!best || ringAreaM2(p) > ringAreaM2(best)) ? p : best), null);
+  const axis = largest ? longestEdgeAngleDegrees(largest) : undefined;
   const pitchDeg = roofPitchDegrees(estimate?.roofSegments, estimate?.estimated ?? true);
+  const packed = generatePanelsForFaces(faces, dims, { orientation, pitchDeg, obstructions: obstructions.map((o) => o.ring) }, axis);
+  const panels = dedupeSolarPanels(keepPanelsClear(packed, faces.map((f) => f.ring), paths, dims, { clearM: DESIGN_RULES.edgeSetbackM }));
 
-  // One orientation for the whole roof: whichever fits more panels.
-  const pack = (orientation: "PORTRAIT" | "LANDSCAPE") =>
-    keepPanelsClear(
-      generatePanelsForFaces(corrected.faces, AUTO_PANEL.dims, { orientation, pitchDeg, obstructions }, axis),
-      faceRings,
-      outline,
-      AUTO_PANEL.dims,
-      { clearM: DESIGN_RULES.edgeSetbackM },
-    );
-  const portrait = pack("PORTRAIT");
-  const landscape = pack("LANDSCAPE");
-  const useLandscape = landscape.length >= portrait.length;
   return {
-    outline,
-    faces: faceRings,
-    obstructions,
-    panels: useLandscape ? landscape : portrait,
-    orientation: useLandscape ? "LANDSCAPE" : "PORTRAIT",
+    outline: paths,
+    faces: faces.map((f) => f.ring),
+    obstructions: obstructions.map((o) => o.ring),
+    panels,
+    orientation,
+    dims,
+    needsVerification: !initial.traced,
   };
 }
 
@@ -175,7 +302,7 @@ const pts = (geo: SnapshotGeo, ring: LatLng[]) => ring.map((p) => toPx(geo, p).m
 
 /** Faces, obstructions and panels drawn over the satellite image, cropped to the roof. */
 async function render(png: Buffer, geo: SnapshotGeo, d: Design, mpp: number): Promise<{ thumb: Buffer; large: Buffer }> {
-  const panelPolys = d.panels.map((p) => panelCornersLatLng(p, AUTO_PANEL.dims));
+  const panelPolys = d.panels.map((p) => panelCornersLatLng(p, d.dims));
   const stroke = Math.max(2, Math.round(geo.widthPx / 640));
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${geo.widthPx}" height="${geo.heightPx}">
   ${d.faces.map((r) => `<polygon points="${pts(geo, r)}" fill="rgba(255,232,102,0.10)" stroke="#FFC21A" stroke-width="${stroke}" stroke-linejoin="round"/>`).join("")}
@@ -209,33 +336,42 @@ async function render(png: Buffer, geo: SnapshotGeo, d: Design, mpp: number): Pr
 
 export async function runAutoRoofDesign(inputs: RoofDesignInputs): Promise<AutoRoofDesign> {
   if (!inputs.located || !inputs.pin) return { status: "NO_ADDRESS", message: "Couldn't find this address on the map." };
-  const { lat, lng } = inputs.pin;
+  const pin = inputs.pin;
   const [mask, dsm] = await Promise.all([raster(inputs.maskBase64), raster(inputs.dsmBase64)]);
   const parcel = inputs.parcel && inputs.parcel.length >= 3 ? inputs.parcel : null;
 
-  // Zoom 21 first (~3 cm pixels); a roof too big for that frame is retried at 20 — as on the Designs page.
+  // Page: useRoofSnapshot — zoom 21 first (~3 cm pixels), retried at 20 for a roof too big for the frame.
+  let snap: Awaited<ReturnType<typeof snapshot>> | null = null;
+  let analysis: RoofSnapshotAnalysis | null = null;
   for (const zoom of [ROOF_SNAPSHOT.zoom, ROOF_SNAPSHOT.zoom - 1]) {
-    const snap = await snapshot(lat, lng, zoom);
-    const analysis = analyseRoofSnapshot(snap.rgba, snap.geo, { pin: { lat, lng }, hint: mask, dsm, parcel });
-    if (!analysis) continue;
-    const d = design(analysis, inputs.estimate, dsm, mask);
-    if (!d) continue;
-    const { thumb, large } = await render(snap.png, snap.geo, d, analysis.metresPerPixel);
-    const panelCount = d.panels.length;
-    return {
-      status: "READY",
-      lat,
-      lng,
-      panelCount,
-      panelWatts: AUTO_PANEL.watts,
-      systemKw: Math.round(((panelCount * AUTO_PANEL.watts) / 1000) * 100) / 100,
-      orientation: d.orientation,
-      faceCount: d.faces.length,
-      roofAreaM2: Math.round(d.outline.reduce((s, r) => s + ringAreaM2(r), 0)),
-      thumb,
-      large,
-      message: panelCount === 0 ? "Roof found, but no face is big enough for a panel." : null,
-    };
+    snap = await snapshot(pin.lat, pin.lng, zoom);
+    analysis = analyseRoofSnapshot(snap.rgba, snap.geo, { pin, hint: mask, dsm, parcel });
+    if (analysis) break;
   }
-  return { status: "NO_ROOF", lat, lng, message: "Couldn't find a roof at this address in the satellite image." };
+  if (!snap) return { status: "NO_ROOF", lat: pin.lat, lng: pin.lng, message: "Couldn't load the satellite image." };
+  // Draw on the zoom-21 frame when the roof was traced there, else whichever frame was analysed last.
+  const d = design(analysis, inputs.estimate, dsm, mask, parcel, pin);
+  if (!d) return { status: "NO_ROOF", lat: pin.lat, lng: pin.lng, message: "Couldn't find a roof at this address in the satellite image." };
+
+  const mpp = analysis?.metresPerPixel ?? (156543.03392 * Math.cos((pin.lat * Math.PI) / 180)) / 2 ** snap.geo.zoom / snap.geo.scale;
+  const { thumb, large } = await render(snap.png, snap.geo, d, mpp);
+  const panelCount = d.panels.length;
+  const notes = [
+    d.needsVerification ? "Roof outline from Google's data, not traced from the image: check the roof shape." : null,
+    panelCount === 0 ? "Roof found, but no face is big enough for a panel." : null,
+  ].filter(Boolean);
+  return {
+    status: "READY",
+    lat: pin.lat,
+    lng: pin.lng,
+    panelCount,
+    panelWatts: AUTO_PANEL.watts,
+    systemKw: Math.round(((panelCount * AUTO_PANEL.watts) / 1000) * 100) / 100,
+    orientation: d.orientation,
+    faceCount: d.faces.length,
+    roofAreaM2: Math.round(d.outline.reduce((s, r) => s + ringAreaM2(r), 0)),
+    thumb,
+    large,
+    message: notes.length ? notes.join(" ") : null,
+  };
 }
