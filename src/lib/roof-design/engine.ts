@@ -33,6 +33,8 @@ import {
   boxCentre,
   boxToRing,
   clipRingToBox,
+  convexHull,
+  pointInRing,
   clipRingToConvexPolygon,
   dedupePanels,
   distanceM,
@@ -80,6 +82,14 @@ export const ROOF_DESIGN_LIMITS = {
   maxFootprintGoogleDisagreementM: 40,
   /** A clip that keeps less than this share of the lot is a misalignment, not a trim. */
   minClipCoverage: 0.35,
+  /**
+   * The land lot found for the pin holds less than this share of Google's
+   * building for the address: the property is more than that one lot (a house
+   * built across two lots — 264 Wangee Rd, Greenacre), so the lot is widened
+   * to take in the building. A terrace's lot holds most of its own house
+   * (24 Derwent St: 78%), so terraces keep their lot.
+   */
+  minLotBuildingShare: 0.6,
   /** Relook accepts readings a little looser than the automatic design. */
   relook: { maxShareDiff: 0.15, minSeen: 0.2 },
 } as const;
@@ -90,6 +100,35 @@ export const DEFAULT_PANEL = { watts: 440, dims: { heightM: 1.762, widthM: 1.134
 const lineLumaOf = (ctx: RoofDesignContext) => ctx.snapshot?.luma ?? ctx.rgbLuma ?? null;
 const lineMaskOf = (ctx: RoofDesignContext) => ctx.snapshot?.mask ?? ctx.mask ?? null;
 const realSegments = (ctx: RoofDesignContext) => (ctx.estimate && !ctx.estimate.estimated ? ctx.estimate.roofSegments : undefined);
+
+/* ── Step 0: the land the design may use ─────────────────────────── */
+
+export type DesignLot = { ring: LatLngRing; areaM2: number; extended: boolean };
+
+/**
+ * The lot that keeps the roof finder off the neighbours' roofs. The cadastre
+ * returns the one lot under the pin; when Google's building for this address
+ * (its real roof segments, centred near the pin) lies mostly outside that
+ * lot, the property spans more than one lot, and the lot is widened to the
+ * building's extent (convex hull of the lot and the segments' boxes) — never
+ * cutting the house in half.
+ */
+export function lotForDesign(
+  lot: { ring: LatLngRing; areaM2: number } | null | undefined,
+  estimate: SolarEstimateResult | null | undefined,
+  pin?: LatLng,
+): DesignLot | null {
+  if (!lot || lot.ring.length < 3) return null;
+  const segs = estimate && !estimate.estimated ? estimate.roofSegments : undefined;
+  const total = segs?.reduce((s, g) => s + g.areaM2, 0) ?? 0;
+  if (!segs || total <= 0) return { ...lot, extended: false };
+  if (pin && distanceM(pin, estimate!.center) > 15) return { ...lot, extended: false };
+  const inside = segs.filter((g) => pointInRing(g.center, lot.ring)).reduce((s, g) => s + g.areaM2, 0);
+  if (inside / total >= ROOF_DESIGN_LIMITS.minLotBuildingShare) return { ...lot, extended: false };
+  const corners = segs.flatMap((g) => (g.boundingBox ? boxToRing(g.boundingBox) : [g.center]));
+  const ring = convexHull([...lot.ring, ...corners]);
+  return { ring, areaM2: ringAreaM2(ring), extended: true };
+}
 
 /* ── Step 1: the starting roof outline ──────────────────────────────── */
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestAvailableRoofs, designRoof, initialRoofs, type RoofDesignContext } from "./engine";
+import { bestAvailableRoofs, designRoof, initialRoofs, lotForDesign, type RoofDesignContext } from "./engine";
 import { panelCorners, ringAreaM2 } from "./geometry";
 
 const lat0 = -33.78;
@@ -52,5 +52,31 @@ describe("designRoof", () => {
   it("picks the orientation that fits more when asked for the best", () => {
     const d = designRoof({ pin }, { outline: [rect(0, 0, 14, 9)], orientation: "best" })!;
     expect(d.panels.length).toBe(Math.max(d.counts.PORTRAIT, d.counts.LANDSCAPE));
+  });
+});
+
+describe("lotForDesign", () => {
+  const seg = (x: number, y: number, areaM2: number) => ({
+    pitchDegrees: 20,
+    azimuthDegrees: 0,
+    areaM2,
+    center: ll(x, y),
+    boundingBox: { sw: ll(x - 3, y - 3), ne: ll(x + 3, y + 3) },
+  });
+  const est = (segs: ReturnType<typeof seg>[]) =>
+    ({ estimated: false, center: ll(8, 10), roofSegments: segs }) as unknown as Parameters<typeof lotForDesign>[1];
+
+  it("widens a lot that holds only part of the house (264 Wangee Rd, Greenacre)", () => {
+    const lot = { ring: rect(0, 0, 9, 30), areaM2: 270 };
+    const r = lotForDesign(lot, est([seg(4, 10, 40), seg(12, 10, 40), seg(13, 16, 30)]), ll(8, 10))!;
+    expect(r.extended).toBe(true);
+    expect(r.areaM2).toBeGreaterThan(270);
+  });
+
+  it("keeps a lot that holds most of the house (a terrace)", () => {
+    const lot = { ring: rect(0, 0, 9, 30), areaM2: 270 };
+    const r = lotForDesign(lot, est([seg(4, 10, 60), seg(4, 16, 30), seg(12, 10, 20)]), ll(8, 10))!;
+    expect(r.extended).toBe(false);
+    expect(r.ring).toBe(lot.ring);
   });
 });

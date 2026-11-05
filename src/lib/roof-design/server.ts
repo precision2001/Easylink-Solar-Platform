@@ -13,7 +13,7 @@ import { parseGeoTiffDsm, type GeoTiffRaster } from "@/utils/geotiff";
 import { analyseRoofSnapshot, ROOF_SNAPSHOT, snapshotMetresPerPixel, type RoofSnapshotAnalysis, type SnapshotGeo } from "@/lib/designer/roofSnapshot";
 import { buildBackendUrl, unwrapApiData } from "@/lib/customers/backend";
 import type { SolarEstimateResult } from "@/types/solar";
-import { designRoof, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
+import { designRoof, lotForDesign, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
 import { panelCorners, ringAreaM2, type LatLng, type LatLngRing } from "./geometry";
 
 /* ── Satellite image ────────────────────────────────────────────────── */
@@ -199,6 +199,7 @@ export async function loadRoofContext(
     if (footprint?.ring && footprint.ring.length >= 3) ctx.footprint = footprint.ring;
     const layer = (u?: string) => (u ? getBytes(url(`/solar/geotiff-proxy?url=${encodeURIComponent(u)}`)).then(parseRaster) : Promise.resolve(null));
     [ctx.mask, ctx.dsm] = await Promise.all([layer(combined?.dataLayers?.maskUrl), layer(combined?.dataLayers?.dsmUrl)]);
+    ctx.parcel = lotForDesign(ctx.parcel, ctx.estimate, pin);
     return ctx;
   }
   const key = source.key;
@@ -212,6 +213,7 @@ export async function loadRoofContext(
   if (insights) ctx.estimate = estimateFromGoogleInsights(insights as GoogleInsights);
   const layer = (u?: string) => (u ? getBytes(`${u}&key=${key}`).then(parseRaster) : Promise.resolve(null));
   [ctx.mask, ctx.dsm] = await Promise.all([layer(layers?.maskUrl), layer(layers?.dsmUrl)]);
+  ctx.parcel = lotForDesign(ctx.parcel, ctx.estimate, pin);
   return ctx;
 }
 
@@ -294,6 +296,8 @@ export async function designRoofAt(
   } = {},
 ): Promise<DesignRoofAtResult> {
   const context = opts.context ?? (await loadRoofContext(pin, opts.source === undefined ? defaultDataSource() : opts.source));
+  // The lot may not hold the whole house (a property over two lots): widen it first.
+  context.parcel = lotForDesign(context.parcel, context.estimate, pin);
   let image: Snapshot | null = null;
   if (!context.snapshot) {
     try {

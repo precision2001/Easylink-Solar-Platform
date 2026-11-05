@@ -180,3 +180,33 @@ export function dedupePanels(panels: SolarPanel[]): SolarPanel[] {
     return true;
   });
 }
+
+/** Point-in-ring test (lat/lng treated as planar; fine at lot scale). */
+export function pointInRing(p: LatLng, ring: LatLngRing): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if (a.lat > p.lat !== b.lat > p.lat && p.lng < ((b.lng - a.lng) * (p.lat - a.lat)) / (b.lat - a.lat) + a.lng) inside = !inside;
+  }
+  return inside;
+}
+
+/** Convex hull of points (Andrew's monotone chain), counter-clockwise. */
+export function convexHull(points: LatLng[]): LatLngRing {
+  const pts = [...points].sort((a, b) => a.lng - b.lng || a.lat - b.lat);
+  if (pts.length < 3) return pts;
+  const cross = (o: LatLng, a: LatLng, b: LatLng) => (a.lng - o.lng) * (b.lat - o.lat) - (a.lat - o.lat) * (b.lng - o.lng);
+  const lower: LatLng[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: LatLng[] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}

@@ -194,6 +194,27 @@ Who uses it:
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-11-05: 264 Wangee Rd, Greenacre (house built across two lots): east faces missed
+1. **Seen:** the live design drew only the western strip of the roof; the
+   whole east face and most of the south and north faces were missing.
+2. **Why:** the NSW cadastre returns the one lot under the pin (Lot 2110
+   DP1092512, 307 m²). The house stands across that lot and the next, so 60%
+   of Google's building for the address lay outside it. The roof finder keeps
+   to the lot (to stay off neighbours' roofs), so it cut the house in half.
+3. **Fix (engine, `lotForDesign`):** when the lot holds less than 60% of
+   Google's building for the pin (real segments, building centred within 15 m
+   of the pin), the property is more than that lot: the lot is widened to the
+   convex hull of the lot and Google's segment boxes. Terraces keep their lot
+   (24 Derwent St's lot holds 78% of its house; every other test roof 94–100%).
+   Used by the Designs page, Quotes & Leads and the API alike.
+4. **Result:** the whole roof is found, with all 5 faces from the height model,
+   and 86 portrait / 99 landscape panels fit, where the clipped roof gave
+   45 / 47.
+5. **Still open on this roof:** existing panels on the west and north faces
+   are only partly packed around. The north wing's ridge is not drawn as a
+   face border, and the rear skillion lines are not straight (height-model
+   faces).
+
 ### 2026-11-05: One roof-design code base for every module
 1. **Owner's request:** "Build code base for roof design that is accessible by
    other modules (internal and external) to avoid duplication of code and

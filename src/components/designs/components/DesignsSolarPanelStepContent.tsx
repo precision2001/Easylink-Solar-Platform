@@ -35,6 +35,7 @@ import {
   confirmRoofOutlines,
   findRoofFaces,
   layoutRoofPanels,
+  lotForDesign,
   panelCorners as roofPanelCorners,
   relookReadings,
   ringAreaM2,
@@ -405,12 +406,18 @@ export const DesignsSolarPanelStepContent = forwardRef<
    * found by its colour and traced (see roofSnapshot.ts). Its mask fits the
    * eaves and its brightness finds the hips, ridges and valleys.
    */
-  // The land lot keeps the roof finder off the neighbours' roofs; wait for it.
-  const parcelRing = cadastralParcel.data?.ring ?? null;
+  // The land lot keeps the roof finder off the neighbours' roofs; wait for
+  // it, and for Google's building, which widens a lot that doesn't hold the
+  // whole house (a property over two lots — the engine's `lotForDesign`).
+  const designLot = useMemo(
+    () => (cadastralParcel.loading || loading ? null : lotForDesign(cadastralParcel.data, data, selectedLocation ?? undefined)),
+    [cadastralParcel.data, cadastralParcel.loading, data, loading, selectedLocation],
+  );
+  const parcelRing = designLot?.ring ?? null;
   const roofSnapshot = useRoofSnapshot(
     selectedLocation ?? null,
     maskRaster,
-    layersLoading || cadastralParcel.loading,
+    layersLoading || cadastralParcel.loading || loading,
     dsmRaster,
     parcelRing,
   );
@@ -429,11 +436,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
       mask: maskRaster,
       dsm: dsmRaster ?? null,
       rgbLuma: rgbOverlay?.luma ?? null,
-      parcel: cadastralParcel.data ? { ring: cadastralParcel.data.ring, areaM2: cadastralParcel.data.areaM2 } : null,
+      parcel: designLot,
       parcelBounds,
       footprint: footprint.data?.ring ?? null,
     };
-  }, [selectedLocation, data, roofSnapshot.analysis, maskRaster, dsmRaster, rgbOverlay?.luma, cadastralParcel.data, parcelBounds, footprint.data?.ring]);
+  }, [selectedLocation, data, roofSnapshot.analysis, maskRaster, dsmRaster, rgbOverlay?.luma, designLot, parcelBounds, footprint.data?.ring]);
 
   /** Google's own bounding box, only when it's near the pin (on a vacant block Google snaps to a neighbour). */
   const boundingBoxNearPin = useMemo(() => (roofCtx ? engineBoundingBoxNearPin(roofCtx) ?? undefined : undefined), [roofCtx]);
