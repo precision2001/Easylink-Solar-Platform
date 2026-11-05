@@ -138,6 +138,14 @@ Every design, by hand or on the live page, whatever found the roof:
 
 ## Code base — one roof designer for the whole platform (`src/lib/roof-design`)
 
+**Rule (owner, 5 Nov 2026):** any portal or website, and every outside
+request, uses the Roof Designer to design its systems — installers,
+customers, operations, the website and outside websites. Pages call
+`requestRoofDesign()` (`@/lib/roof-design/client`) or the engine; outside
+websites and systems call `POST /api/roof-design` (`docs/ROOF_DESIGN_API.md`).
+No other code finds roofs, faces or panel layouts itself:
+`src/lib/roof-design/rule.test.ts` fails the build's tests if it does.
+
 Every module that designs a roof runs the same code, so a fix reaches all of
 them at once. Never copy a step into a page, route or script; call the engine.
 
@@ -176,6 +184,10 @@ Who uses it:
   for systems outside the platform, by API key.
 - `GET /api/solar/roof-lines-check` (localhost only) and
   `scripts/roof-design/live-pipeline.ts`: checks on real Google data.
+- The portals' Solar designer (installer, customer and operations;
+  `MasterDesignerBody`): "Find my roof" asks the Roof Designer for the
+  address and shows its drawing, faces and panel count; without it the
+  sample roof is marked as a sample.
 - The proposal drawing and the clearance check use `geometry.panelCorners`.
 
 ## Lessons log

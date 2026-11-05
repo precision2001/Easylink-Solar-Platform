@@ -7,7 +7,7 @@ import { designBatteryKwh, buildProposalDocument, type ProposalDocument, type Pr
 import { fetchProposalPricing, type ProposalPricingResponse } from "@/lib/proposal/proposalPricing";
 import { BATTERY_CAPACITY_OPTIONS, DEFAULT_PANEL_TIER_ID, PANEL_TIER_OPTIONS } from "@/lib/designs/proposalOptions";
 import type { DesignProposalState } from "@/lib/store/designProposalSlice";
-import { snapshotMetresPerPixel } from "@/lib/designer/roofSnapshot";
+import { snapshotMetresPerPixel } from "@/lib/roof-design";
 import { buildRoofDrawing, placeDriveway, toXY, type RoofDrawing, type XY } from "@/lib/proposal/roofGeometry";
 
 const LOGO_PATH = "/images/solarDesignLogo.png";

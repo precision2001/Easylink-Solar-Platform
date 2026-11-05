@@ -1,20 +1,29 @@
 # Roof-design API
 
-EasyLink's roof designer for systems outside the platform (CRMs, partner
-tools, internal services). It runs the same engine as the Designs page
-(`src/lib/roof-design`), so results match what a designer sees on screen.
+**Platform rule (5 Nov 2026):** installers, customers, operations, the
+website and outside websites get their system designs from the Roof
+Designer, and only from it. It runs the same engine as the Designs page
+(`src/lib/roof-design`), so every design follows the same rules and matches
+what a designer sees on screen.
 
-## Enable it
+## Who can call it
 
-Set one or more keys (at least 16 characters each, comma-separated) in the
-web server's environment and restart:
+| Caller | How | Limit |
+| --- | --- | --- |
+| The platform's own pages (installer, customer and operations portals, the website) | from the browser, same origin, no key — use `requestRoofDesign()` from `@/lib/roof-design/client` | 12 designs an hour per visitor |
+| Outside websites (browser) | origin listed in `ROOF_DESIGN_API_ORIGINS`, no key (CORS) | 12 designs an hour per visitor |
+| Outside systems (server to server) | `x-api-key` from `ROOF_DESIGN_API_KEYS` | 30 designs an hour per key |
+
+Set these in the web server's environment and restart:
 
 ```
-ROOF_DESIGN_API_KEYS=key-for-partner-a,key-for-crm
+ROOF_DESIGN_API_KEYS=key-for-partner-a,key-for-crm         # 16+ characters each
+ROOF_DESIGN_API_ORIGINS=https://partner.com.au,https://www.otherbrand.com.au
 ```
 
-Until a key is set the endpoint answers `503`. Each key may make 30 designs an
-hour (`429` with `Retry-After` beyond that). Remove a key to revoke it.
+Without keys, outside systems get `503`. Keys are secret: never put one in a
+web page; a website calling from the browser is listed in
+`ROOF_DESIGN_API_ORIGINS` instead. Remove a key or origin to revoke it.
 
 ## Request
 
@@ -46,7 +55,7 @@ Content-Type: application/json
   "obstructions": [{ "ring": […], "kind": "spot|step" }],
   "lines": { "total": 30, "checked": 30, "ok": 19 },
   "panels": { "orientation": "PORTRAIT", "count": 21, "counts": {"PORTRAIT":21,"LANDSCAPE":29}, "watts": 400, "dims": {…},
-              "items": [{ "center": {lat,lng}, "rotationDeg": 0, "slopeDeg": 26, "corners": [4 × {lat,lng}] }] },
+              "items": [{ "face": 0, "center": {lat,lng}, "rotationDeg": 0, "slopeDeg": 26, "corners": [4 × {lat,lng}] }] },
   "systemKw": 8.4, "roofPitchDeg": 26.1,
   "inverter": { … },                       // 200% DC:AC hybrid / 133% standard, 10 kW export per phase
   "notes": ["…"],
@@ -54,7 +63,7 @@ Content-Type: application/json
 }
 ```
 
-Errors: `400` bad body, `401` key, `422` address not found, `429` rate limit,
+Errors: `400` bad body, `401` key (or origin not listed), `422` address not found, `429` rate limit,
 `502` design failed, `503` API not enabled.
 
 The rules applied are in `docs/ROOF_DESIGN_PROCESS.md` (100 mm setback, one
@@ -63,7 +72,14 @@ against the image, obstructions packed around).
 
 ## From inside the platform
 
-Don't call the HTTP API from platform code; import the engine:
+Pages ask the Roof Designer through the client:
+
+```ts
+import { requestRoofDesign, panelsPerFace } from "@/lib/roof-design/client";
+const design = await requestRoofDesign({ address, orientation: "best", includeImage: true });
+```
+
+Server code imports the engine directly:
 
 ```ts
 import { designRoof, findRoofFaces, layoutRoofPanels } from "@/lib/roof-design";   // browser or Node

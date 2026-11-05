@@ -1,16 +1,23 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { createRateLimiter } from "@/lib/server/rate-limit";
+import { clientIpFrom, createRateLimiter, isSameOriginRequest } from "@/lib/server/rate-limit";
 import { panelCorners, type LatLng, type LatLngRing } from "@/lib/roof-design";
 import { designRoofAt, googleMapsKey, renderRoofDesign } from "@/lib/roof-design/server";
 
 /**
- * The roof-design API: EasyLink's roof designer for other systems (CRMs,
- * partner tools, internal services). Same engine and rules as the Designs
- * page. See docs/ROOF_DESIGN_API.md.
+ * The roof-design API — the one way installers, customers and outside
+ * websites get a system designed (platform rule, 5 Nov 2026). Same engine
+ * and rules as the Designs page. See docs/ROOF_DESIGN_API.md.
+ *
+ * Who may call:
+ *   - the platform's own pages (installer, customer and operations portals,
+ *     the website): same-origin, limited per visitor IP;
+ *   - outside websites listed in ROOF_DESIGN_API_ORIGINS, from the browser:
+ *     limited per visitor IP;
+ *   - outside systems, server to server: x-api-key from ROOF_DESIGN_API_KEYS,
+ *     limited per key.
  *
  *   POST /api/roof-design
- *   x-api-key: <key from ROOF_DESIGN_API_KEYS>
  *   { "address": "11 Melton St S, Auburn NSW 2144" }      or { "lat": -33.85, "lng": 151.03 }
  *   optional: "orientation": "PORTRAIT" | "LANDSCAPE" | "best", "beautify": true,
  *             "panelWatts": 440, "outline": [[{lat,lng},...]], "includeImage": true
@@ -20,6 +27,38 @@ export const maxDuration = 60;
 
 /** Per key: 30 designs an hour (each one costs Google Solar and Static Maps calls). */
 const limiter = createRateLimiter({ limit: 30, windowMs: 60 * 60 * 1000 });
+/** Per visitor (portal pages and listed websites): 12 designs an hour. */
+const visitorLimiter = createRateLimiter({ limit: 12, windowMs: 60 * 60 * 1000 });
+
+/** Outside websites allowed to call from the browser, e.g. "https://partner.com.au". */
+function allowedOrigins(): string[] {
+  return (process.env.ROOF_DESIGN_API_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/$/, "").toLowerCase())
+    .filter((o) => /^https?:\/\/[^/]+$/.test(o));
+}
+
+function listedOrigin(request: Request): string | null {
+  const origin = request.headers.get("origin")?.replace(/\/$/, "").toLowerCase();
+  return origin && allowedOrigins().includes(origin) ? origin : null;
+}
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  return origin
+    ? {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "content-type, x-api-key, authorization",
+        "Access-Control-Max-Age": "600",
+        Vary: "Origin",
+      }
+    : {};
+}
+
+export function OPTIONS(request: Request) {
+  const origin = listedOrigin(request);
+  return new NextResponse(null, { status: origin ? 204 : 403, headers: corsHeaders(origin) });
+}
 
 function configuredKeys(): string[] {
   return (process.env.ROOF_DESIGN_API_KEYS ?? "")
@@ -57,13 +96,28 @@ async function geocode(address: string): Promise<{ pin: LatLng; formattedAddress
 const fail = (status: number, message: string, headers?: Record<string, string>) => NextResponse.json({ message }, { status, headers });
 
 export async function POST(request: Request) {
-  const keys = configuredKeys();
-  if (keys.length === 0) return fail(503, "The roof-design API is not enabled on this server.");
+  const origin = listedOrigin(request);
+  const res = await handle(request, origin);
+  for (const [k, v] of Object.entries(corsHeaders(origin))) res.headers.set(k, v);
+  return res;
+}
+
+async function handle(request: Request, origin: string | null): Promise<NextResponse> {
   const given = request.headers.get("x-api-key") ?? request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  const keys = configuredKeys();
   const key = given ? keyMatches(given, keys) : null;
-  if (!key) return fail(401, "A valid x-api-key header is required.");
-  const rate = limiter.check(key);
-  if (!rate.allowed) return fail(429, "Too many roof designs for this key; try again later.", { "Retry-After": String(Math.ceil(rate.retryAfterMs / 1000)) });
+  if (key) {
+    const rate = limiter.check(key);
+    if (!rate.allowed) return fail(429, "Too many roof designs for this key; try again later.", { "Retry-After": String(Math.ceil(rate.retryAfterMs / 1000)) });
+  } else if (!given && (origin || isSameOriginRequest(request.headers, request.url))) {
+    // The platform's own pages, or a listed outside website, from the visitor's browser.
+    const rate = visitorLimiter.check(`ip:${clientIpFrom(request.headers)}`);
+    if (!rate.allowed) return fail(429, "Too many roof designs; try again later.", { "Retry-After": String(Math.ceil(rate.retryAfterMs / 1000)) });
+  } else if (keys.length === 0 && !given) {
+    return fail(503, "The roof-design API is not enabled on this server.");
+  } else {
+    return fail(401, "A valid x-api-key header is required.");
+  }
 
   let body: Record<string, unknown>;
   try {
@@ -116,7 +170,7 @@ export async function POST(request: Request) {
         counts: d.counts,
         watts: d.panelWatts,
         dims: d.dims,
-        items: d.panels.map((p) => ({ center: p.center, rotationDeg: p.rotationDegrees ?? 0, slopeDeg: p.slopeDegrees ?? 0, corners: panelCorners(p, d.dims) })),
+        items: d.panels.map((p) => ({ face: p.segmentIndex, center: p.center, rotationDeg: p.rotationDegrees ?? 0, slopeDeg: p.slopeDegrees ?? 0, corners: panelCorners(p, d.dims) })),
       },
       systemKw: d.systemKw,
       roofPitchDeg: d.pitchDeg,

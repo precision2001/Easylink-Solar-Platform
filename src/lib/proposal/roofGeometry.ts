@@ -5,10 +5,9 @@
  * Built from what the designer saved — the faces it packed on, the panels
  * where it placed them, the panel size — so each proposal draws its own roof.
  */
-import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import type { DesignProposalSolarDesign } from "@/lib/store/designProposalSlice";
 import type { SolarPanel } from "@/types/solar";
-import { panelCorners } from "@/lib/roof-design/geometry";
+import { panelCorners, standardHipFaces } from "@/lib/roof-design";
 
 type LatLng = { lat: number; lng: number };
 export type XY = { x: number; y: number };
@@ -84,7 +83,7 @@ export function buildRoofDrawing(sd: DesignProposalSolarDesign | null | undefine
   let faceRings: { ring: LatLng[]; azimuthDeg?: number }[] = (sd.roofFaces ?? []).filter((f) => f.ring.length >= 3);
   if (faceRings.length === 0 && outlines.length > 0) {
     try {
-      faceRings = splitRoofsIntoFaces(outlines).map((f) => ({ ring: f.ring }));
+      faceRings = standardHipFaces(outlines).map((f) => ({ ring: f.ring }));
     } catch {
       faceRings = [];
     }

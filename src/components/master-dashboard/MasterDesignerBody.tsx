@@ -28,6 +28,7 @@ import {
 } from "@/lib/designer/simulation";
 import { dcAcLimitLabel, dcAcLimitPercent } from "@/lib/designer/designRules";
 import { useProposalPricing } from "@/lib/proposal/useProposalPricing";
+import { panelsPerFace, requestRoofDesign, type RoofDesignResponse } from "@/lib/roof-design/client";
 
 /** Designer panel tiers → proposal tiers in the price book. */
 const DESIGNER_TIER: Record<string, string> = { std: "standard", prem: "premium", black: "allBlack" };
@@ -129,7 +130,50 @@ const TICK = "M20 6 9 17l-5-5";
 
 export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?: Role; start?: number }) {
   const d = useMemo(() => defaultsFor(role), [role]);
-  const p = useMemo(() => profileFor(role), [role]);
+  const sample = useMemo(() => profileFor(role), [role]);
+
+  /**
+   * The property's roof, designed by the Roof Designer (platform rule: every
+   * portal gets its designs from it). Until a roof is found the sample
+   * property is shown and marked as a sample.
+   */
+  const [address, setAddress] = useState(sample.address);
+  const [roof, setRoof] = useState<Extract<RoofDesignResponse, { status: "READY" }> | null>(null);
+  const [roofBusy, setRoofBusy] = useState(false);
+  const [roofError, setRoofError] = useState("");
+  const p = useMemo(() => {
+    if (!roof) return sample;
+    const perFace = panelsPerFace(roof);
+    const panelAreaM2 = roof.panels.dims.heightM * roof.panels.dims.widthM;
+    return {
+      ...sample,
+      address: roof.formattedAddress ?? address,
+      roofMax: roof.panels.count,
+      faces: perFace.map((f) => ({ n: f.name, max: f.panels, cols: Math.min(f.panels, 8) })),
+      usable: Math.round(roof.panels.count * panelAreaM2),
+      total: roof.outline.areaM2,
+    };
+  }, [address, roof, sample]);
+
+  const findRoof = async () => {
+    const a = address.trim();
+    if (a.length < 5 || roofBusy) return;
+    setRoofBusy(true);
+    setRoofError("");
+    try {
+      const r = await requestRoofDesign({ address: a, orientation: "best", includeImage: true });
+      if (r.status !== "READY") {
+        setRoofError(r.message);
+        return;
+      }
+      setRoof(r);
+      setStep(5);
+    } catch (e) {
+      setRoofError(e instanceof Error ? e.message : "Couldn't design this roof.");
+    } finally {
+      setRoofBusy(false);
+    }
+  };
 
   const [step, setStep] = useState(start);
   const [propType, setPropType] = useState("res");
@@ -509,6 +553,25 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
         <span className="block h-full" style={{ width: `${Math.round((step / 9) * 100)}%`, background: SUN_GRAD }} />
       </div>
 
+      {!roof && step >= 5 ? (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-[12px] px-3.5 py-2.5 text-[13px]"
+          style={{ background: NAVY_2, border: `1px solid ${SUN}`, color: NAV_TEXT }}
+        >
+          <span className="flex-1">
+            Sample roof. Designs come from the Roof Designer: enter the property address to design its roof.
+          </span>
+          <button
+            type="button"
+            onClick={() => set(() => setStep(4))}
+            className="h-9 cursor-pointer rounded-[10px] border-0 px-3.5 text-[13px] font-bold"
+            style={{ background: SUN_GRAD, color: SUN_INK }}
+          >
+            Design the roof
+          </button>
+        </div>
+      ) : null}
+
       {/* 1 · Welcome */}
       {step === 1 && (
         <div className="flex flex-wrap items-center gap-7 py-6">
@@ -752,20 +815,30 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             </label>
             <input
               id="addr"
-              defaultValue={p.address}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void findRoof();
+              }}
               autoComplete="street-address"
               className="h-[52px] min-w-0 flex-1 rounded-[14px] px-4 text-[16px] text-[#0F172A]"
               style={{ border: `2px solid ${SUNLIGHT}` }}
             />
             <button
               type="button"
-              onClick={() => set(() => setStep(5))}
-              className="h-[52px] cursor-pointer rounded-[14px] border-0 px-5 text-[15px] font-bold"
+              onClick={() => void findRoof()}
+              disabled={roofBusy}
+              className="h-[52px] cursor-pointer rounded-[14px] border-0 px-5 text-[15px] font-bold disabled:cursor-wait disabled:opacity-70"
               style={{ background: SUN_GRAD, color: SUN_INK }}
             >
-              Find my roof
+              {roofBusy ? "Designing the roof…" : "Find my roof"}
             </button>
           </div>
+          {roofError ? (
+            <p role="alert" className="m-0 text-center text-[13px]" style={{ color: "#FFB4A8" }}>
+              {roofError}
+            </p>
+          ) : null}
           <div
             role="img"
             aria-label="Satellite map centred on the property with a pin"
@@ -848,9 +921,9 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
           </p>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
             {[
-              ["Total roof area", `${p.total} m²`, "From the building outline"],
+              ["Total roof area", `${p.total} m²`, roof ? "Measured by the Roof Designer" : "Sample roof"],
               ["Usable roof area", `${p.usable} m²`, "After edges, vents and shade"],
-              ["Panels that can fit", String(p.roofMax), "440 W panels · the most, not the target"],
+              ["Panels that can fit", String(p.roofMax), `${roof?.panels.watts ?? 440} W panels · the most, not the target`],
             ].map(([l, v, s]) => (
               <div
                 key={l}
@@ -899,6 +972,21 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               Edit roof
             </button>
           </div>
+          {roof?.image ? (
+            // The Roof Designer's drawing: every face's border, obstructions and panels on the satellite image.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`data:${roof.image.contentType};base64,${roof.image.base64}`}
+              alt={`Roof Designer layout: ${roof.panels.count} panels on ${roof.faces.items.length} roof faces`}
+              className="mx-auto block max-h-[520px] w-full rounded-[18px] object-contain"
+              style={{ border: `1px solid ${NAVY_LINE}`, background: NAVY_2 }}
+            />
+          ) : null}
+          {roof?.notes.length ? (
+            <p className="m-0 rounded-[12px] px-3.5 py-2.5 text-[13px]" style={{ background: NAVY_2, color: SUNLIGHT }}>
+              {roof.notes.join(" ")}
+            </p>
+          ) : null}
           <div
             role="img"
             aria-label={`Roof outline with ${view === "panels" ? `${panelsShown} panels placed` : `${p.roofMax} possible panel spots`}`}

@@ -25,11 +25,7 @@ import { useBuildingFootprint } from "@/hooks/useBuildingFootprint";
 import { useCadastralParcel } from "@/hooks/useCadastralParcel";
 import { useRoofSnapshot } from "@/hooks/useRoofSnapshot";
 import type { GeoTiffOverlay } from "@/utils/geotiff";
-import type { LatLngRing } from "@/utils/roofMaskContour";
 import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
-import type { SquareReading } from "@/lib/designer/squareRoof";
-import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
-import type { LineCheck } from "@/lib/designer/roofLineCheck";
 import {
   bestAvailableRoofs,
   boundingBoxNearPin as engineBoundingBoxNearPin,
@@ -44,7 +40,11 @@ import {
   ringAreaM2,
   roofPitchOf,
   squareAround,
+  straightenOutlines,
   type LatLngBox,
+  type LatLngRing,
+  type LineCheck,
+  type SquareReading,
   type RoofDesignContext,
   type RoofFaceSet,
 } from "@/lib/roof-design";
@@ -1055,7 +1055,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     // walls (fitting it to the rough trace pushed 25 Gilbert St's east eave
     // onto the patio). The shared engine's `confirmRoofOutlines`.
     const drawn = getCurrentEditingPaths().filter((p) => p.length >= 3);
-    const validPaths = roofCtx ? confirmRoofOutlines(drawn, roofCtx) : regularizeRoofOutlines(drawn);
+    const validPaths = roofCtx ? confirmRoofOutlines(drawn, roofCtx) : straightenOutlines(drawn);
     setSavedRoofs(validPaths);
 
     if (validPaths.length === 0) {

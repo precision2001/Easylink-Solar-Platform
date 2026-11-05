@@ -1,0 +1,74 @@
+/**
+ * How the platform's pages (installer, customer and operations portals, the
+ * website) get a system designed: they ask the Roof Designer. Platform rule
+ * (5 Nov 2026): no page works out a roof or a panel count on its own.
+ */
+import type { LatLng, LatLngRing, PanelDims } from "./geometry";
+import type { InverterSizing, PanelOrientation } from "@/lib/designer/designRules";
+
+export type RoofDesignRequest = ({ address: string } | LatLng) & {
+  orientation?: PanelOrientation | "best";
+  beautify?: boolean;
+  panelWatts?: number;
+  outline?: LatLngRing[];
+  includeImage?: boolean;
+};
+
+export type RoofDesignFace = { ring: LatLngRing; pitchDeg: number | null; azimuthDeg: number | null };
+
+export type RoofDesignPanel = { center: LatLng; rotationDeg: number; slopeDeg: number; corners: LatLngRing; face: number };
+
+export type RoofDesignResponse =
+  | {
+      status: "READY";
+      pin: LatLng;
+      formattedAddress: string | null;
+      outline: { rings: LatLngRing[]; source: string; needsVerification: boolean; areaM2: number };
+      faces: { source: string; gables: number; items: RoofDesignFace[] };
+      obstructions: { ring: LatLngRing; kind: "spot" | "step" }[];
+      lines: { total: number; checked: number; ok: number };
+      panels: {
+        orientation: PanelOrientation;
+        count: number;
+        counts: Record<PanelOrientation, number>;
+        watts: number;
+        dims: PanelDims;
+        items: RoofDesignPanel[];
+      };
+      systemKw: number;
+      roofPitchDeg: number;
+      inverter: InverterSizing;
+      notes: string[];
+      image: { contentType: string; base64: string } | null;
+    }
+  | { status: "NO_ROOF"; pin: LatLng; formattedAddress: string | null; message: string };
+
+/** Ask the Roof Designer for a design. Throws with the API's message on failure. */
+export async function requestRoofDesign(req: RoofDesignRequest, init?: { signal?: AbortSignal; baseUrl?: string }): Promise<RoofDesignResponse> {
+  const res = await fetch(`${init?.baseUrl ?? ""}/api/roof-design`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+    signal: init?.signal,
+  });
+  const json = (await res.json().catch(() => ({}))) as RoofDesignResponse & { message?: string };
+  if (!res.ok) throw new Error(json.message ?? `Roof design failed (${res.status})`);
+  return json;
+}
+
+const COMPASS = ["North", "North-east", "East", "South-east", "South", "South-west", "West", "North-west"];
+
+/** "North", "South-west"… for a face's downslope direction. */
+export function compassName(azimuthDeg: number | null | undefined): string {
+  if (azimuthDeg == null || !Number.isFinite(azimuthDeg)) return "Roof";
+  return COMPASS[Math.round((((azimuthDeg % 360) + 360) % 360) / 45) % 8];
+}
+
+/** Panels on each face of a design, largest first, with the face's direction. */
+export function panelsPerFace(d: Extract<RoofDesignResponse, { status: "READY" }>): { name: string; azimuthDeg: number | null; panels: number }[] {
+  const counts = new Map<number, number>();
+  for (const p of d.panels.items) counts.set(p.face, (counts.get(p.face) ?? 0) + 1);
+  return [...counts.entries()]
+    .map(([i, n]) => ({ name: compassName(d.faces.items[i]?.azimuthDeg), azimuthDeg: d.faces.items[i]?.azimuthDeg ?? null, panels: n }))
+    .sort((a, b) => b.panels - a.panels);
+}
