@@ -80,7 +80,7 @@ export type RoofDesignContext = {
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-06.1";
+export const ROOF_ENGINE_VERSION = "2026-11-06.2";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -99,6 +99,8 @@ export const ROOF_DESIGN_LIMITS = {
    * (24 Derwent St: 78%), so terraces keep their lot.
    */
   minLotBuildingShare: 0.6,
+  /** How far Save may move an eave a person drew or edited, to snap it to the edge in the image. */
+  editSnapM: 0.3,
   /** A roof's lines count as determined when this share of their length is seen in the image (and Google agrees). */
   minSeenDetermined: 0.8,
   /** Relook accepts readings a little looser than the automatic design. */
@@ -622,7 +624,11 @@ export function confirmRoofOutlines(
   const lineMask = lineMaskOf(ctx);
   if (!lineMask) return straightened.map((r, i) => square[i] ?? r);
   const rest = straightened.filter((_, i) => !square[i]);
-  const fitted = rest.length ? regularizeRoofOutlines(rest.map((ring) => fitEavesToMask(ring, lineMask).ring)) : [];
+  // A person's edit: eaves only snapped to the image (≤ 0.3 m), never pushed
+  // back to where the customer moved them from (57 Harry Ave test: a north
+  // wall moved in 1.5 m came back out with the full fit).
+  const fitOpts = userEdit ? { maxShiftM: ROOF_DESIGN_LIMITS.editSnapM } : {};
+  const fitted = rest.length ? regularizeRoofOutlines(rest.map((ring) => fitEavesToMask(ring, lineMask, fitOpts).ring)) : [];
   let k = 0;
   return straightened.map((_, i) => square[i] ?? fitted[k++]);
 }

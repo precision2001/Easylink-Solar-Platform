@@ -186,8 +186,11 @@ Hard rules alongside the tests:
 - **Parallel loading**: the satellite image is fetched alongside Google's
   data, not after it.
 - **Edits win**: an outline drawn or edited by a person (Edit → Save, the
-  API's `outline`) is kept — corners squared (≤ 0.6 m) and eaves fitted, but
-  never replaced by another reading (`confirmRoofOutlines(…, { userEdit })`).
+  API's `outline`) is kept — corners squared (≤ 0.6 m) and eaves only snapped
+  to the edge in the image (≤ 0.3 m, `editSnapM`), never pushed back to where
+  the customer moved them from, and never replaced by another reading
+  (`confirmRoofOutlines(…, { userEdit })`). Tested live on 57 Harry Ave: a
+  north wall moved in 1.5 m stays moved (98 m² sent, 99 m² designed).
 
 ## Code base — one roof designer for the whole platform (`src/lib/roof-design`)
 
