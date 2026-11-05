@@ -157,8 +157,10 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
       pin,
       formattedAddress,
       outline: { rings: d.outline, source: d.outlineSource, needsVerification: d.needsVerification, areaM2: d.roofAreaM2 },
+      determined: d.determined,
       faces: {
         source: d.faceSet.source,
+        evidence: d.faceSet.evidence,
         gables: d.faceSet.gables,
         items: d.faceSet.faces.map((f) => ({ ring: f.ring, pitchDeg: f.pitchDeg ?? null, azimuthDeg: f.azimuthDeg ?? null })),
       },

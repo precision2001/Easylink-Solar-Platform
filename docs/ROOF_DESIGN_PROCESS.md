@@ -136,6 +136,35 @@ Every design, by hand or on the live page, whatever found the roof:
    (665 kW). The walkways also give access for maintenance and the wind
    edge zones that commercial roofs need.
 
+## Priority tests — how the Roof Designer chooses (owner, 5 Nov 2026)
+
+"The order should not matter, the roof lines have to be 100% determined
+because they will actually determine the faces and borders of the roof."
+Every reading of a roof — whole or split by level, each outline variant
+(as traced, walls squared, steps merged, walls lined up with the image's
+square outline), trigonometry or height model — is scored on the same tests,
+in this priority (`compareEvidence` in `engine.ts`):
+
+1. **Google**: its faces match Google's segments *inside that roof* (share of
+   roof facing each wall direction, within 10%).
+2. **The image, both ways**: metres of its hips, valleys and ridges not seen
+   in the image, plus metres of lines the image shows on the roof that its
+   face borders don't explain (`roofLineEvidence.ts`; obstructions such as
+   existing panels left out). Compared in 2 m bands.
+3. Closest to Google.
+
+Hard rules alongside the tests:
+- Wall *positions* come from the image's square-walled outline (alternative
+  measurements of the same walls are settled by the confirmed square-roof
+  rule); the tests decide *structure* — splits, steps, faces.
+- A step stays only when the lines it adds are seen in the image; notches
+  and tabs (short runs beside short runs) are merged away.
+- A new structure (split, step, cleaned trace) needs 80% of its lines seen.
+- The height model is used only where no trigonometry reading is confirmed:
+  its lines are fitted to the image before being checked against it.
+- A roof whose reading fails these is reported **not determined** (page,
+  API `determined: false`, design notes) with Relook / Edit offered.
+
 ## Code base — one roof designer for the whole platform (`src/lib/roof-design`)
 
 **Rule (owner, 5 Nov 2026):** any portal or website, and every outside
@@ -193,6 +222,27 @@ Who uses it:
 ## Lessons log
 
 Newest first. Add an entry whenever a design comes out wrong.
+
+### 2026-11-05: 264 Wangee Rd, Greenacre (hip roof, stepped north wing, rear skillion): faces by the priority tests
+1. **Seen (owner's drawing):** six faces on the main roof — west, south, east
+   from the centre apex, a north triangle, a narrow strip from the step in
+   the north eave, and the north-east face; the engine drew a pyramid or
+   wiggly height-model faces.
+2. **Why:** (a) the main roof and the lower rear roof traced as one outline,
+   so Google's low-pitch rear segments failed the trigonometry reading;
+   (b) the eave step traced at 45°, and the reading only takes walls along or
+   square to the main walls, so it was refused before Google was consulted;
+   (c) ranking by lines seen alone let a plain pyramid win — it saw all its
+   own hips but left the strip lines in the image unexplained.
+3. **Fix:** split by roof level (`splitByRoofLevel`: two pitch groups either
+   side of a wall-parallel line, cut on the eave seen in the image); walls
+   squared and lined up with the image's square outline; steps kept only when
+   their lines are seen; every reading scored on the priority tests above.
+4. **Result:** the main roof read exactly as drawn (Google within 5%, 99% of
+   its lines seen). The rear roof has no confirmed reading: height model,
+   reported not determined. All other test roofs unchanged (Gilbert 43/48,
+   Melton 21/29, Old Canterbury 52/60, Frampton, Derwent, Harry 57 and 61,
+   Frances).
 
 ### 2026-11-05: 264 Wangee Rd, Greenacre (house built across two lots): east faces missed
 1. **Seen:** the live design drew only the western strip of the roof; the

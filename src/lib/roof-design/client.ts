@@ -24,6 +24,8 @@ export type RoofDesignResponse =
       pin: LatLng;
       formattedAddress: string | null;
       outline: { rings: LatLngRing[]; source: string; needsVerification: boolean; areaM2: number };
+      /** Every roof's lines passed the priority tests (Google, then the image). */
+      determined: boolean;
       faces: { source: string; gables: number; items: RoofDesignFace[] };
       obstructions: { ring: LatLngRing; kind: "spot" | "step" }[];
       lines: { total: number; checked: number; ok: number };

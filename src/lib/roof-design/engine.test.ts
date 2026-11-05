@@ -80,3 +80,23 @@ describe("lotForDesign", () => {
     expect(r.ring).toBe(lot.ring);
   });
 });
+
+describe("outline steps", () => {
+  it("squares a step traced at 45° and keeps it (264 Wangee Rd's north eave)", async () => {
+    const { squareWalls, withoutNotches } = await import("./roofLevels");
+    // 14 × 14 m with a 0.6 m step in the north eave, the step traced leaning.
+    const traced = [ll(0, 14), ll(7, 14), ll(7.25, 13.4), ll(14, 13.4), ll(14, 0), ll(0, 0)];
+    const sq = squareWalls(traced)!;
+    expect(sq).not.toBeNull();
+    expect(sq.length).toBe(6);
+    expect(withoutNotches(traced)!.length).toBe(6); // long walls either side: a real step, kept for testing
+  });
+
+  it("merges a notch round a box on the roof (134 Old Canterbury Rd)", async () => {
+    const { withoutNotches } = await import("./roofLevels");
+    const notched = [ll(0, 20), ll(4, 20), ll(4, 20.4), ll(5, 20.4), ll(5, 20), ll(9, 20), ll(9, 0), ll(0, 0)];
+    const out = withoutNotches(notched)!;
+    // The 1 m × 0.4 m tab is gone: nothing sticks out more than 0.1 m above the eave.
+    expect(Math.max(...out.map((p) => (p.lat - lat0) * 111320))).toBeLessThan(20.15);
+  });
+});

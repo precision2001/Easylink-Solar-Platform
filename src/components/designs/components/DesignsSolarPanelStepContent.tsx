@@ -446,7 +446,17 @@ export const DesignsSolarPanelStepContent = forwardRef<
   const boundingBoxNearPin = useMemo(() => (roofCtx ? engineBoundingBoxNearPin(roofCtx) ?? undefined : undefined), [roofCtx]);
 
   /** Best roof outline available right now — null while still waiting on a source that could still beat the next fallback. */
-  const bestAvailable = useMemo(() => (roofCtx ? bestAvailableRoofs(roofCtx) : null), [roofCtx]);
+  // The Roof Designer reads every outline and face candidate on the priority
+  // tests (a few seconds on a complex roof): run it after the page has shown
+  // "Reading the roof faces…", not inside render.
+  const [bestState, setBestState] = useState<{ ctx: RoofDesignContext; result: ReturnType<typeof bestAvailableRoofs> } | null>(null);
+  useEffect(() => {
+    if (!roofCtx) return;
+    const id = window.setTimeout(() => setBestState({ ctx: roofCtx, result: bestAvailableRoofs(roofCtx) }), 40);
+    return () => window.clearTimeout(id);
+  }, [roofCtx]);
+  const readingRoof = Boolean(roofCtx) && bestState?.ctx !== roofCtx;
+  const bestAvailable = bestState && bestState.ctx === roofCtx ? bestState.result : null;
   const bestAvailableOutlines = bestAvailable?.rings ?? null;
   /** True when the starting shape is a real trace of the roof, not a footprint or rectangle guess. */
   const initialRoofIsTraced = bestAvailable?.traced ?? false;
@@ -457,8 +467,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
     // anything: the footprint is clipped by the lot and checked against
     // Google, and the roof is only initialised once per address.
     if (footprint.loading || cadastralParcel.loading || loading) return null;
-    // Wait for the zoom-in analysis before falling back to a footprint or box.
-    if (roofSnapshot.loading) return null;
+    // Wait for the zoom-in analysis and the Roof Designer's reading before
+    // falling back to a footprint or box.
+    if (roofSnapshot.loading || readingRoof) return null;
     if (bestAvailableOutlines) return bestAvailableOutlines;
     if (boundingBoxNearPin) return [boxToRing(boundingBoxNearPin)];
     if (layersLoading) return null;
@@ -470,6 +481,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     footprint.loading,
     layersLoading,
     loading,
+    readingRoof,
     roofCtx,
     roofSnapshot.loading,
     selectedLocation,
@@ -779,7 +791,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     (paths: google.maps.LatLngLiteral[][]): RoofFaceSet =>
       roofCtx
         ? findRoofFaces(paths, roofCtx, { relook: Boolean(relook) })
-        : { source: "assumed-hip", faces: [], interiorChecks: [], moved: 0, obstructions: [], gables: 0 },
+        : { source: "assumed-hip", faces: [], interiorChecks: [], moved: 0, obstructions: [], gables: 0, evidence: [], determined: false },
     [roofCtx, relook],
   );
 
@@ -1369,6 +1381,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   : savedFaceSet.source === "height-model"
                     ? `${savedFaces.length} roof faces found from Google's height data. `
                     : "Roof faces assumed (no usable height data) — check on site. "}
+                {savedFaceSet.determined
+                  ? "Roof lines determined: faces match Google's roof data and the lines are seen in the image. "
+                  : "Roof lines not fully determined: use Relook roof or Edit to correct them. "}
                 {savedFaceSet.moved > 0 ? `${savedFaceSet.moved} roof lines moved onto the edges in the image. ` : ""}
                 {sideWalls ? `Attached house: roof limited to its side walls (${sideWalls.widthM.toFixed(1)} m wide). ` : ""}
                 {savedFaceSet.obstructions.length > 0
@@ -1399,7 +1414,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
               </p>
             )}
 
-            {(loading || layersLoading || roofSnapshot.loading || isGeneratingPanels) && (
+            {(loading || layersLoading || roofSnapshot.loading || (readingRoof && !hasInitializedRoof) || isGeneratingPanels) && (
               <p className="animate-pulse font-inter text-[14px] font-medium text-white/80">
                 {isGeneratingPanels
                   ? "Saving roof and generating solar panels..."
@@ -1407,7 +1422,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
                     ? "Loading roof imagery..."
                     : roofSnapshot.loading
                       ? "Zooming in and finding the roof lines..."
-                      : "Analysing solar potential..."}
+                      : readingRoof && !hasInitializedRoof
+                        ? "Reading the roof faces and checking them against Google and the image..."
+                        : "Analysing solar potential..."}
               </p>
             )}
           </div>

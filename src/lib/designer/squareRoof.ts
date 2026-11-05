@@ -804,7 +804,7 @@ export function hipFacesForSquareRoof(
   // What the image shows: each hip, valley and ridge of a reading is
   // checked against the brightness edge or capping line seen along it.
   const look = (fs: { ring: LatLng[] }[]) => {
-    const lines = interiorEdges(fs, [ring]).map(([a, b]) => checkInteriorLine(a, b, luma));
+    const lines = interiorEdges(fs, [ring]).map(([a, b]) => checkLineCached(a, b, luma));
     let total = 0, ok = 0;
     for (const l of lines) {
       const pa = F.toXY(l.a), pb = F.toXY(l.b);
@@ -870,6 +870,25 @@ export function hipFacesForSquareRoof(
   });
 }
 
+/** The same line is checked by many readings (every gable variant, every outline variant): cache per image. */
+const lineCache = new WeakMap<GeoTiffRaster, Map<string, LineCheck>>();
+function checkLineCached(a: LatLng, b: LatLng, luma: GeoTiffRaster | null): LineCheck {
+  if (!luma) return checkInteriorLine(a, b, luma);
+  let m = lineCache.get(luma);
+  if (!m) {
+    m = new Map();
+    lineCache.set(luma, m);
+  }
+  const k = `${a.lat.toFixed(8)},${a.lng.toFixed(8)}|${b.lat.toFixed(8)},${b.lng.toFixed(8)}`;
+  let v = m.get(k);
+  if (!v) {
+    v = checkInteriorLine(a, b, luma);
+    if (m.size > 20000) m.clear();
+    m.set(k, v);
+  }
+  return { ...v, a, b };
+}
+
 /**
  * The square-walled reading that Google's roof data confirms best: the main
  * outline or one of its alternatives, with its faces (hips, and gables where
@@ -898,16 +917,19 @@ export function rankSquareReadings(
   {
     maxShareDiff = 0.1,
     minSeen = 0.35,
+    cellM,
   }: {
     maxShareDiff?: number;
     /** Share of the computed hips, valleys and ridges that must be seen in the image (when there is an image). */
     minSeen?: number;
+    /** Grid size for the faces (default 5 cm; a coarser grid for searching many outlines). */
+    cellM?: number;
   } = {},
 ): SquareReading[] {
   const out: SquareReading[] = [];
   for (const ring of rings) {
     let rep = { diff: Infinity, seen: 0, lines: [] as LineCheck[], gables: [] as number[] };
-    const faces = hipFacesForSquareRoof(ring, segments, { luma, maxShareDiff, report: (r) => (rep = r) });
+    const faces = hipFacesForSquareRoof(ring, segments, { luma, maxShareDiff, cellM, report: (r) => (rep = r) });
     if (!faces) continue;
     if (luma && rep.lines.length > 0 && rep.seen < minSeen) continue;
     const lines = rep.lines.map((l) => ({
