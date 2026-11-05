@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/master-dashboard/quotes-leads/icons";
+import { RoofDesignCell, RoofDesignViewer, useAutoRoofDesigns } from "@/components/master-dashboard/quotes-leads/RoofDesign";
 import { STAGE_DOT } from "@/components/master-dashboard/quotes-leads/PipelineBoard";
 import {
   TASK_KINDS,
@@ -381,6 +382,15 @@ export function LeadsWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
+
+  // Every listed lead with an address gets a roof design from the platform
+  // designer, on its own; results drop into the table as they finish.
+  const { working: roofWorking, redesign: redesignRoof } = useAutoRoofDesigns(
+    rows,
+    (leadId, design) => setRows((rs) => rs?.map((r) => (r.id === leadId ? { ...r, roofDesign: design } : r)) ?? rs),
+    view !== "spam",
+  );
 
   useEffect(() => {
     setPage(1);
@@ -561,9 +571,10 @@ export function LeadsWorkspace({
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1040px] border-collapse text-[13px]">
+          <table className="w-full min-w-[1180px] border-collapse text-[13px]">
             <colgroup>
-              <col className="w-[25%]" />
+              <col className="w-[22%]" />
+              <col className="w-[136px]" />
               <col className="w-[15%]" />
               <col className="w-[15%]" />
               <col className="w-[29%]" />
@@ -572,7 +583,7 @@ export function LeadsWorkspace({
             </colgroup>
             <thead>
               <tr className="bg-[#F8FAFC] text-left text-[12px] text-[#5B6B80]">
-                {["Customer", "Stage", "Sales owner", "Next action", "Source", ""].map((h, i) => (
+                {["Customer", "Roof design", "Stage", "Sales owner", "Next action", "Source", ""].map((h, i) => (
                   <th key={i} scope="col" className={`border-b border-[#E3E8EF] py-2 font-semibold ${i === 0 ? "pl-5" : "px-2"}`}>
                     {h}
                   </th>
@@ -619,6 +630,15 @@ export function LeadsWorkspace({
                           </div>
                         </div>
                       </div>
+                    </td>
+
+                    <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
+                      <RoofDesignCell
+                        lead={l}
+                        working={roofWorking.has(l.id)}
+                        onOpen={() => setViewing(l.id)}
+                        onRetry={() => redesignRoof(l.id)}
+                      />
                     </td>
 
                     <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
@@ -751,7 +771,7 @@ export function LeadsWorkspace({
                   </tr>,
                   open && meta ? (
                     <tr key={`${l.id}-panel`}>
-                      <td colSpan={6} className="border-b border-[#E3E8EF] bg-[#F8FAFC] px-5 pb-4 pt-1">
+                      <td colSpan={7} className="border-b border-[#E3E8EF] bg-[#F8FAFC] px-5 pb-4 pt-1">
                         <div className="rounded-[12px] border border-[#E3E8EF] bg-white p-4">
                           {open === "next" ? (
                             <NextActionForm lead={l} meta={meta} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
@@ -786,6 +806,14 @@ export function LeadsWorkspace({
             </>
           ) : null}
         </div>
+      ) : null}
+      {viewing && rows?.find((r) => r.id === viewing)?.roofDesign ? (
+        <RoofDesignViewer
+          lead={rows.find((r) => r.id === viewing)!}
+          working={roofWorking.has(viewing)}
+          onClose={() => setViewing(null)}
+          onRedesign={() => redesignRoof(viewing)}
+        />
       ) : null}
     </section>
   );
