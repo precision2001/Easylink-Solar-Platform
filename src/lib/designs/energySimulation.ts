@@ -333,7 +333,8 @@ export function findBatteryKnee(
     const improvement = importsBySize[i - 1] - importsBySize[i];
     const marginalPerKwh =
       improvement / (BATTERY_CURVE_SIZES_KWH[i] - BATTERY_CURVE_SIZES_KWH[i - 1]);
-    if (marginalPerKwh < annualConsumptionKwh * 0.015) {
+    // No use, or no gain from more battery: stop at the smaller size (a $0 bill gets the smallest, not the largest).
+    if (marginalPerKwh <= annualConsumptionKwh * 0.015) {
       return { recommendedKwh: BATTERY_CURVE_SIZES_KWH[i - 1], importsBySize };
     }
   }

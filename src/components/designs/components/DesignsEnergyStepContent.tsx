@@ -443,12 +443,11 @@ export type DesignsEnergyStepValue = {
  * The slider works in dollars (not a 0-100 percent) so a notch is $1 rather
  * than ~$99 across this range.
  */
-const BILL_MONTHLY_MIN = 100;
+const BILL_MONTHLY_MIN = 0;
 const BILL_MONTHLY_MAX = 10000;
 
-/** Used only when a design has no saved bill yet. */
-/** Default bill: $200 a month ($600 a quarter). */
-const BILL_MONTHLY_DEFAULT = 200;
+/** Used only when a design has no saved bill yet: every period starts at $0 for the customer to enter. */
+const BILL_MONTHLY_DEFAULT = 0;
 
 function periodMultiplier(period: DesignBillPeriod): number {
   switch (period) {
@@ -730,7 +729,8 @@ export const DesignsEnergyStepContent = forwardRef<
   // don't re-seed it, so a manual choice always sticks.
   const seededRef = useRef(false);
   useEffect(() => {
-    if (seededRef.current || batteryKwh !== undefined) return;
+    // The bill starts at $0: wait for the customer's bill before recommending a battery.
+    if (seededRef.current || batteryKwh !== undefined || currentMonthly <= 0) return;
     seededRef.current = true;
     const knee = findBatteryKnee(annualConsumptionKwh, annualGenerationKwh);
     dispatch(
@@ -738,9 +738,9 @@ export const DesignsEnergyStepContent = forwardRef<
         equipment: { batteryCapacityKwh: knee.recommendedKwh },
       }),
     );
-    // Runs once to seed the recommended size; subsequent changes are manual.
+    // Seeds the recommended size once, on the first real bill; later changes are manual.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentMonthly]);
 
   const effectiveBatteryKwh = batteryKwh ?? 0;
 
