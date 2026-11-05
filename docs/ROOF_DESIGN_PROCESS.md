@@ -136,9 +136,71 @@ Every design, by hand or on the live page, whatever found the roof:
    (665 kW). The walkways also give access for maintenance and the wind
    edge zones that commercial roofs need.
 
+## Code base — one roof designer for the whole platform (`src/lib/roof-design`)
+
+Every module that designs a roof runs the same code, so a fix reaches all of
+them at once. Never copy a step into a page, route or script; call the engine.
+
+| File | Runs in | What it holds |
+| --- | --- | --- |
+| `geometry.ts` | browser + Node | lat/lng maths: distance, area, centroid, clip to lot or box, panel corners, de-duplicate |
+| `engine.ts` | browser + Node | every design step as a pure function of a `RoofDesignContext` (pin, Google estimate, zoom-21 analysis, mask, height model, lot, footprint) |
+| `server.ts` | Node only | loads the context (platform backend, or Google with a key), fetches and analyses the satellite image (zoom 21, retry 20), draws the design (JPEG 4:3), `designRoofAt(pin)` |
+| `index.ts` | — | the barrel: `import { … } from "@/lib/roof-design"` |
+
+Engine steps (the Designs page's steps, in order):
+
+1. `initialRoofs` / `bestAvailableRoofs`: the starting outline — square-walled
+   reading confirmed by Google → zoomed-image trace → footprint (trimmed to the
+   lot, dropped if Google disagrees) → Google's mask (if it covers half the
+   roof) → Google's box (only near the pin) → placeholder.
+2. `confirmRoofOutlines` (Save Roof): straight lines, then eaves fitted to the
+   image unless a square-walled reading is confirmed.
+3. `findRoofFaces`: square-walled reading (hip or gable per end) → height
+   model filled to the outline → hip split; interior lines corrected against
+   the image; obstructions found. `{ relook: true }` for Relook roof.
+4. `checkRoofLines`: every eave, hip, valley and ridge against the image.
+5. `layoutRoofPanels`: one orientation, rows along the main walls, roof pitch,
+   packed (or Beautify) around obstructions, then `keepPanelsClear` (inside one
+   face, 100 mm from every line) and de-duplicated.
+6. `relookReadings`: the other confirmed readings, best first.
+7. `designRoof`: all of the above in one call, with counts for both
+   orientations, kW and inverter sizing (`inverterSizingFor`).
+
+Who uses it:
+- Designs page (`DesignsSolarPanelStepContent.tsx`): builds the context from
+  its hooks; Save, Relook, orientation, Beautify, side walls all call the engine.
+- Quotes & Leads (`src/lib/server/auto-roof-design.ts`): `designRoofAt` +
+  `renderRoofDesign` on the backend's inputs for a lead.
+- Roof-design API (`POST /api/roof-design`, `docs/ROOF_DESIGN_API.md`):
+  for systems outside the platform, by API key.
+- `GET /api/solar/roof-lines-check` (localhost only) and
+  `scripts/roof-design/live-pipeline.ts`: checks on real Google data.
+- The proposal drawing and the clearance check use `geometry.panelCorners`.
+
 ## Lessons log
 
 Newest first. Add an entry whenever a design comes out wrong.
+
+### 2026-11-05: One roof-design code base for every module
+1. **Owner's request:** "Build code base for roof design that is accessible by
+   other modules (internal and external) to avoid duplication of code and
+   process throughout the platform."
+2. **Found:** the pipeline existed four times — the Designs page (with its own
+   private copies of the geometry helpers), the Quotes & Leads designer (a
+   copy of the page "so the page is never edited"), the roof-lines check
+   route (an older copy without the square-roof, obstruction and clearance
+   steps) and the live-pipeline script (another copy, fixed 25° pitch and
+   panel size). Panel corners were computed three different ways.
+3. **Built:** `src/lib/roof-design` (see Code base above). The page, Quotes &
+   Leads, the check route and the script now call it; their copies are gone
+   (the page lost about 530 lines). External systems use `POST /api/roof-design`.
+4. **Checked:** the old Quotes & Leads copy and the engine on the same Google
+   inputs for 25 Gilbert St, 11 Melton St S, 1 Frampton St, 134 Old
+   Canterbury Rd, 24 Derwent St, 57 and 61 Harry Ave and 66 Frances St:
+   identical outlines, faces and panels on all eight.
+5. **Rule:** a change to how roofs are designed goes into the engine, never
+   into one module.
 
 ### 2026-10-31: 11 Melton St S, Auburn (L-shaped hip roof with a gable street end): rules, not assumptions
 1. **Owner's question:** "on what basis was this assumption?" The square-roof
@@ -651,7 +713,7 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
 - `pack-faces.ts roofs/x.json out.json`: packs image-read faces (any roof json with scale and centre).
 - `find-obstructions.py roofs/x.json crop.png out.png [--thr]`: every dark spot (vent, fan, antenna) and thin line (level difference) inside the faces, for review (step 6).
 - `check-eaves.py roofs/x.json crop.png [--metal]`: where the tiles or sheets end across every eave (step 5).
-- `live-pipeline.ts <lat> <lng> <outDir>` (set GKEY, NODE_USE_ENV_PROXY=1 in the workspace) and `live-draw.py <outDir>`: run and draw the live page's pipeline on Google data.
+- `live-pipeline.ts <lat> <lng> <outDir>` (set GKEY, NODE_USE_ENV_PROXY=1 in the workspace; PARCEL, BEAUTIFY, RELOOK, SQ_DEBUG optional) and `live-draw.py <outDir>`: run the shared engine on Google data and draw it.
 - `beautify.py sections.json out.json [--rows --cols --walk --orient --min-block]`: Beautify Design (step 9).
 - `local-contrast.py x0 y0 x1 y1 scale out.png`: local-contrast gridded view for white or grey metal roofs.
 - `layout.ts`: packs the faces with the live site's packer (all rules,
