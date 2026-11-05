@@ -76,6 +76,21 @@ export type PipelineLead = {
   /** Set while nobody has contacted them yet. */
   respondBy: string | null;
   responseOverdue: boolean;
+  roofDesign?: RoofDesignSummary | null;
+};
+
+/** Automatic roof design (platform designer) for the lead's address. */
+export type RoofDesignSummary = {
+  status: "READY" | "NO_ROOF" | "NO_ADDRESS" | "FAILED";
+  address: string;
+  panelCount: number | null;
+  panelWatts: number | null;
+  systemKw: number | null;
+  orientation: "PORTRAIT" | "LANDSCAPE" | null;
+  faceCount: number | null;
+  roofAreaM2: number | null;
+  message: string | null;
+  updatedAt: string;
 };
 
 export type PipelineMeta = {
