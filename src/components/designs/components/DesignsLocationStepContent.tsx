@@ -17,6 +17,7 @@ import {
 } from "@/utils/constant";
 import { useAppSelector } from "@/lib/store/hooks";
 import { locationStepError } from "@/lib/designs/locationStep";
+import { roofDesignFor } from "@/lib/roof-design/client";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -83,6 +84,16 @@ export const DesignsLocationStepContent = forwardRef<
       storedCustomer.mapLng != null,
   );
   const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Start the Roof Designer as soon as the pin settles, so the roof step
+  // finds the design ready (and every input cached on the server).
+  useEffect(() => {
+    if (!selectedLocation) return;
+    const id = window.setTimeout(() => {
+      roofDesignFor(selectedLocation).catch(() => {});
+    }, 1200);
+    return () => window.clearTimeout(id);
+  }, [selectedLocation]);
 
   useImperativeHandle(ref, () => ({
     getValues: () => ({

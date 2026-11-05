@@ -42,6 +42,7 @@ import {
   roofPitchOf,
   squareAround,
   straightenOutlines,
+  type InitialRoofSource,
   type LatLngBox,
   type LatLngRing,
   type LineCheck,
@@ -59,6 +60,7 @@ import {
 import { mergeProposalData } from "@/lib/store/designProposalSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
 import { compressCanvasSnapshot } from "@/lib/images/compress-browser";
+import { roofDesignFor, type RoofDesignResponse } from "@/lib/roof-design/client";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -450,11 +452,39 @@ export const DesignsSolarPanelStepContent = forwardRef<
   // tests (a few seconds on a complex roof): run it after the page has shown
   // "Reading the roof faces…", not inside render.
   const [bestState, setBestState] = useState<{ ctx: RoofDesignContext; result: ReturnType<typeof bestAvailableRoofs> } | null>(null);
+  // The Roof Designer's design for this pin, usually already made while the
+  // customer confirmed the address (roofDesignFor). Its outline is the
+  // starting roof; the page reads faces and lines on it locally. Only when it
+  // can't be had does the page run the outline search itself.
+  const [serverDesign, setServerDesign] = useState<{ key: string; design: RoofDesignResponse | null } | null>(null);
+  const pinKey = selectedLocation ? `${selectedLocation.lat.toFixed(6)},${selectedLocation.lng.toFixed(6)}` : null;
   useEffect(() => {
-    if (!roofCtx) return;
+    if (!selectedLocation || !pinKey) return;
+    let live = true;
+    const giveUp = window.setTimeout(() => live && setServerDesign({ key: pinKey, design: null }), 45_000);
+    roofDesignFor(selectedLocation)
+      .then((d) => live && setServerDesign({ key: pinKey, design: d }))
+      .catch(() => live && setServerDesign({ key: pinKey, design: null }))
+      .finally(() => window.clearTimeout(giveUp));
+    return () => {
+      live = false;
+      window.clearTimeout(giveUp);
+    };
+  }, [pinKey, selectedLocation]);
+  const serverReady = serverDesign?.key === pinKey ? serverDesign : null;
+  useEffect(() => {
+    if (!roofCtx || !serverReady) return;
+    const d = serverReady.design;
+    if (d && d.status === "READY" && d.outline.rings.length > 0) {
+      setBestState({
+        ctx: roofCtx,
+        result: { rings: d.outline.rings, source: d.outline.source as InitialRoofSource, traced: !d.outline.needsVerification },
+      });
+      return;
+    }
     const id = window.setTimeout(() => setBestState({ ctx: roofCtx, result: bestAvailableRoofs(roofCtx) }), 40);
     return () => window.clearTimeout(id);
-  }, [roofCtx]);
+  }, [roofCtx, serverReady]);
   const readingRoof = Boolean(roofCtx) && bestState?.ctx !== roofCtx;
   const bestAvailable = bestState && bestState.ctx === roofCtx ? bestState.result : null;
   const bestAvailableOutlines = bestAvailable?.rings ?? null;
@@ -1074,7 +1104,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
     // walls (fitting it to the rough trace pushed 25 Gilbert St's east eave
     // onto the patio). The shared engine's `confirmRoofOutlines`.
     const drawn = getCurrentEditingPaths().filter((p) => p.length >= 3);
-    const validPaths = roofCtx ? confirmRoofOutlines(drawn, roofCtx) : straightenOutlines(drawn);
+    // The customer's edit wins: their walls and steps are kept (corners squared, eaves fitted).
+    const validPaths = roofCtx ? confirmRoofOutlines(drawn, roofCtx, { userEdit: true }) : straightenOutlines(drawn);
     setSavedRoofs(validPaths);
 
     if (validPaths.length === 0) {

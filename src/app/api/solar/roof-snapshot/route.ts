@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
+import { getSnapshotPng } from "@/lib/server/roofDataCache";
 
 /**
  * Zoomed-in Google satellite image of one roof (Static Maps, zoom 21,
  * double-density, ~3 cm per pixel), served from our own origin so the
  * Designs page can analyse its pixels to find the roof lines.
  */
-const STATIC_MAPS = "https://maps.googleapis.com/maps/api/staticmap";
 const ALLOWED_ZOOMS = new Set([19, 20, 21]);
 
 export async function GET(request: Request) {
@@ -19,39 +19,17 @@ export async function GET(request: Request) {
   if (!ALLOWED_ZOOMS.has(zoom)) {
     return NextResponse.json({ message: "zoom must be 19, 20 or 21." }, { status: 400 });
   }
-  const key = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  if (!key) {
-    return NextResponse.json({ message: "Google Maps key is not configured." }, { status: 500 });
-  }
-
-  const params = new URLSearchParams({
-    center: `${lat.toFixed(7)},${lng.toFixed(7)}`,
-    zoom: String(zoom),
-    size: "640x640",
-    scale: "2",
-    maptype: "satellite",
-    format: "png32",
-    key,
-  });
-  let res: Response;
+  // Cached by point and zoom (see roofDataCache).
+  let png: Buffer | null;
   try {
-    res = await fetch(`${STATIC_MAPS}?${params.toString()}`, {
-      cache: "no-store",
-      headers: { Referer: "https://www.easylinksolar.com.au/" },
-    });
+    png = await getSnapshotPng(lat, lng, zoom);
   } catch (error) {
     console.error("roof-snapshot fetch error", error);
-    return NextResponse.json({ message: "Unable to reach Google Maps." }, { status: 502 });
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Unable to reach Google Maps." }, { status: 502 });
   }
-  const type = res.headers.get("content-type") ?? "";
-  if (!res.ok || !type.startsWith("image/")) {
-    return NextResponse.json({ message: `Google Maps snapshot failed: ${res.status}` }, { status: 502 });
-  }
-  return new NextResponse(await res.arrayBuffer(), {
+  if (!png) return NextResponse.json({ message: "Google Maps snapshot failed." }, { status: 502 });
+  return new NextResponse(new Uint8Array(png), {
     status: 200,
-    headers: {
-      "Content-Type": type,
-      "Cache-Control": "private, max-age=3600",
-    },
+    headers: { "Content-Type": "image/png", "Cache-Control": "private, max-age=3600" },
   });
 }

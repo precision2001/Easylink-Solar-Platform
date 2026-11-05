@@ -100,3 +100,19 @@ describe("outline steps", () => {
     expect(Math.max(...out.map((p) => (p.lat - lat0) * 111320))).toBeLessThan(20.15);
   });
 });
+
+describe("user edits", () => {
+  it("keeps the customer's drawn step when they save (Edit)", async () => {
+    const { confirmRoofOutlines } = await import("./engine");
+    const drawn = [ll(0, 14), ll(7, 14), ll(7, 13.4), ll(14, 13.4), ll(14, 0), ll(0, 0)];
+    const out = confirmRoofOutlines([drawn], { pin }, { userEdit: true });
+    expect(out).toHaveLength(1);
+    expect(out[0].length).toBe(6);
+  });
+
+  it("designs the outline a person gives, not another reading", () => {
+    const given = [rect(0, 0, 12, 8)];
+    const d = designRoof({ pin }, { outline: given })!;
+    expect(Math.round(d.roofAreaM2)).toBe(96);
+  });
+});

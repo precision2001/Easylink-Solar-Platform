@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  buildBackendUrl,
-  extractMessage,
-  unwrapApiData,
-} from "@/lib/customers/backend";
+import { getCombinedSolar } from "@/lib/server/roofDataCache";
 import type { SolarEstimateResult } from "@/types/solar";
 
 interface DataLayersResult {
@@ -24,7 +20,6 @@ export interface CombinedSolarResult {
  * hits the backend's shared solarLimiter once instead of twice per page load.
  * See useSolarEstimate/useSolarLayers, which both read off this one fetch.
  */
-const ESTIMATE_WITH_LAYERS_PATH = "/solar/estimate-with-layers";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -50,69 +45,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const backendBaseUrl = process.env.BACKEND_API_BASE_URL;
-
-  if (!backendBaseUrl) {
-    return NextResponse.json(
-      { message: "Server configuration is missing BACKEND_API_BASE_URL." },
-      { status: 500 },
-    );
+  const lat = Number((body as { latitude: unknown }).latitude);
+  const lng = Number((body as { longitude: unknown }).longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return NextResponse.json({ message: "latitude and longitude are required." }, { status: 400 });
   }
-
-  let backendResponse: Response;
-
-  try {
-    backendResponse = await fetch(
-      buildBackendUrl(backendBaseUrl, ESTIMATE_WITH_LAYERS_PATH),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(body),
-        cache: "no-store",
-      },
-    );
-  } catch (error) {
-    console.error("estimate-with-layers fetch error", error);
-    return NextResponse.json(
-      { message: "Unable to reach the solar estimation service." },
-      { status: 502 },
-    );
-  }
-
-  const responseText = await backendResponse.text();
-  let payload: unknown = null;
-
-  if (responseText) {
-    try {
-      payload = JSON.parse(responseText);
-    } catch {
-      payload = null;
-    }
-  }
-
-  if (!backendResponse.ok) {
-    return NextResponse.json(
-      {
-        message: extractMessage(
-          payload,
-          "Solar estimation failed. Please try again.",
-        ),
-      },
-      { status: backendResponse.status },
-    );
-  }
-
-  const data = unwrapApiData<CombinedSolarResult>(payload);
-
-  if (!data) {
-    return NextResponse.json(
-      { message: "Unexpected response from solar service." },
-      { status: 502 },
-    );
-  }
-
-  return NextResponse.json({ success: true, data }, { status: 200 });
+  // Cached by address with its layer files (see roofDataCache): the page and
+  // the Roof Designer load an address from Google once.
+  const r = await getCombinedSolar(lat, lng);
+  if (!r.ok) return NextResponse.json({ message: r.message }, { status: r.status });
+  return NextResponse.json({ success: true, data: r.data as unknown as CombinedSolarResult }, { status: 200 });
 }

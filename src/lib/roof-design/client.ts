@@ -74,3 +74,24 @@ export function panelsPerFace(d: Extract<RoofDesignResponse, { status: "READY" }
     .map(([i, n]) => ({ name: compassName(d.faces.items[i]?.azimuthDeg), azimuthDeg: d.faces.items[i]?.azimuthDeg ?? null, panels: n }))
     .sort((a, b) => b.panels - a.panels);
 }
+
+/* ── Start early: the address step asks, the roof step collects ─────── */
+
+const early = new Map<string, Promise<RoofDesignResponse>>();
+const pinKey = (p: LatLng) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
+
+/**
+ * The Roof Designer's design for a pin, asked once per pin and shared: the
+ * address step calls this as soon as the pin is set, so the design is usually
+ * ready (and the server has every input cached) by the roof step.
+ */
+export function roofDesignFor(pin: LatLng): Promise<RoofDesignResponse> {
+  const k = pinKey(pin);
+  let p = early.get(k);
+  if (!p) {
+    p = requestRoofDesign({ lat: pin.lat, lng: pin.lng });
+    p.catch(() => early.delete(k));
+    early.set(k, p);
+  }
+  return p;
+}

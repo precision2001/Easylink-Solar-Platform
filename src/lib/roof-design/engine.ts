@@ -76,6 +76,12 @@ export type RoofDesignContext = {
 
 /* ── Constants (shared by every caller) ─────────────────────────────── */
 
+/**
+ * Changes whenever the engine's decisions change: finished designs are kept
+ * per version, so an engine change never serves a design made by an older one.
+ */
+export const ROOF_ENGINE_VERSION = "2026-11-06.1";
+
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
   minMaskCoverage: 0.5,
@@ -581,7 +587,16 @@ export function bestAvailableRoofs(ctx: RoofDesignContext): InitialRoofs | null 
  * roof edge in the image — unless Google and the image confirm a
  * square-walled reading, whose border is kept as drawn along the walls.
  */
-export function confirmRoofOutlines(rings: LatLngRing[], ctx: RoofDesignContext): LatLngRing[] {
+export function confirmRoofOutlines(
+  rings: LatLngRing[],
+  ctx: RoofDesignContext,
+  /**
+   * The outline was drawn or edited by a person: their walls and steps are
+   * kept. Only their own corners are squared (by at most 0.6 m) and eaves
+   * fitted to the image as before; no other reading replaces it.
+   */
+  { userEdit = false }: { userEdit?: boolean } = {},
+): LatLngRing[] {
   const drawn = rings.filter((p) => p.length >= 3);
   const straightened = regularizeRoofOutlines(drawn);
   // Each roof on its own: one Google and the image confirm as square-walled
@@ -591,8 +606,17 @@ export function confirmRoofOutlines(rings: LatLngRing[], ctx: RoofDesignContext)
   // the best-scoring reading of it.
   const segs = realSegments(ctx);
   const passes = (r: LatLngRing | undefined) => Boolean(r && segs && squareReadingOf(r, ctx));
-  const square =
-    drawn.length === straightened.length
+  const own = (d: LatLngRing | undefined) => {
+    if (!d) return null;
+    if (passes(d)) return d;
+    const sq = squareWalls(d);
+    return sq && passes(sq) ? sq : null;
+  };
+  const square = userEdit
+    ? drawn.length === straightened.length
+      ? drawn.map((d, i) => own(d) ?? own(straightened[i]))
+      : straightened.map((r) => own(r))
+    : drawn.length === straightened.length
       ? drawn.map((d, i) => (passes(d) ? d : confirmedReadingRing(straightened[i], ctx) ?? confirmedReadingRing(d, ctx)))
       : straightened.map((r) => confirmedReadingRing(r, ctx));
   const lineMask = lineMaskOf(ctx);
@@ -802,7 +826,8 @@ export type DesignRoofOptions = {
 export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {}): RoofDesign | null {
   const initial: InitialRoofs | null = opts.outline ? { rings: opts.outline, source: "snapshot", traced: true } : initialRoofs(ctx, { placeholder: false });
   if (!initial) return null;
-  const outline = confirmRoofOutlines(initial.rings, ctx);
+  // An outline given by a person (Edit, or the API's `outline`) is theirs: kept, not replaced by another reading.
+  const outline = confirmRoofOutlines(initial.rings, ctx, { userEdit: Boolean(opts.outline) });
   if (outline.length === 0) return null;
   const faceSet = findRoofFaces(outline, ctx);
   const dims = opts.dims ?? panelDimsOf(ctx);

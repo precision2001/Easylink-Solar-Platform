@@ -165,6 +165,30 @@ Hard rules alongside the tests:
 - A roof whose reading fails these is reported **not determined** (page,
   API `determined: false`, design notes) with Relook / Edit offered.
 
+## Speed — how a design gets to the customer fast (6 Nov 2026)
+
+- **Address cache** (`src/lib/server/roofDataCache.ts`): Google Solar's
+  estimate and data-layer files, the zoomed satellite images, the land lot and
+  the building footprint are kept on the server by address for up to 30 days
+  (size-capped, oldest first out; `ROOF_DATA_CACHE_DIR`,
+  `ROOF_DATA_CACHE_MAX_MB`). The Designs page's data routes and the Roof
+  Designer share it. Data-layer links expire within the hour, so files are
+  kept by address and layer, with the link → file mapping recorded when the
+  links are issued.
+- **Kept designs**: `POST /api/roof-design` keeps finished designs by
+  address, options and `ROOF_ENGINE_VERSION` (bump it whenever the engine's
+  decisions change). A kept design costs no rate limit. An outline given by a
+  person is its own entry.
+- **Start early**: the address step asks the Roof Designer as soon as the pin
+  settles (`roofDesignFor`); the roof step uses that design's outline and
+  reads faces locally, running the outline search itself only if the design
+  can't be had (45 s limit).
+- **Parallel loading**: the satellite image is fetched alongside Google's
+  data, not after it.
+- **Edits win**: an outline drawn or edited by a person (Edit → Save, the
+  API's `outline`) is kept — corners squared (≤ 0.6 m) and eaves fitted, but
+  never replaced by another reading (`confirmRoofOutlines(…, { userEdit })`).
+
 ## Code base — one roof designer for the whole platform (`src/lib/roof-design`)
 
 **Rule (owner, 5 Nov 2026):** any portal or website, and every outside

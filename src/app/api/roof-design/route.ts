@@ -1,8 +1,10 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { clientIpFrom, createRateLimiter, isSameOriginRequest } from "@/lib/server/rate-limit";
 import { panelCorners, type LatLng, type LatLngRing } from "@/lib/roof-design";
 import { designRoofAt, googleMapsKey, renderRoofDesign } from "@/lib/roof-design/server";
+import { ROOF_ENGINE_VERSION } from "@/lib/roof-design/engine";
+import { cachedJson, cacheRead, cacheWrite, placeKey } from "@/lib/server/roofDataCache";
 
 /**
  * The roof-design API — the one way installers, customers and outside
@@ -27,8 +29,8 @@ export const maxDuration = 60;
 
 /** Per key: 30 designs an hour (each one costs Google Solar and Static Maps calls). */
 const limiter = createRateLimiter({ limit: 30, windowMs: 60 * 60 * 1000 });
-/** Per visitor (portal pages and listed websites): 12 designs an hour. */
-const visitorLimiter = createRateLimiter({ limit: 12, windowMs: 60 * 60 * 1000 });
+/** Per visitor (portal pages and listed websites): 20 new designs an hour (kept designs are free). */
+const visitorLimiter = createRateLimiter({ limit: 20, windowMs: 60 * 60 * 1000 });
 
 /** Outside websites allowed to call from the browser, e.g. "https://partner.com.au". */
 function allowedOrigins(): string[] {
@@ -106,13 +108,20 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
   const given = request.headers.get("x-api-key") ?? request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   const keys = configuredKeys();
   const key = given ? keyMatches(given, keys) : null;
+  // Who is asking decides the limit; it's charged only when a design has to
+  // be made (a design kept from earlier costs nothing).
+  let takeRate: () => NextResponse | null;
   if (key) {
-    const rate = limiter.check(key);
-    if (!rate.allowed) return fail(429, "Too many roof designs for this key; try again later.", { "Retry-After": String(Math.ceil(rate.retryAfterMs / 1000)) });
+    takeRate = () => {
+      const rate = limiter.check(key);
+      return rate.allowed ? null : fail(429, "Too many roof designs for this key; try again later.", { "Retry-After": String(Math.ceil(rate.retryAfterMs / 1000)) });
+    };
   } else if (!given && (origin || isSameOriginRequest(request.headers, request.url))) {
     // The platform's own pages, or a listed outside website, from the visitor's browser.
-    const rate = visitorLimiter.check(`ip:${clientIpFrom(request.headers)}`);
-    if (!rate.allowed) return fail(429, "Too many roof designs; try again later.", { "Retry-After": String(Math.ceil(rate.retryAfterMs / 1000)) });
+    takeRate = () => {
+      const rate = visitorLimiter.check(`ip:${clientIpFrom(request.headers)}`);
+      return rate.allowed ? null : fail(429, "Too many roof designs; try again later.", { "Retry-After": String(Math.ceil(rate.retryAfterMs / 1000)) });
+    };
   } else if (keys.length === 0 && !given) {
     return fail(503, "The roof-design API is not enabled on this server.");
   } else {
@@ -130,7 +139,8 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
   let formattedAddress: string | null = null;
   if (isNum(body.lat) && isNum(body.lng)) pin = { lat: body.lat, lng: body.lng };
   else if (typeof body.address === "string" && body.address.trim().length > 4) {
-    const g = await geocode(body.address.trim().slice(0, 300)).catch(() => null);
+    const addr = body.address.trim().slice(0, 300);
+    const g = await cachedJson(`geocode|${addr.toLowerCase()}`, () => geocode(addr).catch(() => null));
     if (!g) return fail(422, "Couldn't find this address on the map.");
     ({ pin, formattedAddress } = g);
   } else return fail(400, "Give either lat and lng, or an address.");
@@ -143,16 +153,42 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
       : undefined;
   const panelWatts = isNum(body.panelWatts) && body.panelWatts >= 100 && body.panelWatts <= 1000 ? body.panelWatts : undefined;
 
+  // Finished designs are kept by address, options and engine version; an
+  // edited outline is its own entry, so a user's edit is never answered with
+  // the automatic design.
+  const designKey = [
+    "design",
+    ROOF_ENGINE_VERSION,
+    placeKey(pin.lat, pin.lng),
+    orientation ?? "-",
+    body.beautify === true ? "b" : "-",
+    panelWatts ?? "-",
+    outline?.length ? createHash("sha1").update(JSON.stringify(outline)).digest("hex") : "auto",
+    body.includeImage === true ? "img" : "-",
+  ].join("|");
+  const kept = await cacheRead(designKey);
+  if (kept) {
+    const res = new NextResponse(kept.toString("utf8"), { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "hit" } });
+    return res;
+  }
+  const limited = takeRate();
+  if (limited) return limited;
+
   try {
     const r = await designRoofAt(pin, { orientation, beautify: body.beautify === true, panelWatts, outline: outline?.length ? outline : undefined });
     if (r.status !== "READY") return NextResponse.json({ status: "NO_ROOF", pin, formattedAddress, message: r.message }, { status: 200 });
+    const respond = async (payload: unknown) => {
+      const text = JSON.stringify(payload);
+      await cacheWrite(designKey, text);
+      return new NextResponse(text, { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "miss" } });
+    };
     const d = r.design;
     let image: { contentType: string; base64: string } | null = null;
     if (body.includeImage === true && r.image) {
       const { large } = await renderRoofDesign(r.image, d);
       image = { contentType: "image/jpeg", base64: large.toString("base64") };
     }
-    return NextResponse.json({
+    return respond({
       status: "READY",
       pin,
       formattedAddress,

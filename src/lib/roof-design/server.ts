@@ -11,7 +11,7 @@
 import sharp from "sharp";
 import { parseGeoTiffDsm, type GeoTiffRaster } from "@/utils/geotiff";
 import { analyseRoofSnapshot, ROOF_SNAPSHOT, snapshotMetresPerPixel, type RoofSnapshotAnalysis, type SnapshotGeo } from "@/lib/designer/roofSnapshot";
-import { buildBackendUrl, unwrapApiData } from "@/lib/customers/backend";
+import { getCadastre, getCombinedSolar, getFootprint, getLayerBytes, getSnapshotPng } from "@/lib/server/roofDataCache";
 import type { SolarEstimateResult } from "@/types/solar";
 import { designRoof, lotForDesign, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
 import { panelCorners, ringAreaM2, type LatLng, type LatLngRing } from "./geometry";
@@ -20,8 +20,6 @@ import { panelCorners, ringAreaM2, type LatLng, type LatLngRing } from "./geomet
 
 export type Snapshot = { png: Buffer; rgba: Uint8Array; geo: SnapshotGeo };
 
-const STATIC_MAPS = "https://maps.googleapis.com/maps/api/staticmap";
-
 export function googleMapsKey(): string | null {
   return process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || null;
 }
@@ -29,18 +27,10 @@ export function googleMapsKey(): string | null {
 /** The satellite image around a point (640×640 at scale 2), as PNG and RGBA pixels. */
 export async function fetchSnapshot(pin: LatLng, zoom: number, key = googleMapsKey()): Promise<Snapshot> {
   if (!key) throw new Error("Google Maps key is not configured");
-  const params = new URLSearchParams({
-    center: `${pin.lat.toFixed(7)},${pin.lng.toFixed(7)}`,
-    zoom: String(zoom),
-    size: `${ROOF_SNAPSHOT.sizePx}x${ROOF_SNAPSHOT.sizePx}`,
-    scale: String(ROOF_SNAPSHOT.scale),
-    maptype: "satellite",
-    format: "png32",
-    key,
-  });
-  const res = await fetch(`${STATIC_MAPS}?${params}`, { cache: "no-store", headers: { Referer: "https://www.easylinksolar.com.au/" } });
-  if (!res.ok || !(res.headers.get("content-type") ?? "").startsWith("image/")) throw new Error(`Satellite image failed: ${res.status}`);
-  return decodeSnapshot(Buffer.from(await res.arrayBuffer()), pin, zoom);
+  // Cached by point and zoom, shared with the Designs page's image route.
+  const png = await getSnapshotPng(pin.lat, pin.lng, zoom, key);
+  if (!png) throw new Error("Satellite image failed");
+  return decodeSnapshot(png, pin, zoom);
 }
 
 /** An image already fetched (or a test image), decoded for analysis. */
@@ -179,25 +169,16 @@ export async function loadRoofContext(
   const ctx: RoofDesignContext = { pin, ...extra };
   if (!source) return ctx;
   if (source.kind === "backend") {
-    const url = (path: string) => buildBackendUrl(source.baseUrl, path);
-    const q = `lat=${encodeURIComponent(pin.lat)}&lng=${encodeURIComponent(pin.lng)}`;
+    // Through the address cache shared with the Designs page's data routes.
     const [combined, parcel, footprint] = await Promise.all([
-      getJson(url("/solar/estimate-with-layers"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ latitude: pin.lat, longitude: pin.lng }),
-      }).then((p) => unwrapApiData<{ estimate: SolarEstimateResult; dataLayers: { maskUrl?: string; dsmUrl?: string } }>(p)).catch(() => null),
-      extra.parcel !== undefined
-        ? Promise.resolve(null)
-        : getJson(url(`/cadastre/lookup?${q}`)).then((p) => unwrapApiData<{ ring: LatLngRing; areaM2: number }>(p)).catch(() => null),
-      extra.footprint !== undefined
-        ? Promise.resolve(null)
-        : getJson(url(`/building-footprint/lookup?${q}`)).then((p) => unwrapApiData<{ ring: LatLngRing }>(p)).catch(() => null),
-    ]);
+      getCombinedSolar(pin.lat, pin.lng).then((r) => (r.ok ? (r.data as unknown as { estimate: SolarEstimateResult; dataLayers: { maskUrl?: string; dsmUrl?: string } }) : null)),
+      extra.parcel !== undefined ? Promise.resolve(null) : getCadastre<{ ring: LatLngRing; areaM2: number }>(pin.lat, pin.lng).then((r) => (r.ok ? r.data : null)),
+      extra.footprint !== undefined ? Promise.resolve(null) : getFootprint<{ ring: LatLngRing }>(pin.lat, pin.lng).then((r) => (r.ok ? r.data : null)),
+    ]).catch(() => [null, null, null] as const);
     if (combined?.estimate) ctx.estimate = combined.estimate;
     if (parcel?.ring && parcel.ring.length >= 3) ctx.parcel = { ring: parcel.ring, areaM2: parcel.areaM2 ?? ringAreaM2(parcel.ring) };
     if (footprint?.ring && footprint.ring.length >= 3) ctx.footprint = footprint.ring;
-    const layer = (u?: string) => (u ? getBytes(url(`/solar/geotiff-proxy?url=${encodeURIComponent(u)}`)).then(parseRaster) : Promise.resolve(null));
+    const layer = (u?: string) => (u ? getLayerBytes(u).then(parseRaster).catch(() => null) : Promise.resolve(null));
     [ctx.mask, ctx.dsm] = await Promise.all([layer(combined?.dataLayers?.maskUrl), layer(combined?.dataLayers?.dsmUrl)]);
     ctx.parcel = lotForDesign(ctx.parcel, ctx.estimate, pin);
     return ctx;
@@ -295,13 +276,22 @@ export async function designRoofAt(
     fetchImage?: (pin: LatLng, zoom: number) => Promise<Snapshot>;
   } = {},
 ): Promise<DesignRoofAtResult> {
+  // The satellite image doesn't depend on Google's data: fetch it alongside.
+  const fetchImage = opts.fetchImage ?? fetchSnapshot;
+  const early = new Map<number, Promise<Snapshot>>();
+  if (!opts.context?.snapshot) {
+    const first = fetchImage(pin, ROOF_SNAPSHOT.zoom);
+    first.catch(() => {});
+    early.set(ROOF_SNAPSHOT.zoom, first);
+  }
+  const fetchEarly = (p: LatLng, zoom: number) => early.get(zoom) ?? fetchImage(p, zoom);
   const context = opts.context ?? (await loadRoofContext(pin, opts.source === undefined ? defaultDataSource() : opts.source));
   // The lot may not hold the whole house (a property over two lots): widen it first.
   context.parcel = lotForDesign(context.parcel, context.estimate, pin);
   let image: Snapshot | null = null;
   if (!context.snapshot) {
     try {
-      const r = await analyseSnapshotAt(context, opts.fetchImage);
+      const r = await analyseSnapshotAt(context, fetchEarly);
       image = r.image;
       context.snapshot = r.analysis;
     } catch {

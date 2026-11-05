@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildBackendUrl } from "@/lib/customers/backend";
+import { getLayerBytes } from "@/lib/server/roofDataCache";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -12,47 +12,18 @@ export async function GET(request: Request) {
     );
   }
 
-  const backendBaseUrl = process.env.BACKEND_API_BASE_URL;
-
-  if (!backendBaseUrl) {
-    return NextResponse.json(
-      { message: "Server configuration is missing BACKEND_API_BASE_URL." },
-      { status: 500 },
-    );
-  }
-
-  const proxyUrl = new URL(
-    buildBackendUrl(backendBaseUrl, "/solar/geotiff-proxy"),
-  );
-  proxyUrl.searchParams.set("url", tiffUrl);
-
-  let backendResponse: Response;
-
+  // From the address cache when this link was issued for a cached address.
+  let bytes: Buffer | null;
   try {
-    backendResponse = await fetch(proxyUrl.toString(), { cache: "no-store" });
+    bytes = await getLayerBytes(tiffUrl);
   } catch (error) {
+    const status = (error as { status?: number }).status ?? 502;
     console.error("geotiff-proxy fetch error", error);
-    return NextResponse.json(
-      { message: "Unable to reach the GeoTIFF proxy." },
-      { status: 502 },
-    );
+    return NextResponse.json({ message: `GeoTIFF proxy failed: ${status}` }, { status });
   }
-
-  if (!backendResponse.ok) {
-    return NextResponse.json(
-      { message: `GeoTIFF proxy failed: ${backendResponse.status}` },
-      { status: backendResponse.status },
-    );
-  }
-
-  const arrayBuffer = await backendResponse.arrayBuffer();
-
-  return new NextResponse(arrayBuffer, {
+  if (!bytes) return NextResponse.json({ message: "Unable to reach the GeoTIFF proxy." }, { status: 502 });
+  return new NextResponse(new Uint8Array(bytes), {
     status: 200,
-    headers: {
-      "Content-Type":
-        backendResponse.headers.get("content-type") ?? "image/tiff",
-      "Cache-Control": "public, max-age=3600",
-    },
+    headers: { "Content-Type": "image/tiff", "Cache-Control": "private, max-age=3600" },
   });
 }
