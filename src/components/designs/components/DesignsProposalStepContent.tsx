@@ -47,6 +47,11 @@ import { estimateSavings } from "@/lib/proposal/proposalPricing";
 import { useProposalPricing } from "@/lib/proposal/useProposalPricing";
 
 
+/** Battery size as quoted: up to two decimals, no trailing zeros (44.24, 40, 13.5). */
+function formatBatteryKwh(kwh: number): string {
+  return String(Math.round(kwh * 100) / 100);
+}
+
 /** Usable kWh from a battery option label ("14.6kWh" → 14.6; "None" → 0). */
 function batteryKwhOf(id: string): number {
   const n = Number.parseFloat(findBatteryCapacity(id).label);
@@ -278,6 +283,7 @@ function BatterySelector({
   onSelect,
   prices,
   sizeKwh,
+  quotedKwh,
   estimated,
 }: {
   selectedId: string;
@@ -288,12 +294,15 @@ function BatterySelector({
   estimated: Set<string>;
   /** The design's battery size; shown when it isn't one of the buttons (e.g. 13 kWh from the Energy step). */
   sizeKwh: number;
+  /** Usable kWh of the battery actually quoted (e.g. 44.24 kWh for a 40 kWh pick): what the selected card shows. */
+  quotedKwh?: number;
 }) {
   const option = findBatteryCapacity(selectedId);
   const optionKwh = Number.parseFloat(option.label);
+  const shownKwh = quotedKwh && quotedKwh > 0 && selectedId !== "none" ? quotedKwh : sizeKwh;
   const selected =
-    sizeKwh > 0 && !(Number.isFinite(optionKwh) && Math.abs(optionKwh - sizeKwh) < 0.05)
-      ? { ...option, label: `${Math.round(sizeKwh * 10) / 10}kWh` }
+    shownKwh > 0 && !(Number.isFinite(optionKwh) && Math.abs(optionKwh - shownKwh) < 0.005)
+      ? { ...option, label: `${formatBatteryKwh(shownKwh)}kWh` }
       : option;
   return (
     <div className={`${GLASS} ${TINT.brandGold} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
@@ -322,7 +331,7 @@ function BatterySelector({
                   : "border-white/70 bg-white/55 text-[#152238] hover:bg-white/75"
               }`}
             >
-              {battery.label}
+              {isSelected ? selected.label : battery.label}
               {battery.id !== "none" && prices[battery.id] ? (
                 <span className={`text-[10px] font-normal ${isSelected ? "text-yellow-lemon" : "text-[#152238]/70"}`}>
                   +{formatAud(prices[battery.id])}
@@ -681,6 +690,7 @@ export const DesignsProposalStepContent = forwardRef<
             onSelect={handleSelectBattery}
             prices={batteryPrices}
             sizeKwh={batteryKwh}
+            quotedKwh={selectedQuote?.battery?.kwh}
             estimated={batteryEstimated}
           />
         </div>
@@ -703,7 +713,10 @@ export const DesignsProposalStepContent = forwardRef<
                 return <ProposalDetailRow key={key} label={CATEGORY_DETAIL_LABEL[key]} value={value} />;
               })}
               {batteryKwh > 0 && !(proposal.equipment.items.battery?.length) ? (
-                <ProposalDetailRow label="Battery" value={`${Math.round(batteryKwh * 10) / 10} kWh`} />
+                <ProposalDetailRow
+                  label="Battery"
+                  value={`${formatBatteryKwh(selectedQuote?.battery?.kwh && selectedQuote.battery.kwh > 0 ? selectedQuote.battery.kwh : batteryKwh)} kWh`}
+                />
               ) : null}
               <ProposalDetailRow label="Number of Panels" value={proposal.summary.totalPanels} />
               <ProposalDetailRow label="Panel Tier" value={findPanelTier(panelTierId).label} />
