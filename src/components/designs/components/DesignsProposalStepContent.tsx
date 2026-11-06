@@ -30,6 +30,7 @@ import {
 } from "@/lib/installers/designs";
 import { clearDesignDraft, saveDesignDraft } from "@/lib/designs/draft-persistence";
 import { probeSignedInCustomer, submitDesignCapture } from "@/lib/designs/capture";
+import { saveLeadDesign } from "@/lib/designs/leadDesignLink";
 import { DesignsProposalDownloadModal } from "./DesignsProposalDownloadModal";
 import {
   DEFAULT_BATTERY_CAPACITY_ID,
@@ -408,16 +409,26 @@ export const DesignsProposalStepContent = forwardRef<
    */
   async function handleSaveToAccount() {
     if (saving) return;
-    // Staff have no customer session, and the public save would create an
-    // account and email the customer. Finish hands over the proposal instead.
-    if (leadId && !isInstallerEditing) {
-      setDownloadModalOpen(true);
-      return;
-    }
     setSaving(true);
     onSavingChange?.(true);
     try {
       const input = proposalToDesignInput(proposal);
+
+      // Staff designing for a lead (Quotes & Leads → Solar Design): saved to
+      // the lead's customer account by the backend. Never the public save,
+      // which would create an account and email the customer.
+      if (leadId && !isInstallerEditing) {
+        const r = await saveLeadDesign(leadId, input);
+        toast.success(
+          r.updated
+            ? "Design updated on the lead."
+            : r.createdAccount
+              ? "Design saved to the lead. A customer account was set up for it; the customer hasn't been emailed."
+              : "Design saved to the lead.",
+        );
+        router.push("/master/quotes-leads");
+        return;
+      }
 
       // Installer session: no customer cookies to write a profile with, and
       // the customer-scoped save endpoints reject anyone but the design's

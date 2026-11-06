@@ -56,3 +56,19 @@ export function leadPrefillFrom(params: { get(name: string): string | null }): L
     pin: pinOk ? { lat, lng } : null,
   };
 }
+
+/** Saves the builder's design to the lead (staff only). Throws with the API's message. */
+export async function saveLeadDesign(
+  leadId: string,
+  input: unknown,
+): Promise<{ leadId: string; designId: string; updated: boolean; createdAccount: boolean }> {
+  const res = await fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/design`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const json = (await res.json().catch(() => ({}))) as { message?: string; data?: { leadId: string; designId: string; updated: boolean; createdAccount: boolean } };
+  if (res.status === 401) throw new Error("Sign in to the Operations portal to save designs for leads.");
+  if (!res.ok || !json.data) throw new Error(json.message || "Could not save the design to this lead.");
+  return json.data;
+}

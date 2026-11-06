@@ -692,6 +692,7 @@ export function DesignsHeroSection({
         showNext={showNext}
         fillPercent={fillPercent}
         finishing={finishing}
+        finishLabel={leadPrefill ? "Save design" : undefined}
       />
     </section>
   );

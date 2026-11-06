@@ -9,6 +9,8 @@ type DesignsHeroFooterProps = {
   showBack?: boolean;
   showNext?: boolean;
   fillPercent?: number;
+  /** Label for the last step's button (default "Finish"). */
+  finishLabel?: string;
   /** True while Finish (the last step's `onNext`) is persisting the design. */
   finishing?: boolean;
 };
@@ -21,6 +23,7 @@ export function DesignsHeroFooter({
   onBack,
   onNext,
   fillPercent = 10,
+  finishLabel = "Finish",
   showBack = false,
   showNext = false,
   finishing = false,
@@ -57,7 +60,7 @@ export function DesignsHeroFooter({
                 showNext ? "" : "invisible pointer-events-none"
               }`}
             >
-              {fillPercent === 100 ? (finishing ? "Saving…" : "Finish") : "Next"}
+              {fillPercent === 100 ? (finishing ? "Saving…" : finishLabel) : "Next"}
               <Icon
                 name="ArrowRight"
                 className={`size-6 ${fillPercent === 100 ? "text-white" : "text-black"}`}
