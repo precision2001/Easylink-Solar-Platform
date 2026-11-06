@@ -47,6 +47,18 @@ import { estimateSavings } from "@/lib/proposal/proposalPricing";
 import { useProposalPricing } from "@/lib/proposal/useProposalPricing";
 
 
+/**
+ * The quoted battery's rated size, as its model name states it (BLUETTI
+ * EP2000 + 6 × B700 … 44.24kWh → 44.24), the size the customer picked on the
+ * Energy step; falls back to the price list's usable kWh.
+ */
+function ratedBatteryKwh(battery: { model: string; kwh: number } | null | undefined): number | undefined {
+  if (!battery) return undefined;
+  const named = [...battery.model.matchAll(/(\d+(?:\.\d+)?)\s*kWh/gi)].map((m) => Number.parseFloat(m[1]));
+  const rated = named.length ? named[named.length - 1] : NaN;
+  return Number.isFinite(rated) && rated > 0 ? rated : battery.kwh > 0 ? battery.kwh : undefined;
+}
+
 /** Battery size as quoted: up to two decimals, no trailing zeros (44.24, 40, 13.5). */
 function formatBatteryKwh(kwh: number): string {
   return String(Math.round(kwh * 100) / 100);
@@ -690,7 +702,7 @@ export const DesignsProposalStepContent = forwardRef<
             onSelect={handleSelectBattery}
             prices={batteryPrices}
             sizeKwh={batteryKwh}
-            quotedKwh={selectedQuote?.battery?.kwh}
+            quotedKwh={ratedBatteryKwh(selectedQuote?.battery)}
             estimated={batteryEstimated}
           />
         </div>
@@ -715,7 +727,14 @@ export const DesignsProposalStepContent = forwardRef<
               {batteryKwh > 0 && !(proposal.equipment.items.battery?.length) ? (
                 <ProposalDetailRow
                   label="Battery"
-                  value={`${formatBatteryKwh(selectedQuote?.battery?.kwh && selectedQuote.battery.kwh > 0 ? selectedQuote.battery.kwh : batteryKwh)} kWh`}
+                  value={(() => {
+                    const rated = ratedBatteryKwh(selectedQuote?.battery);
+                    const usable = selectedQuote?.battery?.kwh;
+                    if (!rated) return `${formatBatteryKwh(batteryKwh)} kWh`;
+                    return usable && Math.abs(usable - rated) >= 0.01
+                      ? `${formatBatteryKwh(rated)} kWh (${formatBatteryKwh(usable)} kWh usable)`
+                      : `${formatBatteryKwh(rated)} kWh`;
+                  })()}
                 />
               ) : null}
               <ProposalDetailRow label="Number of Panels" value={proposal.summary.totalPanels} />
