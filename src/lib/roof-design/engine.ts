@@ -36,6 +36,7 @@ import {
   convexHull,
   pointInRing,
   toLocalXY,
+  fromLocalXY,
   clipRingToConvexPolygon,
   dedupePanels,
   distanceM,
@@ -80,7 +81,7 @@ export type RoofDesignContext = {
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-06.2";
+export const ROOF_ENGINE_VERSION = "2026-11-06.3";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -99,6 +100,16 @@ export const ROOF_DESIGN_LIMITS = {
    * (24 Derwent St: 78%), so terraces keep their lot.
    */
   minLotBuildingShare: 0.6,
+  /**
+   * Google's roof data this many years older than today is out of date: the
+   * roof may have changed since (108 Delhi St, Lidcombe: Google's 2018 data
+   * against a 2026 image). It can no longer veto the image's reading.
+   */
+  staleGoogleYears: 3,
+  /** A traced border with more corners than this is ragged: straight walls replace it. */
+  maxTraceCorners: 20,
+  /** Google's share test switched off (out-of-date data): any share difference passes. */
+  googleWaived: 9,
   /** How far Save may move an eave a person drew or edited, to snap it to the edge in the image. */
   editSnapM: 0.3,
   /** A roof's lines count as determined when this share of their length is seen in the image (and Google agrees). */
@@ -113,6 +124,21 @@ export const DEFAULT_PANEL = { watts: 440, dims: { heightM: 1.762, widthM: 1.134
 const lineLumaOf = (ctx: RoofDesignContext) => ctx.snapshot?.luma ?? ctx.rgbLuma ?? null;
 const lineMaskOf = (ctx: RoofDesignContext) => ctx.snapshot?.mask ?? ctx.mask ?? null;
 const realSegments = (ctx: RoofDesignContext) => (ctx.estimate && !ctx.estimate.estimated ? ctx.estimate.roofSegments : undefined);
+
+/** Years between Google's imagery for this address and today (Infinity when unknown). */
+export function googleDataAgeYears(ctx: RoofDesignContext): number {
+  const d = ctx.estimate && !ctx.estimate.estimated ? Date.parse(ctx.estimate.imageryDate) : NaN;
+  return Number.isFinite(d) ? (Date.now() - d) / (365.25 * 24 * 3600 * 1000) : Infinity;
+}
+
+/**
+ * Google's data is too old to overrule the image: faces are identified from
+ * the image (owner's rule); Google's data only confirms them, when current.
+ */
+export function googleDataStale(ctx: RoofDesignContext): boolean {
+  const age = googleDataAgeYears(ctx);
+  return Number.isFinite(age) && age >= ROOF_DESIGN_LIMITS.staleGoogleYears;
+}
 
 /** Per-context caches: the same ring is read many times (outline search, Save Roof, faces). */
 const caches = new WeakMap<RoofDesignContext, Map<string, unknown>>();
@@ -213,7 +239,45 @@ export function snapshotOutlines(ctx: RoofDesignContext): { rings: LatLngRing[];
     const reading = squareReadingFor(fitted[0], ctx, {}, refs);
     if (reading && newStructureConfirmed(reading)) cands.push({ rings: [reading.ring], reading });
   }
-  if (cands.length === 0) return { rings: fitted, square: false };
+  if (cands.length === 0 && googleDataStale(ctx)) {
+    // Google's data predates the roof in today's image: read the roof on the
+    // image alone — the reading's lines must be seen (80%) and the image's
+    // lines explained — and say Google couldn't confirm it.
+    const waived = { maxShareDiff: ROOF_DESIGN_LIMITS.googleWaived };
+    for (const r of [...squared, ...(fitted.length === 1 ? [fitted[0]] : [])]) {
+      const reading = squareReadingFor(r, ctx, waived, refs);
+      if (reading && reading.evidence.seen >= ROOF_DESIGN_LIMITS.minSeenDetermined) cands.push({ rings: [reading.ring], reading });
+    }
+  }
+  if (cands.length === 0) {
+    // No confirmed reading: the border is still straight walls — the image's
+    // square-walled outline, never a raw trace with dozens of corners.
+    // Of the straight-walled borders, the one the image agrees with best
+    // (24 Derwent St: squaring its trace moved walls the image disagrees with).
+    if (fitted.length !== 1) return { rings: fitted, square: false };
+    // A trace of straight runs with few corners is a fair border; a ragged
+    // one (108 Delhi St: 24 corners round driveway clutter) is replaced by
+    // straight walls.
+    if (fitted[0].length <= ROOF_DESIGN_LIMITS.maxTraceCorners) return { rings: fitted, square: false };
+    const labelled: [string, LatLngRing | null][] = [
+      ["image-square", squared[0] ?? null],
+      ["squared-trace", squareWalls(fitted[0])],
+      ["no-notches", withoutNotches(fitted[0])],
+    ];
+    const kinds = new Map<LatLngRing, string>();
+    const options = labelled.filter(([, r]) => r && r.length >= 4).map(([k, r]) => (kinds.set(r!, k), r!));
+    if (options.length === 0) return { rings: fitted, square: false };
+    if (options.length === 1) return { rings: [options[0]], square: false };
+    const scored = options.map((r) => {
+      const o = findOtherFaces([r], ctx);
+      return { r, ev: evidenceFor(o.faces, r, o.checks, Infinity, roofImageLines(r, ctx), 0.1, null, 0), keeps: overlapShare(fitted[0], r) };
+    });
+    // Fewer corners wins a near tie (within 2 m): straight walls over a stepped trace.
+    const band = (x: (typeof scored)[number]) => (Number.isFinite(x.ev.disagreementM) ? Math.floor(x.ev.disagreementM / 2) : 1e9);
+    scored.sort((a, b) => band(a) - band(b) || a.r.length - b.r.length);
+    (globalThis as { __roofDebug?: (k: string, v: unknown) => void }).__roofDebug?.("border options", scored.map((x) => ({ kind: kinds.get(x.r), pts: x.r.length, d: +x.ev.disagreementM.toFixed(1), keeps: +x.keeps.toFixed(3), area: Math.round(ringAreaM2(x.r)) })));
+    return { rings: [scored[0].r], square: false };
+  }
   cands.sort((x, y) => compareEvidence(x.reading.evidence, y.reading.evidence));
   const rate = (c: Cand) => c.reading.evidence.disagreementM;
   (globalThis as { __roofDebug?: (k: string, v: unknown) => void }).__roofDebug?.(
@@ -237,6 +301,8 @@ export function snapshotOutlines(ctx: RoofDesignContext): { rings: LatLngRing[];
 export type RoofEvidence = {
   googleDiff: number;
   googleOk: boolean;
+  /** Google's data is out of date and was not used to confirm this reading (image only). */
+  googleStale?: boolean;
   seen: number;
   unseenM: number;
   unexplainedM: number;
@@ -284,6 +350,25 @@ export function outlineVariants(ring: LatLngRing): LatLngRing[] {
 
 function lineLengthM(l: LineCheck): number {
   return distanceM(l.a, l.b);
+}
+
+/** Share of ring `a`'s area that ring `b` also covers (sampled on a 0.25 m grid). */
+export function overlapShare(a: LatLngRing, b: LatLngRing): number {
+  const o = a[0];
+  const A = a.map((p) => toLocalXY(p, o));
+  const xs = A.map((p) => p.x);
+  const ys = A.map((p) => p.y);
+  let inA = 0;
+  let both = 0;
+  for (let x = Math.min(...xs); x <= Math.max(...xs); x += 0.25) {
+    for (let y = Math.min(...ys); y <= Math.max(...ys); y += 0.25) {
+      const p = fromLocalXY({ x, y }, o);
+      if (!pointInRing(p, a)) continue;
+      inA++;
+      if (pointInRing(p, b)) both++;
+    }
+  }
+  return inA ? both / inA : 0;
 }
 
 /** Google's plan roof area inside an outline (segments centred in it, sloped area × cos pitch). */
@@ -679,20 +764,47 @@ export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, { rel
     const imgLines = roofImageLines(p, ctx);
     type Cand = { source: FaceSource; faces: RoofFace[]; checks: LineCheck[]; moved: number; gables: number; evidence: RoofEvidence };
     const cands: Cand[] = [];
-    const sq = squareReadingOf(p, ctx, opts) ?? undefined;
-    if (sq) {
-      cands.push({ source: "square-hip", faces: sq.faces, checks: sq.lines, moved: 0, gables: sq.gables.length, evidence: evidenceFor(sq.faces, p, sq.lines, sq.diff, imgLines, maxShareDiff, ctx.snapshot?.luma ?? null, googlePlanFor(p, ctx)) });
+    let sq = squareReadingOf(p, ctx, opts) ?? undefined;
+    let waived = false;
+    if (!sq && googleDataStale(ctx)) {
+      // Out-of-date Google data: the reading stands on the image alone.
+      const w = squareReadingOf(p, ctx, { ...opts, maxShareDiff: ROOF_DESIGN_LIMITS.googleWaived });
+      if (w) {
+        const ev = evidenceFor(w.faces, p, w.lines, w.diff, imgLines, ROOF_DESIGN_LIMITS.googleWaived, ctx.snapshot?.luma ?? null, googlePlanFor(p, ctx));
+        if (ev.seen >= ROOF_DESIGN_LIMITS.minSeenDetermined) {
+          sq = w;
+          waived = true;
+        }
+      }
     }
-    // The height model only where no trigonometry reading is confirmed.
-    const other = sq ? null : findOtherFaces([p], ctx);
-    if (other) cands.push({ ...other, gables: 0, evidence: evidenceFor(other.faces, p, other.checks, segs ? googleDiffFor(other.faces, p, ctx) : Infinity, imgLines, maxShareDiff, ctx.snapshot?.luma ?? null, googlePlanFor(p, ctx)) });
+    if (sq) {
+      const ev = evidenceFor(sq.faces, p, sq.lines, sq.diff, imgLines, maxShareDiff, ctx.snapshot?.luma ?? null, googlePlanFor(p, ctx));
+      cands.push({ source: "square-hip", faces: sq.faces, checks: sq.lines, moved: 0, gables: sq.gables.length, evidence: waived ? { ...ev, googleOk: false, googleStale: true } : ev });
+    }
+    // The height model only where no trigonometry reading is confirmed by
+    // Google; a reading on the image alone competes with it on the image.
+    const other = sq && !waived ? null : findOtherFaces([p], ctx);
+    const stale = googleDataStale(ctx);
+    const fallbackEvidence = (o: NonNullable<typeof other>) => {
+      const ev = evidenceFor(o.faces, p, o.checks, segs ? googleDiffFor(o.faces, p, ctx) : Infinity, imgLines, maxShareDiff, ctx.snapshot?.luma ?? null, googlePlanFor(p, ctx));
+      // Out-of-date Google data confirms nothing, its height model included.
+      return stale ? { ...ev, googleOk: false, googleStale: true } : ev;
+    };
+    if (other) cands.push({ ...other, gables: 0, evidence: fallbackEvidence(other) });
+    if ((!sq || waived) && stale && other?.source === "height-model") {
+      // The height model shows the roof as it was when Google flew over; the
+      // plain hip split competes with it on the image alone.
+      const hip = findOtherFaces([p], ctx, { hipOnly: true });
+      cands.push({ ...hip, gables: 0, evidence: fallbackEvidence(hip) });
+    }
     // A trigonometry reading Google and the image confirm is used; the height
     // model's lines are moved onto edges in the image before being checked
     // against it, so its scores can't overrule a confirmed reading (134 Old
     // Canterbury Rd: it drew a flat-topped north end on a hip roof). The
     // height model is used only where no reading is confirmed — and then the
     // roof's lines are reported as not determined.
-    cands.sort((x, y) => (x.source === "square-hip" ? -1 : 0) - (y.source === "square-hip" ? -1 : 0) || compareEvidence(x.evidence, y.evidence));
+    const firm = (c: (typeof cands)[number]) => (c.source === "square-hip" && !c.evidence.googleStale ? -1 : 0);
+    cands.sort((x, y) => firm(x) - firm(y) || compareEvidence(x.evidence, y.evidence));
     (globalThis as { __roofDebug?: (k: string, v: unknown) => void }).__roofDebug?.(
       "face candidates",
       cands.map((c) => ({ source: c.source, faces: c.faces.length, ...c.evidence })),
@@ -712,9 +824,13 @@ export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, { rel
 }
 
 /** Faces of roofs with no square-walled reading: Google's height model filled to the outline, else the hip split; lines corrected on the image. */
-function findOtherFaces(paths: LatLngRing[], ctx: RoofDesignContext): { source: FaceSource; faces: RoofFace[]; checks: LineCheck[]; moved: number } {
+function findOtherFaces(
+  paths: LatLngRing[],
+  ctx: RoofDesignContext,
+  { hipOnly = false }: { hipOnly?: boolean } = {},
+): { source: FaceSource; faces: RoofFace[]; checks: LineCheck[]; moved: number } {
   const snap = ctx.snapshot ?? null;
-  const detected = detectRoofFaces(ctx.dsm ?? null, paths, ctx.mask ?? null);
+  const detected = hipOnly ? null : detectRoofFaces(ctx.dsm ?? null, paths, ctx.mask ?? null);
   let faces: RoofFace[];
   let source: FaceSource;
   if (detected && detected.length > 0) {
@@ -849,6 +965,9 @@ export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {})
   const notes = [
     needsVerification ? "Roof outline from Google's data or a building footprint, not traced from the image: check the roof shape." : null,
     panels.length === 0 ? "Roof found, but no face is big enough for a panel." : null,
+    faceSet.evidence.some((e) => e.googleStale)
+      ? `Google's roof data for this address is from ${ctx.estimate?.imageryDate?.slice(0, 4) ?? "years ago"} and doesn't match today's satellite image, so it wasn't used to confirm the faces. Confirm on site.`
+      : null,
     faceSet.determined
       ? null
       : "Roof lines not fully determined: a roof's faces don't match Google's roof data or its lines aren't seen in the image. Use Relook roof or Edit, or confirm on site.",

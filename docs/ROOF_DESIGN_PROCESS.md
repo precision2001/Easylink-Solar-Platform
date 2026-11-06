@@ -250,6 +250,33 @@ Who uses it:
 
 Newest first. Add an entry whenever a design comes out wrong.
 
+### 2026-11-06: 108 Delhi St, Lidcombe — Google's data from 2018, a ragged border
+1. **Seen:** a jagged border (24 corners) taking in driveway clutter and
+   cutting the rear section; faces crossing the roof.
+2. **Why:** Google's roof data for the address is from imagery of
+   3 Dec 2018; the roof in today's (2026) image no longer matches it. The
+   image's square outline was read correctly but failed Google's share test
+   (Google: 57% facing ESE; the hip on today's roof: mostly NNE/SSW), so the
+   engine fell back to the raw trace and Google's 2018 height model.
+3. **Fix (owner agreed):** Google's data 3+ years old (`staleGoogleYears`) is
+   out of date: it can't veto the image. A trigonometry reading may stand on
+   the image alone (80% of its lines seen) but must also beat the height
+   model on the image test; the height model and the plain hip split compete
+   on the image alone; the design says "Google's roof data is from 2018 …
+   confirm on site". A traced border of more than 20 corners
+   (`maxTraceCorners`) is replaced by straight walls (the image's square
+   outline, squared walls or notches merged), chosen on the image test.
+4. **Result:** 108 Delhi St gets a straight four-wall border with the date
+   note, still *not determined*: the house is a hip roof with a front bay and
+   a lower rear section that no single reading fits, and the image's outline
+   still takes in about 1.5 m of the west yard — Relook / Edit. Test roofs
+   unchanged except 61 Harry Ave and 66 Frances St, now with straight
+   borders round the same faces.
+5. **Tried and dropped:** letting borders compete on the image test alone,
+   or on how much of the trace they keep, or on whether the dropped part
+   looks like roof: none separated 108 Delhi St's clutter from 24 Derwent
+   St's real roof, and Derwent lost 7 panels.
+
 ### 2026-11-05: 264 Wangee Rd, Greenacre (hip roof, stepped north wing, rear skillion): faces by the priority tests
 1. **Seen (owner's drawing):** six faces on the main roof — west, south, east
    from the centre apex, a north triangle, a narrow strip from the step in

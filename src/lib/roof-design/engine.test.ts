@@ -116,3 +116,14 @@ describe("user edits", () => {
     expect(Math.round(d.roofAreaM2)).toBe(96);
   });
 });
+
+describe("Google data age", () => {
+  it("treats Google imagery 3+ years old as out of date", async () => {
+    const { googleDataStale } = await import("./engine");
+    const est = (d: string) => ({ estimated: false, imageryDate: d, roofSegments: [] }) as unknown as RoofDesignContext["estimate"];
+    expect(googleDataStale({ pin, estimate: est("2018-12-03") })).toBe(true);
+    const recent = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    expect(googleDataStale({ pin, estimate: est(recent) })).toBe(false);
+    expect(googleDataStale({ pin })).toBe(false);
+  });
+});
