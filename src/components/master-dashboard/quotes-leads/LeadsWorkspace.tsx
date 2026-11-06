@@ -1,6 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { leadDesignHref } from "@/lib/designs/leadDesignLink";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/master-dashboard/quotes-leads/icons";
 import { RoofDesignCell, RoofDesignViewer, useAutoRoofDesigns } from "@/components/master-dashboard/quotes-leads/RoofDesign";
@@ -136,18 +138,28 @@ function PillSelect({
   );
 }
 
-function SourceChip({ lead }: { lead: PipelineLead }) {
+/**
+ * Starts a manual design for this lead: the Designs flow opens on the roof
+ * with the lead's details and address filled in. Where the lead came from
+ * sits underneath.
+ */
+function SolarDesignButton({ lead }: { lead: PipelineLead }) {
   const kind = sourceKind(lead.source);
   return (
     <div className="flex flex-col items-start gap-1">
-      <span
-        title={lead.source ?? undefined}
-        className="inline-flex max-w-full items-center gap-1.5 truncate rounded-[6px] bg-[#F1F5F9] px-1.5 py-[3px] text-[12px] font-semibold text-[#334155]"
+      <Link
+        href={leadDesignHref(lead)}
+        title={`Design a system for ${lead.customerName}${lead.address ? ` at ${lead.address}` : ""}`}
+        className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-[8px] border border-[#CBD5E1] pl-1 pr-2.5 text-[12.5px] font-bold text-white no-underline shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB]"
+        style={{ backgroundImage: "linear-gradient(110deg, rgb(84, 116, 235) 10%, rgb(255, 60, 60) 100%)" }}
       >
-        <Icon name={kind.icon} size={13} className="shrink-0 text-[#64748B]" />
-        {kind.label}
+        <Image alt="" src="/images/solarDesignLogo.png" width={24} height={24} className="shrink-0" />
+        <span className="whitespace-nowrap">Solar Design</span>
+        <span aria-hidden="true">→</span>
+      </Link>
+      <span className="truncate text-[11.5px] text-[#64748B]" title={lead.source ?? undefined}>
+        {kind.label} · {ago(lead.createdAt)}
       </span>
-      <span className="text-[11.5px] text-[#64748B]">{ago(lead.createdAt)}</span>
     </div>
   );
 }
@@ -577,8 +589,8 @@ export function LeadsWorkspace({
               <col className="w-[136px]" />
               <col className="w-[15%]" />
               <col className="w-[15%]" />
-              <col className="w-[29%]" />
-              <col className="w-[12%]" />
+              <col className="w-[27%]" />
+              <col className="w-[148px]" />
               <col className="w-[56px]" />
             </colgroup>
             <thead>
@@ -750,7 +762,7 @@ export function LeadsWorkspace({
                     </td>
 
                     <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
-                      <SourceChip lead={l} />
+                      <SolarDesignButton lead={l} />
                       {view === "spam" && l.spamReason ? (
                         <div className="mt-1 text-[11.5px] text-[#B91C1C]">{l.spamReason}</div>
                       ) : l.spamSuggestion?.length ? (

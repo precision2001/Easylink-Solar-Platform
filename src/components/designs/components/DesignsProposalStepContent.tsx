@@ -395,6 +395,8 @@ export const DesignsProposalStepContent = forwardRef<
    */
   const installerCustomerId = searchParams.get("customerId");
   const isInstallerEditing = Boolean(installerCustomerId);
+  /** Staff designing for a lead (Quotes & Leads → Solar Design). */
+  const leadId = searchParams.get("leadId");
 
   /**
    * Persists the builder output so it shows on the customer's design page and
@@ -406,6 +408,12 @@ export const DesignsProposalStepContent = forwardRef<
    */
   async function handleSaveToAccount() {
     if (saving) return;
+    // Staff have no customer session, and the public save would create an
+    // account and email the customer. Finish hands over the proposal instead.
+    if (leadId && !isInstallerEditing) {
+      setDownloadModalOpen(true);
+      return;
+    }
     setSaving(true);
     onSavingChange?.(true);
     try {
@@ -505,7 +513,7 @@ export const DesignsProposalStepContent = forwardRef<
       save: () => void handleSaveToAccount(),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [proposal, isInstallerEditing, editingDesignId, customerUser],
+    [proposal, isInstallerEditing, editingDesignId, customerUser, leadId],
   );
 
   const displayCustomerName = proposal.customer.name || customerName;

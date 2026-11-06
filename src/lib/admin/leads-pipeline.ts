@@ -91,6 +91,9 @@ export type RoofDesignSummary = {
   roofAreaM2: number | null;
   message: string | null;
   updatedAt: string;
+  /** The design's pin, when stored; lets Solar Design skip the address lookup. */
+  lat?: number | null;
+  lng?: number | null;
 };
 
 export type PipelineMeta = {
