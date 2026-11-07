@@ -1,6 +1,6 @@
 "use client";
 
-import { chosenProductsOf } from "@/lib/proposal/proposalDocument";
+import { chosenProductsOf, inverterMatchedToBattery, MATCHED_INVERTER_NOTE } from "@/lib/proposal/proposalDocument";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 
@@ -832,7 +832,11 @@ export const DesignsProposalStepContent = forwardRef<
                   ? `${pricingBlock} Pick a battery size from the list, or your installer will quote it.`
                   : selectedQuote
                   ? `*${selectedQuote.estimated ? "Estimated battery price (no single battery this size in our price list). " : ""}Includes installation and GST, after ${selectedQuote.stcCount} STCs (${formatAud(selectedQuote.stcValue)}). ${
-                      selectedQuote.battery?.inverterBuiltIn ? `${selectedQuote.battery.model}` : (selectedQuote.inverter?.model ?? "")
+                      selectedQuote.battery?.inverterBuiltIn
+                        ? `${selectedQuote.battery.model}`
+                        : selectedQuote.inverter
+                          ? `${selectedQuote.inverter.model}${inverterMatchedToBattery(proposal, selectedQuote) ? ` (${MATCHED_INVERTER_NOTE})` : ""}`
+                          : ""
                     }${selectedQuote.phase === 3 ? ", three-phase supply" : ""}.${pricingLoading ? " Updating…" : ""}`
                   : pricingError
                     ? "We couldn't price this design just now. Your installer will confirm the price."

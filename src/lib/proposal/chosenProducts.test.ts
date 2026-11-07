@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chosenProductsOf, designBatteryKwh } from "./proposalDocument";
+import { chosenProductsOf, designBatteryKwh, inverterMatchedToBattery } from "./proposalDocument";
 import type { DesignProposalState } from "@/lib/store/designProposalSlice";
 
 const B = "75020a62-b9a0-480f-b2ce-3df2b6dfc762";
@@ -26,5 +26,17 @@ describe("the customer's picked products", () => {
 
   it("are left out when nothing was picked", () => {
     expect(chosenProductsOf(proposal({}))).toBeUndefined();
+  });
+});
+
+describe("an inverter the customer didn't pick", () => {
+  const quote = { inverter: { model: "GoodWe ESA (EHA) 8kW 1-phase", kw: 8, phase: 1 }, battery: { model: "GoodWe ESA 17.7kWh", kwh: 17.7, inverterBuiltIn: false } };
+  it("is marked as matched to the battery", () => {
+    expect(inverterMatchedToBattery(proposal({ battery: [battery] }), quote)).toBe(true);
+  });
+  it("is not marked when the customer picked one, or there's no battery", () => {
+    const inv = { productId: B, brand: "GoodWe", name: "ESA 8kW", quantity: 1, ratingLabel: "8 kW" };
+    expect(inverterMatchedToBattery(proposal({ inverter: [inv] }), quote)).toBe(false);
+    expect(inverterMatchedToBattery(proposal({}), { ...quote, battery: null })).toBe(false);
   });
 });

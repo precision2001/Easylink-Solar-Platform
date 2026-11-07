@@ -343,6 +343,17 @@ function buildOptions(
   });
 }
 
+/** Shown after an inverter the customer didn't pick, chosen to run their battery. */
+export const MATCHED_INVERTER_NOTE = "matched to your battery";
+
+/** The quote's inverter wasn't picked by the customer but chosen to run the battery. */
+export function inverterMatchedToBattery(
+  proposal: DesignProposalState,
+  quote: { inverter?: unknown; battery?: { inverterBuiltIn?: boolean } | null } | null | undefined,
+): boolean {
+  return Boolean(quote?.inverter && quote.battery && !quote.battery.inverterBuiltIn && !proposal.equipment.items?.inverter?.length);
+}
+
 export function buildProposalDocument(input: ProposalDocumentInput): ProposalDocument {
   const { proposal, pricing, links } = input;
   const today = input.today ?? new Date();
@@ -399,7 +410,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
     panelCount,
     panelLine: `${panelCount} × ${panelModel ?? "solar panels"}${panelW && !/\d\s*W\b/i.test(panelModel ?? "") ? ` ${panelW} W` : ""}`,
     inverterLine: quote?.inverter
-      ? `${quote.inverter.model} · ${quote.inverter.kw} kW`
+      ? `${quote.inverter.model} · ${quote.inverter.kw} kW${inverterMatchedToBattery(proposal, quote) ? ` (${MATCHED_INVERTER_NOTE})` : ""}`
       : firstInverter
         ? `${[firstInverter.brand, firstInverter.name].filter(Boolean).join(" ")} · ${firstInverter.ratingLabel}`
         : null,
