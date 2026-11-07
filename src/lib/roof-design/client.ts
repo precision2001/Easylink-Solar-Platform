@@ -77,21 +77,51 @@ export function panelsPerFace(d: Extract<RoofDesignResponse, { status: "READY" }
 
 /* ── Start early: the address step asks, the roof step collects ─────── */
 
-const early = new Map<string, Promise<RoofDesignResponse>>();
+type Early = { promise: Promise<RoofDesignResponse>; controller: AbortController; used: boolean; failedAt?: number };
+const early = new Map<string, Early>();
 const pinKey = (p: LatLng) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
+/** A failed design is not asked for again for this long (7 Nov 2026: re-asking on every re-render piled up 504s). */
+export const RETRY_AFTER_FAILURE_MS = 30_000;
+let lastPrefetch: string | null = null;
+
+function ask(pin: LatLng): Early {
+  const k = pinKey(pin);
+  const had = early.get(k);
+  if (had && !(had.failedAt && Date.now() - had.failedAt > RETRY_AFTER_FAILURE_MS)) return had;
+  const controller = new AbortController();
+  const entry: Early = { promise: requestRoofDesign({ lat: pin.lat, lng: pin.lng }, { signal: controller.signal }), controller, used: false };
+  entry.promise.catch(() => {
+    entry.failedAt = Date.now();
+  });
+  early.set(k, entry);
+  return entry;
+}
 
 /**
- * The Roof Designer's design for a pin, asked once per pin and shared: the
- * address step calls this as soon as the pin is set, so the design is usually
- * ready (and the server has every input cached) by the roof step.
+ * The Roof Designer's design for a pin, asked once per pin and shared (the
+ * roof step collects what the address step started).
  */
 export function roofDesignFor(pin: LatLng): Promise<RoofDesignResponse> {
+  const e = ask(pin);
+  e.used = true;
+  return e.promise;
+}
+
+/**
+ * The address step's head start: asks for the design once the pin has
+ * settled. A head start for a pin the customer has since moved away from is
+ * called off (the server drops it if it hasn't started), so nudging the pin
+ * doesn't queue a design per nudge.
+ */
+export function prefetchRoofDesign(pin: LatLng): void {
   const k = pinKey(pin);
-  let p = early.get(k);
-  if (!p) {
-    p = requestRoofDesign({ lat: pin.lat, lng: pin.lng });
-    p.catch(() => early.delete(k));
-    early.set(k, p);
+  if (lastPrefetch && lastPrefetch !== k) {
+    const prev = early.get(lastPrefetch);
+    if (prev && !prev.used) {
+      prev.controller.abort();
+      early.delete(lastPrefetch);
+    }
   }
-  return p;
+  lastPrefetch = k;
+  ask(pin).promise.catch(() => {});
 }

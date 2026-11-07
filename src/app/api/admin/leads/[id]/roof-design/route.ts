@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { backendAuthedFetch, forwardBackendJson } from "@/lib/server/backend-authed-fetch";
-import { runAutoRoofDesign, type RoofDesignInputs } from "@/lib/server/auto-roof-design";
+import type { RoofDesignInputs } from "@/lib/server/auto-roof-design";
+import { roofJob } from "@/lib/server/roofDesignPool";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -37,7 +38,10 @@ async function designLead(id: string): Promise<NextResponse> {
 
   let result;
   try {
-    result = await slot(() => runAutoRoofDesign(inputs));
+    // On the design worker (one design at a time across the server).
+    const r = await slot(() => roofJob({ kind: "auto", inputs }, { key: `lead|${id}|${Date.now()}` }));
+    // Buffers come back from the worker as plain byte arrays.
+    result = r.status === "READY" ? { ...r, thumb: Buffer.from(r.thumb), large: Buffer.from(r.large) } : r;
   } catch (err) {
     console.error("auto roof design failed", id, err);
     result = { status: "FAILED" as const, message: "The designer couldn't finish. Try again." };

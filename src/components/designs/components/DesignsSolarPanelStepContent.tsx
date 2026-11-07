@@ -458,11 +458,16 @@ export const DesignsSolarPanelStepContent = forwardRef<
   // can't be had does the page run the outline search itself.
   const [serverDesign, setServerDesign] = useState<{ key: string; design: RoofDesignResponse | null } | null>(null);
   const pinKey = selectedLocation ? `${selectedLocation.lat.toFixed(6)},${selectedLocation.lng.toFixed(6)}` : null;
+  // Asked once per pin: the location object changes identity on re-renders,
+  // and re-asking after a failure on each one piled up 504s (7 Nov 2026).
+  const selectedLocationRef = useRef(selectedLocation);
+  selectedLocationRef.current = selectedLocation;
   useEffect(() => {
-    if (!selectedLocation || !pinKey) return;
+    const pin = selectedLocationRef.current;
+    if (!pin || !pinKey) return;
     let live = true;
     const giveUp = window.setTimeout(() => live && setServerDesign({ key: pinKey, design: null }), 45_000);
-    roofDesignFor(selectedLocation)
+    roofDesignFor(pin)
       .then((d) => live && setServerDesign({ key: pinKey, design: d }))
       .catch(() => live && setServerDesign({ key: pinKey, design: null }))
       .finally(() => window.clearTimeout(giveUp));
@@ -470,7 +475,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
       live = false;
       window.clearTimeout(giveUp);
     };
-  }, [pinKey, selectedLocation]);
+  }, [pinKey]);
   const serverReady = serverDesign?.key === pinKey ? serverDesign : null;
   useEffect(() => {
     if (!roofCtx || !serverReady) return;

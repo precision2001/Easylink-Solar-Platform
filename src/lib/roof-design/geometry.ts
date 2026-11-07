@@ -210,3 +210,80 @@ export function convexHull(points: LatLng[]): LatLngRing {
   }
   return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
+
+/** Douglas–Peucker: the ring with corners closer than `tolM` to the line between their neighbours dropped. */
+export function simplifyRing(ring: LatLngRing, tolM: number): LatLngRing {
+  if (ring.length <= 4) return ring;
+  const o = ring[0];
+  const pts = ring.map((p) => toLocalXY(p, o));
+  // Split the closed ring at its two farthest-apart corners and simplify each half.
+  let far = 0;
+  let best = -1;
+  for (let i = 1; i < pts.length; i++) {
+    const d = Math.hypot(pts[i].x - pts[0].x, pts[i].y - pts[0].y);
+    if (d > best) {
+      best = d;
+      far = i;
+    }
+  }
+  const keep = new Array<boolean>(pts.length).fill(false);
+  keep[0] = keep[far] = true;
+  const dp = (a: number, b: number) => {
+    // b may wrap past the end of the ring.
+    const n = pts.length;
+    const A = pts[a % n];
+    const B = pts[b % n];
+    let maxD = -1;
+    let idx = -1;
+    for (let i = a + 1; i < b; i++) {
+      const P = pts[i % n];
+      const dx = B.x - A.x;
+      const dy = B.y - A.y;
+      const len = Math.hypot(dx, dy) || 1e-9;
+      const d = Math.abs(dy * P.x - dx * P.y + B.x * A.y - B.y * A.x) / len;
+      if (d > maxD) {
+        maxD = d;
+        idx = i;
+      }
+    }
+    if (maxD > tolM && idx > 0) {
+      keep[idx % n] = true;
+      dp(a, idx);
+      dp(idx, b);
+    }
+  };
+  dp(0, far);
+  dp(far, pts.length);
+  const out = ring.filter((_, i) => keep[i]);
+  return out.length >= 3 ? out : ring;
+}
+
+/** The smallest-area rectangle around a ring (rotating calipers over its hull). */
+export function minAreaRectangle(ring: LatLngRing): LatLngRing | null {
+  const hull = convexHull(ring);
+  if (hull.length < 3) return null;
+  const o = hull[0];
+  const pts = hull.map((p) => toLocalXY(p, o));
+  let best: { area: number; corners: XY[] } | null = null;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1e-6) continue;
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    for (const p of pts) {
+      const u = p.x * ux + p.y * uy;
+      const v = -p.x * uy + p.y * ux;
+      minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+      minV = Math.min(minV, v); maxV = Math.max(maxV, v);
+    }
+    const area = (maxU - minU) * (maxV - minV);
+    if (!best || area < best.area) {
+      const at = (u: number, v: number): XY => ({ x: u * ux - v * uy, y: u * uy + v * ux });
+      best = { area, corners: [at(minU, minV), at(maxU, minV), at(maxU, maxV), at(minU, maxV)] };
+    }
+  }
+  return best ? best.corners.map((c) => fromLocalXY(c, o)) : null;
+}

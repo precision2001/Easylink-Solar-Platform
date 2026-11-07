@@ -17,7 +17,7 @@ import {
 } from "@/utils/constant";
 import { useAppSelector } from "@/lib/store/hooks";
 import { locationStepError } from "@/lib/designs/locationStep";
-import { roofDesignFor } from "@/lib/roof-design/client";
+import { prefetchRoofDesign } from "@/lib/roof-design/client";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -89,9 +89,8 @@ export const DesignsLocationStepContent = forwardRef<
   // finds the design ready (and every input cached on the server).
   useEffect(() => {
     if (!selectedLocation) return;
-    const id = window.setTimeout(() => {
-      roofDesignFor(selectedLocation).catch(() => {});
-    }, 1200);
+    // Once the pin has stayed put for 2 s; moving it calls off the last one.
+    const id = window.setTimeout(() => prefetchRoofDesign(selectedLocation), 2000);
     return () => window.clearTimeout(id);
   }, [selectedLocation]);
 

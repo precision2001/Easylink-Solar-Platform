@@ -1,8 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { clientIpFrom, createRateLimiter, isSameOriginRequest } from "@/lib/server/rate-limit";
-import { panelCorners, type LatLng, type LatLngRing } from "@/lib/roof-design";
-import { designRoofAt, googleMapsKey, renderRoofDesign } from "@/lib/roof-design/server";
+import type { LatLng, LatLngRing } from "@/lib/roof-design";
+import { googleMapsKey } from "@/lib/roof-design/server";
+import { roofJob } from "@/lib/server/roofDesignPool";
 import { ROOF_ENGINE_VERSION } from "@/lib/roof-design/engine";
 import { cachedJson, cacheRead, cacheWrite, placeKey } from "@/lib/server/roofDataCache";
 
@@ -25,7 +26,7 @@ import { cachedJson, cacheRead, cacheWrite, placeKey } from "@/lib/server/roofDa
  *             "panelWatts": 440, "outline": [[{lat,lng},...]], "includeImage": true
  */
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /** Per key: 30 designs an hour (each one costs Google Solar and Static Maps calls). */
 const limiter = createRateLimiter({ limit: 30, windowMs: 60 * 60 * 1000 });
@@ -175,47 +176,25 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
   if (limited) return limited;
 
   try {
-    const r = await designRoofAt(pin, { orientation, beautify: body.beautify === true, panelWatts, outline: outline?.length ? outline : undefined });
-    if (r.status !== "READY") return NextResponse.json({ status: "NO_ROOF", pin, formattedAddress, message: r.message }, { status: 200 });
-    const respond = async (payload: unknown) => {
-      const text = JSON.stringify(payload);
-      await cacheWrite(designKey, text);
-      return new NextResponse(text, { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "miss" } });
-    };
-    const d = r.design;
-    let image: { contentType: string; base64: string } | null = null;
-    if (body.includeImage === true && r.image) {
-      const { large } = await renderRoofDesign(r.image, d);
-      image = { contentType: "image/jpeg", base64: large.toString("base64") };
-    }
-    return respond({
-      status: "READY",
-      pin,
-      formattedAddress,
-      outline: { rings: d.outline, source: d.outlineSource, needsVerification: d.needsVerification, areaM2: d.roofAreaM2 },
-      determined: d.determined,
-      faces: {
-        source: d.faceSet.source,
-        evidence: d.faceSet.evidence,
-        gables: d.faceSet.gables,
-        items: d.faceSet.faces.map((f) => ({ ring: f.ring, pitchDeg: f.pitchDeg ?? null, azimuthDeg: f.azimuthDeg ?? null })),
+    // On the design worker, shared with anyone asking for the same design
+    // right now; dropped if this visitor goes before it starts.
+    const r = await roofJob(
+      {
+        kind: "api",
+        pin,
+        formattedAddress,
+        orientation,
+        beautify: body.beautify === true,
+        panelWatts,
+        outline: outline?.length ? outline : undefined,
+        includeImage: body.includeImage === true,
       },
-      obstructions: d.faceSet.obstructions.map((o) => ({ ring: o.ring, kind: o.kind })),
-      lines: { total: d.lines.total, checked: d.lines.checked, ok: d.lines.ok },
-      panels: {
-        orientation: d.orientation,
-        count: d.panels.length,
-        counts: d.counts,
-        watts: d.panelWatts,
-        dims: d.dims,
-        items: d.panels.map((p) => ({ face: p.segmentIndex, center: p.center, rotationDeg: p.rotationDegrees ?? 0, slopeDeg: p.slopeDegrees ?? 0, corners: panelCorners(p, d.dims) })),
-      },
-      systemKw: d.systemKw,
-      roofPitchDeg: d.pitchDeg,
-      inverter: d.inverter,
-      notes: d.notes,
-      image,
-    });
+      { key: designKey, signal: request.signal },
+    );
+    if (r.status !== "READY") return NextResponse.json(r.body, { status: 200 });
+    const text = JSON.stringify(r.body);
+    await cacheWrite(designKey, text);
+    return new NextResponse(text, { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "miss" } });
   } catch (e) {
     console.error("roof-design API", e);
     return fail(502, "The roof design couldn't be completed; try again shortly.");

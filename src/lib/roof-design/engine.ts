@@ -34,6 +34,8 @@ import {
   boxToRing,
   clipRingToBox,
   convexHull,
+  minAreaRectangle,
+  simplifyRing,
   pointInRing,
   toLocalXY,
   fromLocalXY,
@@ -81,7 +83,7 @@ export type RoofDesignContext = {
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-06.3";
+export const ROOF_ENGINE_VERSION = "2026-11-07.1";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -202,6 +204,52 @@ export type InitialRoofs = {
   traced: boolean;
 };
 
+/**
+ * A border is straight walls (owner's rule): a traced border with more than
+ * maxTraceCorners corners is replaced by the straight-walled border the image
+ * agrees with best — the image's square-walled outline (when it is this
+ * roof), the trace squared, or the trace without notches. Fewer corners wins
+ * a near tie. Applies to every outline, however many the image has and
+ * whether or not Google has data (114 Bombay St, 7 Nov 2026: four outlines of
+ * up to 69 corners went through untouched).
+ */
+/** The trace simplified (0.3–2 m) until it has few enough corners, then squared to its walls when that works. */
+function simplifiedOptions(ring: LatLngRing): [string, LatLngRing | null][] {
+  for (const tol of [0.3, 0.5, 0.8, 1.2, 1.6, 2]) {
+    const s = simplifyRing(ring, tol);
+    if (s.length > ROOF_DESIGN_LIMITS.maxTraceCorners) continue;
+    const sq = s.length >= 4 ? squareWalls(s) : null;
+    return [
+      ["simplified-squared", sq],
+      ["simplified", s.length >= 4 ? s : null],
+    ];
+  }
+  return [];
+}
+
+export function straightenRaggedBorder(ring: LatLngRing, ctx: RoofDesignContext, imageSquare: LatLngRing | null): LatLngRing {
+  if (ring.length <= ROOF_DESIGN_LIMITS.maxTraceCorners) return ring;
+  const labelled: [string, LatLngRing | null][] = [
+    ["image-square", imageSquare && overlapShare(ring, imageSquare) >= 0.5 ? imageSquare : null],
+    ["squared-trace", squareWalls(ring)],
+    ["no-notches", withoutNotches(ring)],
+    ...simplifiedOptions(ring),
+    ["rectangle", minAreaRectangle(ring)],
+  ];
+  const kinds = new Map<LatLngRing, string>();
+  const options = labelled.filter(([, r]) => r && r.length >= 4 && r.length <= ROOF_DESIGN_LIMITS.maxTraceCorners).map(([k, r]) => (kinds.set(r!, k), r!));
+  if (options.length === 0) return ring;
+  if (options.length === 1) return options[0];
+  const scored = options.map((r) => {
+    const o = findOtherFaces([r], ctx);
+    return { r, ev: evidenceFor(o.faces, r, o.checks, Infinity, roofImageLines(r, ctx), 0.1, null, 0), keeps: overlapShare(ring, r) };
+  });
+  const band = (x: (typeof scored)[number]) => (Number.isFinite(x.ev.disagreementM) ? Math.floor(x.ev.disagreementM / 2) : 1e9);
+  scored.sort((a, b) => band(a) - band(b) || a.r.length - b.r.length);
+  (globalThis as { __roofDebug?: (k: string, v: unknown) => void }).__roofDebug?.("border options", scored.map((x) => ({ kind: kinds.get(x.r), pts: x.r.length, d: +x.ev.disagreementM.toFixed(1), keeps: +x.keeps.toFixed(3), area: Math.round(ringAreaM2(x.r)) })));
+  return scored[0].r;
+}
+
 /** The roof as traced in the zoomed image: the square-walled reading Google confirms, else the trace straightened and fitted. */
 export function snapshotOutlines(ctx: RoofDesignContext): { rings: LatLngRing[]; square: boolean } | null {
   const snap = ctx.snapshot;
@@ -210,7 +258,9 @@ export function snapshotOutlines(ctx: RoofDesignContext): { rings: LatLngRing[];
   const segs = realSegments(ctx);
   const straight = regularizeRoofOutlines(found.map((o) => o.ring));
   const fitted = regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, snap.mask).ring));
-  if (!segs) return { rings: fitted, square: false };
+  const imageSquare = snap.squared?.ring ?? null;
+  const straightened = () => ({ rings: fitted.map((r) => straightenRaggedBorder(r, ctx, imageSquare)), square: false });
+  if (!segs) return straightened();
   // Every outline reading, scored on the same priority tests (Google, then
   // the image both ways) — never first-found-wins:
   //  - the square-walled outlines found in the image, whole;
@@ -254,29 +304,7 @@ export function snapshotOutlines(ctx: RoofDesignContext): { rings: LatLngRing[];
     // square-walled outline, never a raw trace with dozens of corners.
     // Of the straight-walled borders, the one the image agrees with best
     // (24 Derwent St: squaring its trace moved walls the image disagrees with).
-    if (fitted.length !== 1) return { rings: fitted, square: false };
-    // A trace of straight runs with few corners is a fair border; a ragged
-    // one (108 Delhi St: 24 corners round driveway clutter) is replaced by
-    // straight walls.
-    if (fitted[0].length <= ROOF_DESIGN_LIMITS.maxTraceCorners) return { rings: fitted, square: false };
-    const labelled: [string, LatLngRing | null][] = [
-      ["image-square", squared[0] ?? null],
-      ["squared-trace", squareWalls(fitted[0])],
-      ["no-notches", withoutNotches(fitted[0])],
-    ];
-    const kinds = new Map<LatLngRing, string>();
-    const options = labelled.filter(([, r]) => r && r.length >= 4).map(([k, r]) => (kinds.set(r!, k), r!));
-    if (options.length === 0) return { rings: fitted, square: false };
-    if (options.length === 1) return { rings: [options[0]], square: false };
-    const scored = options.map((r) => {
-      const o = findOtherFaces([r], ctx);
-      return { r, ev: evidenceFor(o.faces, r, o.checks, Infinity, roofImageLines(r, ctx), 0.1, null, 0), keeps: overlapShare(fitted[0], r) };
-    });
-    // Fewer corners wins a near tie (within 2 m): straight walls over a stepped trace.
-    const band = (x: (typeof scored)[number]) => (Number.isFinite(x.ev.disagreementM) ? Math.floor(x.ev.disagreementM / 2) : 1e9);
-    scored.sort((a, b) => band(a) - band(b) || a.r.length - b.r.length);
-    (globalThis as { __roofDebug?: (k: string, v: unknown) => void }).__roofDebug?.("border options", scored.map((x) => ({ kind: kinds.get(x.r), pts: x.r.length, d: +x.ev.disagreementM.toFixed(1), keeps: +x.keeps.toFixed(3), area: Math.round(ringAreaM2(x.r)) })));
-    return { rings: [scored[0].r], square: false };
+    return straightened();
   }
   cands.sort((x, y) => compareEvidence(x.reading.evidence, y.reading.evidence));
   const rate = (c: Cand) => c.reading.evidence.disagreementM;
