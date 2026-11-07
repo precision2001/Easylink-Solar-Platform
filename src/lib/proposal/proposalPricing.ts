@@ -37,8 +37,17 @@ export const TARIFF_DEFAULTS = {
   zone: 3,
 };
 
+/** Products picked on the equipment step (catalogue product ids). */
+export type ChosenProducts = {
+  panelId?: string;
+  inverterId?: string;
+  batteries?: { id: string; qty: number }[];
+};
+
 export type ProposalPricingRequest = {
   panelCount: number;
+  /** The customer's own products; the engine picks only what isn't here. */
+  products?: ChosenProducts;
   panelTierId?: string;
   /** Usable kWh, or 0 for no battery. */
   batteryKwh?: number;
@@ -71,6 +80,8 @@ export type ProposalQuote = {
 
 export type ProposalPricingResponse = {
   selected: ProposalQuote;
+  /** Which picked products were priced as picked (unmatched: not in the price list). */
+  chosen?: { panel: boolean; inverter: boolean; battery: boolean; batteryKwh: number | null; unmatched: string[] } | null;
   /** Net price for each panel tier, same battery. */
   tierTotals: Record<string, number>;
   /** The panel behind each tier. */

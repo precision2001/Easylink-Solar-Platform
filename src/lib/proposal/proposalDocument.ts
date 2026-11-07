@@ -9,6 +9,7 @@
  * customer saw on screen: savings from `estimateSavings` (same tariffs), price
  * from the pricing engine, and the battery size the step reads.
  */
+import type { ChosenProducts } from "@/lib/proposal/proposalPricing";
 import {
   CONSUMPTION_SEASONALITY,
   GENERATION_SEASONALITY,
@@ -197,9 +198,8 @@ function capacityKwhOf(id: string): number {
 
 /** The battery size the proposal step prices — same order of precedence. */
 export function designBatteryKwh(proposal: DesignProposalState): number {
-  if (proposal.equipment.batteryCapacityKwh !== undefined) {
-    return Math.max(0, proposal.equipment.batteryCapacityKwh);
-  }
+  // Batteries the customer picked come first (7 Nov 2026: the Energy step's
+  // 70 kWh was quoted over three picked 17.7 kWh batteries).
   const items = proposal.equipment.items?.battery ?? [];
   const fromItems = items.reduce((sum, it) => {
     const kwh = Number.parseFloat(it.ratingLabel);
@@ -208,7 +208,28 @@ export function designBatteryKwh(proposal: DesignProposalState): number {
       : sum;
   }, 0);
   if (fromItems > 0) return fromItems;
+  if (proposal.equipment.batteryCapacityKwh !== undefined) {
+    return Math.max(0, proposal.equipment.batteryCapacityKwh);
+  }
   return capacityKwhOf(proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID);
+}
+
+/**
+ * The products picked on the equipment step, for the pricing engine: the
+ * panel, the inverter and the batteries (same product added twice counts
+ * twice). Nothing picked in a category leaves it to the engine.
+ */
+export function chosenProductsOf(proposal: DesignProposalState): ChosenProducts | undefined {
+  const items = proposal.equipment.items;
+  if (!items) return undefined;
+  const isId = (id: string | undefined): id is string => Boolean(id && /^[0-9a-f-]{36}$/i.test(id));
+  const panelId = items.solarPanel?.map((i) => i.productId).find(isId);
+  const inverterId = items.inverter?.map((i) => i.productId).find(isId);
+  const qty = new Map<string, number>();
+  for (const b of items.battery ?? []) if (isId(b.productId)) qty.set(b.productId, (qty.get(b.productId) ?? 0) + Math.max(1, b.quantity));
+  const batteries = [...qty].map(([id, q]) => ({ id, qty: q }));
+  if (!panelId && !inverterId && !batteries.length) return undefined;
+  return { ...(panelId ? { panelId } : {}), ...(inverterId ? { inverterId } : {}), ...(batteries.length ? { batteries } : {}) };
 }
 
 function panelCountOf(proposal: DesignProposalState): number {

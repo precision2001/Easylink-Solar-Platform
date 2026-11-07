@@ -3,7 +3,7 @@
 import QRCode from "qrcode";
 
 import type { ProposalImages } from "@/components/proposal/ProposalPages";
-import { designBatteryKwh, buildProposalDocument, type ProposalDocument, type ProposalLinks } from "@/lib/proposal/proposalDocument";
+import { chosenProductsOf, designBatteryKwh, buildProposalDocument, type ProposalDocument, type ProposalLinks } from "@/lib/proposal/proposalDocument";
 import { fetchProposalPricing, type ProposalPricingResponse } from "@/lib/proposal/proposalPricing";
 import { BATTERY_CAPACITY_OPTIONS, DEFAULT_PANEL_TIER_ID, PANEL_TIER_OPTIONS } from "@/lib/designs/proposalOptions";
 import type { DesignProposalState } from "@/lib/store/designProposalSlice";
@@ -226,6 +226,7 @@ async function pricingFor(proposal: DesignProposalState): Promise<ProposalPricin
       panelCount,
       panelTierId: proposal.equipment.panelTierId ?? DEFAULT_PANEL_TIER_ID,
       batteryKwh: designBatteryKwh(proposal),
+      products: chosenProductsOf(proposal),
       tiers: PANEL_TIER_OPTIONS.map((t) => t.id),
       batteryOptionsKwh: BATTERY_CAPACITY_OPTIONS.map((b) => Number.parseFloat(b.id) || 0),
     });

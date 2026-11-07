@@ -1,5 +1,6 @@
 "use client";
 
+import { chosenProductsOf } from "@/lib/proposal/proposalDocument";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 
@@ -230,8 +231,11 @@ function PanelTierSelector({
   onSelect,
   deltas,
   info,
+  chosen,
 }: {
   selectedId: string;
+  /** The panel picked on the equipment step: shown selected, above the tiers. */
+  chosen?: { label: string; delta: number } | null;
   onSelect: (id: string) => void;
   /** Price difference vs Standard for this design, from the pricing engine. */
   deltas: Record<string, number>;
@@ -243,6 +247,22 @@ function PanelTierSelector({
       <Sheen />
       <CardTitle>Panel Tier</CardTitle>
       <div className="relative mt-2 flex min-h-0 flex-1 flex-col justify-evenly gap-1.5">
+        {chosen ? (
+          <div className="flex w-full items-center justify-between gap-2 rounded-[10px] border border-yellow-lemon/70 bg-[#0B2A4A]/90 px-2.5 py-[clamp(3px,0.8vh,8px)] text-left shadow-md">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="flex size-3.5 shrink-0 items-center justify-center rounded-full border-2 border-yellow-lemon">
+                <span className="size-1.5 rounded-full bg-yellow-lemon" />
+              </span>
+              <span className="min-w-0">
+                <span className="font-source-sans text-[13px] font-semibold text-white">Your pick</span>
+                <span className="block truncate font-inter text-[10.5px] text-white/70">{chosen.label}</span>
+              </span>
+            </span>
+            <span className="shrink-0 font-source-sans text-[12.5px] font-semibold text-yellow-lemon">
+              {Math.round(chosen.delta) === 0 ? "Included" : `${chosen.delta > 0 ? "+" : "−"}${formatAud(Math.abs(chosen.delta))}`}
+            </span>
+          </div>
+        ) : null}
         {PANEL_TIER_OPTIONS.map((tier) => {
           const selected = tier.id === selectedId;
           return (
@@ -550,10 +570,15 @@ export const DesignsProposalStepContent = forwardRef<
     }, 0);
     return total > 0 ? total : undefined;
   }, [proposal.equipment.items.battery]);
+  // Batteries picked on the equipment step come first, then the Energy
+  // step's size, then this step's pick (same rule as the PDF).
   const designBatteryKwh =
-    proposal.equipment.batteryCapacityKwh ??
     itemsBatteryKwh ??
+    proposal.equipment.batteryCapacityKwh ??
     batteryKwhOf(proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID);
+  /** The customer's own products for the pricing engine (panel, inverter, batteries). */
+  const chosenProducts = useMemo(() => chosenProductsOf(proposal), [proposal]);
+  const chosenPanel = proposal.equipment.items.solarPanel?.[0] ?? null;
   /** The battery button that matches the design's size (the nearest one). */
   const batteryCapacityId = useMemo(() => {
     let best = BATTERY_CAPACITY_OPTIONS[0];
@@ -586,6 +611,7 @@ export const DesignsProposalStepContent = forwardRef<
     batteryKwh,
     batteryOptionsKwh,
     tierIds,
+    chosenProducts,
   );
   const selectedQuote = priced?.selected ?? null;
   const arrayKw = selectedQuote?.arrayKw ?? 0;
@@ -650,13 +676,28 @@ export const DesignsProposalStepContent = forwardRef<
     return rows.at(-1)?.cumulativeImpacts ?? 0;
   }, [proposal, computedTotalPrice]);
 
+  // Picking a tier or a battery size here replaces the panel or batteries
+  // picked on the equipment step (one choice at a time, so the screen, the
+  // price and the PDF always agree).
   function handleSelectPanelTier(id: string) {
-    dispatch(mergeProposalData({ equipment: { panelTierId: id } }));
+    dispatch(
+      mergeProposalData({
+        equipment: { panelTierId: id, ...(chosenPanel ? { items: { ...proposal.equipment.items, solarPanel: [] } } : {}) },
+      }),
+    );
   }
 
   function handleSelectBattery(id: string) {
     // Written to the shared size too, so the Energy step shows the same battery.
-    dispatch(mergeProposalData({ equipment: { batteryCapacityId: id, batteryCapacityKwh: batteryKwhOf(id) } }));
+    dispatch(
+      mergeProposalData({
+        equipment: {
+          batteryCapacityId: id,
+          batteryCapacityKwh: batteryKwhOf(id),
+          ...(proposal.equipment.items.battery?.length ? { items: { ...proposal.equipment.items, battery: [] } } : {}),
+        },
+      }),
+    );
   }
 
   /**
@@ -711,7 +752,16 @@ export const DesignsProposalStepContent = forwardRef<
         {/* Row 1: panel tier and battery side by side (the placement the owner chose). */}
         <div className="grid min-h-0 flex-[1.05] grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:grid-cols-[1fr_1.33fr]">
           <PanelTierSelector
-            selectedId={panelTierId}
+            selectedId={chosenPanel ? "" : panelTierId}
+            chosen={
+              chosenPanel
+                ? {
+                    label: `${chosenPanel.brand} ${chosenPanel.name}`.trim(),
+                    delta:
+                      selectedQuote && priced?.tierTotals?.standard != null ? selectedQuote.net - priced.tierTotals.standard : 0,
+                  }
+                : null
+            }
             onSelect={handleSelectPanelTier}
             deltas={tierDeltas}
             info={priced?.tierInfo}
@@ -757,7 +807,7 @@ export const DesignsProposalStepContent = forwardRef<
                 />
               ) : null}
               <ProposalDetailRow label="Number of Panels" value={proposal.summary.totalPanels} />
-              <ProposalDetailRow label="Panel Tier" value={findPanelTier(panelTierId).label} />
+              <ProposalDetailRow label="Panel Tier" value={chosenPanel ? "Your pick" : findPanelTier(panelTierId).label} />
               <ProposalDetailRow label="CO2 Offset" value={proposal.equipment.co2Offset} />
             </div>
           </div>
