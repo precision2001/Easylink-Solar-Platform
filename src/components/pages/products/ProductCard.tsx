@@ -213,6 +213,18 @@ export function ProductCard({
                 <Icon name="Download" className="size-3 shrink-0 text-success" />
               </button>
             ) : null}
+            {product.documents?.map((d) => (
+              <a
+                key={d.url}
+                href={d.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 font-dm-sans text-[10px] font-medium text-warm-gray hover:text-warm-ink"
+              >
+                {d.title}
+                <Icon name="Download" className="size-3 shrink-0 text-success" />
+              </a>
+            ))}
           </div>
         </div>
 

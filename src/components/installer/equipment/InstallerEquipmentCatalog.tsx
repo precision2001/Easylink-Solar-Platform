@@ -1,5 +1,6 @@
 "use client";
 
+import { ProductDocumentLinks } from "@/components/products/ProductDocumentLinks";
 import { productImage } from "@/lib/designs/product-specs";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import classNames from "classnames";
@@ -168,9 +169,9 @@ function keySpecLabel(product: InstallerProductSummary): string {
 
 /**
  * Table view of the same catalogue, matching the Easylink Designer
- * "Equipment & datasheets" artboard. The artboard also lists SKU, stock and a
- * datasheet link per row; the products API carries none of those, so those
- * columns are left out rather than filled with placeholders.
+ * "Equipment & datasheets" artboard, with each product's datasheet and brand
+ * documents. The artboard also lists SKU and stock; the products API carries
+ * neither, so those columns are left out rather than filled with placeholders.
  */
 function ProductTable({ products }: { products: InstallerProductSummary[] }) {
   return (
@@ -183,6 +184,7 @@ function ProductTable({ products }: { products: InstallerProductSummary[] }) {
             <th className="border-b border-warm-border p-2.5 font-semibold">Brand</th>
             <th className="border-b border-warm-border p-2.5 font-semibold">Key spec</th>
             <th className="border-b border-warm-border p-2.5 font-semibold">CEC</th>
+            <th className="border-b border-warm-border p-2.5 font-semibold">Documents</th>
             <th className="border-b border-warm-border p-2.5 text-right font-semibold">
               Indicative price
             </th>
@@ -218,6 +220,13 @@ function ProductTable({ products }: { products: InstallerProductSummary[] }) {
                   ) : (
                     <span className="text-warm-gray">—</span>
                   )}
+                </td>
+                <td className="border-b border-cream-150 p-2.5">
+                  <ProductDocumentLinks
+                    specs={product.specs}
+                    label={`${product.brand ?? ""} ${product.name}`.trim()}
+                    linkClassName="font-semibold text-navy-800"
+                  />
                 </td>
                 <td className="border-b border-cream-150 p-2.5 text-right font-semibold text-warm-ink">
                   {formatCurrency(product.basePrice)}
@@ -315,6 +324,13 @@ function ProductCard({ product }: { product: InstallerProductSummary }) {
           </dd>
         </div>
       </dl>
+
+      <ProductDocumentLinks
+        specs={product.specs}
+        label={`${product.brand ?? ""} ${product.name}`.trim()}
+        className="text-[12px]"
+        linkClassName="font-semibold text-navy-800"
+      />
 
       <div className="mt-auto flex items-end justify-between gap-2">
         {approved || expires ? (
