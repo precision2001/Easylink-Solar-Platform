@@ -3385,7 +3385,14 @@ export type CustomerPortalNavKey =
   | "messages"
   | "products"
   | "payments"
-  | "profile";
+  | "profile"
+  | "pricing"
+  | "works"
+  | "installer"
+  | "privacy"
+  | "voice"
+  | "coach"
+  | "ar";
 
 export const CUSTOMER_PORTAL = {
   title: "My Solar Portal",
