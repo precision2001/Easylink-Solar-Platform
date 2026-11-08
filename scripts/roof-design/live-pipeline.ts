@@ -10,6 +10,7 @@ import { writeFileSync, mkdirSync } from "fs";
 import { snapshotBounds } from "@/lib/designer/roofSnapshot";
 import { hipFacesForSquareRoof } from "@/lib/designer/squareRoof";
 import { designRoof, layoutRoofPanels, relookReadings, ringAreaM2, type LatLngRing } from "@/lib/roof-design";
+import { panelCorners } from "@/lib/roof-design/geometry";
 import { analyseSnapshotAt, fetchSnapshot, loadRoofContext, toPx as toPxAt, type Snapshot } from "@/lib/roof-design/server";
 
 const [lat, lng] = [Number(process.argv[2]), Number(process.argv[3])];
@@ -80,7 +81,7 @@ const dbg = globalThis as unknown as Record<string, unknown>;
     faces: d.faceSet.faces.map((f) => ring(f.ring)),
     obstructions: d.faceSet.obstructions.map((o) => ring(o.ring)),
     counts: d.counts,
-    panels: Object.fromEntries(Object.entries(panels).map(([o, ps]) => [o, ps.map((pn) => ({ c: toPx(pn.center), rot: pn.rotationDegrees, slope: pn.slopeDegrees, orientation: pn.orientation }))])),
+    panels: Object.fromEntries(Object.entries(panels).map(([o, ps]) => [o, ps.map((pn) => ({ c: toPx(pn.center), rot: pn.rotationDegrees, slope: pn.slopeDegrees, orientation: pn.orientation, corners: panelCorners(pn, d.dims).map(toPx) }))])),
   };
   writeFileSync(`${out}/pipeline.json`, JSON.stringify(j));
   console.log(

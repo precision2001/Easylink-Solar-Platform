@@ -22,6 +22,7 @@ import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { fitRoofJunctions } from "./junctions";
+import { mergeAcrossUnseenLines } from "./visibleLines";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
 import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
@@ -95,7 +96,7 @@ export type AiRoofFace = { ring: LatLngRing; azimuthDeg?: number; name?: string 
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-09.3";
+export const ROOF_ENGINE_VERSION = "2026-11-09.4";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -805,13 +806,27 @@ export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, opts:
   if (typeof process !== "undefined" && process.env?.ROOF_JUNCTIONS === "0") return found;
   const luma = lineLumaOf(ctx);
   const fit = fitRoofJunctions(paths, found.faces, luma);
-  if (fit.moved === 0) return found;
+  let faces = fit.faces;
+  let merged = 0;
+  // Flat roof: only the lines the image shows stay (DESIGN_RULES.flatRoofMaxPitchDeg).
+  if (roofPitchOf(ctx) < DESIGN_RULES.flatRoofMaxPitchDeg) {
+    const out: RoofFace[] = [];
+    for (const p of paths) {
+      const mine = faces.filter((f) => pointInRing(ringCentroid(f.ring), p));
+      const r = mergeAcrossUnseenLines(mine, p, luma);
+      out.push(...r.faces);
+      merged += r.merged;
+    }
+    out.push(...faces.filter((f) => !paths.some((p) => pointInRing(ringCentroid(f.ring), p))));
+    faces = out;
+  }
+  if (fit.moved === 0 && merged === 0) return found;
   const snap = ctx.snapshot ?? null;
   return {
     ...found,
-    faces: fit.faces,
-    interiorChecks: interiorEdges(fit.faces, paths).map(([a, b]) => checkInteriorLine(a, b, luma)),
-    obstructions: snap ? findRoofObstructions(snap.luma, fit.faces.map((f) => f.ring)) : found.obstructions,
+    faces,
+    interiorChecks: interiorEdges(faces, paths).map(([a, b]) => checkInteriorLine(a, b, luma)),
+    obstructions: snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)) : found.obstructions,
   };
 }
 

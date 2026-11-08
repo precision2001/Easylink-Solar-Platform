@@ -71,6 +71,14 @@ export const DESIGN_RULES = {
    * the AI's reading, a relook). Outline corners stay on the border's
    * corners (`moveCorners`), which the border rules set.
    */
+  /**
+   * Flat roofs (owner, 9 Nov 2026, 66 Frances St): a roof under this pitch
+   * keeps only the lines the image shows — faces either side of a line that
+   * isn't visible are one face, and a roof with no visible lines is one flat
+   * face. ("If there is no visible roof line connecting two intersection
+   * points, do not consider a split. Roof can be flat too.")
+   */
+  flatRoofMaxPitchDeg: 5,
   roofJunctions: {
     maxShiftM: 1.0,
     /** A point moves only when its lines' match improves by this share. */

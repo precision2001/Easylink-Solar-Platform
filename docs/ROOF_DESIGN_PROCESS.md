@@ -27,6 +27,15 @@ Every design, by hand or on the live page, whatever found the roof:
    straight and connected, faces simple and inside the roof. Applied last
    in `findRoofFaces`, so every page and API gets it
    (`DESIGN_RULES.roofJunctions`, `src/lib/roof-design/junctions.ts`).
+5. **Visible lines only on flat roofs (owner's rule, 9 Nov 2026).** If there
+   is no visible roof line connecting two intersection points, there is no
+   split. A roof can be flat: under 5° (`DESIGN_RULES.flatRoofMaxPitchDeg`)
+   a line between faces stays only where the image shows it (a brightness
+   step or capping line clearly stronger than the roof beside it); faces
+   either side of an unseen line are one face, and a roof with no visible
+   lines is one flat face (`src/lib/roof-design/visibleLines.ts`). Pitched
+   roofs keep their hips even where the image shows them faintly — a panel
+   must never sit across one.
 
 ## Rules (always)
 
@@ -39,6 +48,7 @@ Every design, by hand or on the live page, whatever found the roof:
 | Roof lines straight: along the walls, square to them, or at 45° | snap within 20° | `regularizeRoofOutlines` |
 | Line check against the image | ±100 mm | `roofLineToleranceM` |
 | Intersection points: one shared point per junction, fitted to the image for all its lines | up to 1 m | `roofJunctions` |
+| Flat roof: only visible lines split faces; none visible = one face | under 5° | `flatRoofMaxPitchDeg` |
 | Panel : inverter limit — hybrid inverter or battery / standard | 200% / 133% | `dcAcLimitPercent` |
 | Export limit (Ausgrid, Endeavour) | 10 kW per phase | `exportLimitKwPerPhase` |
 
@@ -258,6 +268,17 @@ Who uses it:
 ## Lessons log
 
 Newest first. Add an entry whenever a design comes out wrong.
+
+### 2026-11-09: 66 Frances St, Lidcombe — hip lines drawn on a flat roof
+
+- **What went wrong:** a 2.8° white metal roof was split into hip faces
+  (assumed-hip) whose lines aren't on the roof; one "intersection point"
+  wasn't real. Splitting along the step shadows was tried and rejected by
+  the owner: it is a flat roof.
+- **Owner's rule:** no visible line connecting two intersection points = no
+  split; roofs can be flat (rule 5, cut-off 5° confirmed by the owner).
+- **Fix:** `mergeAcrossUnseenLines`: the main roof is now one face, 107
+  panels in one block, clear of the step shadows (obstructions).
 
 ### 2026-11-09: 12 Fursorb St, Marayong — intersection points off, so lines and faces didn't line up
 

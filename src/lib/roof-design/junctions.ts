@@ -49,7 +49,7 @@ type Node = {
   nbrs: Set<string>;
 };
 
-function frameOf(points: LatLng[]) {
+export function frameOf(points: LatLng[]) {
   const lat0 = points.reduce((s, p) => s + p.lat, 0) / points.length;
   const lng0 = points.reduce((s, p) => s + p.lng, 0) / points.length;
   const mLng = M_PER_LAT * Math.cos((lat0 * Math.PI) / 180);
@@ -60,7 +60,7 @@ function frameOf(points: LatLng[]) {
 }
 
 /** The image's brightness at a point (bilinear), null off the image. */
-function sampler(luma: GeoTiffRaster, toLL: (q: XY) => LatLng) {
+export function sampler(luma: GeoTiffRaster, toLL: (q: XY) => LatLng) {
   return (q: XY): number | null => {
     const ll = toLL(q);
     const { col, row } = rasterPixelOf(luma, ll.lat, ll.lng);
@@ -82,12 +82,12 @@ function sampler(luma: GeoTiffRaster, toLL: (q: XY) => LatLng) {
  * brightness step across it or a capping line along it (whichever is
  * stronger), averaged.
  */
-function lineResponse(at: (q: XY) => number | null, a: XY, b: XY): number {
+export function lineResponse(at: (q: XY) => number | null, a: XY, b: XY, halfWidthM = 0.06): number {
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   if (len < 0.3) return 0;
   const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
-  // Narrow (6 cm): wider, a line scores the same anywhere within that band and junctions slide.
-  const h = 0.06;
+  // Narrow (6 cm) for fitting: wider, a line scores the same anywhere within that band and junctions slide.
+  const h = halfWidthM;
   const steps = Math.max(4, Math.round((len * 0.8) / 0.08));
   let sum = 0;
   let cnt = 0;
