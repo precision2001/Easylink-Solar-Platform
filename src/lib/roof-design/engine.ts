@@ -22,7 +22,7 @@ import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
 import { fitRoofJunctions } from "./junctions";
-import { mergeAcrossUnseenLines } from "./visibleLines";
+import { flatSectionsFromLines } from "./flatSections";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
 import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
@@ -96,7 +96,7 @@ export type AiRoofFace = { ring: LatLngRing; azimuthDeg?: number; name?: string 
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-09.4";
+export const ROOF_ENGINE_VERSION = "2026-11-09.5";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -805,20 +805,20 @@ export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, opts:
   const found = readRoofFaces(paths, ctx, opts);
   if (typeof process !== "undefined" && process.env?.ROOF_JUNCTIONS === "0") return found;
   const luma = lineLumaOf(ctx);
-  const fit = fitRoofJunctions(paths, found.faces, luma);
+  const flat = roofPitchOf(ctx) < DESIGN_RULES.flatRoofMaxPitchDeg;
+  // Flat roof (DESIGN_RULES.flatRoofMaxPitchDeg): no hips — one flat face
+  // per roof, cut into sections only along the lines the image shows.
+  const fit = flat ? { faces: found.faces, moved: 0 } : fitRoofJunctions(paths, found.faces, luma);
   let faces = fit.faces;
   let merged = 0;
-  // Flat roof: only the lines the image shows stay (DESIGN_RULES.flatRoofMaxPitchDeg).
-  if (roofPitchOf(ctx) < DESIGN_RULES.flatRoofMaxPitchDeg) {
-    const out: RoofFace[] = [];
-    for (const p of paths) {
-      const mine = faces.filter((f) => pointInRing(ringCentroid(f.ring), p));
-      const r = mergeAcrossUnseenLines(mine, p, luma);
-      out.push(...r.faces);
-      merged += r.merged;
-    }
-    out.push(...faces.filter((f) => !paths.some((p) => pointInRing(ringCentroid(f.ring), p))));
-    faces = out;
+  if (flat) {
+    const pitchDeg = roofPitchOf(ctx);
+    faces = paths.flatMap((p) => {
+      const seen = luma ? cached(ctx, `flat-lines|${ringKey(p)}`, () => imageLines(luma, [p], wallAxisOf(p), { insetM: 0.2, minLengthM: 1.0 })) : [];
+      const eaveDeg = longestEdgeAngleDegrees(p);
+      return flatSectionsFromLines(p, seen).sections.map((ring) => ({ ring, eaveDeg, pitchDeg }) as RoofFace);
+    });
+    merged = 1;
   }
   if (fit.moved === 0 && merged === 0) return found;
   const snap = ctx.snapshot ?? null;

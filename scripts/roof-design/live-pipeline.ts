@@ -26,6 +26,8 @@ const dbg = globalThis as unknown as Record<string, unknown>;
     dbg.__sqWhy = (w: unknown) => console.log("square", JSON.stringify(w));
   }
   if (process.env.CLUTTER_DEBUG) dbg.__clutterDebug = (m: Uint8Array, r: Uint8Array, w: number, h: number) => { const d = new Uint8Array(w * h); for (let i = 0; i < d.length; i++) d[i] = (r[i] ? 1 : 0) + (m[i] ? 2 : 0); writeFileSync(`${out}/clutter.bin`, d); writeFileSync(`${out}/clutter.json`, JSON.stringify({ w, h })); };
+  if (process.env.FLAT_DEBUG) dbg.__flatWhy = (w: unknown) => console.log('flat', JSON.stringify(w));
+  const flatDbg: Record<string, unknown> = {}; if (process.env.FLAT_DEBUG) dbg.__flatDbg = (k: string, v: unknown) => (flatDbg[k] = v);
   if (process.env.ROOF_DEBUG) dbg.__roofDebug = (k: string, v: unknown) => console.log(k, JSON.stringify(v));
   const parcelRing: LatLngRing | null = process.env.PARCEL ? JSON.parse(process.env.PARCEL) : null;
   const ctx = await loadRoofContext({ lat, lng }, { kind: "google", key }, { parcel: parcelRing ? { ring: parcelRing, areaM2: ringAreaM2(parcelRing) } : null });
@@ -84,6 +86,7 @@ const dbg = globalThis as unknown as Record<string, unknown>;
     panels: Object.fromEntries(Object.entries(panels).map(([o, ps]) => [o, ps.map((pn) => ({ c: toPx(pn.center), rot: pn.rotationDegrees, slope: pn.slopeDegrees, orientation: pn.orientation, corners: panelCorners(pn, d.dims).map(toPx) }))])),
   };
   writeFileSync(`${out}/pipeline.json`, JSON.stringify(j));
+  if (process.env.FLAT_DEBUG) writeFileSync(`${out}/flat.json`, JSON.stringify(Object.fromEntries(Object.entries(flatDbg).map(([k, v]) => [k, (v as { lat: number; lng: number }[][]).map((l) => l.map(toPx))]))));
   console.log(
     JSON.stringify({
       areaM2: j.areaM2,

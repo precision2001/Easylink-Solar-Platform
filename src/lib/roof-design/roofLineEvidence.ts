@@ -41,7 +41,7 @@ export function imageLines(
   luma: GeoTiffRaster | null,
   roofs: LatLngRing[],
   wallAxisDeg: number,
-  { skip = [] as LatLngRing[], insetM = 0.45, minLengthM = 1.5 } = {},
+  { skip = [] as LatLngRing[], insetM = 0.45, minLengthM = 1.5, strongFloor = 40, strongShare = 0.8 } = {},
 ): ImageLine[] {
   if (!luma || roofs.length === 0) return [];
   const px = rasterPixelSizeM(luma);
@@ -136,7 +136,7 @@ export function imageLines(
   }
   if (pix.length < 20) return [];
   mags.sort((a, b) => a - b);
-  const strong = Math.max(40, mags[Math.floor(mags.length * 0.8)]);
+  const strong = Math.max(strongFloor, mags[Math.floor(mags.length * strongShare)]);
   const lines: ImageLine[] = [];
   const toLL = (x: number, y: number): LatLng => ({ lat: all[0].lat + y / M_PER_LAT, lng: all[0].lng + x / (M_PER_LAT * Math.cos((all[0].lat * Math.PI) / 180)) });
   for (let k = 0; k < 4; k++) {

@@ -6,6 +6,19 @@ St, Lidcombe (Oct 2026). Code lives in `src/lib/designer/`. **Keep the
 lessons log at the bottom up to date**: every time a roof comes out wrong,
 write down what happened, why, and what changed in the code.
 
+## Most important rule — visible lines and visible intersections (owner, 9 Nov 2026)
+
+On every roof, first identify the **visible lines** (hips, ridges, valleys,
+steps, box edges seen in the zoom-21 image) and the **visible intersections**
+(where two or more of them meet, or meet the border). Faces follow them.
+- **Flat roofs (under 5°):** only visible lines are roof lines. Sections are
+  the closed shapes the visible lines make; no visible line between two
+  intersection points, no split (`flatSectionsFromLines`).
+- **Pitched roofs (owner's choice (a), shown on g25):** a line the roof's
+  shape needs stays even where it shows only faintly, marked "check on
+  site" — dropping it put panels across real hips (55 panels instead of 47,
+  several across two slopes).
+
 ## Top priority — never missed (owner's rule, 30 Oct 2026)
 
 Every design, by hand or on the live page, whatever found the roof:
@@ -277,8 +290,14 @@ Newest first. Add an entry whenever a design comes out wrong.
   the owner: it is a flat roof.
 - **Owner's rule:** no visible line connecting two intersection points = no
   split; roofs can be flat (rule 5, cut-off 5° confirmed by the owner).
-- **Fix:** `mergeAcrossUnseenLines`: the main roof is now one face, 107
-  panels in one block, clear of the step shadows (obstructions).
+- **Fix:** flat roofs are read as sections from visible lines and their
+  intersections (`flatSectionsFromLines`): 3 sections, the left step following
+  its visible jogs, 122 portrait panels clear of the step shadows.
+- **Still open:** the owner's drawing has about 8 sections (a fold, two
+  lower-left blocks, a narrow middle block, the framed box). On this white
+  roof only the shaded side of each step shows as a line; the sunlit sides
+  (box bottom and right) are too faint, so those sections don't close. Next:
+  local-contrast lines for white metal roofs.
 
 ### 2026-11-09: 12 Fursorb St, Marayong — intersection points off, so lines and faces didn't line up
 

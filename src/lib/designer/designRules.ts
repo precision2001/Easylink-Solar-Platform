@@ -79,6 +79,18 @@ export const DESIGN_RULES = {
    * points, do not consider a split. Roof can be flat too.")
    */
   flatRoofMaxPitchDeg: 5,
+  /**
+   * MOST IMPORTANT RULE (owner, 9 Nov 2026): on every roof, identify the
+   * visible lines and the visible intersections first; faces follow them.
+   * - Flat roofs (under flatRoofMaxPitchDeg): only visible lines are roof
+   *   lines — sections are the closed shapes the visible lines make, meeting
+   *   at their intersections (flatSections.ts).
+   * - Pitched roofs (owner's choice "a"): a hip, valley or ridge the roof's
+   *   shape needs stays even where the image shows it only faintly (two
+   *   faces lit alike), marked "check on site" — never dropped, because a
+   *   panel must never sit across one.
+   */
+  visibleLinesFirst: true,
   roofJunctions: {
     maxShiftM: 1.0,
     /** A point moves only when its lines' match improves by this share. */
