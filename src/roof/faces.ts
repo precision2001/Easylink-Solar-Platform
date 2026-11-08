@@ -1,5 +1,6 @@
+import { traceOverlay } from "./overlay.js";
 import { z } from "zod";
-import type { ModelClient } from "../ai/model.js";
+import type { ChatMessage, ModelClient } from "../ai/model.js";
 
 /**
  * Roof faces read from a zoom-21 satellite image by the smart model
@@ -63,6 +64,8 @@ export const RoofFacesRequest = z.object({
   lot: z.array(z.tuple([z.number(), z.number()])).min(3).max(400).optional(),
   /** "house": the building at the centre (default); "site": every building on the lot. */
   scope: z.enum(["house", "site"]).default("house"),
+  /** Rounds of self-check: Opus sees its trace drawn on the photo and corrects it (0 = none). */
+  review: z.number().int().min(0).max(3).default(2),
 });
 export type RoofFacesRequest = z.infer<typeof RoofFacesRequest>;
 
@@ -240,8 +243,29 @@ export function cleanFaces(raw: unknown, req: Pick<RoofFacesRequest, "widthPx" |
   };
 }
 
-/** Ask the smart model for the faces of the roof in the image. */
-export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest): Promise<RoofFacesResult> {
+export const ROOF_REVIEW_TEXT = (list: string) => `The last image is YOUR trace drawn on the same photo: border magenta, clear lines yellow, faint lines orange dashed, intersection points cyan with their number. Check it against the photo, at full detail, one item at a time:
+1. Every intersection point must sit exactly where its lines meet in the photo (a corner, the end of a hip, ridge or valley, a box corner, where a step line meets the border). Move any point that is off by more than 3 pixels. One shared point per junction: all its lines end there.
+2. Every line must lie on a roof line you can see in the photo (either image). A line drawn across plain roof is wrong: move its points onto the real line, or remove it (a flat roof can have no split).
+3. Add every visible roof line and intersection point you missed: box edges, step lines, hips, valleys, ridges, parapets, and the lines a shadow edge shows (rule 7).
+4. The border must follow the roof edge on every side, inside the walls and gutters, with corners on the real corners.
+5. Faces must be rebuilt from the corrected points and lines.
+Points by number: ${list}
+Reply with the full corrected trace in the same JSON shape (all buildings, points, lines, faces, obstructions). JSON only.`;
+
+const roundPts = (r: Omit<RoofFacesResult, "usage">) => r.buildings.flatMap((b) => b.points.map((p) => [p.x, p.y] as [number, number]));
+
+/** How far the points moved between two readings: the mean distance from each new point to the nearest old one (px). */
+export function traceShift(a: Omit<RoofFacesResult, "usage">, b: Omit<RoofFacesResult, "usage">): number {
+  const A = roundPts(a);
+  const B = roundPts(b);
+  if (!A.length || !B.length) return Infinity;
+  const d = B.map(([x, y]) => Math.min(...A.map(([u, v]) => Math.hypot(x - u, y - v))));
+  return d.reduce((s, v) => s + v, 0) / d.length + Math.abs(A.length - B.length) * 5;
+}
+
+/** Ask the smart model for the faces of the roof in the image, then have it check its trace against the photo. */
+export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, budgetMs = 200_000): Promise<RoofFacesResult & { reviews: number }> {
+  const t0 = Date.now();
   const scale = req.metresPerPixel ? `, about ${(req.metresPerPixel * 100).toFixed(1)} cm per pixel` : "";
   const scope =
     req.scope === "site"
@@ -249,19 +273,39 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest): 
       : "Trace the building under the centre of the image (scope: house).";
   const lot = req.lot?.length ? ` The land lot, in image pixels: ${JSON.stringify(req.lot.map(([x, y]) => [Math.round(x), Math.round(y)]))}. Trace nothing outside it.` : "";
   const contrast = req.contrastBase64 ? " The second image is the same view with local contrast boosted." : "";
-  const turn = await model.converse({
-    tier: "smart",
-    effort: "high",
-    maxTokens: req.scope === "site" ? 24000 : 12000,
-    system: ROOF_FACES_SYSTEM,
-    messages: [
-      {
-        role: "user",
-        image: { format: req.format, bytes: Buffer.from(req.imageBase64, "base64") },
-        images: req.contrastBase64 ? [{ format: req.format, bytes: Buffer.from(req.contrastBase64, "base64") }] : undefined,
-        text: `This image is ${req.widthPx} x ${req.heightPx} pixels${scale}.${contrast} ${scope}${lot} First the visible lines and intersection points, then borders, then faces and obstructions.${req.hint ? ` ${req.hint}` : ""} JSON only.`,
-      },
-    ],
-  });
-  return { ...cleanFaces(jsonIn(turn.text), req), usage: turn.usage };
+  const photo = Buffer.from(req.imageBase64, "base64");
+  const messages: ChatMessage[] = [
+    {
+      role: "user",
+      image: { format: req.format, bytes: photo },
+      images: req.contrastBase64 ? [{ format: req.format, bytes: Buffer.from(req.contrastBase64, "base64") }] : undefined,
+      text: `This image is ${req.widthPx} x ${req.heightPx} pixels${scale}.${contrast} ${scope}${lot} First the visible lines and intersection points, then borders, then faces and obstructions.${req.hint ? ` ${req.hint}` : ""} JSON only.`,
+    },
+  ];
+  const maxTokens = req.scope === "site" ? 24000 : 12000;
+  let turn = await model.converse({ tier: "smart", effort: "high", maxTokens, system: ROOF_FACES_SYSTEM, messages });
+  let result = cleanFaces(jsonIn(turn.text), req);
+  const usage = { ...turn.usage };
+  let reviews = 0;
+  // The self-check: the trace drawn on the photo, back to Opus, until it stops moving
+  // (under 2 px) or the time budget for a reading runs out.
+  while (reviews < req.review && req.format === "png" && result.buildings.length && Date.now() - t0 < budgetMs * 0.55) {
+    const drawn = traceOverlay(photo, result.buildings);
+    if (!drawn) break;
+    const list = result.buildings
+      .map((b, i) => `${b.name}: ` + b.points.map((p) => `${drawn.numbers[i]!.get(p.id)}=${p.id} (${Math.round(p.x)},${Math.round(p.y)})`).join(", "))
+      .join("; ");
+    messages.push({ role: "assistant", text: turn.text, toolUses: [] });
+    messages.push({ role: "user", image: { format: "png", bytes: drawn.png }, text: ROOF_REVIEW_TEXT(list) });
+    turn = await model.converse({ tier: "smart", effort: "high", maxTokens, system: ROOF_FACES_SYSTEM, messages });
+    usage.inputTokens += turn.usage.inputTokens;
+    usage.outputTokens += turn.usage.outputTokens;
+    const next = cleanFaces(jsonIn(turn.text), req);
+    reviews += 1;
+    if (!next.buildings.length && !next.noRoof) break; // a bad reply: keep the last good trace
+    const moved = traceShift(result, next);
+    result = next;
+    if (moved < 2) break;
+  }
+  return { ...result, usage, reviews };
 }

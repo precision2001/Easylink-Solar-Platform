@@ -31,6 +31,9 @@ export type RoofReading = {
   contrastKey?: string;
   lot?: [number, number][];
   scope?: "house" | "site";
+  /** Self-check rounds asked for, and how many ran. */
+  review?: number;
+  reviews?: number;
   faces?: RoofFaceReading[];
   /** The full trace: per building its border, intersection points, lines, faces and obstructions. */
   buildings?: RoofBuilding[];
@@ -64,6 +67,7 @@ export async function startRoofReading(c: Container, req: RoofFacesRequest, now 
     contrastKey,
     lot: req.lot,
     scope: req.scope,
+    review: req.review,
     createdAt: now.toISOString(),
   };
   await c.store.putRecord(ROOF_READING, row);
@@ -98,6 +102,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       hint: row.hint,
       lot: row.lot,
       scope: row.scope ?? "house",
+      review: row.review ?? 2,
     });
     const decisionId = newId("dec_");
     await c.store.putDecision({
@@ -105,7 +110,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       agentId: "roof-designer",
       eventId: null,
       subject: null,
-      reasoningSummary: `Traced ${r.buildings.length} roof${r.buildings.length === 1 ? "" : "s"}: ${r.buildings.reduce((n, b) => n + b.lines.length, 0)} lines, ${r.buildings.reduce((n, b) => n + b.points.length, 0)} intersection points, ${r.faces.length} face${r.faces.length === 1 ? "" : "s"}.${r.noRoof ? " No roof." : ""}${r.notes ? ` ${r.notes.slice(0, 300)}` : ""}`,
+      reasoningSummary: `Traced ${r.buildings.length} roof${r.buildings.length === 1 ? "" : "s"}: ${r.buildings.reduce((n, b) => n + b.lines.length, 0)} lines, ${r.buildings.reduce((n, b) => n + b.points.length, 0)} intersection points, ${r.faces.length} face${r.faces.length === 1 ? "" : "s"}; checked against the photo ${r.reviews} time${r.reviews === 1 ? "" : "s"}.${r.noRoof ? " No roof." : ""}${r.notes ? ` ${r.notes.slice(0, 300)}` : ""}`,
       action: null,
       autonomyLevel: null,
       outcome: "no_action",
@@ -114,7 +119,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       contextHash: null,
       createdAt: now().toISOString(),
     });
-    return finish({ status: "done", faces: r.faces, buildings: r.buildings, noRoof: r.noRoof, wallsDeg: r.wallsDeg, notes: r.notes, decisionId });
+    return finish({ status: "done", faces: r.faces, buildings: r.buildings, noRoof: r.noRoof, wallsDeg: r.wallsDeg, notes: r.notes, reviews: r.reviews, decisionId });
   } catch (err) {
     console.error("roof reading", id, err);
     return finish({ status: "error", message: "The roof could not be read." });
