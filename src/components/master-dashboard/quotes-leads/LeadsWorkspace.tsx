@@ -3,10 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { leadDesignHref } from "@/lib/designs/leadDesignLink";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/master-dashboard/quotes-leads/icons";
 import { RoofDesignCell, RoofDesignViewer, useAutoRoofDesigns } from "@/components/master-dashboard/quotes-leads/RoofDesign";
 import { STAGE_DOT } from "@/components/master-dashboard/quotes-leads/PipelineBoard";
+import { QuotesDrawer } from "@/components/master-dashboard/quotes-leads/QuotesDrawer";
 import {
   TASK_KINDS,
   TONE_CHIP,
@@ -395,6 +396,8 @@ export function LeadsWorkspace({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [viewing, setViewing] = useState<string | null>(null);
+  // The lead whose quote versions are open in the side drawer.
+  const [quotesFor, setQuotesFor] = useState<{ lead: PipelineLead; startWith: "list" | "create" } | null>(null);
 
   // Every listed lead with an address gets a roof design from the platform
   // designer, on its own; results drop into the table as they finish.
@@ -467,6 +470,8 @@ export function LeadsWorkspace({
       if (!res.ok || !json?.success) throw new Error(json?.message ?? "Could not update the lead.");
     });
   }
+
+  const closeQuotes = useCallback(() => setQuotesFor(null), []);
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const stageLabel = (s: LeadStage) => meta?.stages.find((x) => x.key === s)?.label ?? s;
@@ -616,6 +621,8 @@ export function LeadsWorkspace({
                     : view === "spam"
                       ? [{ label: "Not spam", onSelect: () => void setSpam(l, false) }]
                       : [
+                          { label: "New quote", onSelect: () => setQuotesFor({ lead: l, startWith: "create" }) },
+                          { label: "Quotes", onSelect: () => setQuotesFor({ lead: l, startWith: "list" }) },
                           { label: "Mark as lost…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "lost" }) },
                           { label: "Mark as spam", danger: true, onSelect: () => void setSpam(l, true) },
                         ];
@@ -825,6 +832,15 @@ export function LeadsWorkspace({
           working={roofWorking.has(viewing)}
           onClose={() => setViewing(null)}
           onRedesign={() => redesignRoof(viewing)}
+        />
+      ) : null}
+      {quotesFor ? (
+        <QuotesDrawer
+          key={quotesFor.lead.id}
+          lead={quotesFor.lead}
+          startWith={quotesFor.startWith}
+          onClose={closeQuotes}
+          onChanged={onChanged}
         />
       ) : null}
     </section>

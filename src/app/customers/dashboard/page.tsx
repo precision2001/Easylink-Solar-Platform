@@ -11,6 +11,7 @@ import { useCustomerProjectJourney } from "@/components/customer/dashboard/useCu
 import { fetchDesignOptions, formatOptionPrice, selectDesignOption, type DesignOptions } from "@/lib/customers/design-options";
 import { EMPTY_VALUE, selectedDesignOption } from "@/lib/customers/dashboard-summary";
 import { insightsFor, nextBestStep } from "@/lib/customers/next-best-step";
+import { fetchMyQuotes, type Quote } from "@/lib/quotes";
 import { useAppSelector } from "@/lib/store/hooks";
 
 /** Before a project exists, show where the customer is in the buying journey. */
@@ -34,6 +35,18 @@ export default function CustomerDashboardPage() {
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const { journey, loading: journeyLoading } = useCustomerProjectJourney();
+  // Quotes only steer the next step; if they can't load, the step works as before.
+  const [quotes, setQuotes] = useState<Quote[] | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetchMyQuotes()
+      .then((q) => live && setQuotes(q))
+      .catch(() => live && setQuotes([]));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -61,7 +74,7 @@ export default function CustomerDashboardPage() {
 
   const design = selectedDesignOption(options);
   const loading = optionsLoading || journeyLoading;
-  const step = useMemo(() => nextBestStep({ journey, options }), [journey, options]);
+  const step = useMemo(() => nextBestStep({ journey, options, quotes }), [journey, options, quotes]);
   const insights = useMemo(() => insightsFor(options), [options]);
 
   const steps = useMemo(() => {
@@ -104,7 +117,7 @@ export default function CustomerDashboardPage() {
             <PortalIcon name="spark" size={16} />
             Next best step
           </p>
-          {loading ? (
+          {loading || quotes === null ? (
             <Skeleton className="h-24 bg-white/10" />
           ) : (
             <>

@@ -10,6 +10,7 @@ import { DesignEquipmentList } from "@/components/customer/design/DesignEquipmen
 import { DesignMapPreviewImage } from "@/components/customer/design/DesignMapPreviewImage";
 import { DesignSpecSheet } from "@/components/customer/design/DesignSpecSheet";
 import { ShareAndEarnPanel } from "@/components/customer/design/ShareAndEarnPanel";
+import { CustomerQuotesSection } from "@/components/customer/design/CustomerQuotesSection";
 import {
   buildComparisonTable,
   designMapScreenshotUrl,
@@ -206,6 +207,7 @@ export function CustomerDesignPageClient({ initialDesigns, initialReferrals }: P
               </ButtonLink>
             </div>
           </Panel>
+          <CustomerQuotesSection hasDesign={false} />
         </>
       ) : (
         <>
@@ -288,6 +290,8 @@ export function CustomerDesignPageClient({ initialDesigns, initialReferrals }: P
 
             <DesignSpecSheet sheet={sheet} locked={locked} />
           </div>
+
+          <CustomerQuotesSection hasDesign />
 
           <DesignEquipmentList design={primaryDesign} />
         </>

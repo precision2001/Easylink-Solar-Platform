@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
 import { useRecordingPlayback } from "@/hooks/useRecordingPlayback";
+import { useSmsStatus } from "@/hooks/useSmsStatus";
+import { SmsStatusNote } from "@/components/sms/SmsStatusNote";
+import { smsSelectable } from "@/lib/sms-status";
 import {
   callMeta,
   callStamp,
@@ -403,6 +406,9 @@ export function MasterAgentDialer() {
   // when the next call starts.
   const callKey = callRecordId ?? (callActive ? (activeNumber ?? "") : "");
   const [wrapUp, setWrapUp] = useState<WrapUp>(EMPTY_WRAPUP);
+  // The SMS confirmation can only go out while texting is live or in test mode.
+  const sms = useSmsStatus("admin");
+  const smsAllowed = sms === null || smsSelectable(sms);
   const [wrapSave, setWrapSave] = useState<WrapSaveState>({ status: "idle" });
   const [prevCallKey, setPrevCallKey] = useState(callKey);
   if (prevCallKey !== callKey) {
@@ -577,7 +583,7 @@ export function MasterAgentDialer() {
           // The collected answers belong with the notes — there is no
           // structured place for them on the Call row yet.
           notes: composeNotes(wrapUp),
-          smsConfirmationSent: wrapUp.sendSms,
+          smsConfirmationSent: wrapUp.sendSms && smsAllowed,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -1243,15 +1249,20 @@ export function MasterAgentDialer() {
               />
             </label>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="flex items-center gap-2 text-[13px] text-[#334155]">
-                <input
-                  type="checkbox"
-                  checked={wrapUp.sendSms}
-                  onChange={(e) => setWrapUp((w) => ({ ...w, sendSms: e.target.checked }))}
-                  className="size-4"
-                />
-                Send SMS confirmation (includes STOP opt-out)
-              </label>
+              <div className="flex flex-col gap-1">
+                <label className={`flex items-center gap-2 text-[13px] ${smsAllowed ? "text-[#334155]" : "cursor-not-allowed text-[#94A3B8]"}`}>
+                  <input
+                    type="checkbox"
+                    checked={wrapUp.sendSms && smsAllowed}
+                    disabled={!smsAllowed}
+                    aria-describedby="wrap-sms-status"
+                    onChange={(e) => setWrapUp((w) => ({ ...w, sendSms: e.target.checked }))}
+                    className="size-4"
+                  />
+                  Send SMS confirmation (includes STOP opt-out)
+                </label>
+                <SmsStatusNote id="wrap-sms-status" status={sms} />
+              </div>
               <div className="flex items-center gap-2">
                 {wrapSave.status === "error" ? (
                   <p role="alert" className="m-0 text-[12px] font-semibold text-[#991B1B]">
