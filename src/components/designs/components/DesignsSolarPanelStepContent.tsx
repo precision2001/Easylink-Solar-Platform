@@ -822,12 +822,22 @@ export const DesignsSolarPanelStepContent = forwardRef<
    * reading confirmed by Google and the image, else the height model, else
    * the hip split). Relook accepts slightly looser readings.
    */
+  // The AI platform's reading of the roof (Opus 5.5), from the Roof Designer's
+  // design for this pin: one more reading the engine scores with the others.
+  const serverAiFaces = serverReady?.design?.status === "READY" ? serverReady.design.faces.ai : undefined;
+  const facesCtx = useMemo(
+    (): RoofDesignContext | null =>
+      roofCtx && serverAiFaces?.length
+        ? { ...roofCtx, aiFaces: serverAiFaces.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? undefined })) }
+        : roofCtx,
+    [roofCtx, serverAiFaces],
+  );
   const facesFor = useCallback(
     (paths: google.maps.LatLngLiteral[][]): RoofFaceSet =>
-      roofCtx
-        ? findRoofFaces(paths, roofCtx, { relook: Boolean(relook) })
+      facesCtx
+        ? findRoofFaces(paths, facesCtx, { relook: Boolean(relook) })
         : { source: "assumed-hip", faces: [], interiorChecks: [], moved: 0, obstructions: [], gables: 0, evidence: [], determined: false },
-    [roofCtx, relook],
+    [facesCtx, relook],
   );
 
   const savedFaceSet = useMemo(() => facesFor(savedRoofs), [facesFor, savedRoofs]);
@@ -1414,7 +1424,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   ? `${savedFaces.length} roof faces drawn from the walls by trigonometry (${
                       "gables" in savedFaceSet && savedFaceSet.gables ? `${savedFaceSet.gables} gable end${savedFaceSet.gables > 1 ? "s" : ""}, rest hipped` : "hip roof"
                     }), confirmed by Google's roof data; ${savedFaceSet.interiorChecks.filter((c) => c.status === "confirmed").length} of ${savedFaceSet.interiorChecks.length} hips, valleys and ridges seen in the image. `
-                  : savedFaceSet.source === "height-model"
+                  : savedFaceSet.source === "ai-image"
+                    ? `${savedFaces.length} roof faces read from the satellite image by EasyLink AI, lines checked against the image. `
+                    : savedFaceSet.source === "height-model"
                     ? `${savedFaces.length} roof faces found from Google's height data. `
                     : "Roof faces assumed (no usable height data) — check on site. "}
                 {savedFaceSet.determined
