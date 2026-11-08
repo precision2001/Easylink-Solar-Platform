@@ -22,6 +22,10 @@ import {
   staffActionsFor,
   staffQuotesUrl,
   type Quote,
+  editedTotals,
+  isHandEdited,
+  lineTotal,
+  signedDollarsToCents,
 } from "./quotes";
 import { CUSTOMER_QUOTE_ACTIONS, STAFF_QUOTE_ACTIONS, isAllowedQuoteAction } from "./quotes-actions";
 
@@ -131,10 +135,10 @@ describe("labels and status", () => {
     expect(endOfSydneyDayIso("nope")).toBeNull();
   });
   it("offers only the actions the backend allows", () => {
-    expect(staffActionsFor(quote({ status: "DRAFT" }), NOW)).toEqual({ edit: true, reprice: true, send: true, paymentLink: false, withdraw: true });
-    expect(staffActionsFor(quote(), NOW)).toEqual({ edit: true, reprice: false, send: false, paymentLink: true, withdraw: true });
+    expect(staffActionsFor(quote({ status: "DRAFT" }), NOW)).toEqual({ edit: true, reprice: true, send: true, paymentLink: false, withdraw: true, editLines: true });
+    expect(staffActionsFor(quote(), NOW)).toEqual({ edit: true, reprice: false, send: false, paymentLink: true, withdraw: true, editLines: true });
     expect(staffActionsFor(quote({ status: "VIEWED" }), NOW).edit).toBe(false);
-    expect(staffActionsFor(quote({ status: "ACCEPTED", depositPaidAt: "x" }), NOW)).toEqual({ edit: false, reprice: false, send: false, paymentLink: false, withdraw: false });
+    expect(staffActionsFor(quote({ status: "ACCEPTED", depositPaidAt: "x" }), NOW)).toEqual({ edit: false, reprice: false, send: false, paymentLink: false, withdraw: false, editLines: true });
     expect(staffActionsFor(quote({ status: "ACCEPTED" }), NOW).paymentLink).toBe(true);
   });
   it("sorts newest version first", () => {
@@ -183,5 +187,34 @@ describe("proxies", () => {
     expect(isAllowedQuoteAction(STAFF_QUOTE_ACTIONS, "accept")).toBe(false);
     expect(isAllowedQuoteAction(CUSTOMER_QUOTE_ACTIONS, "accept")).toBe(true);
     expect(isAllowedQuoteAction(CUSTOMER_QUOTE_ACTIONS, "send")).toBe(false);
+  });
+});
+
+describe("hand-edited lines", () => {
+  it("reads signed dollars, so a discount line can be negative", () => {
+    expect(signedDollarsToCents("1,250.50")).toBe(125_050);
+    expect(signedDollarsToCents("-500")).toBe(-50_000);
+    expect(signedDollarsToCents("$0")).toBe(0);
+    expect(signedDollarsToCents("abc")).toBeNull();
+    expect(signedDollarsToCents("1.234")).toBeNull();
+  });
+
+  it("totals lines the same way as the backend", () => {
+    expect(editedTotals([{ quantity: 15, unitPriceCents: 26_500 }, { quantity: 1, unitPriceCents: 890_000 }, { quantity: 1, unitPriceCents: 320_000 }], 252_000, 330_000)).toEqual({
+      subtotalCents: 1_607_500,
+      totalCents: 1_025_500,
+    });
+    expect(lineTotal(2.5, 333)).toBe(833);
+  });
+
+  it("derives a unit price for works lines that only carry a total", () => {
+    const { extras } = quoteLines({ snapshot: { works: [{ name: "Install", quantity: 2, totalCents: 640_000 }] } });
+    expect(extras[0]).toMatchObject({ quantity: 2, unitPriceCents: 320_000, totalCents: 640_000 });
+  });
+
+  it("knows when the prices were edited by hand", () => {
+    expect(isHandEdited({ snapshot: { pricing: { source: "MANUAL" } } })).toBe(true);
+    expect(isHandEdited({ snapshot: { pricing: { source: "PRICING_ENGINE" } } })).toBe(false);
+    expect(isHandEdited({ snapshot: null })).toBe(false);
   });
 });

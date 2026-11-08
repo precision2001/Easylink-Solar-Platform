@@ -5,10 +5,12 @@ import { ChannelChoice, channelUsable } from "@/components/quotes/ChannelChoice"
 import { QuoteCompare } from "@/components/quotes/QuoteCompare";
 import { QuoteDetail } from "@/components/quotes/QuoteDetail";
 import { QuoteForm } from "@/components/quotes/QuoteForm";
+import { QuoteLinesEditor } from "@/components/quotes/QuoteLinesEditor";
 import { QUOTE_BUTTON, QUOTE_FOCUS, QuoteNotice } from "@/components/quotes/QuoteParts";
 import { QuoteSummaryCard } from "@/components/quotes/QuoteSummaryCard";
 import {
   createStaffQuote,
+  isHandEdited,
   listStaffQuotes,
   quoteVersionLabel,
   sendPaymentLink,
@@ -21,7 +23,7 @@ import {
 } from "@/lib/quotes";
 import { useSmsStatus } from "@/hooks/useSmsStatus";
 
-type View = { kind: "list" } | { kind: "create" } | { kind: "edit"; id: string } | { kind: "compare" };
+type View = { kind: "list" } | { kind: "create" } | { kind: "edit"; id: string } | { kind: "lines"; id: string } | { kind: "compare" };
 type Notice = { tone: "error" | "success" | "info"; text: string } | null;
 
 const HOW: Record<PaymentLinkChannel, string> = { email: "email", sms: "SMS", both: "email and SMS" };
@@ -119,7 +121,22 @@ export function StaffQuotesPanel({
   }
 
   const open = quotes?.find((q) => q.id === openId) ?? null;
-  const editing = view.kind === "edit" ? quotes?.find((q) => q.id === view.id) ?? null : null;
+  const editing = view.kind === "edit" || view.kind === "lines" ? quotes?.find((q) => q.id === view.id) ?? null : null;
+
+  /** Lines and prices: a draft is edited in place; anything else is copied into a new draft first. */
+  function editLines(q: Quote) {
+    if (q.status === "DRAFT") {
+      setNotice(null);
+      setView({ kind: "lines", id: q.id });
+      return;
+    }
+    void run("revise", async () => {
+      const draft = await staffQuoteAction(portal, q.id, "revise");
+      setOpenId(draft.id);
+      setView({ kind: "lines", id: draft.id });
+      return `${quoteVersionLabel(q)} copied into draft ${quoteVersionLabel(draft)}. Change its lines and prices, then send it. ${customerName} keeps seeing ${quoteVersionLabel(q)} until then.`;
+    });
+  }
   const comparing = (quotes ?? []).filter((q) => compareIds.includes(q.id));
 
   if (!filterKey) {
@@ -140,6 +157,24 @@ export function StaffQuotesPanel({
             await reload();
             onChanged?.();
             setNotice({ tone: "success", text: `Draft ${created ? quoteVersionLabel(created) : "quote"} created. Check it over, then send it to ${customerName}.` });
+          }}
+        />
+      </Card>
+    );
+  } else if (view.kind === "lines" && editing) {
+    main = (
+      <Card>
+        <QuoteLinesEditor
+          key={editing.id}
+          quote={editing}
+          onCancel={() => setView({ kind: "list" })}
+          onSubmit={async (patch) => {
+            await updateStaffQuote(portal, editing.id, patch);
+            setView({ kind: "list" });
+            setOpenId(editing.id);
+            await reload();
+            onChanged?.();
+            setNotice({ tone: "success", text: `${quoteVersionLabel(editing)} lines and prices saved.` });
           }}
         />
       </Card>
@@ -174,7 +209,8 @@ export function StaffQuotesPanel({
     );
   } else if (open) {
     const can = staffActionsFor(open);
-    const any = can.send || can.edit || can.reprice || can.paymentLink || can.withdraw;
+    const any = true;
+    const handEdited = isHandEdited(open);
     main = (
       <Card>
         <QuoteDetail quote={open} audience="staff" showHeading={layout === "split"} />
@@ -211,14 +247,23 @@ export function StaffQuotesPanel({
               ) : null}
               {can.edit ? (
                 <button type="button" onClick={() => setView({ kind: "edit", id: open.id })} className={QUOTE_BUTTON.quiet}>
-                  Edit
+                  Edit details
                 </button>
               ) : null}
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => editLines(open)}
+                title={open.status === "DRAFT" ? "Add, remove or change lines, quantities and prices" : "Copies this version into a new draft to change"}
+                className={QUOTE_BUTTON.quiet}
+              >
+                {busy === "revise" ? "Copying…" : "Lines and prices"}
+              </button>
               {can.reprice ? (
                 <button
                   type="button"
                   disabled={busy !== null}
-                  title="Re-run the pricing engine on this version's equipment"
+                  title={handEdited ? "Replaces your hand-edited lines and prices with the pricing engine's" : "Re-run the pricing engine on this version's equipment"}
                   onClick={() =>
                     void run("reprice", async () => {
                       await staffQuoteAction(portal, open.id, "reprice");
@@ -227,7 +272,7 @@ export function StaffQuotesPanel({
                   }
                   className={QUOTE_BUTTON.quiet}
                 >
-                  {busy === "reprice" ? "Repricing…" : "Reprice"}
+                  {busy === "reprice" ? "Repricing…" : handEdited ? "Reprice (undo edits)" : "Reprice"}
                 </button>
               ) : null}
               {can.withdraw ? (
