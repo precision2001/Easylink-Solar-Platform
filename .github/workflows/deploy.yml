@@ -65,7 +65,7 @@ jobs:
           BACKEND_API_BASE_URL: ${{ vars.BACKEND_API_BASE_URL }}
           FILES_BUCKET: ${{ vars.FILES_BUCKET }}
           MODEL_FAST_ID: ${{ vars.MODEL_FAST_ID || 'au.anthropic.claude-haiku-4-5-20251001-v1:0' }}
-          MODEL_SMART_ID: ${{ vars.MODEL_SMART_ID || 'au.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
+          MODEL_SMART_ID: ${{ vars.MODEL_SMART_ID || 'au.anthropic.claude-opus-5-5' }}
           PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
           BACKEND_PROJECTS_API: ${{ vars.BACKEND_PROJECTS_API || '0' }}
           STAFF_EMAIL: ${{ vars.STAFF_EMAIL || 'sales@easylinksolar.com.au' }}
