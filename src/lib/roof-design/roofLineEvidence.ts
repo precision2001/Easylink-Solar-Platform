@@ -219,3 +219,45 @@ export function unexplainedLength(lines: ImageLine[], faces: LatLngRing[], outli
 }
 
 export { pointInRing };
+
+/**
+ * The image minus its blur (over `radiusM`), times `gain`, around mid-grey:
+ * the faint light and dark lines of a white or metal roof (box edges, the
+ * thin line where a section steps down) stand out; a uniform roof goes flat.
+ * The same view as `local-contrast.py` in the manual process.
+ */
+export function localContrastRaster(luma: GeoTiffRaster, { radiusM = 0.35, gain = 4 }: { radiusM?: number; gain?: number } = {}): GeoTiffRaster {
+  const W = luma.width;
+  const H = luma.height;
+  const px = rasterPixelSizeM(luma);
+  const r = Math.max(1, Math.round(radiusM / Math.max(px, 1e-3) / 1.7));
+  let a = Float32Array.from(luma.data as ArrayLike<number>);
+  const tmp = new Float32Array(Math.max(W, H));
+  // Three box passes each way ≈ a Gaussian.
+  for (let pass = 0; pass < 3; pass++) {
+    for (let y = 0; y < H; y++) {
+      let acc = 0;
+      const o = y * W;
+      for (let x = -r; x <= r; x++) acc += a[o + Math.min(W - 1, Math.max(0, x))];
+      for (let x = 0; x < W; x++) {
+        tmp[x] = acc / (2 * r + 1);
+        acc += a[o + Math.min(W - 1, x + r + 1)] - a[o + Math.max(0, x - r)];
+      }
+      for (let x = 0; x < W; x++) a[o + x] = tmp[x];
+    }
+    for (let x = 0; x < W; x++) {
+      let acc = 0;
+      for (let y = -r; y <= r; y++) acc += a[Math.min(H - 1, Math.max(0, y)) * W + x];
+      for (let y = 0; y < H; y++) {
+        tmp[y] = acc / (2 * r + 1);
+        acc += a[Math.min(H - 1, y + r + 1) * W + x] - a[Math.max(0, y - r) * W + x];
+      }
+      for (let y = 0; y < H; y++) a[y * W + x] = tmp[y];
+    }
+  }
+  const src = luma.data as ArrayLike<number>;
+  const out = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) out[i] = Math.max(0, Math.min(255, 128 + gain * (src[i] - a[i])));
+  a = new Float32Array(0);
+  return { ...luma, data: out };
+}

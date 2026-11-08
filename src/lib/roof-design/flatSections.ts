@@ -11,6 +11,9 @@
  * Longest lines first, so a step across the roof is cut before the short
  * sides of a box that end on it.
  */
+import type { GeoTiffRaster } from "@/utils/geotiff";
+import { sampler } from "./junctions";
+
 type LatLng = { lat: number; lng: number };
 type XY = { x: number; y: number };
 
@@ -381,4 +384,301 @@ export function flatSectionsFromLines(
   const onBorder = (p: XY) => segs.some((s) => distToSeg(p, s.a, s.b) < 0.05);
   const intersections = [...deg.entries()].filter(([i, ns]) => ns.size >= 3 || (ns.size >= 3 && onBorder(pts[i]))).map(([i]) => toLL(pts[i]));
   return { sections: sections.map((f) => f.map((k) => toLL(pts[k]))), intersections };
+}
+
+/**
+ * Visible lines on a flat roof, along and across the walls (owner's rule:
+ * visible lines first). The general line finder sees the dark shadow edges
+ * of a white metal roof but not the thin light lines of a box edge or a
+ * section step. Here every line parallel to a wall is scored at each point by
+ * how much it stands out from the roof right beside it (a brightness step or
+ * a thin light/dark line, against the median of the roof 0.3–0.9 m either
+ * side). Where it stands out for at least `minLengthM` it is a visible line.
+ */
+export function flatRoofAxisLines(
+  luma: GeoTiffRaster,
+  ring: LatLng[],
+  axisDeg: number,
+  { insetM = 0.25, minLengthM = 1.0, minRatio = 1.8, minResponse = 6, gapM = 0.3 }: { insetM?: number; minLengthM?: number; minRatio?: number; minResponse?: number; gapM?: number } = {},
+): SeenLine[] {
+  const { toXY, toLL } = frameOf(ring);
+  const r = ring.map(toXY);
+  const at = sampler(luma, toLL);
+  const h = 0.08;
+  const out: SeenLine[] = [];
+  const dist = (q: XY) => Math.min(...r.map((p, i) => distToSeg(q, p, r[(i + 1) % r.length])));
+  for (const deg of [axisDeg, axisDeg + 90]) {
+    const t = (deg * Math.PI) / 180;
+    const u = { x: Math.cos(t), y: Math.sin(t) };
+    const n = { x: -u.y, y: u.x };
+    const along = r.map((p) => p.x * u.x + p.y * u.y);
+    const across = r.map((p) => p.x * n.x + p.y * n.y);
+    const [a0, a1] = [Math.min(...along), Math.max(...along)];
+    const [o0, o1] = [Math.min(...across), Math.max(...across)];
+    const dO = 0.05;
+    const dA = 0.1;
+    const NO = Math.ceil((o1 - o0) / dO) + 1;
+    const NA = Math.ceil((a1 - a0) / dA) + 1;
+    const resp = new Float32Array(NO * NA).fill(NaN);
+    for (let i = 0; i < NO; i++) {
+      for (let j = 0; j < NA; j++) {
+        const o = o0 + i * dO;
+        const s = a0 + j * dA;
+        const p = { x: s * u.x + o * n.x, y: s * u.y + o * n.y };
+        if (!inside(p, r) || dist(p) < insetM) continue;
+        const l0 = at(p);
+        const l1 = at({ x: p.x + h * n.x, y: p.y + h * n.y });
+        const l2 = at({ x: p.x - h * n.x, y: p.y - h * n.y });
+        if (l0 === null || l1 === null || l2 === null) continue;
+        resp[i * NA + j] = Math.max(Math.abs(l1 - l2), Math.abs(l0 - (l1 + l2) / 2));
+      }
+    }
+    // Smooth along each line over ±0.25 m.
+    const sm = new Float32Array(NO * NA).fill(NaN);
+    for (let i = 0; i < NO; i++) {
+      for (let j = 0; j < NA; j++) {
+        let s = 0;
+        let c = 0;
+        for (let k = -2; k <= 2; k++) {
+          const v = resp[i * NA + j + k];
+          if (j + k >= 0 && j + k < NA && Number.isFinite(v)) {
+            s += v;
+            c++;
+          }
+        }
+        if (c >= 3 && Number.isFinite(resp[i * NA + j])) sm[i * NA + j] = s / c;
+      }
+    }
+    const vis = new Uint8Array(NO * NA);
+    for (let i = 0; i < NO; i++) {
+      for (let j = 0; j < NA; j++) {
+        const v = sm[i * NA + j];
+        if (!Number.isFinite(v) || v < minResponse) continue;
+        // A peak across (within ±0.15 m)...
+        let peak = true;
+        for (let k = -3; k <= 3 && peak; k++) if (k && i + k >= 0 && i + k < NO && sm[(i + k) * NA + j] > v) peak = false;
+        if (!peak) continue;
+        // ...standing out from the roof 0.3–0.9 m either side.
+        const bg: number[] = [];
+        for (let k = 6; k <= 18; k++) for (const sg of [-1, 1]) {
+          const w = sm[(i + sg * k) * NA + j];
+          if (i + sg * k >= 0 && i + sg * k < NO && Number.isFinite(w)) bg.push(w);
+        }
+        if (bg.length < 6) continue;
+        bg.sort((x, y) => x - y);
+        if (v >= minRatio * Math.max(bg[Math.floor(bg.length / 2)], 1)) vis[i * NA + j] = 1;
+      }
+    }
+    // Runs along each offset (a line may wander ±1 offset step).
+    const gap = Math.round(gapM / dA);
+    const used = new Uint8Array(NO * NA);
+    for (let i = 1; i < NO - 1; i++) {
+      let start = -1;
+      let last = -1;
+      let n0 = 0;
+      let oSum = 0;
+      const flush = () => {
+        if (start >= 0 && (last - start + 1) * dA >= minLengthM && n0 / (last - start + 1) >= 0.6) {
+          const o = o0 + (oSum / n0) * dO;
+          const pa = { x: (a0 + start * dA) * u.x + o * n.x, y: (a0 + start * dA) * u.y + o * n.y };
+          const pb = { x: (a0 + last * dA) * u.x + o * n.x, y: (a0 + last * dA) * u.y + o * n.y };
+          out.push({ a: toLL(pa), b: toLL(pb), lengthM: (last - start + 1) * dA });
+        }
+        start = -1;
+        n0 = 0;
+        oSum = 0;
+      };
+      for (let j = 0; j < NA; j++) {
+        let hit = -1;
+        for (const k of [0, -1, 1]) if (vis[(i + k) * NA + j] && !used[(i + k) * NA + j]) { hit = i + k; break; }
+        if (hit >= 0) {
+          if (start >= 0 && j - last > gap) flush();
+          if (start < 0) start = j;
+          last = j;
+          n0++;
+          oSum += hit;
+          used[hit * NA + j] = 1;
+        }
+      }
+      flush();
+    }
+  }
+  return out;
+}
+
+/** The edge on the sun's side (north) of a long shadow: the edge that casts it. */
+export function shadowCastingEdge(shadow: LatLng[]): SeenLine | null {
+  if (shadow.length < 3) return null;
+  const { toXY, toLL } = frameOf(shadow);
+  const r = shadow.map(toXY);
+  let best: { a: XY; b: XY; len: number; y: number } | null = null;
+  const longest = Math.max(...r.map((p, i) => Math.hypot(r[(i + 1) % r.length].x - p.x, r[(i + 1) % r.length].y - p.y)));
+  for (let i = 0; i < r.length; i++) {
+    const a = r[i];
+    const b = r[(i + 1) % r.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 0.7 * longest) continue;
+    const y = (a.y + b.y) / 2;
+    if (!best || y > best.y) best = { a, b, len, y };
+  }
+  if (!best || best.len < 1) return null;
+  return { a: toLL(best.a), b: toLL(best.b), lengthM: best.len };
+}
+
+/** Per 10 cm along a→b: does the line stand out from the roof beside it (0.3–0.9 m either side)? */
+export function seenAlong(luma: GeoTiffRaster, a: LatLng, b: LatLng, { minRatio = 1.6, minResponse = 5 } = {}): boolean[] {
+  const { toXY, toLL } = frameOf([a, b]);
+  const at = sampler(luma, toLL);
+  const A = toXY(a);
+  const B = toXY(b);
+  const len = Math.hypot(B.x - A.x, B.y - A.y);
+  if (len < 0.1) return [];
+  const u = { x: (B.x - A.x) / len, y: (B.y - A.y) / len };
+  const n = { x: -u.y, y: u.x };
+  const h = 0.08;
+  const resp = (p: XY): number | null => {
+    const l0 = at(p);
+    const l1 = at({ x: p.x + h * n.x, y: p.y + h * n.y });
+    const l2 = at({ x: p.x - h * n.x, y: p.y - h * n.y });
+    if (l0 === null || l1 === null || l2 === null) return null;
+    return Math.max(Math.abs(l1 - l2), Math.abs(l0 - (l1 + l2) / 2));
+  };
+  const out: boolean[] = [];
+  for (let s = 0; s <= len + 1e-9; s += 0.1) {
+    let v = 0;
+    let c = 0;
+    // Best of ±5 cm across (the line may be a pixel off).
+    let best = 0;
+    for (const o of [-0.05, 0, 0.05]) {
+      let sum = 0;
+      let k = 0;
+      for (const ds of [-0.1, 0, 0.1]) {
+        const r = resp({ x: A.x + (s + ds) * u.x + o * n.x, y: A.y + (s + ds) * u.y + o * n.y });
+        if (r !== null) { sum += r; k++; }
+      }
+      if (k) best = Math.max(best, sum / k);
+    }
+    v = best;
+    const bg: number[] = [];
+    for (const o of [0.3, 0.45, 0.6, 0.75, 0.9]) for (const sg of [-1, 1]) {
+      const r = resp({ x: A.x + s * u.x + sg * o * n.x, y: A.y + s * u.y + sg * o * n.y });
+      if (r !== null) { bg.push(r); c++; }
+    }
+    if (c < 4) { out.push(false); continue; }
+    bg.sort((x, y) => x - y);
+    out.push(v >= minResponse && v >= minRatio * Math.max(bg[Math.floor(bg.length / 2)], 1));
+  }
+  return out;
+}
+
+const share = (v: boolean[]) => (v.length ? v.filter(Boolean).length / v.length : 0);
+
+/**
+ * Roof lines a shadow points to (owner's rules: a shadow means a higher edge
+ * beside it; roof lines take priority). For each long shadow on a flat roof:
+ * - its casting edge (the sun-side edge) is a roof line;
+ * - a line parallel to it just past the shadow (0.2–1.5 m), running eave to
+ *   eave, is a section step when the image shows it along 55% of its length;
+ * - from the casting edge's inner end, a line along the walls away from the
+ *   eave is a raised box's side when seen for at least 1.2 m; it ends where
+ *   it stops being seen, and a line back to the eave parallel to the casting
+ *   edge closes the box when seen along half its length.
+ * The lines go to flatSectionsFromLines, which keeps only those that meet
+ * other lines at intersections.
+ */
+export function shadowStructureLines(luma: GeoTiffRaster, ring: LatLng[], shadows: LatLng[][]): { lines: SeenLine[]; casting: SeenLine[] } {
+  const { toXY, toLL } = frameOf(ring);
+  const r = ring.map(toXY);
+  const lines: SeenLine[] = [];
+  const casting: SeenLine[] = [];
+  const nearestEaveDist = (q: XY) => Math.min(...r.map((p, i) => distToSeg(q, p, r[(i + 1) % r.length])));
+  const chord = (p: XY, d: XY): [XY, XY] | null => {
+    let lo: number | null = null;
+    let hi: number | null = null;
+    for (let i = 0; i < r.length; i++) {
+      const c = cross(p, d, r[i], r[(i + 1) % r.length]);
+      if (!c) continue;
+      if (c.s <= 0 && (lo === null || c.s > lo)) lo = c.s;
+      if (c.s >= 0 && (hi === null || c.s < hi)) hi = c.s;
+    }
+    return lo === null || hi === null ? null : [{ x: p.x + lo * d.x, y: p.y + lo * d.y }, { x: p.x + hi * d.x, y: p.y + hi * d.y }];
+  };
+  for (const sh of shadows) {
+    const ce = shadowCastingEdge(sh);
+    if (!ce || ce.lengthM < 1.5) continue;
+    let A = toXY(ce.a);
+    let B = toXY(ce.b);
+    // A = the end at the eave, B = the inner end (the box's corner).
+    if (nearestEaveDist(A) > nearestEaveDist(B)) [A, B] = [B, A];
+    if (nearestEaveDist(A) > 1.2) continue;
+    // A shadow along an eave is the wall below it (a unit stepping back), not a roof line.
+    const alongEave = r.some((p, i) => {
+      const q = r[(i + 1) % r.length];
+      const el = Math.hypot(q.x - p.x, q.y - p.y);
+      const sin = Math.abs((q.x - p.x) * (B.y - A.y) - (q.y - p.y) * (B.x - A.x)) / (el * Math.hypot(B.x - A.x, B.y - A.y));
+      return el > 0.5 && sin < Math.sin((15 * Math.PI) / 180) && distToSeg({ x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }, p, q) < 1.0;
+    });
+    if (alongEave) continue;
+    casting.push({ a: toLL(A), b: toLL(B), lengthM: ce.lengthM });
+    lines.push({ a: toLL(A), b: toLL(B), lengthM: ce.lengthM });
+    const len = Math.hypot(B.x - A.x, B.y - A.y);
+    const d = { x: (B.x - A.x) / len, y: (B.y - A.y) / len };
+    // The shadow side of the casting edge.
+    const sc = sh.map(toXY).reduce((s, p) => ({ x: s.x + p.x / sh.length, y: s.y + p.y / sh.length }), { x: 0, y: 0 });
+    let n = { x: -d.y, y: d.x };
+    if ((sc.x - A.x) * n.x + (sc.y - A.y) * n.y < 0) n = { x: -n.x, y: -n.y };
+    // Section step: eave to eave, just past the shadow.
+    let bestStep: { s: number; p: [XY, XY] } | null = null;
+    for (let off = 0.2; off <= 1.5 + 1e-9; off += 0.05) {
+      const p0 = { x: A.x + off * n.x, y: A.y + off * n.y };
+      const c = chord(p0, d);
+      if (!c) continue;
+      const v = seenAlong(luma, toLL(c[0]), toLL(c[1]));
+      // Judge the part beyond the shadow's tip (the shadow itself is seen anyway).
+      const tipAlong = (B.x - c[0].x) * d.x + (B.y - c[0].y) * d.y;
+      const rest = v.slice(Math.max(0, Math.round(tipAlong / 0.1)));
+      const sv = share(rest);
+      if (rest.length >= 15 && sv >= 0.55 && (!bestStep || sv > bestStep.s)) bestStep = { s: sv, p: c };
+    }
+    if (bestStep) lines.push({ a: toLL(bestStep.p[0]), b: toLL(bestStep.p[1]), lengthM: Math.hypot(bestStep.p[1].x - bestStep.p[0].x, bestStep.p[1].y - bestStep.p[0].y) });
+    // Raised box: a side from the inner end, away from the casting edge.
+    let side: { lat: number; lng: number; end: XY; start: XY } | null = null;
+    let bestLen = 0;
+    for (const lat of [-0.3, -0.15, 0, 0.15, 0.3]) {
+      const s0 = { x: B.x + lat * d.x, y: B.y + lat * d.y };
+      const far = { x: s0.x + 9 * n.x, y: s0.y + 9 * n.y };
+      const v = seenAlong(luma, toLL(s0), toLL(far), { minRatio: 1.4, minResponse: 4 });
+      // Seen run from the start, gaps up to 0.5 m.
+      let end = 0;
+      let gap = 0;
+      for (let k = 0; k < v.length; k++) {
+        if (v[k]) { end = k; gap = 0; } else if (++gap > 5) break;
+      }
+      const runM = end * 0.1;
+      if (runM >= 1.2 && share(v.slice(0, end + 1)) >= 0.6 && runM > bestLen) {
+        bestLen = runM;
+        side = { lat: 0, lng: 0, start: s0, end: { x: s0.x + runM * n.x, y: s0.y + runM * n.y } };
+      }
+    }
+    if (side) {
+      // Bottom back to the eave, parallel to the casting edge: tried within
+      // ±0.6 m of where the side stops being seen; the side ends on it.
+      let bottom: { s: number; e: XY; eave: XY } | null = null;
+      for (let dl = -0.6; dl <= 0.6 + 1e-9; dl += 0.1) {
+        const L = bestLen + dl;
+        if (L < 1.2) continue;
+        const e = { x: side.start.x + L * n.x, y: side.start.y + L * n.y };
+        const c = chord(e, d);
+        if (!c) continue;
+        // Back toward the eave the casting edge starts from (against d).
+        const eave = (c[0].x - e.x) * d.x + (c[0].y - e.y) * d.y < 0 ? c[0] : c[1];
+        const sv = share(seenAlong(luma, toLL(e), toLL(eave), { minRatio: 1.4, minResponse: 4 }));
+        if (sv >= 0.45 && (!bottom || sv > bottom.s)) bottom = { s: sv, e, eave };
+      }
+      const end = bottom ? bottom.e : side.end;
+      lines.push({ a: toLL(side.start), b: toLL(end), lengthM: Math.hypot(end.x - side.start.x, end.y - side.start.y) });
+      if (bottom) lines.push({ a: toLL(bottom.eave), b: toLL(bottom.e), lengthM: Math.hypot(bottom.eave.x - bottom.e.x, bottom.eave.y - bottom.e.y) });
+    }
+  }
+  return { lines, casting };
 }
