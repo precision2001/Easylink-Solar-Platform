@@ -17,10 +17,11 @@ import type { GeoTiffRaster } from "@/utils/geotiff";
 import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
 import type { RoofSnapshotAnalysis } from "@/lib/designer/roofSnapshot";
 import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
-import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
+import { checkInteriorLine, fitEavesToMask, interiorEdges, type LineCheck } from "@/lib/designer/roofLineCheck";
 import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
+import { fitRoofJunctions } from "./junctions";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
 import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
@@ -94,7 +95,7 @@ export type AiRoofFace = { ring: LatLngRing; azimuthDeg?: number; name?: string 
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-09.1";
+export const ROOF_ENGINE_VERSION = "2026-11-09.2";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -598,6 +599,9 @@ function squareReadingSearch(
     const clean = withoutNotches(v) ?? v;
     return alignWalls(clean, refs) ?? clean;
   });
+  // With out-of-date Google data a wing may be newer than Google's data; its
+  // corners are kept as a start too (12 Fursorb St), and the evidence decides.
+
   for (const v of starts) {
     // From each starting outline, drop short steps one at a time while the
     // evidence improves: real steps stay, tracing notches go.
@@ -1037,9 +1041,24 @@ export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {})
   const initial: InitialRoofs | null = opts.outline ? { rings: opts.outline, source: "snapshot", traced: true } : initialRoofs(ctx, { placeholder: false });
   if (!initial) return null;
   // An outline given by a person (Edit, or the API's `outline`) is theirs: kept, not replaced by another reading.
-  const outline = confirmRoofOutlines(initial.rings, ctx, { userEdit: Boolean(opts.outline) });
-  if (outline.length === 0) return null;
-  const faceSet = findRoofFaces(outline, ctx);
+  const confirmed = confirmRoofOutlines(initial.rings, ctx, { userEdit: Boolean(opts.outline) });
+  if (confirmed.length === 0) return null;
+  const found = findRoofFaces(confirmed, ctx);
+  // Every point where roof lines meet is fitted once, for all its lines, to
+  // the image (owner, 12 Fursorb St): lines stay straight and connected.
+  const fit =
+    typeof process !== "undefined" && process.env?.ROOF_JUNCTIONS === "0"
+      ? { outline: confirmed, faces: found.faces, moved: 0 }
+      : fitRoofJunctions(confirmed, found.faces, lineLumaOf(ctx), { fixedOutline: true });
+  const outline = fit.outline;
+  const faceSet: RoofFaceSet =
+    fit.moved > 0
+      ? {
+          ...found,
+          faces: fit.faces,
+          interiorChecks: interiorEdges(fit.faces, outline).map(([a, b]) => checkInteriorLine(a, b, lineLumaOf(ctx))),
+        }
+      : found;
   const dims = opts.dims ?? panelDimsOf(ctx);
   const lay = (orientation: PanelOrientation) => layoutRoofPanels(outline, faceSet, ctx, { orientation, beautify: opts.beautify, dims });
   const portrait = lay("PORTRAIT");
