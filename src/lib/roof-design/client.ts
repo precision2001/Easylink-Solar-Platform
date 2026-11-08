@@ -26,7 +26,13 @@ export type RoofDesignResponse =
       outline: { rings: LatLngRing[]; source: string; needsVerification: boolean; areaM2: number };
       /** Every roof's lines passed the priority tests (Google, then the image). */
       determined: boolean;
-      faces: { source: string; gables: number; items: RoofDesignFace[] };
+      faces: {
+        source: string;
+        gables: number;
+        items: RoofDesignFace[];
+        /** The AI platform's reading of the roof from the image (Opus 5.5), when it was had. */
+        ai?: { ring: LatLngRing; azimuthDeg: number | null }[];
+      };
       obstructions: { ring: LatLngRing; kind: "spot" | "step" }[];
       lines: { total: number; checked: number; ok: number };
       panels: {

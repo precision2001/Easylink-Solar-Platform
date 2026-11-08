@@ -55,6 +55,9 @@ export async function runApiDesign(job: ApiDesignJob): Promise<ApiDesignResult> 
         evidence: d.faceSet.evidence,
         gables: d.faceSet.gables,
         items: d.faceSet.faces.map((f) => ({ ring: f.ring, pitchDeg: f.pitchDeg ?? null, azimuthDeg: f.azimuthDeg ?? null })),
+        // The AI's own reading (before the engine scored and corrected it), so
+        // the Designs page can score it too when it reads faces itself.
+        ai: r.context.aiFaces?.length ? r.context.aiFaces.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? null })) : undefined,
       },
       obstructions: d.faceSet.obstructions.map((o) => ({ ring: o.ring, kind: o.kind })),
       lines: { total: d.lines.total, checked: d.lines.checked, ok: d.lines.ok },

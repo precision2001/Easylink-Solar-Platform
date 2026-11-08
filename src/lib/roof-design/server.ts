@@ -15,6 +15,7 @@ import { getCadastre, getCombinedSolar, getFootprint, getLayerBytes, getSnapshot
 import type { SolarEstimateResult } from "@/types/solar";
 import { designRoof, lotForDesign, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
 import { panelCorners, ringAreaM2, type LatLng, type LatLngRing } from "./geometry";
+import { aiRoofFacesEnabled, fetchAiRoofFaces } from "./aiFaces";
 
 /* ── Satellite image ────────────────────────────────────────────────── */
 
@@ -285,6 +286,11 @@ export async function designRoofAt(
     early.set(ROOF_SNAPSHOT.zoom, first);
   }
   const fetchEarly = (p: LatLng, zoom: number) => early.get(zoom) ?? fetchImage(p, zoom);
+  // The AI platform's reading of the roof (Opus 5.5) starts as soon as the
+  // zoom-21 image is in, alongside Google's data; the engine scores it with
+  // the other readings. Without the platform the design goes on as before.
+  const aiFirst = early.get(ROOF_SNAPSHOT.zoom);
+  const aiFaces = !opts.context?.aiFaces && aiFirst && aiRoofFacesEnabled() ? aiFirst.then((img) => fetchAiRoofFaces(img)).catch(() => null) : null;
   const context = opts.context ?? (await loadRoofContext(pin, opts.source === undefined ? defaultDataSource() : opts.source));
   // The lot may not hold the whole house (a property over two lots): widen it first.
   context.parcel = lotForDesign(context.parcel, context.estimate, pin);
@@ -298,6 +304,7 @@ export async function designRoofAt(
       // No image: the engine falls back to Google's mask or box.
     }
   }
+  if (aiFaces) context.aiFaces = await aiFaces;
   const design = designRoof(context, opts);
   if (!design) return { status: "NO_ROOF", context, image, message: "Couldn't find a roof at this address in the satellite image." };
   return { status: "READY", design, context, image };

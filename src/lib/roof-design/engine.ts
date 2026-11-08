@@ -75,7 +75,18 @@ export type RoofDesignContext = {
   parcelBounds?: LatLngBox | null;
   /** Microsoft building footprint matched to the address. */
   footprint?: LatLngRing | null;
+  /**
+   * Faces read from the zoom-21 image by the AI platform's smart model (Claude
+   * Opus 5.5; `fetchAiRoofFaces` on the server). One more reading of the roof:
+   * filled to the outline, its lines moved onto the edges in the image, and
+   * scored on the same priority tests as every other reading — never taken as
+   * given.
+   */
+  aiFaces?: AiRoofFace[] | null;
 };
+
+/** A face the AI read from the image, in map coordinates. */
+export type AiRoofFace = { ring: LatLngRing; azimuthDeg?: number; name?: string };
 
 /* ── Constants (shared by every caller) ─────────────────────────────── */
 
@@ -83,7 +94,7 @@ export type RoofDesignContext = {
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-07.1";
+export const ROOF_ENGINE_VERSION = "2026-11-08.1";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -750,7 +761,7 @@ export function confirmRoofOutlines(
 
 export type RoofFace = { ring: LatLngRing; eaveDeg: number; pitchDeg?: number; azimuthDeg?: number };
 
-export type FaceSource = "square-hip" | "height-model" | "assumed-hip";
+export type FaceSource = "square-hip" | "ai-image" | "height-model" | "assumed-hip";
 
 export type RoofFaceSet = {
   source: FaceSource;
@@ -819,6 +830,11 @@ export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, { rel
       return stale ? { ...ev, googleOk: false, googleStale: true } : ev;
     };
     if (other) cands.push({ ...other, gables: 0, evidence: fallbackEvidence(other) });
+    // The AI's reading of the image (Claude Opus 5.5), where one was had:
+    // filled to this outline, lines moved onto the image's edges, scored like
+    // the rest. A confirmed trigonometry reading still comes first.
+    const ai = sq && !waived ? null : aiFacesFor(p, ctx);
+    if (ai) cands.push({ ...ai, gables: 0, evidence: fallbackEvidence(ai) });
     if ((!sq || waived) && stale && other?.source === "height-model") {
       // The height model shows the roof as it was when Google flew over; the
       // plain hip split competes with it on the image alone.
@@ -840,15 +856,57 @@ export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, { rel
     const best = cands[0];
     faces.push(...best.faces);
     checks.push(...best.checks);
-    evidence.push(best.source === "square-hip" ? best.evidence : { ...best.evidence, googleOk: false });
+    // A trigonometry or AI reading can be determined (Google confirms it and the
+    // image shows its lines); the height model and the hip split never are.
+    evidence.push(best.source === "square-hip" || best.source === "ai-image" ? best.evidence : { ...best.evidence, googleOk: false });
     moved += best.moved;
     gables += best.gables;
     sources.add(best.source);
   }
   const obstructions = snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)) : [];
-  const source: FaceSource = sources.has("assumed-hip") ? "assumed-hip" : sources.has("height-model") ? "height-model" : "square-hip";
+  const source: FaceSource = sources.has("assumed-hip")
+    ? "assumed-hip"
+    : sources.has("height-model")
+      ? "height-model"
+      : sources.has("ai-image")
+        ? "ai-image"
+        : "square-hip";
   const determined = evidence.length > 0 && evidence.every((e) => e.googleOk && e.seen >= ROOF_DESIGN_LIMITS.minSeenDetermined);
   return { source, faces, interiorChecks: checks, moved, obstructions, gables, evidence, determined };
+}
+
+/** The AI's faces that belong to this roof must cover at least this share of it to be a reading. */
+export const AI_MIN_COVERAGE = 0.6;
+
+/**
+ * The AI's reading of one roof: its faces whose centre is on this roof,
+ * filled out to the outline on the image's 3 cm grid (gaps and overhangs
+ * settled by the image's roof mask), lines moved onto the edges seen in the
+ * image. Null when there is no AI reading, no image, or it covers too little
+ * of this roof.
+ */
+function aiFacesFor(outline: LatLngRing, ctx: RoofDesignContext): { source: FaceSource; faces: RoofFace[]; checks: LineCheck[]; moved: number } | null {
+  const snap = ctx.snapshot ?? null;
+  if (!ctx.aiFaces?.length || !snap) return null;
+  const mine = ctx.aiFaces.filter((f) => f.ring.length >= 3 && pointInRing(ringCentroid(f.ring), outline));
+  if (mine.length === 0) return null;
+  const roofM2 = ringAreaM2(outline);
+  const coveredM2 = mine.reduce((s, f) => s + ringAreaM2(f.ring) * overlapShare(f.ring, outline), 0);
+  if (roofM2 <= 0 || coveredM2 / roofM2 < AI_MIN_COVERAGE) return null;
+  const rings = regularizeRoofOutlines(mine.map((f) => f.ring));
+  let faces: RoofFace[] = mine.map((f, i) => {
+    const az = f.azimuthDeg;
+    const azRad = ((az ?? 0) * Math.PI) / 180;
+    return {
+      ring: rings[i] ?? f.ring,
+      // The same convention as the height model's faces (roofFaceDetect).
+      eaveDeg: az === undefined ? longestEdgeAngleDegrees(f.ring) : (Math.atan2(Math.sin(azRad), -Math.cos(azRad)) * 180) / Math.PI,
+      azimuthDeg: az,
+    };
+  });
+  faces = fillFacesOnRoofs(faces, [outline], snap.mask, snap.metresPerPixel);
+  const corrected = correctInteriorLines(faces, [outline], lineLumaOf(ctx));
+  return { source: "ai-image", faces: corrected.faces, checks: corrected.checks, moved: corrected.moved };
 }
 
 /** Faces of roofs with no square-walled reading: Google's height model filled to the outline, else the hip split; lines corrected on the image. */
