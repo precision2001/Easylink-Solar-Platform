@@ -30,9 +30,6 @@ export function useHydrateCustomerUser(): void {
     // The sign-in screen has no session yet. Asking there would 401, fail the
     // refresh, and bounce the visitor through a pointless logout redirect.
     if (pathname?.startsWith("/customers/auth")) return;
-    // The bare /customers page is public marketing. Asking for a profile there
-    // 401s for signed-out visitors and bounces them to sign-in.
-    if (pathname === "/customers" || pathname === "/customers/") return;
 
     let cancelled = false;
     void fetchCustomerProfile()
