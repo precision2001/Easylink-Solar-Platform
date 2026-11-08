@@ -199,7 +199,7 @@ class EasyLinkAiStack extends Stack {
       ingestKey.grantRead(f);
       searchKey.grantRead(f);
     }
-    this.voiceKey.grantRead(api);
+    for (const f of [api, roof]) this.voiceKey.grantRead(f);
     for (const f of [api, consumer, roof]) {
       f.addToRolePolicy(
         new iam.PolicyStatement({
