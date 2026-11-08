@@ -7,6 +7,7 @@ import {
   expiresInText,
   formatCents,
   formatQuoteDate,
+  isHandEdited,
   isOpen,
   lineCategoryLabel,
   quoteAddress,
@@ -179,10 +180,18 @@ function Row({ label, value, hint, good }: { label: string; value: string; hint?
   );
 }
 
+/** "Edited by hand on 8 Nov 2026" once staff changed the lines or amounts. */
+function handEditedAt(quote: Quote): string | null {
+  if (!isHandEdited(quote)) return null;
+  const manual = quote.snapshot?.manual as { editedAt?: unknown } | undefined;
+  return typeof manual?.editedAt === "string" ? `Edited by hand on ${formatQuoteDate(manual.editedAt)}` : "Edited by hand";
+}
+
 function StaffFacts({ quote }: { quote: Quote }) {
   const by = createdByName(quote);
   const history: [string, string | null][] = [
     ["Created", `${formatQuoteDate(quote.createdAt)}${by ? ` by ${by}` : ""}`],
+    ["Prices", handEditedAt(quote)],
     ["Sent", quote.sentAt ? formatQuoteDate(quote.sentAt) : null],
     ["Viewed", quote.viewedAt ? formatQuoteDate(quote.viewedAt) : null],
     ["Accepted", quote.acceptedAt ? `${formatQuoteDate(quote.acceptedAt)}${quote.acceptedName ? ` by ${quote.acceptedName}` : ""}` : null],

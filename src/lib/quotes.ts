@@ -93,7 +93,22 @@ export type UpdateQuoteInput = {
   notes?: string | null;
   internalNotes?: string | null;
   title?: string;
+  /** Hand-edited lines (drafts only); both lists are replaced together. */
+  lines?: { equipment: EditableEquipmentLine[]; works: EditableWorksLine[] };
+  stcDiscountCents?: number;
+  rebateCents?: number;
 };
+
+export type EditableEquipmentLine = {
+  category: string;
+  productId?: string;
+  name: string;
+  brand?: string;
+  model?: string;
+  quantity: number;
+  unitPriceCents: number;
+};
+export type EditableWorksLine = { name: string; note?: string; quantity: number; unitPriceCents: number };
 
 export const DEFAULT_DEPOSIT_PERCENT = 25;
 export const DEFAULT_VALID_DAYS = 30;
@@ -122,6 +137,30 @@ export function dollarsToCents(input: string): number | null {
 
 export function centsToDollarsInput(cents: number): string {
   return (cents / 100).toFixed(cents % 100 === 0 ? 0 : 2);
+}
+
+/** Signed dollars typed into a price cell ("-500", "$1,250.50") to cents; null when it isn't a number. */
+export function signedDollarsToCents(input: string): number | null {
+  const clean = input.replace(/[$,\s]/g, "");
+  if (!clean || !/^-?\d+(\.\d{0,2})?$/.test(clean)) return null;
+  return Math.round(Number(clean) * 100);
+}
+
+/** Same rounding as the backend: quantity × unit price, to the cent. */
+export function lineTotal(quantity: number, unitPriceCents: number): number {
+  return Math.round(quantity * unitPriceCents);
+}
+
+/** Subtotal of every line, less the STC discount and rebates (mirrors the backend). */
+export function editedTotals(lines: { quantity: number; unitPriceCents: number }[], stcDiscountCents: number, rebateCents: number) {
+  const subtotalCents = lines.reduce((sum, l) => sum + lineTotal(l.quantity, l.unitPriceCents), 0);
+  return { subtotalCents, totalCents: subtotalCents - stcDiscountCents - rebateCents };
+}
+
+/** True once staff have changed the lines or amounts by hand. */
+export function isHandEdited(q: Pick<Quote, "snapshot">): boolean {
+  const pricing = q.snapshot?.pricing;
+  return !!pricing && typeof pricing === "object" && (pricing as { source?: unknown }).source === "MANUAL";
 }
 
 /** What's left to pay on completion once the deposit is in. */
@@ -233,6 +272,8 @@ export function staffActionsFor(q: Pick<Quote, "status" | "validUntil" | "deposi
   return {
     edit: q.status === "DRAFT" || (q.status === "SENT" && open),
     reprice: q.status === "DRAFT",
+    /** Change lines and amounts: in place on a draft, or as a new draft version of anything else. */
+    editLines: true,
     send: q.status === "DRAFT",
     paymentLink: (open || q.status === "ACCEPTED") && !q.depositPaidAt && q.depositCents > 0,
     withdraw: q.status === "DRAFT" || open,
@@ -313,7 +354,9 @@ function toLine(raw: unknown): QuoteLine | null {
   if (!name) return null;
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
   const quantity = num(r.quantity) || 1;
-  const unit = num(r.unitPriceCents);
+  const total = typeof r.totalCents === "number" && Number.isFinite(r.totalCents) ? r.totalCents : null;
+  // Works lines from the pricing engine carry only a total: derive the unit price.
+  const unit = typeof r.unitPriceCents === "number" && Number.isFinite(r.unitPriceCents) ? r.unitPriceCents : total !== null ? Math.round(total / quantity) : 0;
   return {
     category: typeof r.category === "string" ? r.category : "",
     productId: typeof r.productId === "string" ? r.productId : null,
@@ -322,7 +365,7 @@ function toLine(raw: unknown): QuoteLine | null {
     model: typeof r.model === "string" ? r.model : null,
     quantity,
     unitPriceCents: unit,
-    totalCents: typeof r.totalCents === "number" && Number.isFinite(r.totalCents) ? r.totalCents : unit * quantity,
+    totalCents: total ?? unit * quantity,
   };
 }
 
@@ -352,6 +395,10 @@ const CATEGORY_LABEL: Record<string, string> = {
   "heat pump": "Heat pump",
   heat_pump: "Heat pump",
   installation: "Installation",
+  solarpanel: "Solar panels",
+  evcharger: "EV charger",
+  heatpump: "Heat pump",
+  other: "Other",
   extra: "Extra",
 };
 
@@ -470,6 +517,7 @@ const STAFF_ACTION_ERROR: Record<StaffQuoteAction, string> = {
   reprice: "Could not reprice the quote.",
   "payment-link": "Could not send the payment link.",
   withdraw: "Could not withdraw the quote.",
+  revise: "Could not make a new version to edit.",
 };
 
 export async function staffQuoteAction<T = Quote>(
