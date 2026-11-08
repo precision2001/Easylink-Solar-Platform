@@ -8,6 +8,8 @@ import { RECORD_TYPES } from "../core/records.js";
 import { AGENTS } from "../ai/agents.js";
 import { LEVEL_LABEL, defaultLevel, suggestPromotion } from "../policy/autonomy.js";
 import { isStaff } from "../policy/policy.js";
+import { RoofFacesRequest } from "../roof/faces.js";
+import { getRoofReading, startRoofReading, type RoofReading } from "../roof/readings.js";
 import { generateScreenWithRepair, validateScreen } from "../screens/spec.js";
 import { WORKFLOWS } from "../actions/workflows.js";
 import type { Container } from "../container.js";
@@ -68,6 +70,13 @@ export function createApp(c: Container) {
       ctx.set("relay", !!(ingest && c.ingestKey && safeEq(ingest, c.ingestKey)));
       return next();
     }
+    if (ingest && c.ingestKey && safeEq(ingest, c.ingestKey) && (ctx.req.path === "/v1/roof/faces" || ctx.req.path.startsWith("/v1/roof/faces/"))) {
+      // The website's Roof Designer, server to server (no person signed in on the public Designs page).
+      ctx.set("principal", { kind: "integration", id: "roof-designer", roles: ["roof-designer"], on_behalf_of: null });
+      ctx.set("token", null);
+      ctx.set("relay", false);
+      return next();
+    }
     if (ingest && c.ingestKey && safeEq(ingest, c.ingestKey) && ctx.req.path === "/v1/events") {
       const anon = ctx.req.header("x-visitor-id") ?? "anonymous";
       ctx.set("principal", { kind: "visitor", id: anon.slice(0, 64), roles: [], on_behalf_of: null });
@@ -83,6 +92,44 @@ export function createApp(c: Container) {
     await next();
   };
   const ok = <T>(ctx: Context<Env>, data: T, status = 200) => ctx.json({ success: true, message: "OK", data }, status as 200);
+
+  // ---------- roof faces (Roof Designer) ----------
+  // One reading of a roof's faces from its satellite image by the smart model,
+  // run in the background (src/roof/readings.ts). Off when the "roof" kill
+  // switch is on, the roof designer is paused, or today's AI budget is spent;
+  // each reading is a decision record whose cost counts towards the budget.
+  const roofCaller = (p: Principal) => p.kind === "integration" || isStaff(p);
+  app.post("/v1/roof/faces", async (ctx) => {
+    if (!roofCaller(ctx.get("principal"))) return ctx.json({ success: false, message: "Not allowed" }, 403);
+    const parsed = RoofFacesRequest.safeParse(await ctx.req.json().catch(() => null));
+    if (!parsed.success) return ctx.json({ success: false, message: "Invalid request", errors: parsed.error.flatten() }, 400);
+    const control = await c.store.getControl();
+    if (control.familiesOff.roof || control.pausedAgents["roof-designer"]) {
+      return ctx.json({ success: false, message: "Roof reading is switched off.", code: "OFF" }, 503);
+    }
+    if (control.dailyBudgetAud != null) {
+      const start = new Date();
+      start.setUTCHours(0, 0, 0, 0);
+      const today = await c.store.listDecisions({ sinceIso: start.toISOString(), limit: 10_000 });
+      if (today.reduce((s, d) => s + d.costAud, 0) >= control.dailyBudgetAud) {
+        return ctx.json({ success: false, message: "Daily AI budget reached.", code: "BUDGET" }, 503);
+      }
+    }
+    try {
+      const row = await startRoofReading(c, parsed.data);
+      const now = (await getRoofReading(c, row.id)) ?? row;
+      return ok(ctx, publicReading(now), 202);
+    } catch (err) {
+      console.error("roof faces start", err);
+      return ctx.json({ success: false, message: "The roof reading could not be started." }, 502);
+    }
+  });
+  app.get("/v1/roof/faces/:id", async (ctx) => {
+    if (!roofCaller(ctx.get("principal"))) return ctx.json({ success: false, message: "Not allowed" }, 403);
+    const row = await getRoofReading(c, ctx.req.param("id"));
+    if (!row) return ctx.json({ success: false, message: "Not found" }, 404);
+    return ok(ctx, publicReading(row));
+  });
 
   // ---------- events ----------
   const InEvent = z.object({
@@ -466,4 +513,18 @@ async function audit(c: Container, p: Principal, type: string, data: Record<stri
   const evt = makeEvent({ type, source: "ai-control", principal: p, subject: subject ?? { type: "ai_control", id: "global" }, data });
   await c.store.recordEvent(evt);
   await c.bus.publish([evt]);
+}
+
+/** A roof reading as callers see it (no storage key). */
+function publicReading(r: RoofReading) {
+  return {
+    id: r.id,
+    status: r.status,
+    faces: r.faces,
+    wallsDeg: r.wallsDeg,
+    notes: r.notes,
+    message: r.message,
+    createdAt: r.createdAt,
+    finishedAt: r.finishedAt,
+  };
 }

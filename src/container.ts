@@ -13,6 +13,11 @@ import { Relations } from "./access/relations.js";
 import { JobService } from "./jobs/service.js";
 import { TimelineWriter } from "./history/timeline.js";
 import { BraveWebSearch, ContactFinder, FakeWebSearch, type WebSearch } from "./contacts/finder.js";
+import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
+import { processRoofReading } from "./roof/readings.js";
+
+let lambda: LambdaClient | null = null;
+const lambdaClient = () => (lambda ??= new LambdaClient({ region: process.env.AWS_REGION ?? "ap-southeast-2" }));
 
 export type Container = {
   store: Store;
@@ -30,10 +35,14 @@ export type Container = {
   serviceToken: string;
   /** Shared secret the Next.js server uses to forward visitor events. */
   ingestKey: string;
+  /** Reads stored files back (documents, roof images). */
+  bytes: FileBytes;
+  /** Hands a roof reading to the background reader (RoofFacesFn in AWS; inline locally and in tests). */
+  dispatchRoofReading: (id: string) => Promise<void>;
 };
 
 export function buildContainer(
-  over: Partial<Pick<Container, "store" | "bus" | "backend" | "messaging" | "files" | "model">> & { bytes?: FileBytes; web?: WebSearch; serviceToken?: string; ingestKey?: string; now?: () => Date } = {},
+  over: Partial<Pick<Container, "store" | "bus" | "backend" | "messaging" | "files" | "model" | "dispatchRoofReading">> & { bytes?: FileBytes; web?: WebSearch; serviceToken?: string; ingestKey?: string; now?: () => Date } = {},
 ): Container {
   const local = process.env.AI_MODE === "local";
   const store = over.store ?? (local ? new MemoryStore() : new DynamoStore(process.env.AI_TABLE ?? "easylink-ai"));
@@ -60,7 +69,18 @@ export function buildContainer(
     bus.subscribe((e) => timeline.index(e).then(() => undefined, (err) => console.error("timeline", err)));
     bus.subscribe((e) => void runtime.handle(e));
   }
-  const c: Container = { store, bus, backend, messaging, files, model, actions, runtime, classifier, contacts, relations, timeline, serviceToken, ingestKey };
+  const roofFn = process.env.ROOF_FACES_FN;
+  const dispatchRoofReading =
+    over.dispatchRoofReading ??
+    (roofFn && !local
+      ? async (id: string) => {
+          // Fire and forget: RoofFacesFn has the time the API doesn't (29 s).
+          await lambdaClient().send(new InvokeCommand({ FunctionName: roofFn, InvocationType: "Event", Payload: Buffer.from(JSON.stringify({ id })) }));
+        }
+      : async (id: string) => {
+          await processRoofReading(c, id);
+        });
+  const c: Container = { store, bus, backend, messaging, files, model, actions, runtime, classifier, contacts, relations, timeline, serviceToken, ingestKey, bytes, dispatchRoofReading };
   jobsSvc = new JobService(c);
   return c;
 }

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/http/app.js";
-import { setup } from "./helpers.js";
+import { setup, WEEKDAY_AFTERNOON } from "./helpers.js";
 
 const H = (token: string) => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" });
 type Res<T> = { data: T };
@@ -129,7 +129,17 @@ describe("who sees what", () => {
     });
     const link = w.messaging.sent.at(-1)!.links![0]!;
     expect(link).toMatch(/^https:\/\/ai\.example\.test\/f\//);
-    const hop = await w.app.request(new URL(link).pathname);
+    // The link expires 14 days after the test clock's day; the route checks
+    // the real date, so hold the real date there too (the test broke after
+    // 4 Nov 2026 otherwise).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(WEEKDAY_AFTERNOON);
+    let hop: Response;
+    try {
+      hop = await w.app.request(new URL(link).pathname);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(hop.status).toBe(302);
     await settle();
     const hist = await get<{ title: string }[]>(w.app, "/v1/ai/projects/customer/cus_1/history", "cust");

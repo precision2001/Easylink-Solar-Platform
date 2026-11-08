@@ -170,12 +170,17 @@ class EasyLinkAiStack extends Stack {
     const api = fn("ApiFn", "src/handlers/api.ts", Duration.seconds(29));
     const consumer = fn("AiConsumerFn", "src/handlers/ai-consumer.ts", Duration.minutes(5), 1536);
     const contact = fn("ContactEventsFn", "src/handlers/contact-events.ts", Duration.seconds(30), 512);
+    // Roof faces from the satellite image (Roof Designer): invoked async by the API, so the
+    // smart model has more than the API's 29 seconds.
+    const roof = fn("RoofFacesFn", "src/handlers/roof-faces.ts", Duration.minutes(2), 512);
+    api.addEnvironment("ROOF_FACES_FN", roof.functionName);
+    roof.grantInvoke(api);
     consumer.addEventSource(new SqsEventSource(queue, { batchSize: 5, reportBatchItemFailures: true, maxConcurrency: 20 }));
     const delivery = fn("DeliveryReceiptsFn", "src/handlers/delivery-events.ts", Duration.seconds(30), 512);
     receipts.addSubscription(new LambdaSubscription(delivery));
     key.grantEncryptDecrypt(new iam.ServicePrincipal("ses.amazonaws.com"));
 
-    for (const f of [api, consumer, contact, delivery]) {
+    for (const f of [api, consumer, contact, delivery, roof]) {
       table.grantReadWriteData(f);
       bus.grantPutEventsTo(f);
       serviceToken.grantRead(f);
@@ -183,7 +188,7 @@ class EasyLinkAiStack extends Stack {
       searchKey.grantRead(f);
     }
     this.voiceKey.grantRead(api);
-    for (const f of [api, consumer]) {
+    for (const f of [api, consumer, roof]) {
       f.addToRolePolicy(
         new iam.PolicyStatement({
           actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:Converse"],
@@ -198,10 +203,13 @@ class EasyLinkAiStack extends Stack {
       const files = s3.Bucket.fromBucketName(this, "FilesBucket", filesBucketName);
       files.grantRead(api);
       files.grantRead(consumer);
+      files.grantRead(roof);
+      // Roof images for the Roof Designer's AI reading (read back by RoofFacesFn).
+      files.grantPut(api, "roof/*");
       // Job photos and bills uploaded through the portals land under jobs/.
       files.grantPut(api, "jobs/*");
       // Malware scan results (GuardDuty Malware Protection for S3 tags each object).
-      for (const f of [api, consumer]) f.addToRolePolicy(new iam.PolicyStatement({ actions: ["s3:GetObjectTagging"], resources: [files.arnForObjects("*")] }));
+      for (const f of [api, consumer, roof]) f.addToRolePolicy(new iam.PolicyStatement({ actions: ["s3:GetObjectTagging"], resources: [files.arnForObjects("*")] }));
     }
 
     const http = new apigw.HttpApi(this, "AiApi", {
