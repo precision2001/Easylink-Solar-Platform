@@ -612,6 +612,7 @@ export const DesignsProposalStepContent = forwardRef<
     batteryOptionsKwh,
     tierIds,
     chosenProducts,
+    proposal.customer.supplyPhase,
   );
   const selectedQuote = priced?.selected ?? null;
   const arrayKw = selectedQuote?.arrayKw ?? 0;
@@ -785,6 +786,9 @@ export const DesignsProposalStepContent = forwardRef<
               <ProposalDetailRow label="Customer" value={displayCustomerName} mask />
               <ProposalDetailRow label="Address" value={proposal.customer.address} mask />
               <ProposalDetailRow label="Property" value={proposal.customer.property} />
+              {proposal.customer.supplyPhase ? (
+                <ProposalDetailRow label="Supply" value={proposal.customer.supplyPhase === 3 ? "Three phase" : "Single phase"} />
+              ) : null}
               {EQUIPMENT_CATEGORY_KEYS.map((key) => {
                 const items = proposal.equipment.items[key];
                 if (!items || items.length === 0) return null;

@@ -38,6 +38,11 @@ export type DesignProposalCustomer = {
   marketingConsent?: boolean;
   address: string;
   property: string;
+  /**
+   * The home's power supply as the customer said on the Energy step
+   * (optional). Unset: the pricing engine tries single phase first.
+   */
+  supplyPhase?: 1 | 3;
   /** Pin from the location step map (decimal degrees). Used by the solar-panel step map. */
   mapLat?: number;
   mapLng?: number;

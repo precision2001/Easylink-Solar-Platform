@@ -17,6 +17,7 @@ export function useProposalPricing(
   batteryOptionsKwh: number[] = [],
   tiers: string[] = [],
   products?: ChosenProducts,
+  phase?: 1 | 3,
 ) {
   const [data, setData] = useState<ProposalPricingResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,6 +38,7 @@ export function useProposalPricing(
           tiers: tiersKey ? tiersKey.split(",") : undefined,
           batteryOptionsKwh: optionsKey ? optionsKey.split(",").map(Number) : [],
           ...(productsKey ? { products: JSON.parse(productsKey) as ChosenProducts } : {}),
+          ...(phase ? { phase } : {}),
         },
         ctrl.signal,
       )
@@ -56,6 +58,6 @@ export function useProposalPricing(
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [panelCount, panelTierId, batteryKwh, optionsKey, tiersKey, productsKey]);
+  }, [panelCount, panelTierId, batteryKwh, optionsKey, tiersKey, productsKey, phase]);
   return { data, loading, error };
 }

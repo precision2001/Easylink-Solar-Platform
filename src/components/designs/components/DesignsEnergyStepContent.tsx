@@ -523,7 +523,12 @@ function EnergyBillInput({
   onMonthlyAmountChange,
   gridRatePerKwh,
   onGridRateChange,
+  supplyPhase,
+  onSupplyPhaseChange,
 }: {
+  /** The home's supply (optional): 1 single phase, 3 three phase, undefined not said. */
+  supplyPhase?: 1 | 3;
+  onSupplyPhaseChange: (phase: 1 | 3 | undefined) => void;
   billPeriod: DesignBillPeriod;
   onBillPeriodChange: (period: DesignBillPeriod) => void;
   /** Slider basis: normalized monthly AUD (Redux `currentBill` / projections use this). */
@@ -608,6 +613,9 @@ function EnergyBillInput({
       </div>
 
       <div className="mt-[16px] flex flex-col items-end gap-[12px]">
+        <div className="flex w-full items-center justify-between gap-2">
+          <SupplyPhaseSwitch value={supplyPhase} onChange={onSupplyPhaseChange} />
+        </div>
         <SingleScrollBar
           value={currentMonthlyAmount}
           onChange={(monthly) => {
@@ -655,6 +663,41 @@ function EnergyBillInput({
             <span className="text-[12px] text-white">✎</span>
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Optional: is the home single or three phase? Two-way switch; pressing the
+ * chosen side again clears it ("not sure"). Feeds the pricing engine
+ * (proposal, PDF) so inverters suit the home's supply.
+ */
+function SupplyPhaseSwitch({ value, onChange }: { value?: 1 | 3; onChange: (phase: 1 | 3 | undefined) => void }) {
+  const option = (phase: 1 | 3, label: string) => {
+    const on = value === phase;
+    return (
+      <button
+        type="button"
+        role="radio"
+        aria-checked={on}
+        onClick={() => onChange(on ? undefined : phase)}
+        className={`h-[26px] rounded-full px-3 font-source-sans text-[12.5px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-design-accent-cyan ${
+          on ? "bg-[#0B2A4A] text-yellow-lemon" : "text-[#101828]/70 hover:text-[#101828]"
+        }`}
+      >
+        {label}
+      </button>
+    );
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <span className="font-source-sans text-[12.5px] font-semibold text-[#101828]">
+        Home supply <span className="font-normal text-[#101828]/60">(optional)</span>
+      </span>
+      <div role="radiogroup" aria-label="Home power supply" className="inline-flex rounded-full border border-[#E5E7EB] bg-white p-[2px]">
+        {option(1, "Single phase")}
+        {option(3, "Three phase")}
       </div>
     </div>
   );
@@ -851,6 +894,8 @@ export const DesignsEnergyStepContent = forwardRef<
                 onGridRateChange={(rate) =>
                   dispatch(mergeProposalData({ pricing: { gridRatePerKwh: rate } }))
                 }
+                supplyPhase={proposal.customer.supplyPhase}
+                onSupplyPhaseChange={(phase) => dispatch(mergeProposalData({ customer: { supplyPhase: phase } }))}
               />
             </div>
 

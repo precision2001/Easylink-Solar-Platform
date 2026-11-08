@@ -48,6 +48,8 @@ export type ProposalPricingRequest = {
   panelCount: number;
   /** The customer's own products; the engine picks only what isn't here. */
   products?: ChosenProducts;
+  /** The home's supply when the customer said (Energy step). */
+  phase?: 1 | 3;
   panelTierId?: string;
   /** Usable kWh, or 0 for no battery. */
   batteryKwh?: number;

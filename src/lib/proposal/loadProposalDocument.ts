@@ -227,6 +227,7 @@ async function pricingFor(proposal: DesignProposalState): Promise<ProposalPricin
       panelTierId: proposal.equipment.panelTierId ?? DEFAULT_PANEL_TIER_ID,
       batteryKwh: designBatteryKwh(proposal),
       products: chosenProductsOf(proposal),
+      ...(proposal.customer.supplyPhase ? { phase: proposal.customer.supplyPhase } : {}),
       tiers: PANEL_TIER_OPTIONS.map((t) => t.id),
       batteryOptionsKwh: BATTERY_CAPACITY_OPTIONS.map((b) => Number.parseFloat(b.id) || 0),
     });
