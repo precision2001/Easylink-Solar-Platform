@@ -91,6 +91,14 @@ export const DESIGN_RULES = {
    *   panel must never sit across one.
    */
   visibleLinesFirst: true,
+  /**
+   * Shadows (owner, 9 Nov 2026): a shadow means something higher beside it.
+   * Roof lines take priority — the edge casting a shadow is a roof line when
+   * it meets the border or another roof line at an intersection point (a
+   * step, raised box, parapet); only a shadow whose edge connects to no line
+   * is an obstruction (vent, fan, antenna).
+   */
+  shadowEdgesAreRoofLines: true,
   roofJunctions: {
     maxShiftM: 1.0,
     /** A point moves only when its lines' match improves by this share. */

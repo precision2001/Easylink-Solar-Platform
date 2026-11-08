@@ -19,6 +19,20 @@ steps, box edges seen in the zoom-21 image) and the **visible intersections**
   site" — dropping it put panels across real hips (55 panels instead of 47,
   several across two slopes).
 
+### Shadows (owner, 9 Nov 2026, 66 Frances St townhouse row)
+
+A shadow on a roof means something higher stands beside it, on the sun side
+(north in Sydney imagery, shadows fall roughly south). **Roof lines take
+priority**: trace the edge that casts the shadow. If that edge meets the
+border or another roof line at an intersection point, it is a **roof line**
+(a step, a raised box, a parapet) and its section is traced with all its
+corners. Only a shadow whose casting edge connects to no other line (a
+vent, whirlybird, air-conditioner, antenna) is an **obstruction**. A shadow
+from something off the roof (a neighbour's wall, a tree) is shading, not a
+line. Lesson: on the row the four raised boxes were boxed as obstructions
+from their shadow triangles; traced as roof lines they gave 7 sections and
+18 intersection points.
+
 ## Top priority — never missed (owner's rule, 30 Oct 2026)
 
 Every design, by hand or on the live page, whatever found the roof:
