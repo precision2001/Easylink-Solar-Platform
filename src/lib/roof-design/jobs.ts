@@ -58,6 +58,9 @@ export async function runApiDesign(job: ApiDesignJob): Promise<ApiDesignResult> 
         // The AI's own reading (before the engine scored and corrected it), so
         // the Designs page can score it too when it reads faces itself.
         ai: r.context.aiFaces?.length ? r.context.aiFaces.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? null })) : undefined,
+        // Opus's full trace (owner's rule: it traces every roof first): the page uses it as the design too.
+        trace: r.context.aiTrace ?? undefined,
+        traceLines: d.faceSet.trace,
       },
       obstructions: d.faceSet.obstructions.map((o) => ({ ring: o.ring, kind: o.kind })),
       lines: { total: d.lines.total, checked: d.lines.checked, ok: d.lines.ok },

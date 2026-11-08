@@ -15,7 +15,7 @@
  * AI_PLATFORM_URL and AI_EVENT_INGEST_KEY. ROOF_AI=off turns it off.
  */
 import sharp from "sharp";
-import type { AiRoofFace } from "./engine";
+import type { AiRoofFace, AiRoofTrace } from "./engine";
 import type { LatLng } from "./geometry";
 import { snapshotMetresPerPixel, type SnapshotGeo } from "@/lib/designer/roofSnapshot";
 
@@ -23,8 +23,12 @@ type Snapshot = { png: Buffer; geo: SnapshotGeo };
 
 /** Side of the square sent to the AI, in image pixels (about 30 m at zoom 21). */
 export const AI_CROP_PX = 960;
-/** How long a design waits for the AI's reading before going on without it. */
-export const AI_WAIT_MS = 35_000;
+/**
+ * How long a design waits for the AI's trace. Opus traces every roof first
+ * (owner's rule, 9 Nov 2026); a careful trace takes 25-60 s, so the wait is
+ * long enough for it, inside the API's 120 s.
+ */
+export const AI_WAIT_MS = 90_000;
 const POLL_MS = 1500;
 
 const platformUrl = () => process.env.ROOF_AI_PLATFORM_URL || process.env.AI_PLATFORM_URL || "";
@@ -51,12 +55,51 @@ export function fromPx(geo: SnapshotGeo, x: number, y: number): LatLng {
 /** Compass bearing → the azimuth convention the engine uses (degrees clockwise from north). */
 const azimuthOf = (bearing: number | null | undefined) => (typeof bearing === "number" && Number.isFinite(bearing) ? bearing : undefined);
 
+type PxRing = [number, number][];
+type PlatformFace = { name: string; bearingDeg: number | null; ring: PxRing };
+type PlatformBuilding = {
+  name: string;
+  main: boolean;
+  flat: boolean;
+  outline: PxRing;
+  points: { id: string; x: number; y: number }[];
+  lines: { from: string; to: string; kind: string; seen: "clear" | "faint" }[];
+  faces: PlatformFace[];
+  obstructions: { kind: string; ring: PxRing }[];
+};
 type PlatformReading = {
   id: string;
   status: "pending" | "done" | "error";
-  faces?: { name: string; bearingDeg: number | null; ring: [number, number][] }[];
+  faces?: PlatformFace[];
+  buildings?: PlatformBuilding[];
+  noRoof?: boolean;
   message?: string;
 };
+
+/**
+ * The same view with local contrast boosted (the image minus its blur, x4,
+ * around mid-grey): faint box edges and light step lines on white or metal
+ * roofs show clearly. Sent to Opus as a second image.
+ */
+export async function localContrastPng(png: Buffer): Promise<Buffer> {
+  const g = await sharp(png).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const b = await sharp(png).greyscale().blur(5).raw().toBuffer();
+  const out = Buffer.alloc(g.data.length);
+  for (let i = 0; i < out.length; i++) out[i] = Math.max(0, Math.min(255, 128 + 4 * (g.data[i] - b[i])));
+  return sharp(out, { raw: { width: g.info.width, height: g.info.height, channels: 1 } }).png({ compressionLevel: 9 }).toBuffer();
+}
+
+/** Pixel of a lat/lng in the snapshot (Web Mercator, like `fromPx`). */
+function toPxOf(geo: SnapshotGeo, p: LatLng): [number, number] {
+  const W = 256 * 2 ** geo.zoom * geo.scale;
+  const merc = (lat: number, lng: number) => {
+    const s = Math.sin((lat * Math.PI) / 180);
+    return [((lng + 180) / 360) * W, (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * W];
+  };
+  const [xc, yc] = merc(geo.centerLat, geo.centerLng);
+  const [x, y] = merc(p.lat, p.lng);
+  return [x - xc + geo.widthPx / 2, y - yc + geo.heightPx / 2];
+}
 
 async function platform(path: string, init?: RequestInit): Promise<PlatformReading | null> {
   const base = platformUrl().replace(/\/+$/, "");
@@ -73,10 +116,12 @@ async function platform(path: string, init?: RequestInit): Promise<PlatformReadi
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * The AI's faces of the roof at the centre of the image, in lat/lng, or null
- * (not configured, not readable, or not back in time). Never throws.
+ * Opus's trace of the roof at the centre of the image, in lat/lng (owner's
+ * rule: Opus traces every roof first — visible lines and intersection points,
+ * borders, faces, obstructions), or null (not configured, not readable, or not
+ * back in time). Never throws.
  */
-export async function fetchAiRoofFaces(image: Snapshot, opts: { waitMs?: number; hint?: string } = {}): Promise<AiRoofFace[] | null> {
+export async function fetchAiRoofTrace(image: Snapshot, opts: { waitMs?: number; hint?: string; lot?: LatLng[] | null } = {}): Promise<AiRoofTrace | null> {
   if (!aiRoofFacesEnabled()) return null;
   const deadline = Date.now() + (opts.waitMs ?? AI_WAIT_MS);
   try {
@@ -86,15 +131,20 @@ export async function fetchAiRoofFaces(image: Snapshot, opts: { waitMs?: number;
     const top = Math.round((geo.heightPx - side) / 2);
     // PNG keeps the tile and edge detail the model reads lines from.
     const crop = await sharp(image.png).extract({ left, top, width: side, height: side }).png({ compressionLevel: 9 }).toBuffer();
+    const contrast = await localContrastPng(crop).catch(() => null);
+    const lot = opts.lot?.length ? opts.lot.map((p) => { const [x, y] = toPxOf(geo, p); return [Math.round(x - left), Math.round(y - top)] as [number, number]; }) : undefined;
     const started = await platform("v1/roof/faces", {
       method: "POST",
       body: JSON.stringify({
         imageBase64: crop.toString("base64"),
+        contrastBase64: contrast ? contrast.toString("base64") : undefined,
         format: "png",
         widthPx: side,
         heightPx: side,
         metresPerPixel: snapshotMetresPerPixel(geo),
         hint: opts.hint,
+        lot,
+        scope: "house",
       }),
     });
     if (!started?.id) return null;
@@ -103,13 +153,34 @@ export async function fetchAiRoofFaces(image: Snapshot, opts: { waitMs?: number;
       await wait(POLL_MS);
       r = await platform(`v1/roof/faces/${encodeURIComponent(started.id)}`);
     }
-    if (!r || r.status !== "done" || !r.faces?.length) return null;
-    return r.faces.map((f) => ({
-      name: f.name,
-      azimuthDeg: azimuthOf(f.bearingDeg),
-      ring: f.ring.map(([x, y]) => fromPx(geo, x + left, y + top)),
-    }));
+    if (!r || r.status !== "done") return null;
+    const ll = ([x, y]: [number, number]) => fromPx(geo, x + left, y + top);
+    const ring = (pts: PxRing) => pts.map(ll);
+    const buildings = r.buildings?.length
+      ? r.buildings
+      : r.faces?.length
+        ? [{ name: "Main roof", main: true, flat: false, outline: [], points: [], lines: [], faces: r.faces, obstructions: [] } as PlatformBuilding]
+        : [];
+    const main = buildings.find((b) => b.main) ?? buildings[0];
+    if (!main) return r.noRoof ? { noRoof: true, faces: [], outline: null, lines: [], obstructions: [], flat: false } : null;
+    const pts = new Map(main.points.map((p) => [p.id, [p.x, p.y] as [number, number]]));
+    return {
+      noRoof: false,
+      flat: main.flat,
+      outline: main.outline.length >= 3 ? ring(main.outline) : null,
+      faces: main.faces.map((f) => ({ name: f.name, azimuthDeg: azimuthOf(f.bearingDeg), ring: ring(f.ring) })),
+      lines: main.lines
+        .filter((l) => pts.has(l.from) && pts.has(l.to))
+        .map((l) => ({ a: ll(pts.get(l.from)!), b: ll(pts.get(l.to)!), kind: l.kind, seen: l.seen })),
+      obstructions: main.obstructions.map((o) => ({ kind: o.kind, ring: ring(o.ring) })),
+    };
   } catch {
     return null;
   }
+}
+
+/** The faces alone (older callers). */
+export async function fetchAiRoofFaces(image: Snapshot, opts: { waitMs?: number; hint?: string } = {}): Promise<AiRoofFace[] | null> {
+  const t = await fetchAiRoofTrace(image, opts);
+  return t?.faces.length ? t.faces : null;
 }

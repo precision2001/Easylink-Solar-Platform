@@ -1,3 +1,4 @@
+import type { AiRoofTrace } from "./engine";
 /**
  * How the platform's pages (installer, customer and operations portals, the
  * website) get a system designed: they ask the Roof Designer. Platform rule
@@ -32,6 +33,9 @@ export type RoofDesignResponse =
         items: RoofDesignFace[];
         /** The AI platform's reading of the roof from the image (Opus 5.5), when it was had. */
         ai?: { ring: LatLngRing; azimuthDeg: number | null }[];
+        /** Opus's full trace (it traces every roof first): border, faces, lines, obstructions. */
+        trace?: AiRoofTrace;
+        traceLines?: { lines: number; faint: number; unconfirmed: number };
       };
       obstructions: { ring: LatLngRing; kind: "spot" | "step" }[];
       lines: { total: number; checked: number; ok: number };

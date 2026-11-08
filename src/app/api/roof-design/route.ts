@@ -193,7 +193,9 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
     );
     if (r.status !== "READY") return NextResponse.json(r.body, { status: 200 });
     const text = JSON.stringify(r.body);
-    await cacheWrite(designKey, text);
+    // Kept only when Opus traced it (or no AI is set up): an untraced design is asked again next time.
+    const notes = (r.body as { notes?: string[] }).notes ?? [];
+    if (!notes.some((n) => n.startsWith("Opus couldn't trace"))) await cacheWrite(designKey, text);
     return new NextResponse(text, { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "miss" } });
   } catch (e) {
     console.error("roof-design API", e);

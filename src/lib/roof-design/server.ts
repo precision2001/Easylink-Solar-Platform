@@ -15,7 +15,7 @@ import { getCadastre, getCombinedSolar, getFootprint, getLayerBytes, getSnapshot
 import type { SolarEstimateResult } from "@/types/solar";
 import { designRoof, googleDataStale, lotForDesign, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
 import { panelCorners, ringAreaM2, type LatLng, type LatLngRing } from "./geometry";
-import { aiRoofFacesEnabled, fetchAiRoofFaces } from "./aiFaces";
+import { aiRoofFacesEnabled, fetchAiRoofTrace } from "./aiFaces";
 
 /* ── Satellite image ────────────────────────────────────────────────── */
 
@@ -287,12 +287,16 @@ export async function designRoofAt(
     early.set(ROOF_SNAPSHOT.zoom, first);
   }
   const fetchEarly = (p: LatLng, zoom: number) => early.get(zoom) ?? fetchImage(p, zoom);
-  // The AI platform's reading of the roof (Opus 5.5) starts as soon as the
-  // zoom-21 image is in, alongside Google's data; the engine scores it with
-  // the other readings. Without the platform the design goes on as before.
+  // Owner's rule: Opus traces every roof first (visible lines and
+  // intersection points, borders, faces, obstructions). It starts as soon as
+  // the zoom-21 image and the land lot are in, alongside Google's data.
   const aiFirst = early.get(ROOF_SNAPSHOT.zoom);
-  const aiFaces = !opts.context?.aiFaces && aiFirst && aiRoofFacesEnabled() ? aiFirst.then((img) => fetchAiRoofFaces(img)).catch(() => null) : null;
-  const context = opts.context ?? (await loadRoofContext(pin, opts.source === undefined ? defaultDataSource() : opts.source));
+  const contextP = opts.context ? Promise.resolve(opts.context) : loadRoofContext(pin, opts.source === undefined ? defaultDataSource() : opts.source);
+  const wantTrace = !opts.context?.aiTrace && !opts.outline && Boolean(aiFirst) && aiRoofFacesEnabled();
+  const traceP = wantTrace
+    ? Promise.all([aiFirst!, contextP.catch(() => null)]).then(([img, ctx]) => fetchAiRoofTrace(img, { lot: ctx?.parcel?.ring ?? null })).catch(() => null)
+    : null;
+  const context = await contextP;
   // The lot may not hold the whole house (a property over two lots): widen it first.
   context.parcel = lotForDesign(context.parcel, context.estimate, pin);
   let image: Snapshot | null = null;
@@ -305,7 +309,14 @@ export async function designRoofAt(
       // No image: the engine falls back to Google's mask or box.
     }
   }
-  if (aiFaces) context.aiFaces = await aiFaces;
+  if (traceP) {
+    context.aiTrace = await traceP;
+    if (context.aiTrace?.faces.length) context.aiFaces = context.aiTrace.faces;
+    // Opus says there is no building roof here (bare ground, a yard, a building site).
+    if (context.aiTrace?.noRoof) {
+      return { status: "NO_ROOF", context, image, message: "No building roof at this address in the satellite image (bare ground, a yard or a building site)." };
+    }
+  }
   const design = designRoof(context, opts);
   if (!design) return { status: "NO_ROOF", context, image, message: "Couldn't find a roof at this address in the satellite image." };
   return { status: "READY", design, context, image };

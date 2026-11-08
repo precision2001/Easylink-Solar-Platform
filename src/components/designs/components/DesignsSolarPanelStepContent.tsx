@@ -466,7 +466,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
     const pin = selectedLocationRef.current;
     if (!pin || !pinKey) return;
     let live = true;
-    const giveUp = window.setTimeout(() => live && setServerDesign({ key: pinKey, design: null }), 45_000);
+    // Opus traces the roof first (up to 90 s, owner's rule): wait for it, inside the API's 120 s.
+    const giveUp = window.setTimeout(() => live && setServerDesign({ key: pinKey, design: null }), 115_000);
     roofDesignFor(pin)
       .then((d) => live && setServerDesign({ key: pinKey, design: d }))
       .catch(() => live && setServerDesign({ key: pinKey, design: null }))
@@ -825,12 +826,18 @@ export const DesignsSolarPanelStepContent = forwardRef<
   // The AI platform's reading of the roof (Opus 5.5), from the Roof Designer's
   // design for this pin: one more reading the engine scores with the others.
   const serverAiFaces = serverReady?.design?.status === "READY" ? serverReady.design.faces.ai : undefined;
+  // Owner's rule: Opus traces every roof first — the page uses the same trace as the server.
+  const serverTrace = serverReady?.design?.status === "READY" ? serverReady.design.faces.trace : undefined;
   const facesCtx = useMemo(
     (): RoofDesignContext | null =>
-      roofCtx && serverAiFaces?.length
-        ? { ...roofCtx, aiFaces: serverAiFaces.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? undefined })) }
+      roofCtx && (serverAiFaces?.length || serverTrace)
+        ? {
+            ...roofCtx,
+            aiFaces: serverAiFaces?.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? undefined })),
+            aiTrace: serverTrace ?? roofCtx.aiTrace,
+          }
         : roofCtx,
-    [roofCtx, serverAiFaces],
+    [roofCtx, serverAiFaces, serverTrace],
   );
   const facesFor = useCallback(
     (paths: google.maps.LatLngLiteral[][]): RoofFaceSet =>
