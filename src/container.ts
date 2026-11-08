@@ -15,6 +15,7 @@ import { TimelineWriter } from "./history/timeline.js";
 import { BraveWebSearch, ContactFinder, FakeWebSearch, type WebSearch } from "./contacts/finder.js";
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
 import { processRoofReading } from "./roof/readings.js";
+import { MemoryRoofImages, S3RoofImages, type RoofImages } from "./roof/images.js";
 
 let lambda: LambdaClient | null = null;
 const lambdaClient = () => (lambda ??= new LambdaClient({ region: process.env.AWS_REGION ?? "ap-southeast-2" }));
@@ -37,12 +38,14 @@ export type Container = {
   ingestKey: string;
   /** Reads stored files back (documents, roof images). */
   bytes: FileBytes;
+  /** Roof images waiting for the background reader (the platform's own bucket). */
+  roofImages: RoofImages;
   /** Hands a roof reading to the background reader (RoofFacesFn in AWS; inline locally and in tests). */
   dispatchRoofReading: (id: string) => Promise<void>;
 };
 
 export function buildContainer(
-  over: Partial<Pick<Container, "store" | "bus" | "backend" | "messaging" | "files" | "model" | "dispatchRoofReading">> & { bytes?: FileBytes; web?: WebSearch; serviceToken?: string; ingestKey?: string; now?: () => Date } = {},
+  over: Partial<Pick<Container, "store" | "bus" | "backend" | "messaging" | "files" | "model" | "dispatchRoofReading" | "roofImages">> & { bytes?: FileBytes; web?: WebSearch; serviceToken?: string; ingestKey?: string; now?: () => Date } = {},
 ): Container {
   const local = process.env.AI_MODE === "local";
   const store = over.store ?? (local ? new MemoryStore() : new DynamoStore(process.env.AI_TABLE ?? "easylink-ai"));
@@ -69,6 +72,7 @@ export function buildContainer(
     bus.subscribe((e) => timeline.index(e).then(() => undefined, (err) => console.error("timeline", err)));
     bus.subscribe((e) => void runtime.handle(e));
   }
+  const roofImages = over.roofImages ?? (process.env.ROOF_IMAGES_BUCKET && !local ? new S3RoofImages() : new MemoryRoofImages());
   const roofFn = process.env.ROOF_FACES_FN;
   const dispatchRoofReading =
     over.dispatchRoofReading ??
@@ -80,7 +84,7 @@ export function buildContainer(
       : async (id: string) => {
           await processRoofReading(c, id);
         });
-  const c: Container = { store, bus, backend, messaging, files, model, actions, runtime, classifier, contacts, relations, timeline, serviceToken, ingestKey, bytes, dispatchRoofReading };
+  const c: Container = { store, bus, backend, messaging, files, model, actions, runtime, classifier, contacts, relations, timeline, serviceToken, ingestKey, bytes, roofImages, dispatchRoofReading };
   jobsSvc = new JobService(c);
   return c;
 }

@@ -175,6 +175,18 @@ class EasyLinkAiStack extends Stack {
     const roof = fn("RoofFacesFn", "src/handlers/roof-faces.ts", Duration.minutes(2), 512);
     api.addEnvironment("ROOF_FACES_FN", roof.functionName);
     roof.grantInvoke(api);
+    // Roof images wait here for RoofFacesFn: private, encrypted, gone after 7 days.
+    const roofImages = new s3.Bucket(this, "RoofImages", {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      lifecycleRules: [{ expiration: Duration.days(7) }],
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: false,
+    });
+    for (const f of [api, roof]) f.addEnvironment("ROOF_IMAGES_BUCKET", roofImages.bucketName);
+    roofImages.grantPut(api);
+    roofImages.grantRead(roof);
     consumer.addEventSource(new SqsEventSource(queue, { batchSize: 5, reportBatchItemFailures: true, maxConcurrency: 20 }));
     const delivery = fn("DeliveryReceiptsFn", "src/handlers/delivery-events.ts", Duration.seconds(30), 512);
     receipts.addSubscription(new LambdaSubscription(delivery));
@@ -203,9 +215,6 @@ class EasyLinkAiStack extends Stack {
       const files = s3.Bucket.fromBucketName(this, "FilesBucket", filesBucketName);
       files.grantRead(api);
       files.grantRead(consumer);
-      files.grantRead(roof);
-      // Roof images for the Roof Designer's AI reading (read back by RoofFacesFn).
-      files.grantPut(api, "roof/*");
       // Job photos and bills uploaded through the portals land under jobs/.
       files.grantPut(api, "jobs/*");
       // Malware scan results (GuardDuty Malware Protection for S3 tags each object).

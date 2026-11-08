@@ -42,7 +42,7 @@ const CONTENT_TYPE: Record<RoofFacesRequest["format"], string> = { png: "image/p
 export async function startRoofReading(c: Container, req: RoofFacesRequest, now = new Date()): Promise<RoofReading> {
   const id = newId("roof_");
   const s3Key = `roof/${id}.${req.format === "jpeg" ? "jpg" : req.format}`;
-  await c.files.put(s3Key, Buffer.from(req.imageBase64, "base64"), CONTENT_TYPE[req.format]);
+  await c.roofImages.put(s3Key, Buffer.from(req.imageBase64, "base64"), CONTENT_TYPE[req.format]);
   const row: RoofReading = {
     id,
     status: "pending",
@@ -73,10 +73,10 @@ export async function processRoofReading(c: Container, id: string, now = () => n
     return done;
   };
   try {
-    const img = await c.bytes.raw({ s3Key: row.s3Key }, 10 * 1024 * 1024);
+    const img = await c.roofImages.get(row.s3Key);
     if (!img) return finish({ status: "error", message: "The roof image could not be read back." });
     const r = await readRoofFaces(c.model, {
-      imageBase64: Buffer.from(img.bytes).toString("base64"),
+      imageBase64: Buffer.from(img).toString("base64"),
       format: row.format,
       widthPx: row.widthPx,
       heightPx: row.heightPx,
