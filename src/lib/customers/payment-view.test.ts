@@ -41,6 +41,7 @@ describe("paymentKindLabel", () => {
     expect(paymentKindLabel("SERVICE")).toBe("Installer service");
     expect(paymentKindLabel("PRODUCT_ORDER")).toBe("Product order");
     expect(paymentKindLabel("AD_QUOTE")).toBe("Website package");
+    expect(paymentKindLabel("QUOTE_DEPOSIT")).toBe("Quote deposit");
   });
 
   it("never returns a blank label", () => {
