@@ -95,7 +95,7 @@ export type AiRoofFace = { ring: LatLngRing; azimuthDeg?: number; name?: string 
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-09.2";
+export const ROOF_ENGINE_VERSION = "2026-11-09.3";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -792,7 +792,30 @@ export type RoofFaceSet = {
  * outline; else the standard hip split. Lines are then corrected against the
  * image, and obstructions found inside the faces.
  */
-export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, { relook = false }: { relook?: boolean } = {}): RoofFaceSet {
+/**
+ * Every face of the roof(s) — the reading the priority tests pick (below) —
+ * with the INTERSECTION-POINT RULE applied last, on every path that draws
+ * faces (Designs page, Roof Designer API, Quotes & Leads, proposals):
+ * every point where two or more roof lines meet is one shared point, fitted
+ * once to the image for all its lines (DESIGN_RULES.roofJunctions; owner,
+ * 9 Nov 2026, 12 Fursorb St). Lines stay straight and connected.
+ */
+export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, opts: { relook?: boolean } = {}): RoofFaceSet {
+  const found = readRoofFaces(paths, ctx, opts);
+  if (typeof process !== "undefined" && process.env?.ROOF_JUNCTIONS === "0") return found;
+  const luma = lineLumaOf(ctx);
+  const fit = fitRoofJunctions(paths, found.faces, luma);
+  if (fit.moved === 0) return found;
+  const snap = ctx.snapshot ?? null;
+  return {
+    ...found,
+    faces: fit.faces,
+    interiorChecks: interiorEdges(fit.faces, paths).map(([a, b]) => checkInteriorLine(a, b, luma)),
+    obstructions: snap ? findRoofObstructions(snap.luma, fit.faces.map((f) => f.ring)) : found.obstructions,
+  };
+}
+
+function readRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, { relook = false }: { relook?: boolean } = {}): RoofFaceSet {
   const snap = ctx.snapshot ?? null;
   const segs = realSegments(ctx);
   const opts: { maxShareDiff?: number; minSeen?: number } = relook ? ROOF_DESIGN_LIMITS.relook : {};
@@ -1041,24 +1064,9 @@ export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {})
   const initial: InitialRoofs | null = opts.outline ? { rings: opts.outline, source: "snapshot", traced: true } : initialRoofs(ctx, { placeholder: false });
   if (!initial) return null;
   // An outline given by a person (Edit, or the API's `outline`) is theirs: kept, not replaced by another reading.
-  const confirmed = confirmRoofOutlines(initial.rings, ctx, { userEdit: Boolean(opts.outline) });
-  if (confirmed.length === 0) return null;
-  const found = findRoofFaces(confirmed, ctx);
-  // Every point where roof lines meet is fitted once, for all its lines, to
-  // the image (owner, 12 Fursorb St): lines stay straight and connected.
-  const fit =
-    typeof process !== "undefined" && process.env?.ROOF_JUNCTIONS === "0"
-      ? { outline: confirmed, faces: found.faces, moved: 0 }
-      : fitRoofJunctions(confirmed, found.faces, lineLumaOf(ctx), { fixedOutline: true });
-  const outline = fit.outline;
-  const faceSet: RoofFaceSet =
-    fit.moved > 0
-      ? {
-          ...found,
-          faces: fit.faces,
-          interiorChecks: interiorEdges(fit.faces, outline).map(([a, b]) => checkInteriorLine(a, b, lineLumaOf(ctx))),
-        }
-      : found;
+  const outline = confirmRoofOutlines(initial.rings, ctx, { userEdit: Boolean(opts.outline) });
+  if (outline.length === 0) return null;
+  const faceSet = findRoofFaces(outline, ctx);
   const dims = opts.dims ?? panelDimsOf(ctx);
   const lay = (orientation: PanelOrientation) => layoutRoofPanels(outline, faceSet, ctx, { orientation, beautify: opts.beautify, dims });
   const portrait = lay("PORTRAIT");

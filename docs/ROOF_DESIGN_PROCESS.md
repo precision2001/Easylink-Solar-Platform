@@ -19,6 +19,14 @@ Every design, by hand or on the live page, whatever found the roof:
    100 mm clear of every line of that face and of the outline. The live page
    checks this last, after any packer or Beautify (`keepPanelsClear` in
    `panelClearance.ts`), and removes any panel that fails.
+4. **Intersection points (owner's rule, 9 Nov 2026).** Every point where two
+   or more roof lines meet — an apex, hips meeting a ridge, a wing's ridge
+   meeting a valley — is ONE point shared by all those lines, placed where
+   they meet in the image. It is fitted once for all its lines (up to 1 m,
+   only on a clear 10% better match), never line by line; lines stay
+   straight and connected, faces simple and inside the roof. Applied last
+   in `findRoofFaces`, so every page and API gets it
+   (`DESIGN_RULES.roofJunctions`, `src/lib/roof-design/junctions.ts`).
 
 ## Rules (always)
 
@@ -30,6 +38,7 @@ Every design, by hand or on the live page, whatever found the roof:
 | Rows parallel to the main walls (alignment rule) | snap within 30° | `alignmentSnapDeg` |
 | Roof lines straight: along the walls, square to them, or at 45° | snap within 20° | `regularizeRoofOutlines` |
 | Line check against the image | ±100 mm | `roofLineToleranceM` |
+| Intersection points: one shared point per junction, fitted to the image for all its lines | up to 1 m | `roofJunctions` |
 | Panel : inverter limit — hybrid inverter or battery / standard | 200% / 133% | `dcAcLimitPercent` |
 | Export limit (Ausgrid, Endeavour) | 10 kW per phase | `exportLimitKwPerPhase` |
 
@@ -249,6 +258,24 @@ Who uses it:
 ## Lessons log
 
 Newest first. Add an entry whenever a design comes out wrong.
+
+### 2026-11-09: 12 Fursorb St, Marayong — intersection points off, so lines and faces didn't line up
+
+- **What went wrong:** the hip reading's junctions are computed from the
+  border (equal-pitch geometry), so where the border or pitch is a little off
+  every junction is 0.5–1 m from where the lines meet in the image. The
+  existing line correction moved lines one at a time and averaged shared
+  corners, so junctions drifted.
+- **Owner's rule:** use the intersection points that connect two or more
+  lines — fit the points, and the lines follow.
+- **Fix:** `fitRoofJunctions` (rule 4 above). On 12 Fursorb the centre, the
+  wing's ridge end and apex, south and west points landed on the owner's
+  marked points. Outline corners stay fixed for now (moving them broke fr1's
+  eave). Also: stale (2018) Google data can no longer turn a hip end into a
+  gable when the image shows the hips.
+- **Still open:** the north-west wing is left out of the border — Google's
+  2018 data doesn't have it and the border search only counts image lines
+  inside each border, so leaving a wing out costs nothing.
 
 ### 2026-11-06: 108 Delhi St, Lidcombe — Google's data from 2018, a ragged border
 1. **Seen:** a jagged border (24 corners) taking in driveway clutter and

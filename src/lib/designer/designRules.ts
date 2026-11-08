@@ -58,6 +58,26 @@ export const DESIGN_RULES = {
   roofLineToleranceM: 0.1,
   /** Eaves found further than the tolerance (but within this) are moved onto the roof edge. */
   eaveMaxShiftM: 2.0,
+  /**
+   * PRIORITY RULE — intersection points (owner, 9 Nov 2026, 12 Fursorb St,
+   * Marayong): roof lines meet at points — an apex, where hips meet a ridge,
+   * where a wing's ridge meets a valley, a hip at an eave corner. Each such
+   * point is ONE point shared by every line that meets there, and it is
+   * placed where those lines meet in the image: moved (up to `maxShiftM`)
+   * to where all its lines together best match the edges and capping lines
+   * seen, never line by line. Lines stay straight and connected; faces stay
+   * simple and inside the roof. Applied to every roof design, whatever
+   * produced the faces (Google's segments, the height model, the hip split,
+   * the AI's reading, a relook). Outline corners stay on the border's
+   * corners (`moveCorners`), which the border rules set.
+   */
+  roofJunctions: {
+    maxShiftM: 1.0,
+    /** A point moves only when its lines' match improves by this share. */
+    minGain: 0.1,
+    moveCorners: false,
+    cornerMaxShiftM: 0.5,
+  },
 } as const;
 
 /**

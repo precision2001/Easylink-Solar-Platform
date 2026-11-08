@@ -1,5 +1,5 @@
 /**
- * Roof junctions fitted to the image (owner, 9 Nov 2026, 12 Fursorb St,
+ * PRIORITY RULE (DESIGN_RULES.roofJunctions): roof junctions fitted to the image (owner, 9 Nov 2026, 12 Fursorb St,
  * Marayong: "the intersection points of the roof are coming off, that's why
  * lines and faces are not aligning — use the intersection points that connect
  * two or more lines").
@@ -20,6 +20,7 @@
  *  - A move is kept only when it clearly improves the match (by 10%) and
  *    leaves every face a simple polygon.
  */
+import { DESIGN_RULES } from "@/lib/designer/designRules";
 import type { GeoTiffRaster } from "@/utils/geotiff";
 import { rasterPixelOf } from "@/utils/geotiff";
 
@@ -137,7 +138,12 @@ export function fitRoofJunctions<F extends { ring: LatLng[] }>(
   outline: LatLng[][],
   faces: F[],
   luma: GeoTiffRaster | null,
-  { junctionM = 1.0, cornerM = 0.5, fixedOutline = false, minGain = 0.1 }: JunctionFitOptions = {},
+  {
+    junctionM = DESIGN_RULES.roofJunctions.maxShiftM,
+    cornerM = DESIGN_RULES.roofJunctions.cornerMaxShiftM,
+    fixedOutline = !DESIGN_RULES.roofJunctions.moveCorners,
+    minGain = DESIGN_RULES.roofJunctions.minGain,
+  }: JunctionFitOptions = {},
 ): JunctionFit<F> {
   const all = [...outline.flat(), ...faces.flatMap((f) => f.ring)];
   if (!luma || all.length === 0 || faces.length === 0) return { outline, faces, moved: 0 };
