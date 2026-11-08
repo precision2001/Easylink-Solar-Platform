@@ -1,7 +1,7 @@
 import { newId } from "../core/envelope.js";
 import { turnCostAud } from "../ai/model.js";
 import type { Container } from "../container.js";
-import { readRoofFaces, type RoofFaceReading, type RoofFacesRequest } from "./faces.js";
+import { readRoofFaces, type RoofBuilding, type RoofFaceReading, type RoofFacesRequest } from "./faces.js";
 
 /**
  * A roof reading runs in the background (event-based): the Roof Designer
@@ -27,7 +27,14 @@ export type RoofReading = {
   heightPx: number;
   metresPerPixel?: number;
   hint?: string;
+  /** The boosted-contrast view, stored next to the image. */
+  contrastKey?: string;
+  lot?: [number, number][];
+  scope?: "house" | "site";
   faces?: RoofFaceReading[];
+  /** The full trace: per building its border, intersection points, lines, faces and obstructions. */
+  buildings?: RoofBuilding[];
+  noRoof?: boolean;
   wallsDeg?: number | null;
   notes?: string;
   message?: string;
@@ -43,6 +50,8 @@ export async function startRoofReading(c: Container, req: RoofFacesRequest, now 
   const id = newId("roof_");
   const s3Key = `roof/${id}.${req.format === "jpeg" ? "jpg" : req.format}`;
   await c.roofImages.put(s3Key, Buffer.from(req.imageBase64, "base64"), CONTENT_TYPE[req.format]);
+  const contrastKey = req.contrastBase64 ? s3Key.replace(/(\.[a-z]+)$/, "-contrast$1") : undefined;
+  if (contrastKey && req.contrastBase64) await c.roofImages.put(contrastKey, Buffer.from(req.contrastBase64, "base64"), CONTENT_TYPE[req.format]);
   const row: RoofReading = {
     id,
     status: "pending",
@@ -52,6 +61,9 @@ export async function startRoofReading(c: Container, req: RoofFacesRequest, now 
     heightPx: req.heightPx,
     metresPerPixel: req.metresPerPixel,
     hint: req.hint,
+    contrastKey,
+    lot: req.lot,
+    scope: req.scope,
     createdAt: now.toISOString(),
   };
   await c.store.putRecord(ROOF_READING, row);
@@ -75,13 +87,17 @@ export async function processRoofReading(c: Container, id: string, now = () => n
   try {
     const img = await c.roofImages.get(row.s3Key);
     if (!img) return finish({ status: "error", message: "The roof image could not be read back." });
+    const contrast = row.contrastKey ? await c.roofImages.get(row.contrastKey) : null;
     const r = await readRoofFaces(c.model, {
       imageBase64: Buffer.from(img).toString("base64"),
+      contrastBase64: contrast ? Buffer.from(contrast).toString("base64") : undefined,
       format: row.format,
       widthPx: row.widthPx,
       heightPx: row.heightPx,
       metresPerPixel: row.metresPerPixel,
       hint: row.hint,
+      lot: row.lot,
+      scope: row.scope ?? "house",
     });
     const decisionId = newId("dec_");
     await c.store.putDecision({
@@ -89,7 +105,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       agentId: "roof-designer",
       eventId: null,
       subject: null,
-      reasoningSummary: `Read ${r.faces.length} roof face${r.faces.length === 1 ? "" : "s"} from the satellite image.${r.notes ? ` ${r.notes.slice(0, 300)}` : ""}`,
+      reasoningSummary: `Traced ${r.buildings.length} roof${r.buildings.length === 1 ? "" : "s"}: ${r.buildings.reduce((n, b) => n + b.lines.length, 0)} lines, ${r.buildings.reduce((n, b) => n + b.points.length, 0)} intersection points, ${r.faces.length} face${r.faces.length === 1 ? "" : "s"}.${r.noRoof ? " No roof." : ""}${r.notes ? ` ${r.notes.slice(0, 300)}` : ""}`,
       action: null,
       autonomyLevel: null,
       outcome: "no_action",
@@ -98,7 +114,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       contextHash: null,
       createdAt: now().toISOString(),
     });
-    return finish({ status: "done", faces: r.faces, wallsDeg: r.wallsDeg, notes: r.notes, decisionId });
+    return finish({ status: "done", faces: r.faces, buildings: r.buildings, noRoof: r.noRoof, wallsDeg: r.wallsDeg, notes: r.notes, decisionId });
   } catch (err) {
     console.error("roof reading", id, err);
     return finish({ status: "error", message: "The roof could not be read." });

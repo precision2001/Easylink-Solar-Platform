@@ -521,6 +521,8 @@ function publicReading(r: RoofReading) {
     id: r.id,
     status: r.status,
     faces: r.faces,
+    buildings: r.buildings,
+    noRoof: r.noRoof,
     wallsDeg: r.wallsDeg,
     notes: r.notes,
     message: r.message,

@@ -20,6 +20,8 @@ export type ChatMessage =
       role: "user";
       text?: string;
       image?: { format: "jpeg" | "png" | "webp"; bytes: Uint8Array };
+      /** More images in the same turn, after `image` (e.g. a second view of the same scene). */
+      images?: { format: "jpeg" | "png" | "webp"; bytes: Uint8Array }[];
       /** A PDF or office document for the model to read (Bedrock document block). */
       document?: { format: "pdf" | "docx" | "doc" | "xlsx" | "xls" | "csv" | "txt"; name: string; bytes: Uint8Array };
       toolResults?: { toolUseId: string; json: unknown; error?: boolean }[];
@@ -133,6 +135,7 @@ function toBedrock(m: ChatMessage): Message {
     content.push({ toolResult: { toolUseId: r.toolUseId, content: [{ json: r.json as never }], status: r.error ? "error" : "success" } });
   }
   if (m.image) content.push({ image: { format: m.image.format, source: { bytes: m.image.bytes } } });
+  for (const im of m.images ?? []) content.push({ image: { format: im.format, source: { bytes: im.bytes } } });
   if (m.document) {
     // Bedrock allows letters, digits, spaces, hyphens, parentheses and square brackets in document names.
     const name = m.document.name.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9 \-()[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "document";

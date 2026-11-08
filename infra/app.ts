@@ -172,7 +172,7 @@ class EasyLinkAiStack extends Stack {
     const contact = fn("ContactEventsFn", "src/handlers/contact-events.ts", Duration.seconds(30), 512);
     // Roof faces from the satellite image (Roof Designer): invoked async by the API, so the
     // smart model has more than the API's 29 seconds.
-    const roof = fn("RoofFacesFn", "src/handlers/roof-faces.ts", Duration.minutes(2), 512);
+    const roof = fn("RoofFacesFn", "src/handlers/roof-faces.ts", Duration.minutes(5), 512);
     api.addEnvironment("ROOF_FACES_FN", roof.functionName);
     roof.grantInvoke(api);
     // Roof images wait here for RoofFacesFn: private, encrypted, gone after 7 days.

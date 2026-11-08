@@ -15,14 +15,33 @@ import type { ModelClient } from "../ai/model.js";
  * ten-face roof) — inside the ±1.2 m the line check corrects.
  */
 
-export const ROOF_FACES_SYSTEM = `You map residential roofs in Sydney, Australia for solar panel layout, from zoom-21 satellite images (north is up).
-A FACE is one continuous sloped plane of roofing. Bound each face by the lines you can SEE in the image: eaves (roof edge), hips, ridges, valleys, and steps between levels. Rules:
-- Find every face of the main house roof under the centre of the image, including narrow strips and small triangles. Light or dark strips between faces are separate faces.
-- Never merge two faces across a hip, valley or ridge. Never include neighbouring buildings, patios, carports, verandahs or flat roofs that are not part of the main tiled/sheet roof.
-- Hips usually run at 45 degrees to the walls in plan. Corners sit exactly where two visible lines meet; adjacent faces share corner points exactly.
-- Faces turned north and west are usually lighter in Sydney; shading helps tell faces apart.
-- Coordinates are image pixels: x from the left edge, y from the top edge.
-Answer with JSON only: {"walls_deg": <compass bearing of the main wall direction>, "faces":[{"name":"...","facing":"N|NNE|NE|ENE|E|ESE|SE|SSE|S|SSW|SW|WSW|W|WNW|NW|NNW or a bearing in degrees","ring":[[x,y],...]}], "notes":"..."}`;
+export const ROOF_FACES_SYSTEM = `You trace roofs in Sydney, Australia for solar panel layout, from zoom-21 satellite images (north is up). EasyLink's roof rules, in priority order — follow every one:
+
+1. VISIBLE LINES AND VISIBLE INTERSECTION POINTS FIRST (most important rule). Before naming any face, find every roof line you can SEE: eaves (roof edges), hips, ridges, valleys, steps between levels, the edges of raised boxes and parapets. Mark every point where two or more of those lines meet, or where a line meets the roof's border: these are the intersection points. Each intersection point is ONE point shared by every line that meets there — give it one id and reuse it. Lines run straight from intersection point to intersection point; trace them on the line seen in the image, not where geometry says they should be.
+2. BORDERS. Trace the border (outline) of every roof along its eaves, with straight walls and a corner wherever two eaves meet. Then every face gets its own border made of those lines.
+3. FACES FROM THE LINES. A face is one continuous plane bounded by the lines in rule 1. Find every face, including narrow strips and small triangles (a light or dark strip between faces is its own face). Never merge faces across a hip, valley or ridge. Adjacent faces share their corner points exactly.
+4. FLAT OR LOW-PITCH ROOFS (white or grey metal sheet, under about 5 degrees). There are no hips. A flat roof is ONE face unless a visible line runs between two intersection points: split ONLY where the image shows that line. No visible line connecting two intersection points means no split. Sections of a flat roof are the closed shapes the visible lines make (steps across the roof, raised boxes, folds).
+5. PITCHED ROOFS (tiles or pitched metal). A hip, valley or ridge the roof's shape requires stays even where it shows only faintly (two faces lit alike) — mark it "seen":"faint" so it is checked on site. Never drop it: a panel must never sit across one. Hips usually run at 45 degrees to the walls in plan; a hip end and a gable end look different (a gable end has no hip lines and a straight eave across the end) — read which one the image shows.
+6. SHADOWS POINT TO ROOF LINES. A shadow on a roof means something higher stands beside it, on the sun side (north). Trace the edge that casts the shadow. If that edge meets the border or another roof line at an intersection point, it IS a roof line (a step, a raised box, a parapet): trace the whole section with all its corners. Only a shadow whose casting edge connects to no other line is an obstruction (vent, whirlybird, air-conditioner, antenna). A shadow cast by something off the roof (a tree, a neighbour's wall) is "shading", not a line.
+7. OBSTRUCTIONS. Mark every vent, whirlybird, flue, antenna, skylight, air-conditioner, rooftop plant and existing solar panel as an obstruction with its true shape.
+8. WHAT IS AND ISN'T THE ROOF. Never include neighbouring buildings, or roofs across the land lot line when a lot is given. A terrace or attached house is only the strip between its party walls. Patios, carports and verandahs at a lower level are separate roofs, not part of the main roof. Bare ground, yards, building sites and car parks are NOT roofs: if there is no building roof where asked, say so with "no_roof": true.
+9. WHICH BUILDINGS. When the request says "site", trace EVERY building on the land lot, each with its own border, lines, points, faces and obstructions. Otherwise trace the building under the centre of the image only.
+
+The second image, when given, is the same view with local contrast boosted: faint lines on white or metal roofs (box edges, light step lines) show clearly there. Use it to find lines; give coordinates in the first image's pixels (the two images line up exactly).
+Coordinates are image pixels: x from the left edge, y from the top edge. Be precise: about 3 cm per pixel, and lines must land within 3 pixels of the line in the image.
+
+Answer with JSON only:
+{"walls_deg": <compass bearing of the main wall direction>,
+ "no_roof": false,
+ "buildings": [{
+   "name": "...", "main": true, "flat": false,
+   "outline": [[x,y],...],
+   "points": [{"id":"P1","x":0,"y":0}],
+   "lines": [{"from":"P1","to":"P2","kind":"eave|hip|ridge|valley|step|box|parapet|fold","seen":"clear|faint"}],
+   "faces": [{"name":"...","facing":"N|NNE|NE|ENE|E|ESE|SE|SSE|S|SSW|SW|WSW|W|WNW|NW|NNW|flat or a bearing in degrees","points":["P1","P2","P3"]}],
+   "obstructions": [{"kind":"vent|whirlybird|flue|antenna|skylight|aircon|plant|panels|shading","ring":[[x,y],...]}]
+ }],
+ "notes": "..."}`;
 
 export const RoofFacesRequest = z.object({
   /** The image, base64 (PNG, JPEG or WebP), at most about 3.75 MB once decoded. */
@@ -34,6 +53,12 @@ export const RoofFacesRequest = z.object({
   metresPerPixel: z.number().positive().max(1).optional(),
   /** Free text for the model, e.g. the address or "terrace: stay between the party walls". */
   hint: z.string().max(500).optional(),
+  /** The same view with local contrast boosted (same size and format), for faint lines on white or metal roofs. */
+  contrastBase64: z.string().min(100).max(5_000_000).optional(),
+  /** The land lot in image pixels: nothing outside it is traced. */
+  lot: z.array(z.tuple([z.number(), z.number()])).min(3).max(400).optional(),
+  /** "house": the building at the centre (default); "site": every building on the lot. */
+  scope: z.enum(["house", "site"]).default("house"),
 });
 export type RoofFacesRequest = z.infer<typeof RoofFacesRequest>;
 
@@ -45,8 +70,25 @@ export type RoofFaceReading = {
   ring: [number, number][];
 };
 
-export type RoofFacesResult = {
+export type RoofPoint = { id: string; x: number; y: number };
+export type RoofLine = { from: string; to: string; kind: string; seen: "clear" | "faint" };
+export type RoofObstructionReading = { kind: string; ring: [number, number][] };
+export type RoofBuilding = {
+  name: string;
+  main: boolean;
+  flat: boolean;
+  outline: [number, number][];
+  points: RoofPoint[];
+  lines: RoofLine[];
   faces: RoofFaceReading[];
+  obstructions: RoofObstructionReading[];
+};
+
+export type RoofFacesResult = {
+  /** Every face of every building (kept for readers that only use faces). */
+  faces: RoofFaceReading[];
+  buildings: RoofBuilding[];
+  noRoof: boolean;
   wallsDeg: number | null;
   notes: string;
   usage: { inputTokens: number; outputTokens: number };
@@ -86,38 +128,109 @@ function areaPx(ring: [number, number][]): number {
   return Math.abs(a) / 2;
 }
 
+const MAX_BUILDINGS = 12;
+
+/** A ring of [x, y] pixel points, clamped to the image, without repeats; null when unusable. */
+function cleanRing(raw: unknown, W: number, H: number, max = 60): [number, number][] | null {
+  if (!Array.isArray(raw)) return null;
+  const ring: [number, number][] = [];
+  for (const p of raw.slice(0, max)) {
+    if (!Array.isArray(p) || p.length < 2) continue;
+    const x = Number(p[0]);
+    const y = Number(p[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const q: [number, number] = [Math.min(W, Math.max(0, x)), Math.min(H, Math.max(0, y))];
+    const last = ring[ring.length - 1];
+    if (!last || last[0] !== q[0] || last[1] !== q[1]) ring.push(q);
+  }
+  const first = ring[0];
+  const lastPt = ring[ring.length - 1];
+  if (ring.length > 1 && first && lastPt && first[0] === lastPt[0] && first[1] === lastPt[1]) ring.pop();
+  return ring.length >= 3 ? ring : null;
+}
+
+const str = (v: unknown, max: number, dflt: string) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : dflt);
+
 /**
- * Faces from a model reply, cleaned: corners inside the image, at least three
- * distinct corners, no slivers (under 0.5 m², or 500 px² when the scale is
- * unknown), at most 40 faces of 40 corners.
+ * The reading from a model reply, cleaned: buildings with their outline,
+ * intersection points, lines, faces (built from the shared points) and
+ * obstructions; corners inside the image; no slivers (under 0.5 m², or 500 px²
+ * when the scale is unknown). A reply in the older shape (top-level faces with
+ * rings) is read as one building.
  */
 export function cleanFaces(raw: unknown, req: Pick<RoofFacesRequest, "widthPx" | "heightPx" | "metresPerPixel">): Omit<RoofFacesResult, "usage"> {
-  const obj = (raw && typeof raw === "object" ? raw : {}) as { faces?: unknown; walls_deg?: unknown; notes?: unknown };
-  const list = Array.isArray(obj.faces) ? obj.faces.slice(0, 40) : [];
+  const W = req.widthPx;
+  const H = req.heightPx;
+  const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const minArea = req.metresPerPixel ? 0.5 / (req.metresPerPixel * req.metresPerPixel) : 500;
-  const faces: RoofFaceReading[] = [];
-  for (const f of list) {
-    const ringIn = (f as { ring?: unknown })?.ring;
-    if (!Array.isArray(ringIn)) continue;
-    const ring: [number, number][] = [];
-    for (const p of ringIn.slice(0, 40)) {
-      if (!Array.isArray(p) || p.length < 2) continue;
-      const x = Number(p[0]);
-      const y = Number(p[1]);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-      const q: [number, number] = [Math.min(req.widthPx, Math.max(0, x)), Math.min(req.heightPx, Math.max(0, y))];
-      const last = ring[ring.length - 1];
-      if (!last || last[0] !== q[0] || last[1] !== q[1]) ring.push(q);
+  const facesOf = (list: unknown, pts: Map<string, [number, number]>): RoofFaceReading[] => {
+    const out: RoofFaceReading[] = [];
+    for (const f of Array.isArray(list) ? list.slice(0, 60) : []) {
+      const o = (f && typeof f === "object" ? f : {}) as Record<string, unknown>;
+      let ring: [number, number][] | null = null;
+      if (Array.isArray(o.points)) {
+        const r = (o.points as unknown[]).map((id) => pts.get(String(id))).filter((p): p is [number, number] => Boolean(p));
+        ring = cleanRing(r, W, H);
+      }
+      if (!ring) ring = cleanRing(o.ring, W, H);
+      if (!ring || areaPx(ring) < minArea) continue;
+      out.push({ name: str(o.name, 80, `Face ${out.length + 1}`), bearingDeg: bearingOf(o.facing), ring });
     }
-    const first = ring[0];
-    const lastPt = ring[ring.length - 1];
-    if (ring.length > 1 && first && lastPt && first[0] === lastPt[0] && first[1] === lastPt[1]) ring.pop();
-    if (ring.length < 3 || areaPx(ring) < minArea) continue;
-    const name = typeof (f as { name?: unknown }).name === "string" ? String((f as { name: string }).name).slice(0, 80) : `Face ${faces.length + 1}`;
-    faces.push({ name, bearingDeg: bearingOf((f as { facing?: unknown }).facing), ring });
+    return out;
+  };
+  const buildings: RoofBuilding[] = [];
+  for (const bRaw of Array.isArray(obj.buildings) ? obj.buildings.slice(0, MAX_BUILDINGS) : []) {
+    const b = (bRaw && typeof bRaw === "object" ? bRaw : {}) as Record<string, unknown>;
+    const points: RoofPoint[] = [];
+    const pts = new Map<string, [number, number]>();
+    for (const pRaw of Array.isArray(b.points) ? b.points.slice(0, 300) : []) {
+      const p = (pRaw && typeof pRaw === "object" ? pRaw : {}) as Record<string, unknown>;
+      const id = String(p.id ?? "");
+      const x = Number(p.x);
+      const y = Number(p.y);
+      if (!id || pts.has(id) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const q: [number, number] = [Math.min(W, Math.max(0, x)), Math.min(H, Math.max(0, y))];
+      pts.set(id, q);
+      points.push({ id, x: q[0], y: q[1] });
+    }
+    const lines: RoofLine[] = [];
+    for (const lRaw of Array.isArray(b.lines) ? b.lines.slice(0, 400) : []) {
+      const l = (lRaw && typeof lRaw === "object" ? lRaw : {}) as Record<string, unknown>;
+      const from = String(l.from ?? "");
+      const to = String(l.to ?? "");
+      if (!pts.has(from) || !pts.has(to) || from === to) continue;
+      lines.push({ from, to, kind: str(l.kind, 20, "line"), seen: l.seen === "faint" ? "faint" : "clear" });
+    }
+    const faces = facesOf(b.faces, pts);
+    const outline = cleanRing(b.outline, W, H, 120);
+    const obstructions: RoofObstructionReading[] = [];
+    for (const oRaw of Array.isArray(b.obstructions) ? b.obstructions.slice(0, 80) : []) {
+      const o = (oRaw && typeof oRaw === "object" ? oRaw : {}) as Record<string, unknown>;
+      const ring = cleanRing(o.ring, W, H, 40);
+      if (ring) obstructions.push({ kind: str(o.kind, 20, "obstruction"), ring });
+    }
+    if (!outline && faces.length === 0) continue;
+    buildings.push({
+      name: str(b.name, 80, `Building ${buildings.length + 1}`),
+      main: b.main === true,
+      flat: b.flat === true,
+      outline: outline ?? [],
+      points,
+      lines,
+      faces,
+      obstructions,
+    });
   }
+  // The older reply shape: faces with rings at the top level.
+  if (buildings.length === 0 && Array.isArray(obj.faces)) {
+    const faces = facesOf(obj.faces, new Map());
+    if (faces.length) buildings.push({ name: "Main roof", main: true, flat: false, outline: [], points: [], lines: [], faces, obstructions: [] });
+  }
+  if (buildings.length && !buildings.some((b) => b.main)) buildings[0]!.main = true;
   return {
-    faces,
+    faces: buildings.flatMap((b) => b.faces).slice(0, 120),
+    buildings,
+    noRoof: obj.no_roof === true && buildings.length === 0,
     wallsDeg: bearingOf(obj.walls_deg),
     notes: typeof obj.notes === "string" ? obj.notes.slice(0, 1000) : "",
   };
@@ -126,16 +239,23 @@ export function cleanFaces(raw: unknown, req: Pick<RoofFacesRequest, "widthPx" |
 /** Ask the smart model for the faces of the roof in the image. */
 export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest): Promise<RoofFacesResult> {
   const scale = req.metresPerPixel ? `, about ${(req.metresPerPixel * 100).toFixed(1)} cm per pixel` : "";
+  const scope =
+    req.scope === "site"
+      ? "Trace EVERY building on the land lot (scope: site)."
+      : "Trace the building under the centre of the image (scope: house).";
+  const lot = req.lot?.length ? ` The land lot, in image pixels: ${JSON.stringify(req.lot.map(([x, y]) => [Math.round(x), Math.round(y)]))}. Trace nothing outside it.` : "";
+  const contrast = req.contrastBase64 ? " The second image is the same view with local contrast boosted." : "";
   const turn = await model.converse({
     tier: "smart",
     effort: "high",
-    maxTokens: 6000,
+    maxTokens: req.scope === "site" ? 24000 : 12000,
     system: ROOF_FACES_SYSTEM,
     messages: [
       {
         role: "user",
         image: { format: req.format, bytes: Buffer.from(req.imageBase64, "base64") },
-        text: `This image is ${req.widthPx} x ${req.heightPx} pixels${scale}. Map every face of the main house roof.${req.hint ? ` ${req.hint}` : ""} JSON only.`,
+        images: req.contrastBase64 ? [{ format: req.format, bytes: Buffer.from(req.contrastBase64, "base64") }] : undefined,
+        text: `This image is ${req.widthPx} x ${req.heightPx} pixels${scale}.${contrast} ${scope}${lot} First the visible lines and intersection points, then borders, then faces and obstructions.${req.hint ? ` ${req.hint}` : ""} JSON only.`,
       },
     ],
   });

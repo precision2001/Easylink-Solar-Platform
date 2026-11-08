@@ -55,6 +55,67 @@ describe("roof face parsing", () => {
   });
 });
 
+const traced = JSON.stringify({
+  walls_deg: 27,
+  no_roof: false,
+  buildings: [
+    {
+      name: "House",
+      main: true,
+      flat: false,
+      outline: [[100, 100], [500, 100], [500, 400], [100, 400]],
+      points: [
+        { id: "A", x: 100, y: 100 }, { id: "B", x: 500, y: 100 }, { id: "C", x: 500, y: 400 }, { id: "D", x: 100, y: 400 },
+        { id: "R1", x: 250, y: 250 }, { id: "R2", x: 350, y: 250 }, { id: "R2", x: 9, y: 9 },
+      ],
+      lines: [
+        { from: "A", to: "R1", kind: "hip", seen: "clear" },
+        { from: "R1", to: "R2", kind: "ridge", seen: "clear" },
+        { from: "C", to: "R2", kind: "hip", seen: "faint" },
+        { from: "A", to: "NOPE", kind: "hip" },
+      ],
+      faces: [
+        { name: "North", facing: "N", points: ["A", "B", "R2", "R1"] },
+        { name: "East", facing: "E", points: ["B", "C", "R2"] },
+        { name: "South", facing: "S", points: ["C", "D", "R1", "R2"] },
+        { name: "West", facing: "W", points: ["D", "A", "R1"] },
+      ],
+      obstructions: [{ kind: "vent", ring: [[300, 300], [310, 300], [310, 310], [300, 310]] }],
+    },
+  ],
+  notes: "Hip roof.",
+});
+
+describe("the full trace (visible lines and intersection points first)", () => {
+  it("builds faces from shared intersection points, keeps lines and obstructions", () => {
+    const r = cleanFaces(JSON.parse(traced), body);
+    expect(r.buildings).toHaveLength(1);
+    const b = r.buildings[0]!;
+    expect(b.points.map((p) => p.id)).toEqual(["A", "B", "C", "D", "R1", "R2"]); // a repeated id is dropped
+    expect(b.lines).toHaveLength(3); // a line to an unknown point is dropped
+    expect(b.lines[2]?.seen).toBe("faint");
+    expect(b.faces[0]?.ring).toEqual([[100, 100], [500, 100], [350, 250], [250, 250]]);
+    // Neighbouring faces share the very same corner.
+    expect(b.faces[1]?.ring[2]).toEqual(b.faces[0]?.ring[2]);
+    expect(b.obstructions[0]?.kind).toBe("vent");
+    expect(r.faces).toHaveLength(4);
+    expect(r.noRoof).toBe(false);
+  });
+
+  it("reads 'no roof' (bare ground, a yard)", () => {
+    const r = cleanFaces({ no_roof: true, buildings: [] }, body);
+    expect(r.noRoof).toBe(true);
+    expect(r.faces).toEqual([]);
+  });
+
+  it("puts every rule in the instructions", async () => {
+    const { ROOF_FACES_SYSTEM } = await import("../src/roof/faces.js");
+    for (const rule of ["VISIBLE LINES AND VISIBLE INTERSECTION POINTS FIRST", "BORDERS", "FLAT OR LOW-PITCH", "faint", "SHADOWS POINT TO ROOF LINES", "OBSTRUCTIONS", "no_roof", "site"]) {
+      expect(ROOF_FACES_SYSTEM).toContain(rule);
+    }
+  });
+});
+
 describe("POST /v1/roof/faces", () => {
   it("reads the roof in the background and serves it by id (Roof Designer, ingest key)", async () => {
     const { c, store } = setup([{ text: reply }]);
@@ -70,7 +131,7 @@ describe("POST /v1/roof/faces", () => {
     expect(done.data.faces.map((f) => f.name)).toEqual(["North face", "Off the image"]);
     const decisions = await store.listDecisions({ agentId: "roof-designer" });
     expect(decisions).toHaveLength(1);
-    expect(decisions[0]?.reasoningSummary).toContain("Read 2 roof faces");
+    expect(decisions[0]?.reasoningSummary).toContain("2 faces");
   });
 
   it("asks the smart tier with the image", async () => {
@@ -81,6 +142,23 @@ describe("POST /v1/roof/faces", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.tier).toBe("smart");
     expect(calls[0]?.messages[0]?.image).toBeTruthy();
+  });
+
+  it("sends the boosted-contrast view as a second image, with the lot and the scope", async () => {
+    const { c } = setup([{ text: traced }]);
+    const app = createApp(c);
+    const r = await app.request("/v1/roof/faces", {
+      method: "POST",
+      headers: KEY,
+      body: JSON.stringify({ ...body, contrastBase64: IMG, lot: [[0, 0], [640, 0], [640, 640]], scope: "site" }),
+    });
+    const { data } = (await r.json()) as { data: { id: string } };
+    const calls = (c.model as unknown as { calls: { messages: { images?: unknown[]; text?: string }[] }[] }).calls;
+    expect(calls[0]?.messages[0]?.images).toHaveLength(1);
+    expect(calls[0]?.messages[0]?.text).toContain("EVERY building");
+    expect(calls[0]?.messages[0]?.text).toContain("land lot");
+    const got = (await (await app.request(`/v1/roof/faces/${data.id}`, { headers: KEY })).json()) as { data: { buildings: { lines: unknown[] }[] } };
+    expect(got.data.buildings[0]?.lines).toHaveLength(3);
   });
 
   it("needs the ingest key or staff, and a valid image", async () => {
