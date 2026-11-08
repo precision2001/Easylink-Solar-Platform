@@ -147,6 +147,9 @@ export const DesignsRegisterStepContent = forwardRef<
                   inputProps={{ "data-clarity-mask": "true" }}
                 />
               </label>
+              <p className="-mt-1 font-inter text-[12.5px] leading-[18px] text-white/75">
+                We’ll text this number about your quote and installation, such as appointment times and payment links. No marketing. Reply STOP to opt out.
+              </p>
 
               {/* Wording is versioned: change MARKETING_CONSENT_VERSION in
                   lib/designs/capture.ts whenever this text changes. */}

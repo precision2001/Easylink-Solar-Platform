@@ -682,6 +682,9 @@ function SignUpForm({ onSwitchMode }: { onSwitchMode: () => void }) {
           error={errors.phone?.message}
           {...register("phone")}
         />
+        <p className="-mt-2 text-[12.5px] leading-[18px] text-[#5B6B80]">
+          We’ll text this number about your quote and installation, such as appointment times and payment links. No marketing. Reply STOP to opt out.
+        </p>
         <Field
           label="Email"
           type="email"

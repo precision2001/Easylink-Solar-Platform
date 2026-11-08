@@ -324,11 +324,14 @@ function SignUpForm({ onSwitchMode }: { onSwitchMode: () => void }) {
           />
           <AuthField
             icon={<Icon name="Phone" />}
-            placeholder="+1 234 567 8900"
+            placeholder="0412 345 678"
             type="tel"
             error={errors.phone?.message}
             {...register("phone")}
           />
+          <p className="-mt-2 text-[12.5px] leading-[18px] text-[#5B6B80]">
+            We’ll text this number about jobs, site visits and payments. No marketing. Reply STOP to opt out.
+          </p>
           <AuthField
             icon={<Icon name="Mail" />}
             placeholder="john@example.com"
