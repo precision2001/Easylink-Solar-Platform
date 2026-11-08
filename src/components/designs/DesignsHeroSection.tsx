@@ -647,7 +647,11 @@ export function DesignsHeroSection({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 items-center overflow-y-auto">
+      {/*
+        Safe centring: a step centres while it fits; a taller one starts at the
+        top and scrolls, instead of being cut off top and bottom.
+      */}
+      <div className="flex min-h-0 flex-1 items-center-safe overflow-y-auto">
         {hydrating || leadLocating ? (
           <p className="relative z-10 mx-auto px-4 font-source-sans text-[16px] text-white/80">
             {leadLocating ? `Finding ${leadPrefill?.address ?? "the address"}…` : "Loading your design…"}
