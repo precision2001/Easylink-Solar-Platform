@@ -15,7 +15,7 @@ import { getCadastre, getCombinedSolar, getFootprint, getLayerBytes, getSnapshot
 import type { SolarEstimateResult } from "@/types/solar";
 import { designRoof, googleDataStale, lotForDesign, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
 import { panelCorners, ringAreaM2, type LatLng, type LatLngRing } from "./geometry";
-import { aiRoofFacesEnabled, fetchAiRoofTrace } from "./aiFaces";
+import { aiRoofFacesEnabled, aiTraceKey, aiTraceRunning, fetchAiRoofTrace } from "./aiFaces";
 
 /* ── Satellite image ────────────────────────────────────────────────── */
 
@@ -294,7 +294,7 @@ export async function designRoofAt(
   const contextP = opts.context ? Promise.resolve(opts.context) : loadRoofContext(pin, opts.source === undefined ? defaultDataSource() : opts.source);
   const wantTrace = !opts.context?.aiTrace && !opts.outline && Boolean(aiFirst) && aiRoofFacesEnabled();
   const traceP = wantTrace
-    ? Promise.all([aiFirst!, contextP.catch(() => null)]).then(([img, ctx]) => fetchAiRoofTrace(img, { lot: ctx?.parcel?.ring ?? null })).catch(() => null)
+    ? Promise.all([aiFirst!, contextP.catch(() => null)]).then(([img, ctx]) => fetchAiRoofTrace(img, { lot: ctx?.parcel?.ring ?? null, key: aiTraceKey(pin) })).catch(() => null)
     : null;
   const context = await contextP;
   // The lot may not hold the whole house (a property over two lots): widen it first.
@@ -311,6 +311,7 @@ export async function designRoofAt(
   }
   if (traceP) {
     context.aiTrace = await traceP;
+    if (context.aiTrace === null && aiTraceRunning(aiTraceKey(pin))) context.aiTracePending = true;
     if (context.aiTrace?.faces.length) context.aiFaces = context.aiTrace.faces;
     // Opus says there is no building roof here (bare ground, a yard, a building site).
     if (context.aiTrace?.noRoof) {

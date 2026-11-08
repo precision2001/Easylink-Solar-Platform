@@ -117,6 +117,18 @@ export function roofDesignFor(pin: LatLng): Promise<RoofDesignResponse> {
   return e.promise;
 }
 
+/** Asks again for a pin (Opus was still tracing it): the earlier answer is dropped. */
+export function refreshRoofDesign(pin: LatLng): Promise<RoofDesignResponse> {
+  early.delete(pinKey(pin));
+  return roofDesignFor(pin);
+}
+
+/** True when the design says Opus is still tracing and checking the roof. */
+export function stillTracing(d: RoofDesignResponse | null | undefined): boolean {
+  const notes = (d as { notes?: string[] } | null | undefined)?.notes ?? [];
+  return notes.some((n) => n.startsWith("Opus is still"));
+}
+
 /**
  * The address step's head start: asks for the design once the pin has
  * settled. A head start for a pin the customer has since moved away from is

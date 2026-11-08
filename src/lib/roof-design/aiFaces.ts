@@ -15,6 +15,9 @@
  * AI_PLATFORM_URL and AI_EVENT_INGEST_KEY. ROOF_AI=off turns it off.
  */
 import sharp from "sharp";
+import { readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AiRoofFace, AiRoofTrace } from "./engine";
 import type { LatLng } from "./geometry";
 import { snapshotMetresPerPixel, type SnapshotGeo } from "@/lib/designer/roofSnapshot";
@@ -24,11 +27,47 @@ type Snapshot = { png: Buffer; geo: SnapshotGeo };
 /** Side of the square sent to the AI, in image pixels (about 30 m at zoom 21). */
 export const AI_CROP_PX = 960;
 /**
- * How long a design waits for the AI's trace. Opus traces every roof first
- * (owner's rule, 9 Nov 2026); a careful trace takes 25-60 s, so the wait is
- * long enough for it, inside the API's 120 s.
+ * How long one design request waits for the AI's trace, inside the site's
+ * 120 s request limit. Opus traces every roof first and then checks its trace
+ * against the photo (owner's rules, 9 Nov 2026), which takes 1.5-4 minutes:
+ * past this wait the reading keeps running, the design says Opus is still
+ * tracing, and the page asks again (the next request picks up the same
+ * reading instead of starting another).
  */
 export const AI_WAIT_MS = 90_000;
+/** A reading is picked up again by later requests for the same roof for this long. */
+const READING_REUSE_MS = 30 * 60_000;
+const READINGS_FILE = join(tmpdir(), "easylink-roof-ai-readings.json");
+type ReadingRef = { id: string; at: number; status: "pending" | "done" | "error" };
+function readRefs(): Record<string, ReadingRef> {
+  try {
+    return JSON.parse(readFileSync(READINGS_FILE, "utf8")) as Record<string, ReadingRef>;
+  } catch {
+    return {};
+  }
+}
+function saveRef(key: string, ref: ReadingRef | null) {
+  try {
+    const all = readRefs();
+    const now = Date.now();
+    for (const [k, v] of Object.entries(all)) if (now - v.at > READING_REUSE_MS) delete all[k];
+    if (ref) all[key] = ref;
+    else delete all[key];
+    writeFileSync(READINGS_FILE, JSON.stringify(all));
+  } catch {
+    // best effort: without it a later request starts a new reading
+  }
+}
+function freshRef(key: string): ReadingRef | null {
+  const r = readRefs()[key];
+  return r && Date.now() - r.at < READING_REUSE_MS && r.status !== "error" ? r : null;
+}
+/** True while Opus is still tracing or checking this roof (started by an earlier request). */
+export function aiTraceRunning(key: string): boolean {
+  return freshRef(key)?.status === "pending";
+}
+/** The key a roof's reading is filed under: the pin to about 10 cm. */
+export const aiTraceKey = (p: LatLng) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
 const POLL_MS = 1500;
 
 const platformUrl = () => process.env.ROOF_AI_PLATFORM_URL || process.env.AI_PLATFORM_URL || "";
@@ -121,7 +160,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * borders, faces, obstructions), or null (not configured, not readable, or not
  * back in time). Never throws.
  */
-export async function fetchAiRoofTrace(image: Snapshot, opts: { waitMs?: number; hint?: string; lot?: LatLng[] | null } = {}): Promise<AiRoofTrace | null> {
+export async function fetchAiRoofTrace(image: Snapshot, opts: { waitMs?: number; hint?: string; lot?: LatLng[] | null; key?: string } = {}): Promise<AiRoofTrace | null> {
   if (!aiRoofFacesEnabled()) return null;
   const deadline = Date.now() + (opts.waitMs ?? AI_WAIT_MS);
   try {
@@ -133,7 +172,8 @@ export async function fetchAiRoofTrace(image: Snapshot, opts: { waitMs?: number;
     const crop = await sharp(image.png).extract({ left, top, width: side, height: side }).png({ compressionLevel: 9 }).toBuffer();
     const contrast = await localContrastPng(crop).catch(() => null);
     const lot = opts.lot?.length ? opts.lot.map((p) => { const [x, y] = toPxOf(geo, p); return [Math.round(x - left), Math.round(y - top)] as [number, number]; }) : undefined;
-    const started = await platform("v1/roof/faces", {
+    const had = opts.key ? freshRef(opts.key) : null;
+    const started = had ? { id: had.id, status: "pending" as const } : await platform("v1/roof/faces", {
       method: "POST",
       body: JSON.stringify({
         imageBase64: crop.toString("base64"),
@@ -145,14 +185,17 @@ export async function fetchAiRoofTrace(image: Snapshot, opts: { waitMs?: number;
         hint: opts.hint,
         lot,
         scope: "house",
+        review: 2,
       }),
     });
     if (!started?.id) return null;
+    if (opts.key && !had) saveRef(opts.key, { id: started.id, at: Date.now(), status: "pending" });
     let r: PlatformReading | null = started;
     while (r && r.status === "pending" && Date.now() + POLL_MS < deadline) {
       await wait(POLL_MS);
       r = await platform(`v1/roof/faces/${encodeURIComponent(started.id)}`);
     }
+    if (opts.key && r && r.status !== "pending") saveRef(opts.key, { id: started.id, at: had?.at ?? Date.now(), status: r.status });
     if (!r || r.status !== "done") return null;
     const ll = ([x, y]: [number, number]) => fromPx(geo, x + left, y + top);
     const ring = (pts: PxRing) => pts.map(ll);

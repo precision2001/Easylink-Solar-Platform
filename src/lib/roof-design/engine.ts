@@ -93,6 +93,8 @@ export type RoofDesignContext = {
    * trace came back — the design says it needs a hand trace.
    */
   aiTrace?: AiRoofTrace | null;
+  /** Opus is still tracing and checking this roof (past this request's wait): ask again shortly. */
+  aiTracePending?: boolean;
 };
 
 /** A face the AI read from the image, in map coordinates. */
@@ -1196,7 +1198,9 @@ export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {})
   const needsVerification = !initial.traced;
   const t = faceSet.trace;
   const notes = [
-    ctx.aiTrace === null && !opts.outline
+    ctx.aiTrace === null && !opts.outline && ctx.aiTracePending
+      ? "Opus is still tracing and checking this roof against the photo: the design refreshes when it's done. Lines below are the engine's own reading for now."
+      : ctx.aiTrace === null && !opts.outline
       ? "Opus couldn't trace this roof in time: it needs a hand trace (Edit the roof) before quoting. Lines below are the engine's own reading."
       : null,
     t && (t.faint > 0 || t.unconfirmed > 0)

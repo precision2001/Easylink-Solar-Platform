@@ -60,7 +60,7 @@ import {
 import { mergeProposalData } from "@/lib/store/designProposalSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
 import { compressCanvasSnapshot } from "@/lib/images/compress-browser";
-import { roofDesignFor, type RoofDesignResponse } from "@/lib/roof-design/client";
+import { refreshRoofDesign, roofDesignFor, stillTracing, type RoofDesignResponse } from "@/lib/roof-design/client";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -466,15 +466,30 @@ export const DesignsSolarPanelStepContent = forwardRef<
     const pin = selectedLocationRef.current;
     if (!pin || !pinKey) return;
     let live = true;
-    // Opus traces the roof first (up to 90 s, owner's rule): wait for it, inside the API's 120 s.
-    const giveUp = window.setTimeout(() => live && setServerDesign({ key: pinKey, design: null }), 115_000);
+    let timer: number | undefined;
+    // Opus traces the roof first and checks its trace against the photo
+    // (owner's rules). One request waits up to 90 s, inside the site's 120 s;
+    // while Opus is still at it, the engine's design shows and the page asks
+    // again every 20 s (up to 5 minutes) until the checked trace is in.
+    const giveUp = window.setTimeout(() => live && setServerDesign((cur) => cur ?? { key: pinKey, design: null }), 115_000);
+    const take = (d: RoofDesignResponse, tries: number) => {
+      if (!live) return;
+      setServerDesign({ key: pinKey, design: d });
+      if (stillTracing(d) && tries < 15)
+        timer = window.setTimeout(() => {
+          refreshRoofDesign(pin)
+            .then((n) => take(n, tries + 1))
+            .catch(() => {});
+        }, 20_000);
+    };
     roofDesignFor(pin)
-      .then((d) => live && setServerDesign({ key: pinKey, design: d }))
+      .then((d) => take(d, 0))
       .catch(() => live && setServerDesign({ key: pinKey, design: null }))
       .finally(() => window.clearTimeout(giveUp));
     return () => {
       live = false;
       window.clearTimeout(giveUp);
+      if (timer) window.clearTimeout(timer);
     };
   }, [pinKey]);
   const serverReady = serverDesign?.key === pinKey ? serverDesign : null;
