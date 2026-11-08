@@ -638,9 +638,17 @@ export function hipFacesForSquareRoof(
     minAreaRatio = 0.85,
     report,
     luma = null,
+    googleStale = false,
   }: {
     cellM?: number;
     maxShareDiff?: number;
+    /**
+     * Google's data is years older than the image: it can't make a gable
+     * where the image shows the hips (12 Fursorb St, Marayong). The plain hip
+     * reading is kept when the image shows its lines better (by 5 points) and
+     * Google is still roughly with it (share difference up to 0.3).
+     */
+    googleStale?: boolean;
     maxUnmatched?: number;
     minAreaRatio?: number;
     /** Receives how well the faces matched Google (share difference, 0 = exact), which ends are gables, and the image check. */
@@ -820,6 +828,7 @@ export function hipFacesForSquareRoof(
   };
   let faces = build(new Set());
   let best = { faces, ...score(faces), gables: [] as number[], ...look(faces) };
+  const allHip = best;
   {
     const convex = (i: number) => {
       const a = xy[(i - 1 + n) % n], b = xy[i], c = xy[(i + 1) % n];
@@ -843,11 +852,13 @@ export function hipFacesForSquareRoof(
       if (better(cand, best)) best = cand;
     }
   }
+  const hipOverStaleGable = googleStale && best.gables.length > 0 && allHip.diff <= 0.3 && allHip.seen >= best.seen + 0.05;
+  if (hipOverStaleGable) best = allHip;
   faces = best.faces;
   if (faces.length < 2) return null;
   (globalThis as { __sqWhy?: (w: unknown) => void }).__sqWhy?.({ diff: +best.diff.toFixed(3), gables: best.gables, unmatched: +(unmatched / gTotal).toFixed(3), gTotal: Math.round(gTotal), fTotal: Math.round(best.fTotal), f: best.f.map((x) => Math.round(x)), g: g.map((x) => Math.round(x)) });
   report?.({ diff: best.diff, gables: best.gables, areaRatio: best.fTotal / gTotal, seen: best.seen, lines: best.lines });
-  if (best.diff > maxShareDiff) return null;
+  if (best.diff > maxShareDiff && !hipOverStaleGable) return null;
   // And about as much roof as Google measured (not a part of it).
   if (best.fTotal < minAreaRatio * gTotal) return null;
 
@@ -918,8 +929,11 @@ export function rankSquareReadings(
     maxShareDiff = 0.1,
     minSeen = 0.35,
     cellM,
+    googleStale,
   }: {
     maxShareDiff?: number;
+    /** See hipFacesForSquareRoof. */
+    googleStale?: boolean;
     /** Share of the computed hips, valleys and ridges that must be seen in the image (when there is an image). */
     minSeen?: number;
     /** Grid size for the faces (default 5 cm; a coarser grid for searching many outlines). */
@@ -929,7 +943,7 @@ export function rankSquareReadings(
   const out: SquareReading[] = [];
   for (const ring of rings) {
     let rep = { diff: Infinity, seen: 0, lines: [] as LineCheck[], gables: [] as number[] };
-    const faces = hipFacesForSquareRoof(ring, segments, { luma, maxShareDiff, cellM, report: (r) => (rep = r) });
+    const faces = hipFacesForSquareRoof(ring, segments, { luma, maxShareDiff, cellM, googleStale, report: (r) => (rep = r) });
     if (!faces) continue;
     if (luma && rep.lines.length > 0 && rep.seen < minSeen) continue;
     const lines = rep.lines.map((l) => ({

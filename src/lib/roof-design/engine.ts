@@ -94,7 +94,7 @@ export type AiRoofFace = { ring: LatLngRing; azimuthDeg?: number; name?: string 
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-08.2";
+export const ROOF_ENGINE_VERSION = "2026-11-09.1";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -172,7 +172,9 @@ const ringKey = (r: LatLngRing) => r.map((p) => `${p.lat.toFixed(8)},${p.lng.toF
 function squareReadingOf(ring: LatLngRing, ctx: RoofDesignContext, opts: { maxShareDiff?: number; minSeen?: number; cellM?: number } = {}): SquareReading | null {
   const segs = realSegments(ctx);
   if (!segs || ring.length < 4) return null;
-  return cached(ctx, `sq|${JSON.stringify(opts)}|${ringKey(ring)}`, () => rankSquareReadings([ring], segs, ctx.snapshot?.luma ?? null, opts)[0] ?? null);
+  // Out-of-date Google data can't overrule the hips the image shows.
+  const o = { ...opts, googleStale: googleDataStale(ctx) };
+  return cached(ctx, `sq|${JSON.stringify(o)}|${ringKey(ring)}`, () => rankSquareReadings([ring], segs, ctx.snapshot?.luma ?? null, o)[0] ?? null);
 }
 
 /* ── Step 0: the land the design may use ─────────────────────────── */
@@ -989,7 +991,7 @@ export function relookReadings(ctx: RoofDesignContext, current?: LatLngRing | nu
   const segs = realSegments(ctx);
   if (!snap || !segs) return [];
   const rings = [...(current ? [current] : []), ...(snap.relook?.() ?? [])];
-  return rankSquareReadings(rings, segs, snap.luma, ROOF_DESIGN_LIMITS.relook);
+  return rankSquareReadings(rings, segs, snap.luma, { ...ROOF_DESIGN_LIMITS.relook, googleStale: googleDataStale(ctx) });
 }
 
 /* ── The whole design in one call ───────────────────────────────────── */
