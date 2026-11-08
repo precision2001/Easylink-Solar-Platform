@@ -2,6 +2,7 @@
 
 import classNames from "classnames";
 import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
@@ -59,6 +60,9 @@ function clampPos(pos: Pos): Pos {
 }
 
 export function EasylinkAiChatbot() {
+  const pathname = usePathname();
+  // Full-screen flows with a Back/Next bar along the bottom: sit above it.
+  const aboveFooter = pathname?.startsWith("/designs") ?? false;
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatTurn[]>([WELCOME]);
   const [input, setInput] = useState("");
@@ -290,7 +294,7 @@ export function EasylinkAiChatbot() {
         }
         className={classNames(
           "fixed z-[100] flex touch-none select-none items-center justify-center transition",
-          !pos && "bottom-6 right-6",
+          !pos && (aboveFooter ? "bottom-28 right-4 sm:right-6" : "bottom-6 right-6"),
           open
             ? "size-14 bg-navy-800 text-white hover:bg-navy-900 shadow-lg rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
             : "cursor-grab active:cursor-grabbing",
