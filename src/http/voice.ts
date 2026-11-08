@@ -16,6 +16,9 @@ import { principalFromUser, type Env } from "./app.js";
  *   GET  /voice/calls/:callId/jobs/:jobId              the job, short enough to read out
  *   POST /voice/calls/:callId/jobs/:jobId/steps/:a     do a step the caller may do by phone
  *   POST /voice/calls/:callId/jobs/:jobId/link         text a link (pay, photos, bill, documents)
+ *   POST /voice/calls/:callId/transfer                 ask for a person: offers the live call to available staff
+ *   GET  /voice/calls/:callId/transfer                 has anyone taken it yet?
+ *   POST /voice/calls/:callId/transfer/cancel          stop waiting; the caller is called back instead
  *   POST /voice/calls/:callId/end                      transcript and recording location, into job history
  *
  * Caller ID can be spoofed, so nothing about a job is said or done until the caller
@@ -55,6 +58,8 @@ type VoiceCall = {
   transcriptKey?: string;
   recordingKey?: string;
   summary?: string;
+  transferId?: string;
+  handedTo?: string;
 };
 
 /** Australian numbers in any common form → +61XXXXXXXXX. */
@@ -282,13 +287,67 @@ export function registerVoiceRoutes(app: Hono<Env>, c: Container, jobs: JobServi
     }
   });
 
+  // ---------- handing the call to a person (contact centre phase 2) ----------
+
+  async function live<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const r = await c.backend.call<T>(method, `/live-calls${path}`, body, svc);
+    if (!r.ok || !r.data) throw new JobError(r.message ?? "The team's phones can't be reached right now", r.status >= 400 ? r.status : 503);
+    return r.data;
+  }
+
+  app.post("/voice/calls/:callId/transfer", async (ctx) => {
+    try {
+      const b = z.object({ summary: z.string().min(1).max(4000), reason: z.string().max(300).optional() }).parse(await ctx.req.json());
+      const v = await load(ctx.req.param("callId") ?? "");
+      if (!v) throw new JobError("Call not found", 404);
+      const who = v.verified && v.firstName ? v.firstName : undefined;
+      const d = await live<{ transferId: string; offered: boolean; status: string; ringSeconds?: number }>("POST", "/transfers", { roomName: v.id, callerNumber: v.phone, callerName: who, summary: b.summary, reason: b.reason });
+      v.transferId = d.transferId;
+      await save(v);
+      return ctx.json({ success: true, message: "OK", data: { offered: d.offered, status: d.status, ringSeconds: d.ringSeconds ?? 0 } });
+    } catch (e) {
+      return fail(ctx, e);
+    }
+  });
+
+  app.get("/voice/calls/:callId/transfer", async (ctx) => {
+    try {
+      const v = await load(ctx.req.param("callId") ?? "");
+      if (!v?.transferId) throw new JobError("No transfer on this call", 404);
+      const d = await live<{ status: string; acceptedBy: string | null }>("GET", `/transfers/${encodeURIComponent(v.transferId)}`);
+      if (d.status === "ACCEPTED" && d.acceptedBy && !v.handedTo) {
+        v.handedTo = d.acceptedBy;
+        await save(v);
+      }
+      return ctx.json({ success: true, message: "OK", data: { status: d.status, acceptedBy: d.acceptedBy } });
+    } catch (e) {
+      return fail(ctx, e);
+    }
+  });
+
+  app.post("/voice/calls/:callId/transfer/cancel", async (ctx) => {
+    try {
+      const b = z.object({ reason: z.string().max(300).optional() }).parse(await ctx.req.json().catch(() => ({})));
+      const v = await load(ctx.req.param("callId") ?? "");
+      if (!v?.transferId) throw new JobError("No transfer on this call", 404);
+      const d = await live<{ status: string }>("POST", `/transfers/${encodeURIComponent(v.transferId)}/cancel`, { reason: b.reason });
+      return ctx.json({ success: true, message: "OK", data: { status: d.status } });
+    } catch (e) {
+      return fail(ctx, e);
+    }
+  });
+
   app.post("/voice/calls/:callId/end", async (ctx) => {
     try {
-      const b = z.object({ durationSec: z.number().min(0).max(36000).optional(), transcriptKey: z.string().max(300).optional(), recordingKey: z.string().max(300).optional(), summary: z.string().max(1000).optional(), jobId: z.string().max(80).optional(), messages: z.array(z.string().max(600)).max(10).optional() }).parse(await ctx.req.json().catch(() => ({})));
+      const b = z.object({ durationSec: z.number().min(0).max(36000).optional(), transcriptKey: z.string().max(300).optional(), recordingKey: z.string().max(300).optional(), summary: z.string().max(1000).optional(), jobId: z.string().max(80).optional(), messages: z.array(z.string().max(600)).max(10).optional(), startedAt: z.string().max(40).optional(), turns: z.array(z.object({ who: z.string().max(20), text: z.string().max(4000).optional() }).passthrough()).max(2000).optional() }).parse(await ctx.req.json().catch(() => ({})));
       const v = await load(ctx.req.param("callId") ?? "");
       if (!v) throw new JobError("Call not found", 404);
       Object.assign(v, { endedAt: new Date().toISOString(), transcriptKey: b.transcriptKey, recordingKey: b.recordingKey, summary: b.summary });
       await save(v);
+      // Still waiting for a person when the call ended: make sure the caller gets called back.
+      if (v.transferId && !v.handedTo) {
+        await c.backend.call("POST", `/live-calls/transfers/${encodeURIComponent(v.transferId)}/cancel`, { reason: "the caller hung up while waiting" }, svc).catch(() => undefined);
+      }
       // Messages left for the team (questions the agent couldn't answer, callers who want a call back).
       if (b.messages?.length) {
         const who = v.verified ? `${v.firstName || v.kind} (verified ${v.kind})` : v.known ? `a ${v.kind} number, not verified` : "an unknown caller";
@@ -298,6 +357,23 @@ export function registerVoiceRoutes(app: Hono<Env>, c: Container, jobs: JobServi
         const mins = Math.max(1, Math.round((b.durationSec ?? 0) / 60));
         await jobs.noteCall(b.jobId, v.principal, `Phone call with ${v.firstName || v.kind} (${mins} min)`, [b.summary, b.recordingKey && `Recording: ${b.recordingKey}`, b.transcriptKey && `Transcript: ${b.transcriptKey}`].filter(Boolean).join("\n"));
       }
+      // Save the call on the customer's record in the backend (phase 1 contact centre). Best effort:
+      // a backend without /call-records yet answers 404 and nothing else is affected.
+      const spoken = (b.turns ?? []).filter((t) => (t.who === "agent" || t.who === "caller") && t.text?.trim()).map((t) => ({ who: t.who as "agent" | "caller", text: String(t.text) }));
+      await c.backend
+        .call("POST", "/call-records/ai", {
+          roomName: v.id,
+          from: v.phone,
+          startedAt: b.startedAt ?? v.startedAt,
+          endedAt: v.endedAt,
+          durationSec: b.durationSec !== undefined ? Math.round(b.durationSec) : undefined,
+          verified: v.verified,
+          summary: [b.summary, v.handedTo && `Handed to ${v.handedTo}, who took over the call.`].filter(Boolean).join(" ") || undefined,
+          recordingKey: b.recordingKey,
+          transcript: spoken.length ? spoken : undefined,
+          messages: b.messages?.length ? b.messages : undefined,
+        }, svc)
+        .catch((e) => console.error("voice call record", e));
       return ctx.json({ success: true, message: "OK", data: { saved: true } });
     } catch (e) {
       return fail(ctx, e);

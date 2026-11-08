@@ -99,7 +99,9 @@ async def entrypoint(ctx: JobContext) -> None:
             transcript_key = None
         try:
             await platform.end(durationSec=round(time.time() - started), transcriptKey=transcript_key, recordingKey=recording_key,
-                               summary=summarise(turns, agent.messages_left), jobId=agent.current_job, messages=agent.messages_left or None)
+                               summary=summarise(turns, agent.messages_left), jobId=agent.current_job, messages=agent.messages_left or None,
+                               startedAt=datetime.fromtimestamp(started, timezone.utc).isoformat(),
+                               turns=[{"who": t.get("who"), "text": t.get("text")} for t in turns if t.get("text")])
         except PlatformError:
             log.exception("call note not saved")
         await platform.aclose()
@@ -107,7 +109,7 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(finish)
 
     await session.start(agent=agent, room=ctx.room)
-    notice = "This call is recorded so we can help you properly. " if recording_key else ""
+    notice = "This call is recorded and may be monitored so we can help you properly. " if recording_key else ""
     if recording_key and not recording_key.startswith("calls/"):
         recording_key = None
     if who.get("known"):

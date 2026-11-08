@@ -61,6 +61,18 @@ class Platform:
     async def link(self, job_id: str, what: str) -> dict[str, Any]:
         return await self._req("POST", self._c(f"/jobs/{quote(job_id, safe='')}/link"), {"what": what})
 
+    async def transfer(self, summary: str, reason: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"summary": summary}
+        if reason:
+            body["reason"] = reason
+        return await self._req("POST", self._c("/transfer"), body)
+
+    async def transfer_status(self) -> dict[str, Any]:
+        return await self._req("GET", self._c("/transfer"))
+
+    async def cancel_transfer(self, reason: str) -> dict[str, Any]:
+        return await self._req("POST", self._c("/transfer/cancel"), {"reason": reason})
+
     async def end(self, **info: Any) -> dict[str, Any]:
         body = {k: v for k, v in info.items() if v is not None}
         return await self._req("POST", self._c("/end"), body)

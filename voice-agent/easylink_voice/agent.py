@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Literal
 
@@ -44,6 +45,12 @@ Doing things
 - Uploads (photos, energy bills, payment screenshots) and payments happen in the portal: use text_link and tell them the link is on its way.
 - If a step is refused, explain the reason in plain words and what happens instead. Don't retry the same thing.
 - When they're done, thank them and call end_call.
+
+Handing over to a person
+- You take every call first. Hand over with transfer_to_person when a person is genuinely needed: they're ready to book or buy and want to talk it through, they're upset or complaining, they ask for a person twice, or it's something you can't do.
+- Before calling it, tell them you'll see if someone from the team is free and it may take up to half a minute.
+- If someone takes the call, introduce them in one sentence and say goodbye; you then leave the call and they carry on.
+- If nobody is free, tell them the team will call them back on this number shortly. Don't promise a time. Then ask if there's anything else you can help with.
 """
 
 
@@ -66,6 +73,9 @@ class EasyLinkAgent(Agent):
         # Codes read out on this call, masked in the stored transcript.
         self.secrets: set[str] = set()
         self.ended = False
+        self.handed_to: str | None = None
+        # Seconds between checks while a transfer rings; tests make it fast.
+        self.poll_seconds = 2.0
 
     # ---------- helpers ----------
     def _job(self, job_id: str | None) -> str:
@@ -230,6 +240,60 @@ class EasyLinkAgent(Agent):
         return "Message noted. The team will call back on this number."
 
     @function_tool
+    async def transfer_to_person(self, context: RunContext, summary: str, reason: str) -> str:
+        """Offer this live call to someone in the EasyLink team. Waits up to about 30 seconds for someone to take it.
+
+        Args:
+            summary: Two or three sentences for the person taking over: who this is, what they want, what's been done so far.
+            reason: A few words on why a person is needed, e.g. "ready to book a site visit".
+        """
+        if self.handed_to:
+            return f"{self.handed_to} has already taken this call."
+        try:
+            r = await self.platform.transfer(summary[:4000], reason[:300] or None)
+        except PlatformError as e:
+            self.messages_left.append(f"Wanted to speak to a person ({reason}). {summary}"[:600])
+            raise ToolError("The team's phones can't be reached. Tell them the team will call back on this number, and you've noted why.") from e
+        if not r.get("offered"):
+            return "Nobody is free right now. A callback has been booked for this number with your summary. Tell them the team will call back shortly."
+        waited = 0.0
+        limit = float(r.get("ringSeconds") or 30) + 4
+        while waited < limit:
+            await asyncio.sleep(self.poll_seconds)
+            waited += self.poll_seconds
+            try:
+                st = await self.platform.transfer_status()
+            except PlatformError:
+                continue
+            if st.get("status") == "ACCEPTED":
+                self.handed_to = st.get("acceptedBy") or "a team member"
+                return (f"{self.handed_to} has joined the call. Say in one sentence that {self.handed_to} is here and can help, "
+                        "say goodbye, then call leave_call_to_person. Don't say anything after that.")
+            if st.get("status") in ("MISSED", "DECLINED", "CANCELLED"):
+                break
+        try:
+            await self.platform.cancel_transfer("nobody took the call in time")
+        except PlatformError:
+            pass
+        return "Nobody could take it in time. A callback has been booked for this number with your summary. Tell them the team will call back shortly."
+
+    @function_tool
+    async def leave_call_to_person(self, context: RunContext) -> str:
+        """Leave the call so the team member who joined carries on with the caller. Only after transfer_to_person said someone joined."""
+        if not self.handed_to:
+            raise ToolError("Nobody from the team has joined this call.")
+        self.ended = True
+        await context.wait_for_playout()
+        from livekit.agents import get_job_context
+
+        try:
+            # Leave without closing the room: the caller and the team member stay connected.
+            get_job_context().shutdown(reason="handed to a person")
+        except RuntimeError:
+            pass
+        return "Left the call."
+
+    @function_tool
     async def end_call(self, context: RunContext) -> str:
         """Hang up, after you've said goodbye."""
         self.ended = True
@@ -237,7 +301,13 @@ class EasyLinkAgent(Agent):
         from livekit.agents import get_job_context
 
         try:
-            get_job_context().shutdown(reason="agent ended the call")
+            ctx = get_job_context()
+            try:
+                # Closing the room hangs up the phone line too.
+                await ctx.delete_room()
+            except Exception:
+                pass
+            ctx.shutdown(reason="agent ended the call")
         except RuntimeError:
             pass  # not in a LiveKit job (tests)
         return "Call ended."
