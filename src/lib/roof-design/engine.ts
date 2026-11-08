@@ -853,6 +853,17 @@ export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, opts:
   };
 }
 
+/** Metres from p to segment a-b (local flat frame). */
+function distanceToSegmentM(p: LatLng, a: LatLng, b: LatLng): number {
+  const mLng = 111320 * Math.cos((p.lat * Math.PI) / 180);
+  const X = (q: LatLng) => ({ x: (q.lng - p.lng) * mLng, y: (q.lat - p.lat) * 111320 });
+  const A = X(a), B = X(b);
+  const dx = B.x - A.x, dy = B.y - A.y;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, -(A.x * dx + A.y * dy) / l2)) : 0;
+  return Math.hypot(A.x + t * dx, A.y + t * dy);
+}
+
 /** The trace must cover this share of the roof to be the design. */
 export const AI_TRACE_MIN_COVERAGE = 0.6;
 
@@ -884,11 +895,20 @@ function tracedFaces(paths: LatLngRing[], ctx: RoofDesignContext): RoofFaceSet |
     };
   });
   const luma = lineLumaOf(ctx);
-  const fit = fitRoofJunctions(paths, faces, luma);
+  // Fine-tuning only: a traced point moves at most 0.3 m, and only on a clear
+  // gain (12 Fursorb St, 9 Nov 2026: a 1 m allowance pulled Opus's points onto
+  // other edges and the faces no longer matched the trace).
+  const fit = fitRoofJunctions(paths, faces, luma, { junctionM: 0.3, minGain: 0.2 });
   faces = fit.faces;
   const checks = interiorEdges(faces, paths).map(([a, b]) => checkInteriorLine(a, b, luma));
   const snap = ctx.snapshot ?? null;
-  const spots = snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)).filter((o) => o.kind === "spot") : [];
+  // The engine's own spots, except along a traced line (hip capping reads as spots).
+  const edges = interiorEdges(faces, paths);
+  const nearLine = (ring: LatLngRing) => {
+    const c = ringCentroid(ring);
+    return edges.some(([a, b]) => distanceToSegmentM(c, a, b) < 0.35);
+  };
+  const spots = snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)).filter((o) => o.kind === "spot" && !nearLine(o.ring)) : [];
   const traced: RoofObstruction[] = t.obstructions.filter((o) => o.ring.length >= 3).map((o) => ({ kind: o.kind === "shading" ? "step" : "spot", ring: o.ring, sizePx: 0 }));
   const faint = t.lines.filter((l) => l.seen === "faint").length;
   const unconfirmed = checks.filter((c) => c.status === "unconfirmed").length;
