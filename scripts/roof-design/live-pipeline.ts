@@ -24,6 +24,7 @@ const dbg = globalThis as unknown as Record<string, unknown>;
     dbg.__sqDebug = (name: string, g: Uint8Array, w: number, h: number) => writeFileSync(`${out}/sq_${name}.json`, JSON.stringify({ w, h, d: Array.from(g) }));
     dbg.__sqWhy = (w: unknown) => console.log("square", JSON.stringify(w));
   }
+  if (process.env.CLUTTER_DEBUG) dbg.__clutterDebug = (m: Uint8Array, r: Uint8Array, w: number, h: number) => { const d = new Uint8Array(w * h); for (let i = 0; i < d.length; i++) d[i] = (r[i] ? 1 : 0) + (m[i] ? 2 : 0); writeFileSync(`${out}/clutter.bin`, d); writeFileSync(`${out}/clutter.json`, JSON.stringify({ w, h })); };
   if (process.env.ROOF_DEBUG) dbg.__roofDebug = (k: string, v: unknown) => console.log(k, JSON.stringify(v));
   const parcelRing: LatLngRing | null = process.env.PARCEL ? JSON.parse(process.env.PARCEL) : null;
   const ctx = await loadRoofContext({ lat, lng }, { kind: "google", key }, { parcel: parcelRing ? { ring: parcelRing, areaM2: ringAreaM2(parcelRing) } : null });

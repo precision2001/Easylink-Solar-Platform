@@ -13,7 +13,7 @@ import { parseGeoTiffDsm, type GeoTiffRaster } from "@/utils/geotiff";
 import { analyseRoofSnapshot, ROOF_SNAPSHOT, snapshotMetresPerPixel, type RoofSnapshotAnalysis, type SnapshotGeo } from "@/lib/designer/roofSnapshot";
 import { getCadastre, getCombinedSolar, getFootprint, getLayerBytes, getSnapshotPng } from "@/lib/server/roofDataCache";
 import type { SolarEstimateResult } from "@/types/solar";
-import { designRoof, lotForDesign, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
+import { designRoof, googleDataStale, lotForDesign, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
 import { panelCorners, ringAreaM2, type LatLng, type LatLngRing } from "./geometry";
 import { aiRoofFacesEnabled, fetchAiRoofFaces } from "./aiFaces";
 
@@ -50,13 +50,14 @@ export async function decodeSnapshot(png: Buffer, pin: LatLng, zoom: number): Pr
  * can be drawn even when no roof was traced.
  */
 export async function analyseSnapshotAt(
-  ctx: Pick<RoofDesignContext, "pin" | "mask" | "dsm" | "parcel">,
+  ctx: Pick<RoofDesignContext, "pin" | "mask" | "dsm" | "parcel" | "estimate">,
   fetchImage: (pin: LatLng, zoom: number) => Promise<Snapshot> = fetchSnapshot,
 ): Promise<{ image: Snapshot | null; analysis: RoofSnapshotAnalysis | null }> {
   let image: Snapshot | null = null;
+  const heightsStale = googleDataStale(ctx as RoofDesignContext);
   for (const zoom of [ROOF_SNAPSHOT.zoom, ROOF_SNAPSHOT.zoom - 1]) {
     image = await fetchImage(ctx.pin, zoom);
-    const analysis = analyseRoofSnapshot(image.rgba, image.geo, { pin: ctx.pin, hint: ctx.mask ?? null, dsm: ctx.dsm ?? null, parcel: ctx.parcel?.ring ?? null });
+    const analysis = analyseRoofSnapshot(image.rgba, image.geo, { pin: ctx.pin, hint: ctx.mask ?? null, dsm: ctx.dsm ?? null, parcel: ctx.parcel?.ring ?? null, heightsStale });
     if (analysis) return { image, analysis };
   }
   return { image, analysis: null };
