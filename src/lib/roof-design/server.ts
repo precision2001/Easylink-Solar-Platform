@@ -16,7 +16,7 @@ import { alignedNswSnapshot, getNswSnapshotPng, inNsw, nswImageryDate } from "@/
 import type { SolarEstimateResult } from "@/types/solar";
 import { designRoof, googleDataStale, lotForDesign, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
 import { panelCorners, ringAreaM2, type LatLng, type LatLngRing } from "./geometry";
-import { aiRoofFacesEnabled, aiTraceKey, aiTraceRunning, fetchAiRoofTrace } from "./aiFaces";
+import { AI_CROP_PX, aiRoofFacesEnabled, aiTraceKey, aiTraceRunning, fetchAiRoofTrace } from "./aiFaces";
 
 /* ── Satellite image ────────────────────────────────────────────────── */
 
@@ -36,6 +36,26 @@ export async function fetchSnapshot(pin: LatLng, zoom: number, key = googleMapsK
 }
 
 /** An image already fetched (or a test image), decoded for analysis. */
+/**
+ * The zoom Opus traces at: 21, or 20 when the building (its footprint) or,
+ * without one, the land lot spans more than fits in the zoom-21 cut.
+ */
+export function traceZoomFor(ctx: Pick<RoofDesignContext, "footprint" | "parcel"> | null | undefined): number {
+  const ring = ctx?.footprint?.length ? ctx.footprint : ctx?.parcel?.ring;
+  if (!ring?.length) return ROOF_SNAPSHOT.zoom;
+  const lat0 = ring[0].lat;
+  const mLat = 111_320;
+  const mLng = mLat * Math.cos((lat0 * Math.PI) / 180);
+  let span = 0;
+  for (const a of ring) for (const b of ring) span = Math.max(span, Math.hypot((a.lat - b.lat) * mLat, (a.lng - b.lng) * mLng));
+  // The cut is AI_CROP_PX at zoom 21 (about 29 m in Sydney); keep a margin.
+  const cutM = AI_CROP_PX * 0.0373 * Math.cos((lat0 * Math.PI) / 180) * 0.85;
+  return span > cutM ? ROOF_SNAPSHOT.zoom - 1 : ROOF_SNAPSHOT.zoom;
+}
+
+/** A reading is picked up again only for the same pin and the same picture (zoom). */
+const traceKey = (pin: LatLng, zoom: number) => `${aiTraceKey(pin)}|z${zoom}`;
+
 /** The NSW aerial photo of a snapshot's frame, lined up with it, and the note Opus gets with it. */
 export async function nswSecondPhoto(img: Snapshot, pin: LatLng): Promise<{ png: Buffer; note: string } | null> {
   const [aligned, date] = await Promise.all([
@@ -324,9 +344,18 @@ export async function designRoofAt(
   // In NSW, the state's surveyed aerial photo of the same frame goes with it
   // (owner, 9 Nov 2026): lined up with Google's, so Opus can confirm faint
   // lines and corners on a second picture.
-  const nswP = wantTrace && inNsw(pin.lat, pin.lng) ? aiFirst!.then((img) => nswSecondPhoto(img, pin)).catch(() => null) : Promise.resolve(null);
-  const traceP = wantTrace
-    ? Promise.all([aiFirst!, contextP.catch(() => null), nswP]).then(([img, ctx, second]) => fetchAiRoofTrace(img, { lot: ctx?.parcel?.ring ?? null, key: aiTraceKey(pin), second })).catch(() => null)
+  // The whole building must be in Opus's picture (9 Nov 2026: the 66 Frances
+  // townhouse rows, ~40 m long, were cut off at the edges of the zoom-21 cut,
+  // about 29 m across). A building or lot too big for it is traced on the
+  // zoom-20 image (about 58 m across) instead.
+  const traceImgP = wantTrace
+    ? contextP
+        .catch(() => null)
+        .then((ctx) => (traceZoomFor(ctx) === ROOF_SNAPSHOT.zoom ? aiFirst! : fetchEarly(pin, traceZoomFor(ctx)).catch(() => aiFirst!)))
+    : null;
+  const nswP = traceImgP && inNsw(pin.lat, pin.lng) ? traceImgP.then((img) => nswSecondPhoto(img, pin)).catch(() => null) : Promise.resolve(null);
+  const traceP = traceImgP
+    ? Promise.all([traceImgP, contextP.catch(() => null), nswP]).then(([img, ctx, second]) => fetchAiRoofTrace(img, { lot: ctx?.parcel?.ring ?? null, key: traceKey(pin, img.geo.zoom), second })).catch(() => null)
     : null;
   const context = await contextP;
   // The lot may not hold the whole house (a property over two lots): widen it first.
@@ -343,7 +372,7 @@ export async function designRoofAt(
   }
   if (traceP) {
     context.aiTrace = await traceP;
-    if (context.aiTrace === null && aiTraceRunning(aiTraceKey(pin))) context.aiTracePending = true;
+    if (context.aiTrace === null && [ROOF_SNAPSHOT.zoom, ROOF_SNAPSHOT.zoom - 1].some((z) => aiTraceRunning(traceKey(pin, z)))) context.aiTracePending = true;
     if (context.aiTrace?.faces.length) context.aiFaces = context.aiTrace.faces;
     // Opus says there is no building roof here (bare ground, a yard, a building site).
     if (context.aiTrace?.noRoof) {

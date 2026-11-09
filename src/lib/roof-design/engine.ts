@@ -117,7 +117,7 @@ export type AiRoofTrace = {
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-09.8";
+export const ROOF_ENGINE_VERSION = "2026-11-09.9";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -1173,6 +1173,24 @@ export type DesignRoofOptions = {
  * Pin + data in, finished design out: the Designs page's steps (initial
  * outline → Save Roof → faces → panels) without the screen.
  */
+/**
+ * Opus's border, straightened; as traced when straightening throws corners
+ * far outside it (66 Frances St south-east row, 9 Nov 2026: a corner landed
+ * 100+ m away and the border crossed itself).
+ */
+function straightenedOrAsTraced(outline: LatLngRing): LatLngRing[] {
+  const rings = regularizeRoofOutlines([outline]);
+  const lat0 = outline[0].lat;
+  const mLat = 111_320;
+  const mLng = mLat * Math.cos((lat0 * Math.PI) / 180);
+  const lats = outline.map((p) => p.lat);
+  const lngs = outline.map((p) => p.lng);
+  const [s0, n0, w0, e0] = [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs)];
+  const out = (p: { lat: number; lng: number }) =>
+    Math.max(s0 - p.lat, p.lat - n0, 0) * mLat > 3 || Math.max(w0 - p.lng, p.lng - e0, 0) * mLng > 3;
+  return rings.length && !rings.some((r) => r.some(out)) ? rings : [outline];
+}
+
 export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {}): RoofDesign | null {
   // Owner's rule: Opus traces every roof first. Its border is the outline
   // (straightened, corners kept); a person's outline (Edit, the API) still wins.
@@ -1180,7 +1198,7 @@ export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {})
   const initial: InitialRoofs | null = opts.outline
     ? { rings: opts.outline, source: "snapshot", traced: true }
     : trace
-      ? { rings: regularizeRoofOutlines([trace.outline!]), source: "ai-trace", traced: true }
+      ? { rings: straightenedOrAsTraced(trace.outline!), source: "ai-trace", traced: true }
       : initialRoofs(ctx, { placeholder: false });
   if (!initial) return null;
   // An outline given by a person (Edit, or the API's `outline`) or traced by Opus is kept, not replaced by another reading.
