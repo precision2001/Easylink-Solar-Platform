@@ -1239,6 +1239,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
 
   /* GeoTIFF imagery overlays */
   useImperativeOverlay(mapReady, rgbOverlay, 0.92, showSolarRgb);
+
+  // NSW Spatial Services aerial photos beside Google's (owner, 9 Nov 2026):
+  // flip the map to compare roof lines, or use them when Google's is unclear.
+  const [imagery, setImagery] = useState<"google" | "nsw">("google");
+  const nswInfo = useNswImagery(selectedLocation?.lat ?? null, selectedLocation?.lng ?? null);
+  useEffect(() => {
+    if (!mapReady || imagery !== "nsw" || !nswInfo?.available) return;
+    const layer = new google.maps.ImageMapType({
+      getTileUrl: (c, z) => `/api/imagery/nsw/tile/${z}/${c.x}/${c.y}`,
+      tileSize: new google.maps.Size(256, 256),
+      maxZoom: 23,
+      name: "NSW imagery",
+    });
+    mapReady.overlayMapTypes.insertAt(0, layer);
+    return () => {
+      const i = mapReady.overlayMapTypes.getArray().indexOf(layer);
+      if (i >= 0) mapReady.overlayMapTypes.removeAt(i);
+    };
+  }, [mapReady, imagery, nswInfo?.available]);
   useImperativeOverlay(mapReady, maskOverlay, 0.45, showSolarRgb);
 
   /* Solar panels + roof outline (building footprint, else mask-traced perimeter, else API bounding box) */
@@ -1725,8 +1744,17 @@ export const DesignsSolarPanelStepContent = forwardRef<
               )}
             </div>
 
+            {imagery === "nsw" && nswInfo?.available ? (
+              <div className="pointer-events-none absolute bottom-[6px] left-[10px] z-10 rounded-[4px] bg-black/55 px-2 py-[2px] font-inter text-[10.5px] text-white/90">
+                {nswInfo.attribution}
+                {nswInfo.capturedOn ? ` · flown ${formatFlown(nswInfo.capturedOn)}` : ""}
+                {nswInfo.resolutionCm ? ` · ${nswInfo.resolutionCm} cm` : ""}
+              </div>
+            ) : null}
+
             {/* Top-right controls — excluded from proposal screenshot */}
             <div className="pointer-events-auto absolute left-[14px] right-[14px] top-[14px] z-10 flex flex-wrap items-center justify-end gap-[8px]">
+              {nswInfo?.available ? <ImageryToggle value={imagery} onChange={setImagery} nswDate={nswInfo.capturedOn} /> : null}
               <LayerToggle active={activeLayer} onChange={setActiveLayer} />
               <OrientationToggle
                 value={panelOrientation}
@@ -1923,6 +1951,59 @@ function OrientationToggle({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+type NswImageryInfo = { available: boolean; capturedOn: string | null; resolutionCm: number | null; attribution: string };
+
+/** Whether NSW aerial photos cover the pin, and when they were flown. */
+function useNswImagery(lat: number | null, lng: number | null): NswImageryInfo | null {
+  const key = lat != null && lng != null ? `${lat},${lng}` : null;
+  const [info, setInfo] = useState<{ key: string; data: NswImageryInfo } | null>(null);
+  useEffect(() => {
+    if (key == null) return;
+    let live = true;
+    fetch(`/api/imagery/nsw?lat=${lat}&lng=${lng}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { data?: NswImageryInfo } | null) => {
+        if (live && j?.data) setInfo({ key, data: j.data });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [key, lat, lng]);
+  return info && info.key === key ? info.data : null;
+}
+
+/** "2022-05-01" → "May 2022". */
+function formatFlown(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-AU", { month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+function ImageryToggle({ value, onChange, nswDate }: { value: "google" | "nsw"; onChange: (v: "google" | "nsw") => void; nswDate: string | null }) {
+  const options: { value: "google" | "nsw"; label: string; title: string }[] = [
+    { value: "google", label: "Google", title: "Google satellite imagery" },
+    { value: "nsw", label: nswDate ? `NSW ${nswDate.slice(0, 4)}` : "NSW", title: "NSW Spatial Services aerial photo, to compare roof lines" },
+  ];
+  return (
+    <div className="flex overflow-hidden rounded-[6px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]" role="group" aria-label="Imagery">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          title={opt.title}
+          aria-pressed={value === opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`h-[33px] px-[11px] font-inter text-[12px] font-semibold tracking-[-0.1px] transition ${
+            value === opt.value ? "bg-white text-[#2094F3]" : "bg-white/60 text-[#333] hover:bg-white/80"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }
