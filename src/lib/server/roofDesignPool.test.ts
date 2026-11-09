@@ -7,7 +7,7 @@ vi.mock("@/lib/roof-design/jobs", () => ({ runRoofJob }));
 // it would run real roof jobs instead of the mock.
 vi.stubEnv("NEXT_DIST_DIR", ".test-no-roof-worker");
 
-const { roofJob, roofJobStats } = await import("./roofDesignPool");
+const { roofJob, roofJobStats, MAX_RUNNING } = await import("./roofDesignPool");
 
 const job = (lat: number) => ({ kind: "api" as const, pin: { lat, lng: 151 }, formattedAddress: null });
 const deferred = () => {
@@ -32,32 +32,35 @@ describe("roof design pool", () => {
     expect(runRoofJob).toHaveBeenCalledTimes(1);
   });
 
-  it("runs one design at a time, in order", async () => {
-    const first = deferred();
-    runRoofJob.mockReturnValueOnce(first.promise).mockResolvedValueOnce({ status: "NO_ROOF", body: {} });
-    const a = roofJob(job(-33.2), { key: "a" });
-    const b = roofJob(job(-33.3), { key: "b" });
+  it("runs several designs at once (their Opus waits overlap), the rest wait in order", async () => {
+    const held = Array.from({ length: MAX_RUNNING }, () => deferred());
+    for (const d of held) runRoofJob.mockReturnValueOnce(d.promise);
+    runRoofJob.mockResolvedValueOnce({ status: "NO_ROOF", body: {} });
+    const running = held.map((_, i) => roofJob(job(-33.2 - i / 100), { key: `a${i}` }));
+    const last = roofJob(job(-33.3), { key: "last" });
     await tick();
-    expect(runRoofJob).toHaveBeenCalledTimes(1);
+    expect(runRoofJob).toHaveBeenCalledTimes(MAX_RUNNING);
     expect(roofJobStats().waiting).toBe(1);
-    first.resolve({ status: "READY", body: {} });
-    await a;
-    await b;
-    expect(runRoofJob).toHaveBeenCalledTimes(2);
+    held[0].resolve({ status: "READY", body: {} });
+    await running[0];
+    expect(await last).toEqual({ status: "NO_ROOF", body: {} });
+    expect(runRoofJob).toHaveBeenCalledTimes(MAX_RUNNING + 1);
+    for (const d of held.slice(1)) d.resolve({ status: "READY", body: {} });
+    await Promise.all(running);
   });
 
   it("drops a waiting design once nobody wants it", async () => {
-    const first = deferred();
-    runRoofJob.mockReturnValueOnce(first.promise);
-    const running = roofJob(job(-33.4), { key: "run" });
+    const held = Array.from({ length: MAX_RUNNING }, () => deferred());
+    for (const d of held) runRoofJob.mockReturnValueOnce(d.promise);
+    const running = held.map((_, i) => roofJob(job(-33.4 - i / 100), { key: `run${i}` }));
     const gone = new AbortController();
     const dropped = roofJob(job(-33.5), { key: "drop", signal: gone.signal });
     gone.abort();
     await expect(dropped).rejects.toThrow(/no longer needed/);
-    first.resolve({ status: "READY", body: {} });
-    await running;
+    for (const d of held) d.resolve({ status: "READY", body: {} });
+    await Promise.all(running);
     await tick();
-    expect(runRoofJob).toHaveBeenCalledTimes(1);
+    expect(runRoofJob).toHaveBeenCalledTimes(MAX_RUNNING);
   });
 
   it("keeps a waiting design while someone still wants it", async () => {
