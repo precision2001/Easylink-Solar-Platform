@@ -9,6 +9,7 @@
  * customer saw on screen: savings from `estimateSavings` (same tariffs), price
  * from the pricing engine, and the battery size the step reads.
  */
+import { batteryOptionRows } from "./batteryOptions";
 import type { ChosenProducts } from "@/lib/proposal/proposalPricing";
 import {
   CONSUMPTION_SEASONALITY,
@@ -302,8 +303,33 @@ function buildOptions(
   arrayKw: number,
   designKwh: number,
   pricing: ProposalPricingResponse | null,
+  chosenIds: string[] = [],
+  shownId?: string,
 ): ProposalOption[] {
   const totals = pricing?.batteryTotals ?? {};
+  // The battery options the customer compared (owner, 9 Nov 2026): exactly
+  // those, as options A, B and C, the quickest payback recommended.
+  if (chosenIds.length > 1 && pricing) {
+    const rows = batteryOptionRows(chosenIds, pricing, monthly, arrayKw);
+    return rows.map((r) => {
+      const isDesign = r.id === shownId;
+      const s = estimateSavings(monthly, arrayKw, r.kwh);
+      const price = isDesign ? pricing.selected.net : (r.total ?? 0);
+      const quoted = pricing.batteryInfo?.[String(r.kwh)];
+      const kwhLabel = quoted && r.kwh > 0 ? +quoted.kwh.toFixed(1) : r.kwh;
+      return {
+        key: `b${r.kwh}`,
+        label: `Option ${r.letter}${r.recommended ? " · Recommended" : ""}`,
+        title: r.kwh === 0 ? "Solar only" : `Solar + ${kwhLabel} kWh battery`,
+        batteryKwh: kwhLabel,
+        price,
+        yearlySavings: Math.round(s.yearlySavings),
+        paybackYears: payback(price, s.yearlySavings),
+        selfPoweredPct: selfPowered(s),
+        isDesign,
+      };
+    });
+  }
   const sizes = BATTERY_CAPACITY_OPTIONS.map((b) => capacityKwhOf(b.id))
     .filter((k) => totals[String(k)] != null)
     .sort((a, b) => a - b);
@@ -466,7 +492,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
     co2TonnesYear: Math.round(co2Year * 10) / 10,
     co2Tonnes25: Math.round(co225),
 
-    options: buildOptions(monthly, systemKw, batteryKwh, pricing),
+    options: buildOptions(monthly, systemKw, batteryKwh, pricing, proposal.equipment.batteryOptionIds ?? [], proposal.equipment.batteryCapacityId),
     roofAreaM2: proposal.solarDesign?.polygonTotalAreaM2
       ? Math.round(proposal.solarDesign.polygonTotalAreaM2)
       : null,

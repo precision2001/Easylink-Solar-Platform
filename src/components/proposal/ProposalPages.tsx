@@ -870,12 +870,14 @@ function Options({ doc, images }: PageProps) {
               >
                 {dark ? (
                   <div style={{ position: "absolute", top: -13, left: 18, background: C.sun, color: C.navy, borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>
-                    Your design
+                    {o.label.startsWith("Option ") ? "Shown in this proposal" : "Your design"}
                   </div>
                 ) : null}
                 <div>
                   <div style={{ ...eyebrow(dark), fontSize: 12 }}>{o.label}</div>
-                  <div style={{ fontFamily: DISPLAY, fontWeight: 800, fontSize: 22, marginTop: 4 }}>{o.isDesign ? (o.batteryKwh > 0 ? "Power all evening" : "Start saving") : o.title}</div>
+                  <div style={{ fontFamily: DISPLAY, fontWeight: 800, fontSize: 22, marginTop: 4 }}>
+                    {o.label.startsWith("Option ") ? o.title : o.isDesign ? (o.batteryKwh > 0 ? "Power all evening" : "Start saving") : o.title}
+                  </div>
                 </div>
                 <div style={big(36, dark ? C.sun : undefined)}>{formatAud(o.price)}</div>
                 <div style={{ fontSize: 13, lineHeight: 1.55, color: mut }}>

@@ -89,6 +89,22 @@ describe("buildProposalDocument", () => {
     expect(doc.options[0].isDesign).toBe(true);
   });
 
+  it("shows exactly the battery options the customer compared, lettered, the shown one marked", () => {
+    const doc = buildProposalDocument({
+      proposal: design({ batteryCapacityId: "20kwh", batteryCapacityKwh: 20, batteryOptionIds: ["40kwh", "none", "20kwh"] }),
+      pricing: { ...pricing, batteryInfo: { "20": { model: "FoxESS CQ7", kwh: 20.9 }, "40": { model: "FoxESS CQ7", kwh: 41.8 } } },
+      links,
+      today,
+    });
+    expect(doc.options.map((o) => [o.label.split(" · ")[0], o.batteryKwh, o.price])).toEqual([
+      ["Option A", 0, 8990],
+      ["Option B", 20.9, 19290],
+      ["Option C", 41.8, 26990],
+    ]);
+    expect(doc.options.filter((o) => o.isDesign).map((o) => o.label.split(" · ")[0])).toEqual(["Option B"]);
+    expect(doc.options.filter((o) => o.label.endsWith("Recommended"))).toHaveLength(1);
+  });
+
   it("still builds without the pricing engine, from the stored price", () => {
     const doc = buildProposalDocument({ proposal: design(), pricing: null, links, today });
     expect(doc.price).toBe(19290);

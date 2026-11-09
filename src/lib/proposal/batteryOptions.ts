@@ -46,6 +46,8 @@ export type BatteryOptionRow = {
   id: string;
   letter: string;
   kwh: number;
+  /** The usable kWh of the battery actually quoted for this option (can differ a little from the size asked). */
+  quotedKwh: number;
   /** The battery the price list has for this size, if any. */
   model: string | null;
   estimated: boolean;
@@ -82,6 +84,7 @@ export function batteryOptionRows(
       id,
       letter: OPTION_LETTERS[i] ?? String(i + 1),
       kwh,
+      quotedKwh: kwh > 0 && info?.kwh ? +info.kwh.toFixed(1) : kwh,
       model: kwh > 0 ? info?.model ?? null : null,
       estimated: Boolean(kwh > 0 && info?.estimated),
       total,

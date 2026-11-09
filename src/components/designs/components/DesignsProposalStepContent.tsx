@@ -454,7 +454,8 @@ function BatteryCompare({
       value: (r) =>
         r.kwh > 0 ? (
           <>
-            {formatBatteryKwh(r.kwh)} kWh
+            {formatBatteryKwh(r.quotedKwh)} kWh
+            {r.quotedKwh !== r.kwh ? <span className="block text-[10px] font-normal text-white/60">closest to {formatBatteryKwh(r.kwh)} kWh</span> : null}
             {r.model ? <span className="block text-[11px] font-normal text-white/70">{r.model}</span> : null}
           </>
         ) : (
