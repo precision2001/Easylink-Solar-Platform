@@ -57,6 +57,8 @@ export type NextAction = {
 
 export type Person = { id: string; firstName: string; lastName: string; email?: string };
 
+import type { LeadDesignShare } from "@/lib/designs/send-to-customer";
+
 export type PipelineLead = {
   id: string;
   customerName: string;
@@ -79,6 +81,8 @@ export type PipelineLead = {
   roofDesign?: RoofDesignSummary | null;
   /** Quotes still open on the lead (draft, sent, viewed): one per battery option, and the lowest total. */
   openQuotes?: { count: number; fromCents: number | null } | null;
+  /** The lead's design and when it last went to the customer. */
+  design?: LeadDesignShare | null;
 };
 
 /** Automatic roof design (platform designer) for the lead's address. */

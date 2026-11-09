@@ -4,6 +4,8 @@ import { QuoteOptionsChip } from "./QuoteOptionsChip";
 import Image from "next/image";
 import Link from "next/link";
 import { leadDesignHref } from "@/lib/designs/leadDesignLink";
+import { shareLabel } from "@/lib/designs/send-to-customer";
+import { SendDesignDialog } from "@/components/designs/SendDesignDialog";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/master-dashboard/quotes-leads/icons";
 import { RoofDesignCell, RoofDesignViewer, useAutoRoofDesigns } from "@/components/master-dashboard/quotes-leads/RoofDesign";
@@ -145,7 +147,7 @@ function PillSelect({
  * with the lead's details and address filled in. Where the lead came from
  * sits underneath.
  */
-function SolarDesignButton({ lead }: { lead: PipelineLead }) {
+function SolarDesignButton({ lead, onSend }: { lead: PipelineLead; onSend?: () => void }) {
   const kind = sourceKind(lead.source);
   return (
     <div className="flex flex-col items-start gap-1">
@@ -162,7 +164,27 @@ function SolarDesignButton({ lead }: { lead: PipelineLead }) {
       <span className="truncate text-[11.5px] text-[#64748B]" title={lead.source ?? undefined}>
         {kind.label} · {ago(lead.createdAt)}
       </span>
+      {lead.design ? <DesignShareLine design={lead.design} onSend={onSend} /> : null}
     </div>
+  );
+}
+
+/** When the lead's design last went to the customer; a quick Send when it hasn't (or changed since). */
+function DesignShareLine({ design, onSend }: { design: NonNullable<PipelineLead["design"]>; onSend?: () => void }) {
+  const { text, stale } = shareLabel(design);
+  return (
+    <span className="flex max-w-full items-center gap-1 text-[11.5px]">
+      <span className={`truncate ${stale ? "text-[#9A5B00]" : "text-[#047857]"}`}>{text}</span>
+      {stale && onSend ? (
+        <button
+          type="button"
+          onClick={onSend}
+          className="shrink-0 rounded-[4px] px-1 font-bold text-[#1D4ED8] underline underline-offset-2 hover:text-[#1E3A8A] focus-visible:outline-2 focus-visible:outline-[#2563EB]"
+        >
+          Send
+        </button>
+      ) : null}
+    </span>
   );
 }
 
@@ -399,6 +421,7 @@ export function LeadsWorkspace({
   const [viewing, setViewing] = useState<string | null>(null);
   // The lead whose quote versions are open in the side drawer.
   const [quotesFor, setQuotesFor] = useState<{ lead: PipelineLead; startWith: "list" | "create" } | null>(null);
+  const [sendDesignFor, setSendDesignFor] = useState<PipelineLead | null>(null);
 
   // Every listed lead with an address gets a roof design from the platform
   // designer, on its own; results drop into the table as they finish.
@@ -624,6 +647,7 @@ export function LeadsWorkspace({
                       : [
                           { label: "New quote", onSelect: () => setQuotesFor({ lead: l, startWith: "create" }) },
                           { label: "Quotes", onSelect: () => setQuotesFor({ lead: l, startWith: "list" }) },
+                          ...(l.design ? [{ label: "Send design to customer", onSelect: () => setSendDesignFor(l) }] : []),
                           { label: "Mark as lost…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "lost" }) },
                           { label: "Mark as spam", danger: true, onSelect: () => void setSpam(l, true) },
                         ];
@@ -771,7 +795,7 @@ export function LeadsWorkspace({
                     </td>
 
                     <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
-                      <SolarDesignButton lead={l} />
+                      <SolarDesignButton lead={l} onSend={() => setSendDesignFor(l)} />
                       {view === "spam" && l.spamReason ? (
                         <div className="mt-1 text-[11.5px] text-[#B91C1C]">{l.spamReason}</div>
                       ) : l.spamSuggestion?.length ? (
@@ -834,6 +858,27 @@ export function LeadsWorkspace({
           working={roofWorking.has(viewing)}
           onClose={() => setViewing(null)}
           onRedesign={() => redesignRoof(viewing)}
+        />
+      ) : null}
+      {sendDesignFor?.design ? (
+        <SendDesignDialog
+          portal="admin"
+          designId={sendDesignFor.design.id}
+          customerName={sendDesignFor.customerName}
+          phone={sendDesignFor.customerPhone}
+          email={sendDesignFor.customerEmail}
+          onClose={() => setSendDesignFor(null)}
+          onSent={(r) => {
+            if (!r.sharedAt) return;
+            const id = sendDesignFor.id;
+            setRows((rs) =>
+              rs?.map((x) =>
+                x.id === id && x.design
+                  ? { ...x, design: { ...x.design, sharedAt: r.sharedAt, updatedAt: r.sharedAt!, sharedChannels: [r.email === "sent" ? "EMAIL" : null, r.sms === "sent" ? "SMS" : null].filter(Boolean).join(",") } }
+                  : x,
+              ) ?? rs,
+            );
+          }}
         />
       ) : null}
       {quotesFor ? (
