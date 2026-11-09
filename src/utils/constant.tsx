@@ -2365,6 +2365,15 @@ export const LANDING_FOOTER_COLUMNS: LandingFooterColumn[] = [
       { label: "Blog", href: "/blog" },
     ],
   },
+  {
+    title: "Legal",
+    items: [
+      { label: "Privacy policy", href: "/privacy-policy" },
+      { label: "Terms and conditions", href: "/terms" },
+      { label: "Refunds and cancellations", href: "/refunds" },
+      { label: "Cookie policy", href: "/cookies" },
+    ],
+  },
 ];
 
 /** Shared hero-style CTA block (footer + firmware page) */

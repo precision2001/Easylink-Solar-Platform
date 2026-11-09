@@ -330,7 +330,11 @@ export function PrivacyConsentView({ email }: { email?: string | null }) {
           ))}
         </ul>
         <p className="m-0 rounded-[14px] bg-[#F4F6FA] px-4 py-3 text-[14px] leading-[1.55] text-[#334155]">
-          You decide who sees your details. We share them with an installer only to quote or install your system, and never sell them.
+          You decide who sees your details. We share them with an installer only to quote or install your system, and never sell them. Read our{" "}
+          <Link href="/privacy-policy" className="font-semibold text-[#1D4ED8] underline">
+            privacy policy
+          </Link>
+          .
         </p>
       </Panel>
       <div className="flex flex-col gap-4">
