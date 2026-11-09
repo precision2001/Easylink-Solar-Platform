@@ -46,6 +46,14 @@ import {
   buildFinancialProjectionFromProposal,
 } from "@/lib/proposal/financialProjection";
 import { estimateSavings } from "@/lib/proposal/proposalPricing";
+import {
+  batteryOptionRows,
+  MAX_BATTERY_OPTIONS,
+  OPTION_LETTERS,
+  sortOptions,
+  tapBatteryOption,
+  type BatteryOptionRow,
+} from "@/lib/proposal/batteryOptions";
 import { useProposalPricing } from "@/lib/proposal/useProposalPricing";
 
 
@@ -312,61 +320,104 @@ function PanelTierSelector({
 }
 
 function BatterySelector({
-  selectedId,
-  onSelect,
+  optionIds,
+  shownId,
+  onTap,
+  onRemove,
+  onCompare,
   prices,
-  sizeKwh,
-  quotedKwh,
   estimated,
 }: {
-  selectedId: string;
-  onSelect: (id: string) => void;
+  /** The battery options being compared (smallest first). */
+  optionIds: string[];
+  /** The option the screen shows. */
+  shownId: string;
+  onTap: (id: string) => void;
+  onRemove: (id: string) => void;
+  onCompare: () => void;
   /** Added cost of each battery for this design (after battery STCs), from the quote engine. */
   prices: Record<string, number>;
   /** Options priced by estimate (no single product that size in the price list). */
   estimated: Set<string>;
-  /** The design's battery size; shown when it isn't one of the buttons (e.g. 13 kWh from the Energy step). */
-  sizeKwh: number;
-  /** Usable kWh of the battery actually quoted (e.g. 44.24 kWh for a 40 kWh pick): what the selected card shows. */
-  quotedKwh?: number;
 }) {
-  const option = findBatteryCapacity(selectedId);
-  const optionKwh = Number.parseFloat(option.label);
-  const shownKwh = quotedKwh && quotedKwh > 0 && selectedId !== "none" ? quotedKwh : sizeKwh;
-  const selected =
-    shownKwh > 0 && !(Number.isFinite(optionKwh) && Math.abs(optionKwh - shownKwh) < 0.005)
-      ? { ...option, label: `${formatBatteryKwh(shownKwh)}kWh` }
-      : option;
+  const letterOf = (id: string) => OPTION_LETTERS[optionIds.indexOf(id)] ?? "";
   return (
     <div className={`${GLASS} ${TINT.brandGold} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
       <Sheen />
       <CardTitle
         dark
         right={
-          <span className="rounded-full bg-black/70 px-2.5 py-[1px] font-source-sans text-[12px] font-semibold text-yellow-lemon">
-            {selected.label}
-          </span>
+          optionIds.length > 1 ? (
+            <button
+              type="button"
+              onClick={onCompare}
+              className="rounded-full bg-[#0B2A4A] px-3 py-[2px] font-source-sans text-[12px] font-bold text-yellow-lemon shadow-md ring-1 ring-white/50 transition hover:brightness-125"
+            >
+              Compare {optionIds.length} options →
+            </button>
+          ) : (
+            <span className="rounded-full bg-black/70 px-2.5 py-[1px] font-source-sans text-[12px] font-semibold text-yellow-lemon">
+              {findBatteryCapacity(shownId).label}
+            </span>
+          )
         }
       >
-        Battery
+        Battery{" "}
+        <span className="font-semibold normal-case tracking-normal text-[#152238]/70">
+          · pick up to {MAX_BATTERY_OPTIONS} to compare
+        </span>
       </CardTitle>
       <div className="relative mt-2 grid min-h-0 flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4">
         {BATTERY_CAPACITY_OPTIONS.map((battery) => {
-          const isSelected = battery.id === selectedId;
+          const inOptions = optionIds.includes(battery.id);
+          const isShown = battery.id === shownId;
           return (
             <button
               key={battery.id}
               type="button"
-              onClick={() => onSelect(battery.id)}
-              className={`flex flex-col items-center justify-center rounded-[9px] border px-1 py-[clamp(1px,0.5vh,6px)] font-source-sans text-[12.5px] font-semibold leading-tight transition ${
-                isSelected
+              aria-pressed={inOptions}
+              onClick={() => onTap(battery.id)}
+              className={`relative flex flex-col items-center justify-center rounded-[9px] border px-1 py-[clamp(1px,0.5vh,6px)] font-source-sans text-[12.5px] font-semibold leading-tight transition ${
+                isShown
                   ? "border-white bg-[#0B2A4A]/90 text-white shadow-md"
-                  : "border-white/70 bg-white/55 text-[#152238] hover:bg-white/75"
+                  : inOptions
+                    ? "border-[#0B2A4A] bg-white/85 text-[#152238] ring-2 ring-[#0B2A4A]/70"
+                    : "border-white/70 bg-white/55 text-[#152238] hover:bg-white/75"
               }`}
             >
-              {isSelected ? selected.label : battery.label}
+              {inOptions ? (
+                <span
+                  className={`absolute left-1 top-1 flex h-[16px] min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                    isShown ? "bg-yellow-lemon text-[#0B2A4A]" : "bg-[#0B2A4A] text-yellow-lemon"
+                  }`}
+                >
+                  {letterOf(battery.id)}
+                </span>
+              ) : null}
+              {inOptions && optionIds.length > 1 ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Remove ${battery.label} from the options`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(battery.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onRemove(battery.id);
+                    }
+                  }}
+                  className={`absolute right-1 top-0.5 text-[13px] leading-none ${isShown ? "text-white/80 hover:text-white" : "text-[#152238]/60 hover:text-[#152238]"}`}
+                >
+                  ×
+                </span>
+              ) : null}
+              {battery.label}
               {battery.id !== "none" && prices[battery.id] ? (
-                <span className={`text-[10px] font-normal ${isSelected ? "text-yellow-lemon" : "text-[#152238]/70"}`}>
+                <span className={`text-[10px] font-normal ${isShown ? "text-yellow-lemon" : "text-[#152238]/70"}`}>
                   +{formatAud(prices[battery.id])}
                   {estimated.has(battery.id) ? " est." : ""}
                 </span>
@@ -377,6 +428,132 @@ function BatterySelector({
       </div>
     </div>
   );
+}
+
+/** The battery options side by side: the same rows for each, the quickest payback marked. */
+function BatteryCompare({
+  rows,
+  shownId,
+  onPick,
+  onClose,
+}: {
+  rows: BatteryOptionRow[];
+  shownId: string;
+  onPick: (id: string) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const money = (n: number | null) => (n == null ? "On request" : formatAud(n));
+  const lines: { label: string; value: (r: BatteryOptionRow) => React.ReactNode }[] = [
+    {
+      label: "Battery",
+      value: (r) =>
+        r.kwh > 0 ? (
+          <>
+            {formatBatteryKwh(r.kwh)} kWh
+            {r.model ? <span className="block text-[11px] font-normal text-white/70">{r.model}</span> : null}
+          </>
+        ) : (
+          "Solar only"
+        ),
+    },
+    {
+      label: "Total price",
+      value: (r) => (
+        <span className="text-[18px] font-bold text-yellow-lemon">
+          {money(r.total)}
+          {r.estimated ? <span className="block text-[10px] font-normal text-white/70">estimate</span> : null}
+        </span>
+      ),
+    },
+    { label: "Monthly savings", value: (r) => formatAud(r.monthlySavings) },
+    { label: "New bill", value: (r) => `${formatAud(r.newBill)}/mth` },
+    { label: "Payback", value: (r) => (r.paybackYears != null ? `${r.paybackYears.toFixed(1)} yrs` : "—") },
+    { label: "25-year net savings", value: (r) => money(r.net25) },
+  ];
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#020817]/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Compare battery options" onClick={onClose}>
+      <div className={`${GLASS} ${TINT.neutral} w-full max-w-[880px] bg-[#0B1A33]/95 p-5`} onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="font-source-sans text-[14px] font-bold uppercase tracking-[1px] text-white">Compare battery options</p>
+          <button type="button" onClick={onClose} className="text-[22px] leading-none text-white/70 hover:text-white" aria-label="Close">
+            ×
+          </button>
+        </div>
+        <p className="mb-3 font-source-sans text-[12px] text-white/70">
+          Same roof and panels for every option. Prices include installation and GST, after STCs and the battery rebate. Each option is quoted on its own; the customer accepts one.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] border-separate border-spacing-x-2 font-source-sans text-[13px] text-white">
+            <thead>
+              <tr>
+                <th className="w-[140px]" />
+                {rows.map((r) => (
+                  <th key={r.id} className={`rounded-t-[12px] px-3 pb-2 pt-3 text-center ${r.id === shownId ? "bg-white/[0.12]" : "bg-white/[0.05]"}`}>
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.8px] text-white/60">Option {r.letter}</span>
+                    {r.recommended ? (
+                      <span className="mt-1 inline-block rounded-full bg-yellow-lemon px-2 py-[1px] text-[10px] font-bold uppercase text-[#0B2A4A]">Recommended</span>
+                    ) : null}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={l.label}>
+                  <td className="py-2 pr-2 text-[12px] font-semibold uppercase tracking-[0.6px] text-white/60">{l.label}</td>
+                  {rows.map((r) => (
+                    <td key={r.id} className={`px-3 py-2 text-center ${r.id === shownId ? "bg-white/[0.12]" : "bg-white/[0.05]"}`}>
+                      {l.value(r)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              <tr>
+                <td />
+                {rows.map((r) => (
+                  <td key={r.id} className={`rounded-b-[12px] px-3 pb-3 pt-2 text-center ${r.id === shownId ? "bg-white/[0.12]" : "bg-white/[0.05]"}`}>
+                    <button
+                      type="button"
+                      onClick={() => onPick(r.id)}
+                      className={`w-full rounded-[8px] py-1.5 text-[13px] font-bold transition ${
+                        r.id === shownId ? "bg-white/20 text-white" : "bg-[linear-gradient(172.76deg,#2094F3_0%,#17CFCF_100%)] text-white hover:brightness-110"
+                      }`}
+                    >
+                      {r.id === shownId ? "Showing" : "Show this option"}
+                    </button>
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One draft quote per battery option for a lead's design; returns the quote references made. */
+async function createOptionQuotes(leadId: string, designId: string, kwhs: number[]): Promise<string[]> {
+  const made: string[] = [];
+  for (const batteryKwh of kwhs) {
+    try {
+      const res = await fetch("/api/admin/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId, designId, batteryKwh }),
+      });
+      const json = (await res.json().catch(() => null)) as { data?: { number?: number; reference?: string } } | null;
+      if (res.ok && json?.data) made.push(json.data.reference ?? (json.data.number ? `Q-${String(json.data.number).padStart(6, "0")}` : "quote"));
+    } catch {
+      // Left out of the count; staff can quote it from the lead.
+    }
+  }
+  return made;
 }
 
 export type DesignsProposalStepContentProps = {
@@ -439,8 +616,22 @@ export const DesignsProposalStepContent = forwardRef<
       // which would create an account and email the customer.
       if (leadId && !isInstallerEditing) {
         const r = await saveLeadDesign(leadId, input);
+        // Each battery option the customer compared becomes its own quote
+        // (same design, that battery); accepting one supersedes the others.
+        const options = sortOptions(proposal.equipment.batteryOptionIds ?? []);
+        let quoted: string[] = [];
+        if (options.length > 1) {
+          quoted = await createOptionQuotes(leadId, r.designId, options.map((id) => batteryKwhOf(id)));
+        }
         // The lead's roof picture follows the latest design (it was only made once).
         fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/roof-design`, { method: "POST", keepalive: true }).catch(() => {});
+        if (options.length > 1) {
+          toast[quoted.length === options.length ? "success" : "warning"](
+            quoted.length
+              ? `${quoted.length} of ${options.length} battery options quoted: ${quoted.join(", ")} (drafts on the lead).`
+              : "The battery options couldn't be quoted. Create them from the lead's Quotes.",
+          );
+        }
         toast.success(
           r.updated
             ? "Design updated on the lead."
@@ -690,18 +881,45 @@ export const DesignsProposalStepContent = forwardRef<
     );
   }
 
-  function handleSelectBattery(id: string) {
-    // Written to the shared size too, so the Energy step shows the same battery.
+  /** The battery options being compared; the shown battery is always one of them. */
+  const batteryOptionIds = useMemo(() => {
+    const saved = (proposal.equipment.batteryOptionIds ?? []).filter((id) => BATTERY_CAPACITY_OPTIONS.some((b) => b.id === id));
+    return sortOptions(saved.includes(batteryCapacityId) ? saved : [...saved, batteryCapacityId]).slice(0, MAX_BATTERY_OPTIONS + 1);
+  }, [proposal.equipment.batteryOptionIds, batteryCapacityId]);
+  const [comparing, setComparing] = useState(false);
+  const optionRows = useMemo(
+    () => batteryOptionRows(batteryOptionIds, priced ?? null, monthlyBill, arrayKw),
+    [batteryOptionIds, priced, monthlyBill, arrayKw],
+  );
+
+  function setBatteryOptions(ids: string[], shown: string) {
     dispatch(
       mergeProposalData({
         equipment: {
-          batteryCapacityId: id,
-          batteryCapacityKwh: batteryKwhOf(id),
+          batteryOptionIds: ids,
+          batteryCapacityId: shown,
+          batteryCapacityKwh: batteryKwhOf(shown),
           ...(proposal.equipment.items.battery?.length ? { items: { ...proposal.equipment.items, battery: [] } } : {}),
         },
       }),
     );
   }
+
+  function handleTapBattery(id: string) {
+    const next = tapBatteryOption(batteryOptionIds, batteryCapacityId, id);
+    if (next.full) {
+      toast.info(`Up to ${MAX_BATTERY_OPTIONS} battery options. Take one out (×) to add another.`);
+      return;
+    }
+    setBatteryOptions(next.ids, next.shown);
+  }
+
+  function handleRemoveBattery(id: string) {
+    const rest = batteryOptionIds.filter((x) => x !== id);
+    if (!rest.length) return;
+    setBatteryOptions(rest, id === batteryCapacityId ? rest[0] : batteryCapacityId);
+  }
+
 
   /**
    * Keeps the stored price, savings and payback in sync with the engine so
@@ -770,11 +988,12 @@ export const DesignsProposalStepContent = forwardRef<
             info={priced?.tierInfo}
           />
           <BatterySelector
-            selectedId={batteryCapacityId}
-            onSelect={handleSelectBattery}
+            optionIds={batteryOptionIds}
+            shownId={batteryCapacityId}
+            onTap={handleTapBattery}
+            onRemove={handleRemoveBattery}
+            onCompare={() => setComparing(true)}
             prices={batteryPrices}
-            sizeKwh={batteryKwh}
-            quotedKwh={ratedBatteryKwh(selectedQuote?.battery)}
             estimated={batteryEstimated}
           />
         </div>
@@ -881,6 +1100,18 @@ export const DesignsProposalStepContent = forwardRef<
           Download your proposal
         </button>
       </div>
+
+      {comparing ? (
+        <BatteryCompare
+          rows={optionRows}
+          shownId={batteryCapacityId}
+          onPick={(id) => {
+            setBatteryOptions(batteryOptionIds, id);
+            setComparing(false);
+          }}
+          onClose={() => setComparing(false)}
+        />
+      ) : null}
 
       <DesignsProposalDownloadModal
         open={downloadModalOpen}
