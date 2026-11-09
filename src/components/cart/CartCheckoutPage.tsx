@@ -553,6 +553,11 @@ export function CartCheckoutPage() {
                 <p className="mt-2 text-center font-dm-sans text-[11px] text-warm-gray">
                   Secure payment by {providerName}. You&apos;ll get an email confirmation.
                 </p>
+                <p className="mt-1 text-center font-dm-sans text-[11px] text-warm-gray">
+                  By paying you agree to our{" "}
+                  <Link href="/terms" target="_blank" className="underline">terms</Link> and{" "}
+                  <Link href="/refunds" target="_blank" className="underline">refunds policy</Link>.
+                </p>
               </>
             ) : (
               <>

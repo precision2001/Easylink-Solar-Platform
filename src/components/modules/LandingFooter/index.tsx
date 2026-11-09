@@ -147,8 +147,12 @@ export function FooterSection({
           <p className="leading-relaxed">
             © {new Date().getFullYear()} EasyLink Solar. All rights reserved.
           </p>
-          {/* TODO: add Privacy policy, Terms of service and Cookie policy links (here and as a
-              "Legal" footer column) once the owner supplies the legal text and the pages exist. */}
+          <nav aria-label="Legal" className="flex flex-wrap justify-center gap-x-5 gap-y-1">
+            <Link href="/privacy-policy" className="transition hover:text-slate-800">Privacy</Link>
+            <Link href="/terms" className="transition hover:text-slate-800">Terms</Link>
+            <Link href="/refunds" className="transition hover:text-slate-800">Refunds</Link>
+            <Link href="/cookies" className="transition hover:text-slate-800">Cookies</Link>
+          </nav>
         </div>
       </div>
     </footer>

@@ -112,7 +112,7 @@ export type EditableWorksLine = { name: string; note?: string; quantity: number;
 
 export const DEFAULT_DEPOSIT_PERCENT = 25;
 export const DEFAULT_VALID_DAYS = 30;
-export const QUOTE_TERMS_HREF = "/warranty";
+export const QUOTE_TERMS_HREF = "/terms#quotes";
 /** The backend sends at most this many automatic reminders per quote. */
 export const MAX_QUOTE_REMINDERS = 5;
 

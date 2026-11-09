@@ -717,6 +717,11 @@ function SignUpForm({ onSwitchMode }: { onSwitchMode: () => void }) {
           {isSubmitting ? <Spinner /> : null}
           {isSubmitting ? "Creating your account…" : "Create account"}
         </button>
+        <p className="m-0 text-center text-[12.5px] leading-[1.5] text-warm-gray">
+          By creating an account you agree to our{" "}
+          <Link href="/terms" target="_blank" className="font-semibold underline">terms</Link> and{" "}
+          <Link href="/privacy-policy" target="_blank" className="font-semibold underline">privacy policy</Link>.
+        </p>
       </form>
 
       <OrDivider label="Already have an account?" />
