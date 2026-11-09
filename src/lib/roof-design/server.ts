@@ -12,6 +12,7 @@ import sharp from "sharp";
 import { parseGeoTiffDsm, type GeoTiffRaster } from "@/utils/geotiff";
 import { analyseRoofSnapshot, ROOF_SNAPSHOT, snapshotMetresPerPixel, type RoofSnapshotAnalysis, type SnapshotGeo } from "@/lib/designer/roofSnapshot";
 import { getCadastre, getCombinedSolar, getFootprint, getLayerBytes, getSnapshotPng } from "@/lib/server/roofDataCache";
+import { alignedNswSnapshot, getNswSnapshotPng, inNsw, nswImageryDate } from "@/lib/server/nswImagery";
 import type { SolarEstimateResult } from "@/types/solar";
 import { designRoof, googleDataStale, lotForDesign, type DesignRoofOptions, type RoofDesign, type RoofDesignContext } from "./engine";
 import { panelCorners, ringAreaM2, type LatLng, type LatLngRing } from "./geometry";
@@ -35,6 +36,33 @@ export async function fetchSnapshot(pin: LatLng, zoom: number, key = googleMapsK
 }
 
 /** An image already fetched (or a test image), decoded for analysis. */
+/** The NSW aerial photo of a snapshot's frame, lined up with it, and the note Opus gets with it. */
+export async function nswSecondPhoto(img: Snapshot, pin: LatLng): Promise<{ png: Buffer; note: string } | null> {
+  const [aligned, date] = await Promise.all([
+    alignedNswSnapshot(img.png, pin.lat, pin.lng, img.geo.zoom).catch(() => null),
+    nswImageryDate(pin.lat, pin.lng).catch(() => null),
+  ]);
+  if (!aligned) return null;
+  const parts = ["NSW Spatial Services aerial photo"];
+  if (date?.capturedOn) parts.push(`flown ${date.capturedOn}`);
+  if (date?.resolutionCm) parts.push(`${date.resolutionCm} cm pixels, enlarged to match`);
+  return { png: aligned.png, note: parts.join(", ") };
+}
+
+/**
+ * Google's satellite image, or the NSW aerial photo of the same frame when
+ * Google's fails (owner, 9 Nov 2026: the NSW photos are the backup).
+ */
+export async function fetchSnapshotOrNsw(pin: LatLng, zoom: number, key = googleMapsKey()): Promise<Snapshot> {
+  try {
+    return await fetchSnapshot(pin, zoom, key);
+  } catch (err) {
+    const nsw = await getNswSnapshotPng(pin.lat, pin.lng, zoom).catch(() => null);
+    if (!nsw) throw err;
+    return decodeSnapshot(nsw, pin, zoom);
+  }
+}
+
 export async function decodeSnapshot(png: Buffer, pin: LatLng, zoom: number): Promise<Snapshot> {
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   return {
@@ -279,7 +307,7 @@ export async function designRoofAt(
   } = {},
 ): Promise<DesignRoofAtResult> {
   // The satellite image doesn't depend on Google's data: fetch it alongside.
-  const fetchImage = opts.fetchImage ?? fetchSnapshot;
+  const fetchImage = opts.fetchImage ?? fetchSnapshotOrNsw;
   const early = new Map<number, Promise<Snapshot>>();
   if (!opts.context?.snapshot) {
     const first = fetchImage(pin, ROOF_SNAPSHOT.zoom);
@@ -293,8 +321,12 @@ export async function designRoofAt(
   const aiFirst = early.get(ROOF_SNAPSHOT.zoom);
   const contextP = opts.context ? Promise.resolve(opts.context) : loadRoofContext(pin, opts.source === undefined ? defaultDataSource() : opts.source);
   const wantTrace = !opts.context?.aiTrace && !opts.outline && Boolean(aiFirst) && aiRoofFacesEnabled();
+  // In NSW, the state's surveyed aerial photo of the same frame goes with it
+  // (owner, 9 Nov 2026): lined up with Google's, so Opus can confirm faint
+  // lines and corners on a second picture.
+  const nswP = wantTrace && inNsw(pin.lat, pin.lng) ? aiFirst!.then((img) => nswSecondPhoto(img, pin)).catch(() => null) : Promise.resolve(null);
   const traceP = wantTrace
-    ? Promise.all([aiFirst!, contextP.catch(() => null)]).then(([img, ctx]) => fetchAiRoofTrace(img, { lot: ctx?.parcel?.ring ?? null, key: aiTraceKey(pin) })).catch(() => null)
+    ? Promise.all([aiFirst!, contextP.catch(() => null), nswP]).then(([img, ctx, second]) => fetchAiRoofTrace(img, { lot: ctx?.parcel?.ring ?? null, key: aiTraceKey(pin), second })).catch(() => null)
     : null;
   const context = await contextP;
   // The lot may not hold the whole house (a property over two lots): widen it first.

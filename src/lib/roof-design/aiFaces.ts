@@ -160,7 +160,17 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * borders, faces, obstructions), or null (not configured, not readable, or not
  * back in time). Never throws.
  */
-export async function fetchAiRoofTrace(image: Snapshot, opts: { waitMs?: number; hint?: string; lot?: LatLng[] | null; key?: string } = {}): Promise<AiRoofTrace | null> {
+export async function fetchAiRoofTrace(
+  image: Snapshot,
+  opts: {
+    waitMs?: number;
+    hint?: string;
+    lot?: LatLng[] | null;
+    key?: string;
+    /** A second aerial photo in the same frame, lined up with `image` (NSW Spatial Services), and what it is. */
+    second?: { png: Buffer; note: string } | null;
+  } = {},
+): Promise<AiRoofTrace | null> {
   if (!aiRoofFacesEnabled()) return null;
   const deadline = Date.now() + (opts.waitMs ?? AI_WAIT_MS);
   try {
@@ -171,6 +181,10 @@ export async function fetchAiRoofTrace(image: Snapshot, opts: { waitMs?: number;
     // PNG keeps the tile and edge detail the model reads lines from.
     const crop = await sharp(image.png).extract({ left, top, width: side, height: side }).png({ compressionLevel: 9 }).toBuffer();
     const contrast = await localContrastPng(crop).catch(() => null);
+    // The second photo, cut the same way (a palette PNG keeps the request small).
+    const second = opts.second
+      ? await sharp(opts.second.png).extract({ left, top, width: side, height: side }).png({ compressionLevel: 9, palette: true, quality: 92 }).toBuffer().catch(() => null)
+      : null;
     const lot = opts.lot?.length ? opts.lot.map((p) => { const [x, y] = toPxOf(geo, p); return [Math.round(x - left), Math.round(y - top)] as [number, number]; }) : undefined;
     const had = opts.key ? freshRef(opts.key) : null;
     const started = had ? { id: had.id, status: "pending" as const } : await platform("v1/roof/faces", {
@@ -178,6 +192,8 @@ export async function fetchAiRoofTrace(image: Snapshot, opts: { waitMs?: number;
       body: JSON.stringify({
         imageBase64: crop.toString("base64"),
         contrastBase64: contrast ? contrast.toString("base64") : undefined,
+        secondImageBase64: second ? second.toString("base64") : undefined,
+        secondImageNote: second ? opts.second!.note : undefined,
         format: "png",
         widthPx: side,
         heightPx: side,
