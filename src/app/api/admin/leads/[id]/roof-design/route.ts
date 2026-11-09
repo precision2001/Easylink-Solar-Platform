@@ -47,6 +47,10 @@ async function designLead(id: string): Promise<NextResponse> {
     result = { status: "FAILED" as const, message: "The designer couldn't finish. Try again." };
   }
 
+  // Opus is still tracing (it takes longer than one request): keep the lead's
+  // current design and tell the page to ask again shortly.
+  if (result.status === "TRACING") return NextResponse.json({ success: false, retry: true, message: result.message }, { status: 202 });
+
   const body =
     result.status === "READY"
       ? {

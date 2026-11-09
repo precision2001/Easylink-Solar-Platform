@@ -21,6 +21,7 @@ import { checkInteriorLine, fitEavesToMask, interiorEdges, type LineCheck } from
 import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
 import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
+import { fitTraceToEdges } from "./edgeFit";
 import { fitRoofJunctions } from "./junctions";
 import { flatSectionsFromLines } from "./flatSections";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
@@ -117,7 +118,7 @@ export type AiRoofTrace = {
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-09.6";
+export const ROOF_ENGINE_VERSION = "2026-11-09.7";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -897,11 +898,9 @@ function tracedFaces(paths: LatLngRing[], ctx: RoofDesignContext): RoofFaceSet |
     };
   });
   const luma = lineLumaOf(ctx);
-  // Fine-tuning only: a traced point moves at most 0.3 m, and only on a clear
-  // gain (12 Fursorb St, 9 Nov 2026: a 1 m allowance pulled Opus's points onto
-  // other edges and the faces no longer matched the trace).
-  const fit = fitRoofJunctions(paths, faces, luma, { junctionM: 0.3, minGain: 0.2 });
-  faces = fit.faces;
+  // The trace is already fitted to the photo's edges (fitTraceToEdges, in
+  // designRoof); its points aren't moved again here.
+  const fit = { faces, moved: 0 };
   const checks = interiorEdges(faces, paths).map(([a, b]) => checkInteriorLine(a, b, luma));
   const snap = ctx.snapshot ?? null;
   // The engine's own spots, except along a traced line (hip capping reads as spots).
@@ -1172,10 +1171,14 @@ export type DesignRoofOptions = {
  * Pin + data in, finished design out: the Designs page's steps (initial
  * outline → Save Roof → faces → panels) without the screen.
  */
-export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {}): RoofDesign | null {
+export function designRoof(ctx0: RoofDesignContext, opts: DesignRoofOptions = {}): RoofDesign | null {
   // Owner's rule: Opus traces every roof first. Its border is the outline
   // (straightened, corners kept); a person's outline (Edit, the API) still wins.
-  const trace = !opts.outline && ctx.aiTrace?.outline && ctx.aiTrace.faces.length ? ctx.aiTrace : null;
+  // Opus decides which lines and points there are; the edge fit puts them on
+  // the photo, within 100 mm (owner, 9 Nov 2026).
+  const edge = !opts.outline && ctx0.aiTrace?.outline && ctx0.aiTrace.faces.length ? fitTraceToEdges(ctx0.aiTrace, lineLumaOf(ctx0)) : null;
+  const ctx: RoofDesignContext = edge ? { ...ctx0, aiTrace: edge.trace } : ctx0;
+  const trace = edge ? edge.trace : null;
   const initial: InitialRoofs | null = opts.outline
     ? { rings: opts.outline, source: "snapshot", traced: true }
     : trace
@@ -1203,7 +1206,10 @@ export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {})
       : ctx.aiTrace === null && !opts.outline
       ? "Opus couldn't trace this roof in time: it needs a hand trace (Edit the roof) before quoting. Lines below are the engine's own reading."
       : null,
-    t && (t.faint > 0 || t.unconfirmed > 0)
+    edge && edge.total > 0
+      ? `Traced by Opus and fitted to the photo: ${edge.onEdge} of ${edge.total} roof lines on their edge within ${Math.round(DESIGN_RULES.roofLineToleranceM * 1000)} mm${edge.notSeen + edge.off > 0 ? `; ${edge.notSeen + edge.off} not clear in the image` : ""}${t && t.faint > 0 ? `; ${t.faint} seen only faintly by Opus` : ""}${edge.notSeen + edge.off > 0 || (t && t.faint > 0) ? ": check on site" : ""}.`
+      : null,
+    t && !(edge && edge.total > 0) && (t.faint > 0 || t.unconfirmed > 0)
       ? `Traced by Opus: ${t.lines} roof lines; ${t.faint} seen only faintly and ${t.unconfirmed} not confirmed in the image: check on site.`
       : null,
     needsVerification ? "Roof outline from Google's data or a building footprint, not traced from the image: check the roof shape." : null,
