@@ -60,6 +60,13 @@ export const RoofFacesRequest = z.object({
   hint: z.string().max(500).optional(),
   /** The same view with local contrast boosted (same size and format), for faint lines on white or metal roofs. */
   contrastBase64: z.string().min(100).max(5_000_000).optional(),
+  /**
+   * A second aerial photo of the same frame from another source (NSW Spatial
+   * Services), moved onto the first so the same pixel is the same spot, and
+   * a short note of what it is (source, capture date, pixel size).
+   */
+  secondImageBase64: z.string().min(100).max(5_000_000).optional(),
+  secondImageNote: z.string().max(300).optional(),
   /** The land lot in image pixels: nothing outside it is traced. */
   lot: z.array(z.tuple([z.number(), z.number()])).min(3).max(400).optional(),
   /** "house": the building at the centre (default); "site": every building on the lot. */
@@ -273,13 +280,19 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
       : "Trace the building under the centre of the image (scope: house).";
   const lot = req.lot?.length ? ` The land lot, in image pixels: ${JSON.stringify(req.lot.map(([x, y]) => [Math.round(x), Math.round(y)]))}. Trace nothing outside it.` : "";
   const contrast = req.contrastBase64 ? " The second image is the same view with local contrast boosted." : "";
+  const second = req.secondImageBase64
+    ? ` The ${req.contrastBase64 ? "third" : "second"} image is another aerial photo of the same frame${req.secondImageNote ? ` (${req.secondImageNote})` : ""}, lined up with the first. Use it to confirm lines, corners and edges that are faint, hidden by shade or blurred in the first; trace what the first photo shows, and if a building or roof part was added, removed or changed between the two, follow the first and say so in notes.`
+    : "";
   const photo = Buffer.from(req.imageBase64, "base64");
   const messages: ChatMessage[] = [
     {
       role: "user",
       image: { format: req.format, bytes: photo },
-      images: req.contrastBase64 ? [{ format: req.format, bytes: Buffer.from(req.contrastBase64, "base64") }] : undefined,
-      text: `This image is ${req.widthPx} x ${req.heightPx} pixels${scale}.${contrast} ${scope}${lot} First the visible lines and intersection points, then borders, then faces and obstructions.${req.hint ? ` ${req.hint}` : ""} JSON only.`,
+      images: [
+        ...(req.contrastBase64 ? [{ format: req.format, bytes: Buffer.from(req.contrastBase64, "base64") }] : []),
+        ...(req.secondImageBase64 ? [{ format: req.format, bytes: Buffer.from(req.secondImageBase64, "base64") }] : []),
+      ],
+      text: `This image is ${req.widthPx} x ${req.heightPx} pixels${scale}.${contrast}${second} ${scope}${lot} First the visible lines and intersection points, then borders, then faces and obstructions.${req.hint ? ` ${req.hint}` : ""} JSON only.`,
     },
   ];
   const maxTokens = req.scope === "site" ? 24000 : 12000;

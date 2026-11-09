@@ -29,6 +29,9 @@ export type RoofReading = {
   hint?: string;
   /** The boosted-contrast view, stored next to the image. */
   contrastKey?: string;
+  /** A second aerial photo of the same frame (another source), stored next to the image, and what it is. */
+  secondKey?: string;
+  secondNote?: string;
   lot?: [number, number][];
   scope?: "house" | "site";
   /** Self-check rounds asked for, and how many ran. */
@@ -55,6 +58,8 @@ export async function startRoofReading(c: Container, req: RoofFacesRequest, now 
   await c.roofImages.put(s3Key, Buffer.from(req.imageBase64, "base64"), CONTENT_TYPE[req.format]);
   const contrastKey = req.contrastBase64 ? s3Key.replace(/(\.[a-z]+)$/, "-contrast$1") : undefined;
   if (contrastKey && req.contrastBase64) await c.roofImages.put(contrastKey, Buffer.from(req.contrastBase64, "base64"), CONTENT_TYPE[req.format]);
+  const secondKey = req.secondImageBase64 ? s3Key.replace(/(\.[a-z]+)$/, "-second$1") : undefined;
+  if (secondKey && req.secondImageBase64) await c.roofImages.put(secondKey, Buffer.from(req.secondImageBase64, "base64"), CONTENT_TYPE[req.format]);
   const row: RoofReading = {
     id,
     status: "pending",
@@ -65,6 +70,8 @@ export async function startRoofReading(c: Container, req: RoofFacesRequest, now 
     metresPerPixel: req.metresPerPixel,
     hint: req.hint,
     contrastKey,
+    secondKey,
+    secondNote: req.secondImageNote,
     lot: req.lot,
     scope: req.scope,
     review: req.review,
@@ -92,9 +99,12 @@ export async function processRoofReading(c: Container, id: string, now = () => n
     const img = await c.roofImages.get(row.s3Key);
     if (!img) return finish({ status: "error", message: "The roof image could not be read back." });
     const contrast = row.contrastKey ? await c.roofImages.get(row.contrastKey) : null;
+    const second = row.secondKey ? await c.roofImages.get(row.secondKey) : null;
     const r = await readRoofFaces(c.model, {
       imageBase64: Buffer.from(img).toString("base64"),
       contrastBase64: contrast ? Buffer.from(contrast).toString("base64") : undefined,
+      secondImageBase64: second ? Buffer.from(second).toString("base64") : undefined,
+      secondImageNote: row.secondNote,
       format: row.format,
       widthPx: row.widthPx,
       heightPx: row.heightPx,

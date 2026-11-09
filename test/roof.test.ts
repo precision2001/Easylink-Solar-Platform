@@ -161,6 +161,20 @@ describe("POST /v1/roof/faces", () => {
     expect(got.data.buildings[0]?.lines).toHaveLength(3);
   });
 
+  it("sends a second aerial photo of the same frame (NSW), stored with the reading, with its note", async () => {
+    const { c } = setup([{ text: traced }, { text: traced }]);
+    const app = createApp(c);
+    await app.request("/v1/roof/faces", {
+      method: "POST",
+      headers: KEY,
+      body: JSON.stringify({ ...body, contrastBase64: IMG, secondImageBase64: IMG, secondImageNote: "NSW Spatial Services, flown 2022-05-01, 7 cm", review: 0 }),
+    });
+    const calls = (c.model as unknown as { calls: { messages: { images?: unknown[]; text?: string }[] }[] }).calls;
+    expect(calls[0]?.messages[0]?.images).toHaveLength(2);
+    expect(calls[0]?.messages[0]?.text).toContain("third image is another aerial photo of the same frame (NSW Spatial Services, flown 2022-05-01, 7 cm)");
+    expect(calls[0]?.messages[0]?.text).toContain("follow the first");
+  });
+
   it("needs the ingest key or staff, and a valid image", async () => {
     const { c } = setup();
     const app = createApp(c);
