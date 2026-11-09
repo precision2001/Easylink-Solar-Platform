@@ -81,9 +81,15 @@ async function designLead(id: string): Promise<NextResponse> {
 
 export async function POST(_request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const existing = inFlight.get(id);
-  if (existing) return (await existing).clone() as NextResponse;
-  const job = designLead(id).finally(() => inFlight.delete(id));
-  inFlight.set(id, job);
-  return (await job).clone() as NextResponse;
+  let job = inFlight.get(id);
+  if (!job) {
+    job = designLead(id).finally(() => inFlight.delete(id));
+    job.catch(() => {});
+    inFlight.set(id, job);
+  }
+  // Answer inside the site's 120 s limit: a design still going keeps going
+  // (and is saved to the lead when done); the leads page asks again.
+  const done = await Promise.race([job, new Promise<null>((r) => setTimeout(() => r(null), 100_000))]);
+  if (!done) return NextResponse.json({ success: false, retry: true, message: "Still designing this roof." }, { status: 202 });
+  return done.clone() as NextResponse;
 }

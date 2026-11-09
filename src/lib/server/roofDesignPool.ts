@@ -21,7 +21,13 @@ import type { RoofJob, RoofJobResult } from "@/lib/roof-design/jobs";
  * - Without the built worker (local dev, tests) jobs run in-process.
  */
 
-export const JOB_TIMEOUT_MS = 120_000;
+/**
+ * Longest a design may run. Longer than one request (the API answers 202 at
+ * 100 s and the page asks again): with several designs at once on one thread
+ * and Opus's trace and check taking up to 4 minutes, 120 s cut good designs
+ * off ("took too long", 9 Nov 2026).
+ */
+export const JOB_TIMEOUT_MS = 240_000;
 /** Jobs running on the worker at once. */
 export const MAX_RUNNING = 4;
 
@@ -176,6 +182,11 @@ export function roofJob<J extends RoofJob>(job: J, opts: { key: string; signal?:
   }
   pump();
   return e.promise as Promise<RoofJobResult<J>>;
+}
+
+/** True while a job with this key is waiting or running (asking again joins it). */
+export function roofJobPending(key: string): boolean {
+  return byKey.has(key);
 }
 
 /** For the tests and the status line: how many jobs are waiting / running. */
