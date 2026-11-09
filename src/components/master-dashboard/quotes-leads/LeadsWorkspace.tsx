@@ -1,5 +1,6 @@
 "use client";
 
+import { QuoteOptionsChip } from "./QuoteOptionsChip";
 import Image from "next/image";
 import Link from "next/link";
 import { leadDesignHref } from "@/lib/designs/leadDesignLink";
@@ -658,6 +659,7 @@ export function LeadsWorkspace({
                         onOpen={() => setViewing(l.id)}
                         onRetry={() => redesignRoof(l.id)}
                       />
+                      <QuoteOptionsChip leadId={l.id} customerName={l.customerName} open={l.openQuotes} />
                     </td>
 
                     <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">

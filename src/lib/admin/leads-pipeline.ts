@@ -77,6 +77,8 @@ export type PipelineLead = {
   respondBy: string | null;
   responseOverdue: boolean;
   roofDesign?: RoofDesignSummary | null;
+  /** Quotes still open on the lead (draft, sent, viewed): one per battery option, and the lowest total. */
+  openQuotes?: { count: number; fromCents: number | null } | null;
 };
 
 /** Automatic roof design (platform designer) for the lead's address. */
