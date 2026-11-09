@@ -1,3 +1,4 @@
+import type { AiRoofTrace } from "./engine";
 /**
  * How the platform's pages (installer, customer and operations portals, the
  * website) get a system designed: they ask the Roof Designer. Platform rule
@@ -32,6 +33,9 @@ export type RoofDesignResponse =
         items: RoofDesignFace[];
         /** The AI platform's reading of the roof from the image (Opus 5.5), when it was had. */
         ai?: { ring: LatLngRing; azimuthDeg: number | null }[];
+        /** Opus's full trace (it traces every roof first): border, faces, lines, obstructions. */
+        trace?: AiRoofTrace;
+        traceLines?: { lines: number; faint: number; unconfirmed: number };
       };
       obstructions: { ring: LatLngRing; kind: "spot" | "step" }[];
       lines: { total: number; checked: number; ok: number };
@@ -111,6 +115,18 @@ export function roofDesignFor(pin: LatLng): Promise<RoofDesignResponse> {
   const e = ask(pin);
   e.used = true;
   return e.promise;
+}
+
+/** Asks again for a pin (Opus was still tracing it): the earlier answer is dropped. */
+export function refreshRoofDesign(pin: LatLng): Promise<RoofDesignResponse> {
+  early.delete(pinKey(pin));
+  return roofDesignFor(pin);
+}
+
+/** True when the design says Opus is still tracing and checking the roof. */
+export function stillTracing(d: RoofDesignResponse | null | undefined): boolean {
+  const notes = (d as { notes?: string[] } | null | undefined)?.notes ?? [];
+  return notes.some((n) => n.startsWith("Opus is still"));
 }
 
 /**

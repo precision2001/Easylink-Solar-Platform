@@ -60,7 +60,7 @@ import {
 import { mergeProposalData } from "@/lib/store/designProposalSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
 import { compressCanvasSnapshot } from "@/lib/images/compress-browser";
-import { roofDesignFor, type RoofDesignResponse } from "@/lib/roof-design/client";
+import { refreshRoofDesign, roofDesignFor, stillTracing, type RoofDesignResponse } from "@/lib/roof-design/client";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -466,14 +466,30 @@ export const DesignsSolarPanelStepContent = forwardRef<
     const pin = selectedLocationRef.current;
     if (!pin || !pinKey) return;
     let live = true;
-    const giveUp = window.setTimeout(() => live && setServerDesign({ key: pinKey, design: null }), 45_000);
+    let timer: number | undefined;
+    // Opus traces the roof first and checks its trace against the photo
+    // (owner's rules). One request waits up to 90 s, inside the site's 120 s;
+    // while Opus is still at it, the engine's design shows and the page asks
+    // again every 20 s (up to 5 minutes) until the checked trace is in.
+    const giveUp = window.setTimeout(() => live && setServerDesign((cur) => cur ?? { key: pinKey, design: null }), 115_000);
+    const take = (d: RoofDesignResponse, tries: number) => {
+      if (!live) return;
+      setServerDesign({ key: pinKey, design: d });
+      if (stillTracing(d) && tries < 15)
+        timer = window.setTimeout(() => {
+          refreshRoofDesign(pin)
+            .then((n) => take(n, tries + 1))
+            .catch(() => {});
+        }, 20_000);
+    };
     roofDesignFor(pin)
-      .then((d) => live && setServerDesign({ key: pinKey, design: d }))
+      .then((d) => take(d, 0))
       .catch(() => live && setServerDesign({ key: pinKey, design: null }))
       .finally(() => window.clearTimeout(giveUp));
     return () => {
       live = false;
       window.clearTimeout(giveUp);
+      if (timer) window.clearTimeout(timer);
     };
   }, [pinKey]);
   const serverReady = serverDesign?.key === pinKey ? serverDesign : null;
@@ -825,12 +841,18 @@ export const DesignsSolarPanelStepContent = forwardRef<
   // The AI platform's reading of the roof (Opus 5.5), from the Roof Designer's
   // design for this pin: one more reading the engine scores with the others.
   const serverAiFaces = serverReady?.design?.status === "READY" ? serverReady.design.faces.ai : undefined;
+  // Owner's rule: Opus traces every roof first — the page uses the same trace as the server.
+  const serverTrace = serverReady?.design?.status === "READY" ? serverReady.design.faces.trace : undefined;
   const facesCtx = useMemo(
     (): RoofDesignContext | null =>
-      roofCtx && serverAiFaces?.length
-        ? { ...roofCtx, aiFaces: serverAiFaces.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? undefined })) }
+      roofCtx && (serverAiFaces?.length || serverTrace)
+        ? {
+            ...roofCtx,
+            aiFaces: serverAiFaces?.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? undefined })),
+            aiTrace: serverTrace ?? roofCtx.aiTrace,
+          }
         : roofCtx,
-    [roofCtx, serverAiFaces],
+    [roofCtx, serverAiFaces, serverTrace],
   );
   const facesFor = useCallback(
     (paths: google.maps.LatLngLiteral[][]): RoofFaceSet =>
