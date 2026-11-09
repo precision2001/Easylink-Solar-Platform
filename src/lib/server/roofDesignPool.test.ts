@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // No built worker in tests: jobs run in-process through runRoofJob.
 const runRoofJob = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/roof-design/jobs", () => ({ runRoofJob }));
+// Never pick up a built .next/roof-worker.cjs (present after `npm run build`):
+// it would run real roof jobs instead of the mock.
+vi.stubEnv("NEXT_DIST_DIR", ".test-no-roof-worker");
 
 const { roofJob, roofJobStats } = await import("./roofDesignPool");
 
