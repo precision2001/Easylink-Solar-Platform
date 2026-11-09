@@ -1,5 +1,6 @@
 "use client";
 
+import { describeShare } from "@/lib/designs/send-to-customer";
 import { chosenProductsOf, inverterMatchedToBattery, MATCHED_INVERTER_NOTE } from "@/lib/proposal/proposalDocument";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { toast } from "react-toastify";
@@ -633,13 +634,10 @@ export const DesignsProposalStepContent = forwardRef<
               : "The battery options couldn't be quoted. Create them from the lead's Quotes.",
           );
         }
-        toast.success(
-          r.updated
-            ? "Design updated on the lead."
-            : r.createdAccount
-              ? "Design saved to the lead. A customer account was set up for it; the customer hasn't been emailed."
-              : "Design saved to the lead.",
-        );
+        toast.success(r.updated ? "Design updated on the lead." : r.createdAccount ? "Design saved to the lead. A customer account was set up for it." : "Design saved to the lead.");
+        // Sent on to the customer's portal, with a link by email / SMS.
+        const shared = describeShare(r.sent);
+        if (shared) toast[shared.tone === "success" ? "success" : shared.tone === "warning" ? "warning" : "info"](shared.text);
         router.push("/master/quotes-leads");
         return;
       }
@@ -666,6 +664,8 @@ export const DesignsProposalStepContent = forwardRef<
           updated.products,
         );
         toast.success("Design changes saved.");
+        const shared = describeShare(updated.sentToCustomer);
+        if (shared) toast[shared.tone === "success" ? "success" : shared.tone === "warning" ? "warning" : "info"](shared.text);
         router.push("/installers/dashboard/home");
         return;
       }

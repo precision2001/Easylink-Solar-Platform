@@ -1,4 +1,5 @@
 import { fetchWithInstallerSession } from "@/lib/installers/installer-fetch-client";
+import type { DesignShareResult } from "@/lib/designs/send-to-customer";
 
 export type InstallerDesignProduct = {
   id: string;
@@ -18,6 +19,11 @@ export type InstallerDesignProduct = {
 };
 
 export type InstallerCustomerDesign = {
+  /** When the design last went to the customer (sign-in link by email / SMS). */
+  sharedWithCustomerAt?: string | null;
+  sharedChannels?: string | null;
+  /** Returned by a save that sent the design to the customer. */
+  sentToCustomer?: DesignShareResult | null;
   id: string;
   userId: string;
   title: string;
