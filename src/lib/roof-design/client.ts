@@ -57,15 +57,29 @@ export type RoofDesignResponse =
 
 /** Ask the Roof Designer for a design. Throws with the API's message on failure. */
 export async function requestRoofDesign(req: RoofDesignRequest, init?: { signal?: AbortSignal; baseUrl?: string }): Promise<RoofDesignResponse> {
-  const res = await fetch(`${init?.baseUrl ?? ""}/api/roof-design`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
-    signal: init?.signal,
-  });
-  const json = (await res.json().catch(() => ({}))) as RoofDesignResponse & { message?: string };
-  if (!res.ok) throw new Error(json.message ?? `Roof design failed (${res.status})`);
-  return json;
+  // 202: the design is still being worked on past one request's time (it
+  // keeps going on the server); ask again shortly and collect it.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${init?.baseUrl ?? ""}/api/roof-design`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+      signal: init?.signal,
+    });
+    const json = (await res.json().catch(() => ({}))) as RoofDesignResponse & { message?: string };
+    if (res.status === 202 && attempt < 8) {
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, 10_000);
+        init?.signal?.addEventListener("abort", () => {
+          clearTimeout(t);
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+      });
+      continue;
+    }
+    if (!res.ok || res.status === 202) throw new Error(json.message ?? `Roof design failed (${res.status})`);
+    return json;
+  }
 }
 
 const COMPASS = ["North", "North-east", "East", "South-east", "South", "South-west", "West", "North-west"];

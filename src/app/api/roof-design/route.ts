@@ -98,6 +98,9 @@ async function geocode(address: string): Promise<{ pin: LatLng; formattedAddress
 
 const fail = (status: number, message: string, headers?: Record<string, string>) => NextResponse.json({ message }, { status, headers });
 
+/** Under the site's 120 s request limit (nginx), with room to answer. */
+const ANSWER_WITHIN_MS = 100_000;
+
 export async function POST(request: Request) {
   const origin = listedOrigin(request);
   const res = await handle(request, origin);
@@ -178,7 +181,7 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
   try {
     // On the design worker, shared with anyone asking for the same design
     // right now; dropped if this visitor goes before it starts.
-    const r = await roofJob(
+    const job = roofJob(
       {
         kind: "api",
         pin,
@@ -191,12 +194,21 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
       },
       { key: designKey, signal: request.signal },
     );
-    if (r.status !== "READY") return NextResponse.json(r.body, { status: 200 });
-    const text = JSON.stringify(r.body);
     // Kept only when Opus traced it (or no AI is set up): an untraced design is asked again next time.
-    const notes = (r.body as { notes?: string[] }).notes ?? [];
-    if (!notes.some((n) => n.startsWith("Opus couldn't trace") || n.startsWith("Opus is still"))) await cacheWrite(designKey, text);
-    return new NextResponse(text, { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "miss" } });
+    const keep = job.then(async (r) => {
+      if (r.status !== "READY") return r;
+      const notes = (r.body as { notes?: string[] }).notes ?? [];
+      if (!notes.some((n) => n.startsWith("Opus couldn't trace") || n.startsWith("Opus is still"))) await cacheWrite(designKey, JSON.stringify(r.body));
+      return r;
+    });
+    keep.catch(() => {});
+    // Answer inside the site's 120 s request limit: a design still going on
+    // (busy worker, slow Opus) keeps going and is kept when done; the page
+    // asks again and gets it (202 = ask again shortly).
+    const r = await Promise.race([keep, new Promise<null>((res) => setTimeout(() => res(null), ANSWER_WITHIN_MS))]);
+    if (!r) return NextResponse.json({ status: "WORKING", message: "Still designing this roof: ask again shortly." }, { status: 202 });
+    if (r.status !== "READY") return NextResponse.json(r.body, { status: 200 });
+    return new NextResponse(JSON.stringify(r.body), { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "miss" } });
   } catch (e) {
     console.error("roof-design API", e);
     return fail(502, "The roof design couldn't be completed; try again shortly.");
