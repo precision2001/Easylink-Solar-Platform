@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { clientIpFrom, createRateLimiter, isSameOriginRequest } from "@/lib/server/rate-limit";
 import type { LatLng, LatLngRing } from "@/lib/roof-design";
 import { googleMapsKey } from "@/lib/roof-design/server";
-import { roofJob } from "@/lib/server/roofDesignPool";
+import { roofJob, roofJobPending } from "@/lib/server/roofDesignPool";
 import { ROOF_ENGINE_VERSION } from "@/lib/roof-design/engine";
 import { cachedJson, cacheRead, cacheWrite, placeKey } from "@/lib/server/roofDataCache";
 
@@ -175,7 +175,9 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
     const res = new NextResponse(kept.toString("utf8"), { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "hit" } });
     return res;
   }
-  const limited = takeRate();
+  // Asking again for a design that's still being made (after a 202) joins it
+  // and isn't charged.
+  const limited = roofJobPending(designKey) ? null : takeRate();
   if (limited) return limited;
 
   try {
