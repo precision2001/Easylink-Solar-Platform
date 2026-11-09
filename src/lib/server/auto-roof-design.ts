@@ -39,7 +39,7 @@ export type AutoRoofDesign =
       large: Buffer;
       message: string | null;
     }
-  | { status: "NO_ROOF" | "NO_ADDRESS"; lat?: number; lng?: number; message: string };
+  | { status: "NO_ROOF" | "NO_ADDRESS" | "TRACING"; lat?: number; lng?: number; message: string };
 
 /** EasyLink's standard panel for automatic designs (Jinko Tiger Neo class). */
 export const AUTO_PANEL = DEFAULT_PANEL;
@@ -53,10 +53,14 @@ export async function runAutoRoofDesign(inputs: RoofDesignInputs): Promise<AutoR
     context: { pin, estimate: inputs.estimate, mask, dsm, parcel },
     orientation: DESIGN_RULES.defaultOrientation,
     panelWatts: AUTO_PANEL.watts,
+    // As on the Designs page, so a lead's design matches the one staff open.
+    beautify: true,
   });
   if (!r.image) return { status: "NO_ROOF", lat: pin.lat, lng: pin.lng, message: "Couldn't load the satellite image." };
   if (r.status !== "READY") return { status: "NO_ROOF", lat: pin.lat, lng: pin.lng, message: r.message };
   const d = r.design;
+  // Opus is still tracing: nothing is kept yet; the caller asks again.
+  if (d.notes.some((n) => n.startsWith("Opus is still"))) return { status: "TRACING", lat: pin.lat, lng: pin.lng, message: "Opus is still tracing this roof." };
   const { thumb, large } = await renderRoofDesign(r.image, d);
   return {
     status: "READY",

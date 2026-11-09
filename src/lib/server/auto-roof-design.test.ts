@@ -47,13 +47,15 @@ describe("runAutoRoofDesign", () => {
 
 import { autoDesignEligible, roofDesignNeeded } from "@/components/master-dashboard/quotes-leads/RoofDesign";
 describe("roofDesignNeeded", () => {
-  const d = { status: "READY" as const, address: "1 Test St", panelCount: 1, panelWatts: 440, systemKw: 0.44, orientation: null, faceCount: 1, roofAreaM2: 1, message: null, updatedAt: "2026-11-06T00:00:00.000Z" };
+  const d = { status: "READY" as const, address: "1 Test St", panelCount: 1, panelWatts: 440, systemKw: 0.44, orientation: null, faceCount: 1, roofAreaM2: 1, message: null, updatedAt: "2026-11-09T06:00:00.000Z" };
   it("designs leads with an address and no design, or a changed address", () => {
     expect(roofDesignNeeded({ address: "1 Test St", roofDesign: null })).toBe(true);
     expect(roofDesignNeeded({ address: "1 Test St", roofDesign: d })).toBe(false);
     expect(roofDesignNeeded({ address: "2 Other Rd", roofDesign: d })).toBe(true);
     expect(roofDesignNeeded({ address: "  ", roofDesign: null })).toBe(false);
     expect(roofDesignNeeded({ address: "1 Test St", roofDesign: { ...d, updatedAt: "2026-11-05T07:00:00.000Z" } })).toBe(true);
+    // Made before Opus traced every roof first (9 Nov 2026, 3:40 pm Sydney): redone.
+    expect(roofDesignNeeded({ address: "1 Test St", roofDesign: { ...d, updatedAt: "2026-11-09T04:00:00.000Z" } })).toBe(true);
   });
 });
 

@@ -17,6 +17,8 @@ export const AUTO_DESIGN_FROM = new Date("2026-11-05T00:00:00+11:00");
 
 /** Designs made before this came from an earlier server copy of the steps; they are redone. */
 export const PLATFORM_PIPELINE_FROM = new Date("2026-11-05T19:30:00+11:00");
+/** Opus traces every roof first from here (9 Nov 2026): lead designs made before it are redone. */
+export const OPUS_TRACE_FROM = new Date("2026-11-09T15:40:00+11:00");
 
 export function autoDesignEligible(lead: Pick<PipelineLead, "createdAt">): boolean {
   const t = new Date(lead.createdAt).getTime();
@@ -29,12 +31,15 @@ export function roofDesignNeeded(lead: Pick<PipelineLead, "address" | "roofDesig
   const d = lead.roofDesign;
   // Not designed yet, the address has changed since, or designed before the
   // designer followed the Design Platform's steps exactly (5 Nov, evening).
-  return !d || d.address.trim() !== address || new Date(d.updatedAt).getTime() < PLATFORM_PIPELINE_FROM.getTime();
+  return !d || d.address.trim() !== address || new Date(d.updatedAt).getTime() < Math.max(PLATFORM_PIPELINE_FROM.getTime(), OPUS_TRACE_FROM.getTime());
 }
+
+export class StillTracing extends Error {}
 
 export async function requestRoofDesign(leadId: string): Promise<RoofDesignSummary> {
   const res = await fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/roof-design`, { method: "POST" });
   const json = await res.json().catch(() => null);
+  if (res.status === 202 && json?.retry) throw new StillTracing(json.message ?? "Opus is still tracing this roof.");
   if (!res.ok || !json?.success) throw new Error(json?.message ?? "Couldn't design this roof.");
   return json.data as RoofDesignSummary;
 }
@@ -51,6 +56,7 @@ export function useAutoRoofDesigns(
 ) {
   const [working, setWorking] = useState<Set<string>>(new Set());
   const tried = useRef(new Set<string>());
+  const retries = useRef(new Map<string, number>());
   const queue = useRef<string[]>([]);
   const active = useRef(0);
   const cb = useRef(onDesigned);
@@ -66,7 +72,18 @@ export function useAutoRoofDesigns(
       setWorking((w) => new Set(w).add(id));
       requestRoofDesign(id)
         .then((d) => cb.current(id, d))
-        .catch((err: unknown) =>
+        .catch((err: unknown) => {
+          // Opus is still tracing: the lead keeps its design; ask again in 20 s (up to 5 minutes).
+          if (err instanceof StillTracing) {
+            const n = (retries.current.get(id) ?? 0) + 1;
+            retries.current.set(id, n);
+            if (n <= 15)
+              window.setTimeout(() => {
+                if (!queue.current.includes(id)) queue.current.push(id);
+                pumpRef.current();
+              }, 20_000);
+            return;
+          }
           cb.current(id, {
             status: "FAILED",
             address: "",
@@ -78,8 +95,8 @@ export function useAutoRoofDesigns(
             faceCount: null,
             roofAreaM2: null,
             updatedAt: new Date().toISOString(),
-          }),
-        )
+          });
+        })
         .finally(() => {
           active.current--;
           setWorking((w) => {

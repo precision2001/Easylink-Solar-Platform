@@ -439,6 +439,8 @@ export const DesignsProposalStepContent = forwardRef<
       // which would create an account and email the customer.
       if (leadId && !isInstallerEditing) {
         const r = await saveLeadDesign(leadId, input);
+        // The lead's roof picture follows the latest design (it was only made once).
+        fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/roof-design`, { method: "POST", keepalive: true }).catch(() => {});
         toast.success(
           r.updated
             ? "Design updated on the lead."
