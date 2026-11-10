@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findExistingArrays, findRoofObstructions } from "./roofObstructions";
+import { findExistingArrays, findRoofObstructions, panelsOffRoof } from "./roofObstructions";
 import { keepFacesInsideRoofs } from "./roofLineCorrect";
 import type { GeoTiffRaster } from "@/utils/geotiff";
 
