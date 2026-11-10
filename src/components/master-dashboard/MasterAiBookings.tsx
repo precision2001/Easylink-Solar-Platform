@@ -354,7 +354,7 @@ export function MasterAiBookings() {
                     <span className="rounded-full px-2.5 py-0.5 text-[11px] font-bold" style={KIND_STYLE[b.kind]}>
                       {KIND_LABEL[b.kind]}
                     </span>
-                    {b.title.startsWith("URGENT") ? (
+                    {b.notes?.includes("URGENT SAFETY") ? (
                       <span className="rounded-full bg-[#FEE2E2] px-2.5 py-0.5 text-[11px] font-bold text-[#991B1B]">Safety</span>
                     ) : null}
                     {b.status !== "SCHEDULED" ? (
