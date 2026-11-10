@@ -257,7 +257,8 @@ export const ROOF_REVIEW_TEXT = (list: string, unseen = "") => `The last image i
 3. Add every visible roof line and intersection point you missed: box edges, step lines, hips, valleys, ridges, parapets, and the lines a shadow edge shows (rule 7).
 4. The border must follow the roof edge on every side, inside the walls and gutters, with corners on the real corners.
 5. Nothing that isn't roof may be inside the border or a face: courtyards, light wells, voids, balconies, terraces, pools, ground, gaps between buildings, a lower roof's dark gap, neighbours' roofs. Look along every side of the border: where it crosses or takes in something dark or open that isn't roof surface, move it back onto the roof's own edge (the parapet line), adding corners where the roof steps in. New panels will be laid on every face exactly as drawn, so a face over a courtyard puts panels over the courtyard.
-6. Faces must be rebuilt from the corrected points and lines.
+6. Every part of the roof must be inside a face: look along the whole building for wings, lower roofs, porch and garage roofs, and each slope of a hip. A wing with its own hips or ridge gets its own faces, its own ridge and hips, and its corners on its own eaves; never one big face drawn across two roofs, and never a corner placed in the middle of another roof.
+7. Faces must be rebuilt from the corrected points and lines.
 ${unseen ? `Lines NOT on any edge the photo shows (checked pixel by pixel along each line): ${unseen}. Each is wrong as drawn: move its points onto the edge the photo shows (the parapet line, the roof's own edge, the real hip, ridge or valley), or remove it if there is no such line. A border side must run along the roof's edge, never straight across roof or across a courtyard.
 ` : ""}Points by number: ${list}
 Reply with the full corrected trace in the same JSON shape (all buildings, points, lines, faces, obstructions). JSON only.`;
