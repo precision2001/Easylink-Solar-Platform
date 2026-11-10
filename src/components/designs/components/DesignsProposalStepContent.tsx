@@ -593,15 +593,16 @@ function BatteryCompare({
 }
 
 /** One draft quote per battery option for a lead's design; returns the quote references made. */
-async function createOptionQuotes(leadId: string, designId: string, options: { kwh: number; pick?: string }[]): Promise<string[]> {
+async function createOptionQuotes(leadId: string, designId: string, options: { kwh?: number; pick?: string }[]): Promise<string[]> {
   const made: string[] = [];
-  for (const { kwh: batteryKwh, pick } of options) {
+  for (const [i, { kwh: batteryKwh, pick }] of options.entries()) {
     try {
       const res = await fetch("/api/admin/quotes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // A picked battery is quoted as that product; a size, as the price list's battery that size.
-        body: JSON.stringify({ leadId, designId, batteryKwh, ...(pick ? { batteryPick: pick } : {}) }),
+        // The first one replaces the lead's open quotes from earlier designs.
+        body: JSON.stringify({ leadId, designId, batteryKwh, ...(pick ? { batteryPick: pick } : {}), ...(i === 0 ? { replaceOpen: true } : {}) }),
       });
       const json = (await res.json().catch(() => null)) as { data?: { number?: number; reference?: string } } | null;
       if (res.ok && json?.data) made.push(json.data.reference ?? (json.data.number ? `Q-${String(json.data.number).padStart(6, "0")}` : "quote"));
@@ -677,13 +678,37 @@ export const DesignsProposalStepContent = forwardRef<
         const picks = proposal.equipment.items.battery ?? [];
         const kwhOfId = (id: string) => choiceKwh(id, picks);
         const options = sortOptions(proposal.equipment.batteryOptionIds ?? [], kwhOfId);
+        // Every save quotes the design afresh (one quote per battery option, or
+        // one for the design), replacing the open quotes of earlier designs, so
+        // the lead shows only this design's options (owner, 10 Nov 2026).
+        if (!options.length) options.push(proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID);
         let quoted: string[] = [];
-        if (options.length > 1) {
-          quoted = await createOptionQuotes(leadId, r.designId, options.map((id) => ({ kwh: kwhOfId(id), ...(isPickId(id) ? { pick: id } : {}) })));
+        if (options.length >= 1) {
+          // One option: the design exactly as saved (no battery size forced on it).
+          quoted = await createOptionQuotes(leadId, r.designId, options.map((id) => ({ kwh: options.length > 1 ? kwhOfId(id) : undefined, ...(isPickId(id) ? { pick: id } : {}) })));
         }
         // The lead's roof picture follows the latest design (it was only made once).
-        fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/roof-design`, { method: "POST", keepalive: true }).catch(() => {});
-        if (options.length > 1) {
+        // Made from this saved design: its roofs, faces and panels (owner, 10 Nov 2026).
+        const sd = proposal.solarDesign;
+        const saved = sd?.savedRoofs?.length && sd.generatedPanels?.length
+          ? {
+              roofs: sd.savedRoofs,
+              panels: sd.generatedPanels,
+              faces: sd.roofFaces,
+              orientation: sd.panelOrientation,
+              dims: sd.panelDimensions,
+              systemKw: Number.parseFloat(proposal.summary.systemSize) || undefined,
+            }
+          : null;
+        const designBody = JSON.stringify(saved ? { saved } : {});
+        fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/roof-design`, {
+          method: "POST",
+          // keepalive carries it past the page change, but only up to 64 KB.
+          keepalive: designBody.length < 60_000,
+          headers: { "Content-Type": "application/json" },
+          body: designBody,
+        }).catch(() => {});
+        if (options.length > 1 || quoted.length < options.length) {
           toast[quoted.length === options.length ? "success" : "warning"](
             quoted.length
               ? `${quoted.length} of ${options.length} battery options quoted: ${quoted.join(", ")} (drafts on the lead).`
