@@ -13,7 +13,7 @@ type DesignsHeroFooterProps = {
   finishLabel?: string;
   /** True while Finish (the last step's `onNext`) is persisting the design. */
   finishing?: boolean;
-  /** The proposal screen's slate look: a thin rule for the bar, gold Back, blue Save. */
+  /** The proposal screen's slate look: a thin rule for the bar (buttons keep their colours). */
   slate?: boolean;
 };
 
@@ -44,9 +44,7 @@ export function DesignsHeroFooter({
                 <button
                   type="button"
                   onClick={onBack}
-                  className={`inline-flex min-h-12 min-w-[157px] items-center justify-center gap-[14px] rounded-xl font-source-sans text-[18px] font-semibold uppercase leading-6 shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition hover:brightness-95 ${
-                    slate ? "bg-[linear-gradient(135deg,#E0B356_0%,#B8862E_100%)] text-white" : "bg-design-next text-black"
-                  }`}
+                  className="inline-flex min-h-12 min-w-[157px] items-center justify-center gap-[14px] rounded-xl bg-design-next font-source-sans text-[18px] font-semibold uppercase leading-6 text-black shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition hover:brightness-95"
                 >
                   <Icon
                     name="ArrowRight"
@@ -61,7 +59,7 @@ export function DesignsHeroFooter({
               type="button"
               onClick={onNext}
               disabled={fillPercent === 100 && finishing}
-              className={`inline-flex min-h-12 min-w-[157px] items-center justify-center gap-[14px] rounded-xl font-source-sans text-[18px] font-semibold uppercase leading-6 shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-70 ${fillPercent === 100 ? (slate ? "text-white bg-[linear-gradient(135deg,#1E9BEF_0%,#0B6FC4_100%)]" : "text-white bg-design-accent-cyan") : "text-black bg-design-next"} ${
+              className={`inline-flex min-h-12 min-w-[157px] items-center justify-center gap-[14px] rounded-xl font-source-sans text-[18px] font-semibold uppercase leading-6 shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-70 ${fillPercent === 100 ? "text-white bg-design-accent-cyan" : "text-black bg-design-next"} ${
                 showNext ? "" : "invisible pointer-events-none"
               }`}
             >
