@@ -25,7 +25,7 @@ import { fitRoofJunctions } from "./junctions";
 import { flatSectionsFromLines } from "./flatSections";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
-import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
+import { findExistingArrays, findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
 import { keepPanelsClear } from "@/lib/designer/panelClearance";
 import { bestSquareRoof, rankSquareReadings, wallAxisDeg, type SquareReading } from "@/lib/designer/squareRoof";
 import { DESIGN_RULES, inverterSizingFor, roofPitchDegrees, type InverterSizing, type PanelOrientation } from "@/lib/designer/designRules";
@@ -117,7 +117,7 @@ export type AiRoofTrace = {
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-09.9";
+export const ROOF_ENGINE_VERSION = "2026-11-10.1";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -913,6 +913,10 @@ function tracedFaces(paths: LatLngRing[], ctx: RoofDesignContext): RoofFaceSet |
   };
   const spots = snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)).filter((o) => o.kind === "spot" && !nearLine(o.ring)) : [];
   const traced: RoofObstruction[] = t.obstructions.filter((o) => o.ring.length >= 3).map((o) => ({ kind: o.kind === "shading" ? "step" : "spot", ring: o.ring, sizePx: 0 }));
+  // Existing solar panels, from the photo as well as Opus's outlines: Opus
+  // doesn't always mark them, or falls short of their edges (26 Bridgeview Cct,
+  // 10 Nov 2026: new panels laid over the existing array).
+  const arrays = snap ? findExistingArrays(snap.luma, faces.map((f) => f.ring), t.obstructions.filter((o) => o.kind === "panels" && o.ring.length >= 3).map((o) => o.ring)) : [];
   const faint = t.lines.filter((l) => l.seen === "faint").length;
   const unconfirmed = checks.filter((c) => c.status === "unconfirmed").length;
   return {
@@ -920,7 +924,7 @@ function tracedFaces(paths: LatLngRing[], ctx: RoofDesignContext): RoofFaceSet |
     faces,
     interiorChecks: checks,
     moved: fit.moved,
-    obstructions: [...traced, ...spots],
+    obstructions: [...traced, ...arrays, ...spots],
     gables: 0,
     evidence: [],
     determined: faint === 0 && unconfirmed === 0,
@@ -1005,7 +1009,7 @@ function readRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, { relook = f
     gables += best.gables;
     sources.add(best.source);
   }
-  const obstructions = snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)) : [];
+  const obstructions = snap ? [...findRoofObstructions(snap.luma, faces.map((f) => f.ring)), ...findExistingArrays(snap.luma, faces.map((f) => f.ring))] : [];
   const source: FaceSource = sources.has("assumed-hip")
     ? "assumed-hip"
     : sources.has("height-model")

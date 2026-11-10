@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findRoofObstructions } from "./roofObstructions";
+import { findExistingArrays, findRoofObstructions } from "./roofObstructions";
 import { keepFacesInsideRoofs } from "./roofLineCorrect";
 import type { GeoTiffRaster } from "@/utils/geotiff";
 
@@ -46,5 +46,41 @@ describe("keepFacesInsideRoofs", () => {
     const [f] = keepFacesInsideRoofs(faces, [outline]);
     const east = Math.max(...f.ring.map((p) => p.lng));
     expect(east).toBeLessThanOrEqual(ll(190.5, 0).lng);
+  });
+});
+
+describe("findExistingArrays", () => {
+  // A 2 x 3 block of panels (1.0 x 1.35 m, light frame lines between them) on a white sheet roof.
+  const withArray = (base: number, panel: number) =>
+    image(base, (set) => {
+      for (let y = 40; y < 40 + 2 * 34; y++) for (let x = 40; x < 40 + 3 * 45; x++) {
+        if (x >= 190 || y >= 190) continue;
+        set(x, y, (x - 40) % 45 < 2 || (y - 40) % 34 < 2 ? base - 40 : panel);
+      }
+    });
+
+  it("finds an existing array on a light roof and outlines all of it (26 Bridgeview Cct)", () => {
+    const luma = withArray(210, 70);
+    const found = findExistingArrays(luma, [face]);
+    expect(found).toHaveLength(1);
+    const cols = found[0].ring.map((p) => ((p.lng - bounds.west) / (bounds.east - bounds.west)) * W);
+    const rows = found[0].ring.map((p) => ((bounds.north - p.lat) / (bounds.north - bounds.south)) * H);
+    expect(Math.min(...cols)).toBeLessThanOrEqual(43);
+    expect(Math.max(...cols)).toBeGreaterThanOrEqual(172);
+    expect(Math.min(...rows)).toBeLessThanOrEqual(43);
+    expect(Math.max(...rows)).toBeGreaterThanOrEqual(105);
+  });
+
+  it("takes no shadow line, vent or plain roof for panels", () => {
+    const luma = image(210, (set) => {
+      for (let x = 20; x < 180; x++) for (let y = 150; y < 156; y++) set(x, y, 90); // parapet shadow
+      for (let y = 60; y < 70; y++) for (let x = 60; x < 70; x++) set(x, y, 60); // vent
+      for (let y = 10; y < 80; y++) for (let x = 110; x < 190; x++) set(x, y, 70); // upper storey's shadow, against the face edge
+    });
+    expect(findExistingArrays(luma, [face])).toHaveLength(0);
+  });
+
+  it("leaves dark roofs to Opus's outlines", () => {
+    expect(findExistingArrays(withArray(110, 40), [face])).toHaveLength(0);
   });
 });
