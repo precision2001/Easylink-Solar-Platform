@@ -150,6 +150,17 @@ const TINT = {
   neutral: "border-white/20 bg-white/[0.07]",
   /** EasyLink logo yellow → gold, near-solid so the brand colour reads at full strength. */
   brandGold: "border-[rgba(255,245,170,0.85)] bg-[linear-gradient(133deg,rgba(255,239,98,0.95)_0%,rgba(255,200,40,0.93)_45%,rgba(247,141,0,0.93)_100%)]",
+  /* Slate palette (owner's mock-up, 10 Nov 2026). */
+  /** Steel blue glass (stat cards). */
+  steel: "border-[rgba(147,197,253,0.35)] bg-[linear-gradient(160deg,rgba(70,130,180,0.55)_0%,rgba(30,64,105,0.6)_100%)]",
+  /** Grey slate glass (stat cards, panel tier, battery). */
+  slate: "border-white/20 bg-[linear-gradient(160deg,rgba(120,135,155,0.38)_0%,rgba(55,65,82,0.5)_100%)]",
+  /** Deep green glass (system details). */
+  green: "border-[rgba(110,231,183,0.25)] bg-[linear-gradient(150deg,rgba(26,92,66,0.85)_0%,rgba(14,52,44,0.9)_100%)]",
+  /** Deep navy (total price). */
+  navy: "border-[rgba(96,165,250,0.35)] bg-[linear-gradient(160deg,rgba(18,52,110,0.92)_0%,rgba(10,30,70,0.95)_100%)]",
+  /** Charcoal (25-year savings). */
+  charcoal: "border-white/15 bg-[linear-gradient(160deg,rgba(52,56,64,0.85)_0%,rgba(30,33,39,0.92)_100%)]",
 } as const;
 
 function Sheen() {
@@ -179,7 +190,7 @@ function ProposalStatCard({
 }: {
   label: string;
   value: string;
-  variant: "cyan" | "gold";
+  variant: keyof typeof TINT;
 }) {
   return (
     <div className={`${GLASS} ${TINT[variant]} flex min-w-0 flex-col items-center justify-center px-2 py-[clamp(4px,0.9vh,10px)]`}>
@@ -214,9 +225,9 @@ function ProposalDetailRow({
 }) {
   return (
     <p className="flex min-w-0 items-baseline gap-x-1.5 text-[clamp(11px,1.7vh,14px)] leading-[1.35]">
-      <span className="shrink-0 font-source-sans font-bold text-[#152238]">{label}:</span>
+      <span className="shrink-0 font-source-sans font-bold text-white">{label}:</span>
       <span
-        className="min-w-0 truncate font-inter font-medium text-[#152238]/85"
+        className="min-w-0 truncate font-inter font-medium text-white/90"
         title={value}
         {...(mask ? { "data-clarity-mask": "true" } : {})}
       >
@@ -237,7 +248,7 @@ function ProposalSubMetric({
   valueClassName?: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-center rounded-[10px] border border-white/15 bg-white/10 px-1 py-[clamp(2px,0.6vh,6px)]">
+    <div className="flex min-w-0 flex-1 flex-col items-center rounded-[10px] border border-white/10 bg-[#0B1A3A]/70 px-1 py-[clamp(2px,0.6vh,6px)]">
       <p className="truncate font-inter text-[10.5px] text-white/60">{label}</p>
       <p className="font-source-sans text-[clamp(14px,2.1vh,18px)] font-semibold leading-tight">
         <span className={valueClassName ?? "text-white"}>{value}</span>
@@ -263,7 +274,7 @@ function PanelTierSelector({
   info?: Record<string, { model: string; w: number }>;
 }) {
   return (
-    <div className={`${GLASS} ${TINT.design} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
+    <div className={`${GLASS} ${TINT.slate} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
       <Sheen />
       <CardTitle>Panel Tier</CardTitle>
       <div className="relative mt-2 flex min-h-0 flex-1 flex-col justify-evenly gap-1.5">
@@ -292,14 +303,14 @@ function PanelTierSelector({
               onClick={() => onSelect(tier.id)}
               className={`flex w-full items-center justify-between gap-2 rounded-[10px] border px-2.5 py-[clamp(3px,0.8vh,8px)] text-left transition ${
                 selected
-                  ? "border-yellow-lemon/70 bg-[#0B2A4A]/90 shadow-md"
-                  : "border-white/25 bg-white/15 hover:bg-white/25"
+                  ? "border-[#7DD3FC]/70 bg-[linear-gradient(90deg,#1E9BEF_0%,#0E86E0_60%,#22B5F5_100%)] shadow-[0_4px_18px_rgba(14,134,224,0.45)]"
+                  : "border-white/15 bg-[#1F2937]/45 hover:bg-[#1F2937]/65"
               }`}
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span
                   className={`flex size-3.5 shrink-0 items-center justify-center rounded-full border-2 ${
-                    selected ? "border-yellow-lemon" : "border-white/60"
+                    selected ? "border-white" : "border-white/60"
                   }`}
                 >
                   {selected ? <span className="size-1.5 rounded-full bg-yellow-lemon" /> : null}
@@ -318,7 +329,7 @@ function PanelTierSelector({
                   </span>
                 </span>
               </span>
-              <span className={`shrink-0 font-source-sans text-[12.5px] font-semibold ${selected ? "text-yellow-lemon" : "text-white"}`}>
+              <span className={`shrink-0 font-source-sans text-[12.5px] font-semibold ${selected ? "text-white" : "text-white/90"}`}>
                 {(deltas[tier.id] ?? 0) === 0
                   ? "Included"
                   : `${deltas[tier.id] > 0 ? "+" : "−"}${formatAud(Math.abs(deltas[tier.id]))}`}
@@ -377,28 +388,27 @@ function BatterySelector({
 }) {
   const letterOf = (id: string) => OPTION_LETTERS[optionIds.indexOf(id)] ?? "";
   return (
-    <div className={`${GLASS} ${TINT.brandGold} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
+    <div className={`${GLASS} ${TINT.slate} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
       <Sheen />
       <CardTitle
-        dark
         right={
           optionIds.length > 1 ? (
             <button
               type="button"
               onClick={onCompare}
-              className="rounded-full bg-[#0B2A4A] px-3 py-[2px] font-source-sans text-[12px] font-bold text-yellow-lemon shadow-md ring-1 ring-white/50 transition hover:brightness-125"
+              className="rounded-full bg-[#0B1E3F] px-3 py-[2px] font-source-sans text-[12px] font-bold text-white shadow-md ring-1 ring-[#7DD3FC]/60 transition hover:brightness-125"
             >
               Compare {optionIds.length} options →
             </button>
           ) : (
-            <span className="rounded-full bg-black/70 px-2.5 py-[1px] font-source-sans text-[12px] font-semibold text-yellow-lemon">
+            <span className="rounded-full bg-[#0B1E3F] px-2.5 py-[1px] font-source-sans text-[12px] font-semibold text-[#7DD3FC] ring-1 ring-[#7DD3FC]/40">
               {tiles.find((t) => t.id === shownId)?.label ?? findBatteryCapacity(shownId).label}
             </span>
           )
         }
       >
         Battery{" "}
-        <span className="font-semibold normal-case tracking-normal text-[#152238]/70">
+        <span className="font-semibold normal-case tracking-normal text-white/70">
           · pick up to {MAX_BATTERY_OPTIONS} to compare
         </span>
       </CardTitle>
@@ -414,14 +424,14 @@ function BatterySelector({
               onClick={() => onTap(battery.id)}
               className={`relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-[9px] border px-1 py-[clamp(1px,0.5vh,6px)] font-source-sans text-[12.5px] font-semibold leading-tight transition ${
                 inOptions
-                  ? `border-white bg-[#0B2A4A]/90 text-white shadow-md ${isShown && optionIds.length > 1 ? "ring-[3px] ring-yellow-lemon" : ""}`
-                  : "border-white/70 bg-white/55 text-[#152238] hover:bg-white/75"
+                  ? `border-[#7DD3FC]/50 bg-[linear-gradient(160deg,#1E2A78_0%,#0B2350_100%)] text-[#7DD3FC] shadow-md ${isShown && optionIds.length > 1 ? "ring-2 ring-[#38BDF8]" : ""}`
+                  : "border-white/15 bg-[linear-gradient(160deg,rgba(148,163,184,0.42)_0%,rgba(100,116,139,0.38)_100%)] text-white hover:brightness-110"
               }`}
             >
               {inOptions ? (
                 <span
                   className={`absolute left-1 top-1 flex h-[16px] min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                    "bg-yellow-lemon text-[#0B2A4A]"
+                    "bg-[#38BDF8] text-[#0B1E3F]"
                   }`}
                 >
                   {letterOf(battery.id)}
@@ -452,8 +462,8 @@ function BatterySelector({
                 // Which batteries this option is: a small label each in the top-right corner (mark and name), even two of the same.
                 <span className={`pointer-events-none absolute top-1 flex max-w-[calc(100%-2.6rem)] flex-col items-end gap-[2px] ${inOptions && optionIds.length > 1 ? "right-4" : "right-1"}`}>
                   {models[battery.id].slice(0, 2).map((m, i) => (
-                    <span key={i} className={`inline-flex max-w-full items-center gap-1 rounded-full px-1.5 py-[1px] text-[9.5px] font-semibold leading-tight ${inOptions ? "bg-white/10 text-white/90" : "bg-[#0B2A4A]/10 text-[#0B2A4A]"}`} title={m.label}>
-                      <BatteryMark photo={m.photo} dark={!inOptions} />
+                    <span key={i} className={`inline-flex max-w-full items-center gap-1 rounded-full px-1.5 py-[1px] text-[9.5px] font-semibold leading-tight ${inOptions ? "bg-white/10 text-white/90" : "bg-black/20 text-white"}`} title={m.label}>
+                      <BatteryMark photo={m.photo} />
                       <span className="truncate">{m.label}</span>
                     </span>
                   ))}
@@ -462,7 +472,7 @@ function BatterySelector({
               ) : null}
               {battery.label}
               {battery.id !== "none" && prices[battery.id] ? (
-                <span className={`text-[10px] font-normal ${inOptions ? "text-yellow-lemon" : "text-[#152238]/70"}`}>
+                <span className={`text-[10px] font-normal ${inOptions ? "text-white/85" : "text-white/80"}`}>
                   +{formatAud(prices[battery.id])}
                   {estimated.has(battery.id) ? " est." : ""}
                 </span>
@@ -1046,10 +1056,10 @@ export const DesignsProposalStepContent = forwardRef<
     <div className="flex h-full min-h-0 w-full flex-1 self-stretch overflow-y-auto lg:overflow-hidden">
       <div className="relative z-10 mx-auto flex h-full min-h-0 w-full max-w-[1446px] flex-col gap-[clamp(6px,1.2vh,12px)] px-4 py-[clamp(4px,1vh,10px)] sm:px-8 lg:px-[81px]">
         <div className="grid shrink-0 grid-cols-2 gap-[clamp(6px,1vw,12px)] lg:grid-cols-4">
-          <ProposalStatCard label="System Size" value={proposal.summary.systemSize} variant="cyan" />
-          <ProposalStatCard label="Total Panels" value={proposal.summary.totalPanels} variant="gold" />
-          <ProposalStatCard label="Yearly Savings" value={pricedFigure(formatAud(savings.yearlySavings))} variant="cyan" />
-          <ProposalStatCard label="Payback" value={pricedFigure(computedPayback)} variant="gold" />
+          <ProposalStatCard label="System Size" value={proposal.summary.systemSize} variant="steel" />
+          <ProposalStatCard label="Total Panels" value={proposal.summary.totalPanels} variant="slate" />
+          <ProposalStatCard label="Yearly Savings" value={pricedFigure(formatAud(savings.yearlySavings))} variant="steel" />
+          <ProposalStatCard label="Payback" value={pricedFigure(computedPayback)} variant="slate" />
         </div>
 
         {/* Row 1: panel tier and battery side by side (the placement the owner chose). */}
@@ -1084,9 +1094,9 @@ export const DesignsProposalStepContent = forwardRef<
 
         {/* Row 2: system details, price, 25-year net savings. */}
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-[clamp(6px,1vw,12px)] md:grid-cols-3">
-          <div className={`${GLASS} ${TINT.brandGold} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.green} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
             <Sheen />
-            <CardTitle dark>System Details</CardTitle>
+            <CardTitle>System Details</CardTitle>
             <div className="relative mt-1.5 flex min-h-0 flex-1 flex-col justify-evenly overflow-hidden">
               <ProposalDetailRow label="Customer" value={displayCustomerName} mask />
               <ProposalDetailRow label="Address" value={proposal.customer.address} mask />
@@ -1122,7 +1132,7 @@ export const DesignsProposalStepContent = forwardRef<
             </div>
           </div>
 
-          <div className={`${GLASS} ${TINT.cyan} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.navy} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
             <Sheen />
             <div className="relative flex min-h-0 flex-1 flex-col justify-evenly gap-1 text-center">
               <p className="font-source-sans text-[11px] font-semibold uppercase tracking-[0.8px] text-white/85">
@@ -1164,13 +1174,13 @@ export const DesignsProposalStepContent = forwardRef<
             </div>
           </div>
 
-          <div className={`${GLASS} ${TINT.neutral} flex min-h-0 flex-col items-center justify-center p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.charcoal} flex min-h-0 flex-col items-center justify-center p-[clamp(8px,1.4vh,14px)]`}>
             <Sheen />
             <p className="relative font-source-sans text-[12px] font-semibold uppercase tracking-[0.8px] text-white/80">
               25-Year Net Savings
             </p>
             <p className="relative font-source-sans text-[clamp(26px,5vh,40px)] font-bold leading-[1.1]">
-              <span className="bg-[linear-gradient(154.98deg,#2094F3_0%,#17CFCF_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
+              <span className="bg-[linear-gradient(154.98deg,#34D399_0%,#2DD4BF_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
                 {formatAud(netSavings25yr)}
               </span>
             </p>
@@ -1179,7 +1189,7 @@ export const DesignsProposalStepContent = forwardRef<
 
         <button
           type="button"
-          className="mx-auto w-full max-w-[478px] shrink-0 rounded-[12px] bg-[linear-gradient(172.76deg,#2094F3_0%,#17CFCF_100%)] py-[clamp(4px,1vh,10px)] font-source-sans text-[clamp(14px,2.2vh,18px)] font-semibold uppercase tracking-[0.9px] text-white shadow-[0px_0px_30px_0px_rgba(32,148,243,0.45)] ring-1 ring-white/40 transition hover:brightness-110"
+          className="mx-auto w-full max-w-[478px] shrink-0 rounded-[12px] bg-[linear-gradient(90deg,#22D3EE_0%,#1E9BEF_100%)] py-[clamp(4px,1vh,10px)] font-source-sans text-[clamp(14px,2.2vh,18px)] font-semibold uppercase tracking-[0.9px] text-[#0B1E3F] shadow-[0px_0px_30px_0px_rgba(32,148,243,0.45)] ring-1 ring-white/40 transition hover:brightness-110"
           onClick={() => setDownloadModalOpen(true)}
         >
           Download your proposal
