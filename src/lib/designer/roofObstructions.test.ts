@@ -84,3 +84,17 @@ describe("findExistingArrays", () => {
     expect(findExistingArrays(withArray(110, 40), [face])).toHaveLength(0);
   });
 });
+
+
+describe("panelsOffRoof", () => {
+  it("takes out a panel over a dark courtyard beside a light roof, keeps the ones on the roof", () => {
+    const W = 200, H = 200;
+    const data = new Float32Array(W * H).fill(215);
+    for (let y = 0; y < H; y++) for (let x = 120; x < W; x++) data[y * W + x] = 40; // courtyard on the right
+    const luma = { width: W, height: H, data, bounds: { north: 0.002, south: 0, west: 0, east: 0.002 } } as never;
+    const ll = (x: number, y: number) => ({ lat: 0.002 - (y / H) * 0.002, lng: (x / W) * 0.002 });
+    const face = [ll(0, 0), ll(200, 0), ll(200, 200), ll(0, 200)];
+    const panel = (x: number) => [ll(x, 50), ll(x + 30, 50), ll(x + 30, 100), ll(x, 100)];
+    expect(panelsOffRoof(luma, [face], [panel(20), panel(70), panel(100), panel(140)])).toEqual([2, 3]);
+  });
+});
