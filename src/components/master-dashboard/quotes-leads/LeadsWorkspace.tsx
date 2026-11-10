@@ -4,8 +4,8 @@ import { QuoteOptionsChip } from "./QuoteOptionsChip";
 import Image from "next/image";
 import Link from "next/link";
 import { leadDesignHref } from "@/lib/designs/leadDesignLink";
-import { shareLabel } from "@/lib/designs/send-to-customer";
 import { SendDesignDialog } from "@/components/designs/SendDesignDialog";
+import { DesignShareBadge } from "@/components/designs/DesignShareBadge";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/master-dashboard/quotes-leads/icons";
 import { RoofDesignCell, RoofDesignViewer, useAutoRoofDesigns } from "@/components/master-dashboard/quotes-leads/RoofDesign";
@@ -164,29 +164,11 @@ function SolarDesignButton({ lead, onSend }: { lead: PipelineLead; onSend?: () =
       <span className="truncate text-[11.5px] text-[#64748B]" title={lead.source ?? undefined}>
         {kind.label} · {ago(lead.createdAt)}
       </span>
-      {lead.design ? <DesignShareLine design={lead.design} onSend={onSend} /> : null}
+      {lead.design ? <DesignShareBadge design={lead.design} onSend={onSend} size="sm" /> : null}
     </div>
   );
 }
 
-/** When the lead's design last went to the customer; a quick Send when it hasn't (or changed since). */
-function DesignShareLine({ design, onSend }: { design: NonNullable<PipelineLead["design"]>; onSend?: () => void }) {
-  const { text, stale } = shareLabel(design);
-  return (
-    <span className="flex max-w-full items-center gap-1 text-[11.5px]">
-      <span className={`truncate ${stale ? "text-[#9A5B00]" : "text-[#047857]"}`}>{text}</span>
-      {stale && onSend ? (
-        <button
-          type="button"
-          onClick={onSend}
-          className="shrink-0 rounded-[4px] px-1 font-bold text-[#1D4ED8] underline underline-offset-2 hover:text-[#1E3A8A] focus-visible:outline-2 focus-visible:outline-[#2563EB]"
-        >
-          Send
-        </button>
-      ) : null}
-    </span>
-  );
-}
 
 function RowMenu({ items }: { items: { label: string; danger?: boolean; onSelect: () => void }[] }) {
   const [open, setOpen] = useState(false);

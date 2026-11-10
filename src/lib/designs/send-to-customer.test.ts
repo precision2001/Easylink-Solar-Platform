@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeShare, shareLabel } from "./send-to-customer";
+import { describeShare, shareLabel, shareState } from "./send-to-customer";
 
 describe("describeShare", () => {
   it("says what went and why anything didn't", () => {
@@ -25,5 +25,14 @@ describe("shareLabel", () => {
       stale: false,
     });
     expect(shareLabel({ sharedAt: "2026-11-10T08:00:00Z", sharedChannels: "EMAIL", updatedAt: "2026-11-10T09:30:00Z" }, now).text).toBe("Changed since sent 2 h ago by email");
+  });
+});
+
+describe("shareState", () => {
+  const now = Date.parse("2026-11-10T10:00:00Z");
+  it("is unsent, changed or sent", () => {
+    expect(shareState({ sharedAt: null, sharedChannels: null, updatedAt: "2026-11-10T09:00:00Z" }, now)).toEqual({ state: "unsent", when: null, how: null });
+    expect(shareState({ sharedAt: "2026-11-10T08:00:00Z", sharedChannels: "EMAIL,SMS", updatedAt: "2026-11-10T08:00:30Z" }, now)).toEqual({ state: "sent", when: "2 h ago", how: "Email + SMS" });
+    expect(shareState({ sharedAt: "2026-11-10T09:50:00Z", sharedChannels: "EMAIL", updatedAt: "2026-11-10T09:58:00Z" }, now)).toEqual({ state: "changed", when: "10 min ago", how: "Email" });
   });
 });
