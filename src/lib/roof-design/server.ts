@@ -62,7 +62,10 @@ export async function nswSecondPhoto(img: Snapshot, pin: LatLng): Promise<{ png:
     alignedNswSnapshot(img.png, pin.lat, pin.lng, img.geo.zoom).catch(() => null),
     nswImageryDate(pin.lat, pin.lng).catch(() => null),
   ]);
-  if (!aligned) return null;
+  // Only a photo that matches Google's: one that doesn't is of a different
+  // time (53 Turffontein Ave, Box Hill: flown April 2021, bare graded land
+  // where Google shows the new house) and would mislead the trace.
+  if (!aligned?.offsetPx) return null;
   const parts = ["NSW Spatial Services aerial photo"];
   if (date?.capturedOn) parts.push(`flown ${date.capturedOn}`);
   if (date?.resolutionCm) parts.push(`${date.resolutionCm} cm pixels, enlarged to match`);
