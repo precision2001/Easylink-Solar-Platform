@@ -153,6 +153,19 @@ def staff_id():
     return STAFF_ID or _token["user"]
 
 
+def book(kind, lead_id, start, end, notes=None):
+    """Book through /ai-bookings so the person chosen in the Operations Portal gets it."""
+    try:
+        body = {"kind": kind, "leadId": lead_id, "startAt": start.isoformat(), "endAt": end.isoformat()}
+        if notes:
+            body["notes"] = notes[:2000]
+        return api("POST", "/ai-bookings", body)
+    except ToolError as e:
+        if "taken" in str(e).lower():
+            raise ToolError("That time was just taken; offer another time.")
+        raise
+
+
 def sydney(dt_text):
     dt = datetime.fromisoformat(dt_text.replace("Z", "+00:00"))
     return dt.replace(tzinfo=SYD) if dt.tzinfo is None else dt.astimezone(SYD)
@@ -222,7 +235,8 @@ def site_visit_times(a):
     days = min(int(a.get("days") or 5), 10)
     end = start + timedelta(days=days + 4)
     day0 = datetime(start.year, start.month, start.day, tzinfo=SYD)  # Sydney midnight, not UTC midnight
-    taken = rows(api("GET", "/appointments?" + qs(limit=100, installerId=staff_id(), status="SCHEDULED", startFrom=day0.isoformat(), startTo=(day0 + timedelta(days=(end - start).days + 1)).isoformat())))
+    # Busy times of whoever would get the visit (chosen in the Operations Portal > AI bookings).
+    taken = rows(api("GET", "/ai-bookings/busy?" + qs(kind="SITE_VISIT", leadId=a.get("leadId"), **{"from": day0.isoformat()}, to=(day0 + timedelta(days=(end - start).days + 1)).isoformat())))
     busy = [(sydney(x["startAt"]), sydney(x["endAt"])) for x in taken]
     slots, d = [], start
     while len(slots) < 6 and d <= end:
@@ -242,19 +256,10 @@ def book_site_visit(a):
     s = sydney(a["start"])
     if s < datetime.now(SYD) + timedelta(hours=2):
         raise ToolError("That time has passed or is too soon; pick another time.")
-    clash = rows(api("GET", "/appointments?" + qs(limit=20, installerId=staff_id(), status="SCHEDULED", startFrom=s.isoformat(), startTo=(s + timedelta(hours=1)).isoformat())))
-    if any(sydney(x["startAt"]) < s + timedelta(hours=1) and sydney(x["endAt"]) > s for x in clash):
-        raise ToolError("That time was just taken; offer another time.")
-    api("POST", "/appointments", {
-        "leadId": lead["id"],
-        "installerId": staff_id(),
-        "title": f"Site visit: {lead.get('customerName')}",
-        "notes": "Booked by EasyLink AI on a phone call." + (f" {a['notes']}" if a.get("notes") else ""),
-        "startAt": s.isoformat(),
-        "endAt": (s + timedelta(hours=1)).isoformat(),
-    })
+    # The backend picks the person, re-checks the slot, assigns the lead and notifies them.
+    out = book("SITE_VISIT", lead["id"], s, s + timedelta(hours=1), a.get("notes"))
     append_note(lead, f"Site visit booked for {say_time(s)}.")
-    return {"booked": True, "say": say_time(s), "message": "Confirm the time and that they'll get a text."}
+    return {"booked": True, "say": say_time(s), "with": out.get("assignedTo"), "message": "Confirm the time and that they'll get a text."}
 
 
 def indicative_price(a):
@@ -304,14 +309,7 @@ def request_callback(a):
         lead = find_lead(lead_id=lead["id"])
     asked = sydney(a["preferredTime"]) if a.get("preferredTime") else None
     when = next_business_time(max(asked or datetime.now(SYD), datetime.now(SYD) + timedelta(minutes=30)))
-    api("POST", "/appointments", {
-        "leadId": lead["id"],
-        "installerId": staff_id(),
-        "title": f"Call back: {lead.get('customerName')}",
-        "notes": f"Requested via EasyLink AI. Reason: {a.get('reason') or 'not given'}",
-        "startAt": when.isoformat(),
-        "endAt": (when + timedelta(minutes=15)).isoformat(),
-    })
+    book("CALLBACK", lead["id"], when, when + timedelta(minutes=15), f"Reason: {a.get('reason') or 'not given'}")
     append_note(lead, f"Callback requested for {say_time(when)}. Reason: {a.get('reason') or 'not given'}")
     return {"booked": True, "say": say_time(when)}
 
@@ -331,14 +329,7 @@ def report_service_issue(a):
         append_note(lead, "Service request: " + text)
     # Safety issues are flagged for the next 15 minutes, whatever the hour; others go to the next business hour.
     when = datetime.now(SYD) + timedelta(minutes=15) if safety else next_business_time(datetime.now(SYD) + timedelta(hours=1))
-    api("POST", "/appointments", {
-        "leadId": lead["id"],
-        "installerId": staff_id(),
-        "title": ("URGENT safety: " if safety else "Service: ") + (lead.get("customerName") or "customer"),
-        "notes": text,
-        "startAt": when.isoformat(),
-        "endAt": (when + timedelta(minutes=15)).isoformat(),
-    })
+    book("SERVICE", lead["id"], when, when + timedelta(minutes=15), ("URGENT SAFETY. " if safety else "") + text)
     return {"logged": True, "urgent": safety, "callBack": say_time(when), "message": "A team member will call back." + (" Tell them to isolate the system if safe and call 000 if there is fire." if safety else "")}
 
 
