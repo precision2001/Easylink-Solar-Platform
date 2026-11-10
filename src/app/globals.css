@@ -652,6 +652,17 @@
 }
 
 /* Used by RainbowButton's animated gradient-ring border. */
+/* Design send indicator: glitter specks fade in and out (two layers, out of step). */
+@keyframes glitter-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
 @keyframes rainbow-trace-spin {
   to {
     transform: rotate(360deg);
