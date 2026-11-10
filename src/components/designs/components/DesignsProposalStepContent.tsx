@@ -155,8 +155,6 @@ const TINT = {
   steel: "border-[rgba(147,197,253,0.35)] bg-[linear-gradient(160deg,rgba(70,130,180,0.55)_0%,rgba(30,64,105,0.6)_100%)]",
   /** Grey slate glass (stat cards, panel tier, battery). */
   slate: "border-white/20 bg-[linear-gradient(160deg,rgba(120,135,155,0.38)_0%,rgba(55,65,82,0.5)_100%)]",
-  /** Deep green glass (system details). */
-  green: "border-[rgba(110,231,183,0.25)] bg-[linear-gradient(150deg,rgba(26,92,66,0.85)_0%,rgba(14,52,44,0.9)_100%)]",
   /** Deep navy (total price). */
   navy: "border-[rgba(96,165,250,0.35)] bg-[linear-gradient(160deg,rgba(18,52,110,0.92)_0%,rgba(10,30,70,0.95)_100%)]",
   /** Charcoal (25-year savings). */
@@ -225,9 +223,9 @@ function ProposalDetailRow({
 }) {
   return (
     <p className="flex min-w-0 items-baseline gap-x-1.5 text-[clamp(11px,1.7vh,14px)] leading-[1.35]">
-      <span className="shrink-0 font-source-sans font-bold text-white">{label}:</span>
+      <span className="shrink-0 font-source-sans font-bold text-[#152238]">{label}:</span>
       <span
-        className="min-w-0 truncate font-inter font-medium text-white/90"
+        className="min-w-0 truncate font-inter font-medium text-[#152238]/85"
         title={value}
         {...(mask ? { "data-clarity-mask": "true" } : {})}
       >
@@ -1094,9 +1092,9 @@ export const DesignsProposalStepContent = forwardRef<
 
         {/* Row 2: system details, price, 25-year net savings. */}
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-[clamp(6px,1vw,12px)] md:grid-cols-3">
-          <div className={`${GLASS} ${TINT.green} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.brandGold} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
             <Sheen />
-            <CardTitle>System Details</CardTitle>
+            <CardTitle dark>System Details</CardTitle>
             <div className="relative mt-1.5 flex min-h-0 flex-1 flex-col justify-evenly overflow-hidden">
               <ProposalDetailRow label="Customer" value={displayCustomerName} mask />
               <ProposalDetailRow label="Address" value={proposal.customer.address} mask />
