@@ -1,0 +1,236 @@
+[
+ {
+  "name": "find_customer",
+  "description": "Look up the caller in EasyLink by phone (preferred) or email. Call at the start of every call. Returns their first name, area, sales stage and project phase, or found=false.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "phone": {
+     "type": "string",
+     "description": "Caller's phone number, any format"
+    },
+    "email": {
+     "type": "string"
+    }
+   }
+  }
+ },
+ {
+  "name": "save_enquiry",
+  "description": "Create or update the caller's enquiry with what they told you: name, contact, address, interests (solar, battery, EV charger, heat pump), quarterly bill, roof, timing, budget, notes. Returns leadId.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "phone": {
+     "type": "string"
+    },
+    "firstName": {
+     "type": "string"
+    },
+    "lastName": {
+     "type": "string"
+    },
+    "email": {
+     "type": "string"
+    },
+    "address": {
+     "type": "string",
+     "description": "Full street address including suburb, state and postcode"
+    },
+    "interests": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "quarterlyBill": {
+     "type": "number",
+     "description": "Electricity bill per quarter in AUD"
+    },
+    "roof": {
+     "type": "string"
+    },
+    "timing": {
+     "type": "string"
+    },
+    "budget": {
+     "type": "string"
+    },
+    "okToText": {
+     "type": "boolean",
+     "description": "Caller agreed to text confirmations"
+    },
+    "notes": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "phone"
+   ]
+  }
+ },
+ {
+  "name": "site_visit_times",
+  "description": "Get free site-visit times (weekdays, Sydney time). Offer two or three of the returned times.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "fromDate": {
+     "type": "string",
+     "description": "YYYY-MM-DD, earliest day the caller wants"
+    },
+    "days": {
+     "type": "integer",
+     "description": "How many days ahead to look, up to 10"
+    }
+   }
+  }
+ },
+ {
+  "name": "book_site_visit",
+  "description": "Book a one-hour site visit at one of the times from site_visit_times. Needs the leadId from find_customer or save_enquiry.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "leadId": {
+     "type": "string"
+    },
+    "start": {
+     "type": "string",
+     "description": "The 'start' value returned by site_visit_times"
+    },
+    "notes": {
+     "type": "string",
+     "description": "Access, pets, parking or anything the visitor should know"
+    }
+   },
+   "required": [
+    "leadId",
+    "start"
+   ]
+  }
+ },
+ {
+  "name": "indicative_price",
+  "description": "Indicative price range for a solar system, with or without a battery, after the federal STC discount. Never quote it as a final price.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "systemKw": {
+     "type": "number",
+     "description": "Solar size in kW, e.g. 6.6 or 10"
+    },
+    "panelCount": {
+     "type": "integer"
+    },
+    "batteryKwh": {
+     "type": "number"
+    },
+    "phase": {
+     "type": "integer",
+     "description": "Single or three phase power, if known"
+    }
+   }
+  }
+ },
+ {
+  "name": "job_status",
+  "description": "Where an existing customer's job is up to, and their next booking.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "leadId": {
+     "type": "string"
+    },
+    "phone": {
+     "type": "string"
+    },
+    "email": {
+     "type": "string"
+    }
+   }
+  }
+ },
+ {
+  "name": "request_callback",
+  "description": "Book a call back from a team member, e.g. out of hours, a pricing question beyond your limits, or when asked for a person who is unavailable.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "leadId": {
+     "type": "string"
+    },
+    "phone": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "preferredTime": {
+     "type": "string",
+     "description": "ISO date-time in Sydney time, if the caller gave one"
+    },
+    "reason": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "reason"
+   ]
+  }
+ },
+ {
+  "name": "report_service_issue",
+  "description": "Log a warranty or service problem and book an urgent or normal call back. Set safetyIssue for smoke, burning smell, sparking or water in equipment.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "leadId": {
+     "type": "string"
+    },
+    "phone": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "product": {
+     "type": "string"
+    },
+    "serial": {
+     "type": "string"
+    },
+    "fault": {
+     "type": "string"
+    },
+    "safetyIssue": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "fault"
+   ]
+  }
+ },
+ {
+  "name": "add_call_note",
+  "description": "Add a short note to the customer's record, e.g. commitments made or questions to follow up.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "leadId": {
+     "type": "string"
+    },
+    "phone": {
+     "type": "string"
+    },
+    "note": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "note"
+   ]
+  }
+ }
+]
