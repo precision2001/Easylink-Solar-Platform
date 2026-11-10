@@ -66,7 +66,7 @@ const LABEL = "flex flex-col gap-1 text-[12px] font-semibold text-[#475569]";
 const QUIET_BUTTON =
   "h-9 rounded-[8px] border border-[#CBD5E1] bg-white px-3 text-[13px] font-semibold text-[#334155] hover:border-[#64748B] disabled:opacity-50";
 
-type Panel = { leadId: string; kind: "next" | "lost" } | null;
+type Panel = { leadId: string; kind: "next" | "lost" | "delete" } | null;
 
 /* ---------- small parts ---------- */
 
@@ -310,6 +310,44 @@ function NextActionForm({ lead, meta, onDone, onCancel }: { lead: PipelineLead; 
       </div>
       {error ? <p className="m-0 text-[12.5px] font-semibold text-[#991B1B]">{error}</p> : null}
     </form>
+  );
+}
+
+/** Deleting a lead is for good: it asks once, in the row, before it goes. */
+function DeleteForm({ lead, onDone, onCancel }: { lead: PipelineLead; onDone: () => void; onCancel: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/leads/${encodeURIComponent(lead.id)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.success === false) throw new Error(json?.message ?? "Could not delete the lead.");
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete the lead.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="m-0 text-[13px] font-bold text-[#0F172A]">
+        Delete {lead.customerName}?
+        <span className="ml-2 font-normal text-[#5B6B80]">The lead, its tasks and notes are removed for good. This can&apos;t be undone.</span>
+      </p>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => void remove()} disabled={busy} className="h-9 rounded-[8px] bg-[#B91C1C] px-4 text-[13px] font-bold text-white hover:bg-[#991B1B] disabled:opacity-50">
+          {busy ? "Deleting…" : "Delete lead"}
+        </button>
+        <button type="button" onClick={onCancel} className={QUIET_BUTTON}>
+          Cancel
+        </button>
+      </div>
+      {error ? <p className="m-0 text-[12.5px] font-semibold text-[#991B1B]">{error}</p> : null}
+    </div>
   );
 }
 
@@ -626,17 +664,19 @@ export function LeadsWorkspace({
                 const due = l.nextAction ? describeDue(l.nextAction.dueAt) : null;
                 const chip = TONE_CHIP[due?.tone ?? "late"];
                 const second = [l.customerPhone, suburbOf(l.address)].filter(Boolean).join(" · ");
+                const del = { label: "Delete lead…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "delete" }) };
                 const menu =
                   view === "lost"
-                    ? [{ label: "Reopen lead", onSelect: () => void act(l, () => updateLeadPipeline(l.id, { reopen: true })) }]
+                    ? [{ label: "Reopen lead", onSelect: () => void act(l, () => updateLeadPipeline(l.id, { reopen: true })) }, del]
                     : view === "spam"
-                      ? [{ label: "Not spam", onSelect: () => void setSpam(l, false) }]
+                      ? [{ label: "Not spam", onSelect: () => void setSpam(l, false) }, del]
                       : [
                           { label: "New quote", onSelect: () => setQuotesFor({ lead: l, startWith: "create" }) },
                           { label: "Quotes", onSelect: () => setQuotesFor({ lead: l, startWith: "list" }) },
                           ...(l.design ? [{ label: "Send design to customer", onSelect: () => setSendDesignFor(l) }] : []),
                           { label: "Mark as lost…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "lost" }) },
                           { label: "Mark as spam", danger: true, onSelect: () => void setSpam(l, true) },
+                          del,
                         ];
                 return [
                   <tr
@@ -805,7 +845,9 @@ export function LeadsWorkspace({
                     <tr key={`${l.id}-panel`}>
                       <td colSpan={7} className="border-b border-[#E3E8EF] bg-[#F8FAFC] px-5 pb-4 pt-1">
                         <div className="rounded-[12px] border border-[#E3E8EF] bg-white p-4">
-                          {open === "next" ? (
+                          {open === "delete" ? (
+                            <DeleteForm lead={l} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
+                          ) : open === "next" ? (
                             <NextActionForm lead={l} meta={meta} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
                           ) : (
                             <LostForm lead={l} meta={meta} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
