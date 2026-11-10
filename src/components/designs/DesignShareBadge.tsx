@@ -42,11 +42,9 @@ export function DesignShareBadge({
         disabled={!onSend}
         title={`${label}. Send again`}
         aria-label={`${label}. Send again`}
-        className={`group inline-flex w-full min-w-0 items-center gap-1 border border-[#A7E3C4] bg-[#EEFBF3] pl-1 pr-2.5 font-semibold text-[#05603A] transition-colors hover:border-[#4CC38A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB] disabled:cursor-default ${box}`}
+        className={`group inline-flex w-full min-w-0 items-center gap-1.5 border border-[#A7E3C4] bg-[#EEFBF3] pl-1 pr-2.5 font-semibold text-[#05603A] transition-colors hover:border-[#4CC38A] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB] disabled:cursor-default ${box}`}
       >
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[#12B76A] text-white">
-          <PlaneInFlight />
-        </span>
+        <StateLight tone="sent" />
         <span className="truncate">
           Sent {s.when}
           {s.how && size !== "sm" ? (
@@ -73,18 +71,8 @@ export function DesignShareBadge({
       aria-label={label}
       className={`group inline-flex w-full min-w-0 items-center justify-between gap-1 bg-linear-to-r from-yellow-lemon to-orange-amber pl-1 pr-1.5 font-bold text-warm-black shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition-[filter] hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB] disabled:cursor-default ${box}`}
     >
-      <span className="flex min-w-0 items-center gap-1">
-        <span className="relative flex size-5 shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.55)]">
-          <PlaneGrounded />
-          <span className="absolute -right-0.5 -top-0.5 flex size-2">
-            <span
-              className={`absolute inline-flex size-full rounded-full opacity-70 motion-safe:animate-ping ${changed ? "bg-[#C2410C]" : "bg-[#0B1A2E]"}`}
-            />
-            <span
-              className={`relative inline-flex size-2 rounded-full ring-1 ring-white ${changed ? "bg-[#C2410C]" : "bg-[#0B1A2E]"}`}
-            />
-          </span>
-        </span>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <StateLight tone={changed ? "edited" : "unsent"} />
         <span className="truncate">{status}</span>
       </span>
       <span className="flex shrink-0 items-center gap-0.5 rounded-[5px] bg-[rgba(255,255,255,0.45)] px-1.5 py-0.5 font-extrabold transition-colors group-hover:bg-[#0B1A2E] group-hover:text-white">
@@ -95,36 +83,40 @@ export function DesignShareBadge({
   );
 }
 
-/** Paper plane sitting level, not yet sent. */
-function PlaneGrounded() {
-  return (
-    <svg
-      viewBox="0 0 20 20"
-      className="size-[12px]"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.6}
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M2.5 10.5 17 4.5l-3.2 11.2-4.3-3.6-3.3 2.6.5-4.2L2.5 10.5Z" />
-      <path d="m6.9 10.5 6.9-4.4" strokeLinecap="round" />
-      <path d="M2 17.5h16" strokeLinecap="round" strokeDasharray="1.5 2.2" />
-    </svg>
-  );
-}
+const LIGHT = {
+  unsent: { core: "#FF3B4E", deep: "#9F1239", glow: "rgba(255,59,78,0.85)" },
+  edited: { core: "#3B82F6", deep: "#1E3A8A", glow: "rgba(59,130,246,0.85)" },
+  sent: { core: "#22C55E", deep: "#166534", glow: "rgba(34,197,94,0.8)" },
+} as const;
 
-/** Paper plane in flight, sent. */
-function PlaneInFlight() {
+/**
+ * A round holographic light: an iridescent rim that slowly turns around a
+ * lit core in the state's colour (red not sent, blue edited since sent,
+ * green sent). Unsent and edited breathe; sent holds steady. Motion stops
+ * for people who ask for reduced motion.
+ */
+function StateLight({ tone }: { tone: keyof typeof LIGHT }) {
+  const c = LIGHT[tone];
   return (
-    <svg
-      viewBox="0 0 20 20"
-      className="size-[13px]"
-      fill="currentColor"
+    <span
       aria-hidden="true"
+      className="relative ml-1 inline-flex size-[14px] shrink-0"
     >
-      <path d="M18.2 2.1 1.9 8.6c-.7.3-.7 1.3 0 1.5l4.5 1.6 1.6 5c.2.7 1.1.9 1.6.3l2.4-2.7 4 3c.6.4 1.4.1 1.5-.6l2.1-13.5c.1-.8-.6-1.4-1.4-1.1ZM8.1 11.4l7.1-5.6-5.8 6.6-.4 2.6-.9-3.6Z" />
-    </svg>
+      <span
+        className="absolute inset-0 rounded-full motion-safe:animate-[spin_3.5s_linear_infinite]"
+        style={{
+          background:
+            "conic-gradient(from 0deg, #ff7ad9, #8cf6ff, #b9ff8a, #ffe46b, #c4a1ff, #ff7ad9)",
+        }}
+      />
+      <span
+        className={`absolute inset-[2.5px] rounded-full ${tone === "sent" ? "" : "motion-safe:animate-pulse"}`}
+        style={{
+          background: `radial-gradient(circle at 34% 30%, #ffffff 0 16%, ${c.core} 48%, ${c.deep} 100%)`,
+          boxShadow: `0 0 6px 1px ${c.glow}, inset 0 0 2px rgba(255,255,255,0.6)`,
+        }}
+      />
+    </span>
   );
 }
 
