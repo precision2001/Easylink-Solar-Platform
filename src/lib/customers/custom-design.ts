@@ -1,3 +1,4 @@
+import { shownBatteryItems } from "@/lib/proposal/batteryOptions";
 import { fetchWithCustomerSession } from "@/lib/customers/customer-fetch-client";
 import type { CustomerDesign, CustomerDesignProduct } from "@/lib/customers/designs";
 import {
@@ -97,8 +98,9 @@ export function proposalProducts(
   const panelCount = toPositiveInt(proposal.equipment.numberOfPanels);
 
   const picks = Object.entries(proposal.equipment.items).flatMap(
-    ([category, entries]) =>
-      entries.map((item) => ({
+    ([category, all]) =>
+      // Picked batteries are options of their own: the design keeps the shown one.
+      (category === "battery" ? shownBatteryItems(proposal.equipment) : all).map((item, _i, entries) => ({
         productId: item.productId,
         // The panel count from the roof-layout step is more authoritative
         // than a manually-added quantity for the first solar panel entry.
