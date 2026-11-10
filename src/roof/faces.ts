@@ -288,8 +288,12 @@ export function traceShift(a: Omit<RoofFacesResult, "usage">, b: Omit<RoofFacesR
 }
 
 /** Ask the smart model for the faces of the roof in the image, then have it check its trace against the photo. */
-/** Self-check rounds while lines aren't on edges the photo shows. */
-export const REVIEW_MAX = 4;
+/**
+ * Self-check rounds, at most. One round (owner, 11 Nov 2026): further rounds had
+ * Opus move lines by eye, and the intersection step recalculates every corner
+ * from the measured edges anyway, so they cost 60-120 s for nothing.
+ */
+export const REVIEW_MAX = 1;
 
 export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, budgetMs = 360_000): Promise<RoofFacesResult & { reviews: number; refined?: RefineReport }> {
   const t0 = Date.now();
@@ -328,22 +332,24 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
   // again on every self-checked trace and after any added section, so no
   // corner placed by eye survives to the faces or the panels.
   const refined = { sections: 0, calculated: 0, marked: 0, closeupFlags: 0, notConfirmed: 0 };
+  let unsure: { b: number; id: string }[] | null = null; // null: corners not calculated (no scale)
   const placeCorners = (r: typeof result): typeof result => {
     const mpp = req.metresPerPixel ?? 0;
     if (req.format !== "png" || !(mpp > 0) || !r.buildings.length) return r;
     const rep = placeIntersections(photo, r.buildings, mpp);
     refined.calculated = rep.placed;
     refined.marked = rep.marked;
+    unsure = rep.unsure;
     return { ...r, faces: r.buildings.flatMap((b) => b.faces) };
   };
   result = placeCorners(result);
   // The self-check: the trace drawn on the photo, back to Opus, until it stops moving
   // (under 2 px) and every line lies on an edge the photo shows (owner, 10 Nov 2026),
   // or the time budget for a reading runs out. Lines the photo doesn't show keep
-  // the check going, up to REVIEW_MAX rounds.
+  // the check going, but never past REVIEW_MAX rounds (one).
   const unseenOf = (r: typeof result) => (lineEvidence(photo, r.buildings) ?? []).filter((l) => !l.seen);
   let unseen = unseenOf(result);
-  const maxRounds = unseen.length ? Math.max(req.review, REVIEW_MAX) : req.review;
+  const maxRounds = Math.min(req.review, REVIEW_MAX);
   while (reviews < maxRounds && req.format === "png" && result.buildings.length && Date.now() - t0 < budgetMs * 0.75) {
     const drawn = traceOverlay(photo, result.buildings);
     if (!drawn) break;
@@ -383,26 +389,28 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
   }
   // The intersection rule, continued: the calculated points checked on close-ups (3) and confirmed on their own (5).
   if (req.refine && req.format === "png" && result.buildings.length) {
-    if (Date.now() - t0 < budgetMs * 0.9) {
-      try {
-        const r = await checkByCloseups(model, photo, result.buildings, { jsonIn, maxSheets: 3 });
-        usage.inputTokens += r.usage.inputTokens;
-        usage.outputTokens += r.usage.outputTokens;
-        refined.closeupFlags = r.flagged;
-      } catch {
-        /* the calculated points stand */
-      }
+    // The close-up check is optional (owner, 11 Nov 2026): only when it's needed —
+    // for the points that two crossing measured lines didn't fix, and only those.
+    // It runs alongside the points-on-their-own confirmation: both look at the
+    // same final, calculated corners and only mark points, never move them, so
+    // running them together loses nothing and saves a round trip.
+    const closeups = unsure as { b: number; id: string }[] | null;
+    const runCloseups = (closeups === null || closeups.length > 0) && Date.now() - t0 < budgetMs * 0.9;
+    const runConfirm = Date.now() - t0 < budgetMs * 0.95;
+    const [cu, cp] = await Promise.all([
+      runCloseups ? checkByCloseups(model, photo, result.buildings, { jsonIn, maxSheets: 3, ...(closeups ? { only: closeups } : {}) }).catch(() => null) : null,
+      runConfirm ? confirmPoints(model, photo, result.buildings, { jsonIn }).catch(() => null) : null,
+    ]);
+    if (cu) {
+      usage.inputTokens += cu.usage.inputTokens;
+      usage.outputTokens += cu.usage.outputTokens;
+      refined.closeupFlags = cu.flagged;
     }
-    if (Date.now() - t0 < budgetMs * 0.95) {
-      try {
-        const r = await confirmPoints(model, photo, result.buildings, { jsonIn });
-        usage.inputTokens += r.usage.inputTokens;
-        usage.outputTokens += r.usage.outputTokens;
-        refined.notConfirmed = r.rejected;
-        if (r.missing) result = { ...result, notes: [result.notes, `Points check: a corner may be missing (${r.missing}).`].filter(Boolean).join(" ") };
-      } catch {
-        /* unconfirmed points stay marked as calculated */
-      }
+    if (cp) {
+      usage.inputTokens += cp.usage.inputTokens;
+      usage.outputTokens += cp.usage.outputTokens;
+      refined.notConfirmed = cp.rejected;
+      if (cp.missing) result = { ...result, notes: [result.notes, `Points check: a corner may be missing (${cp.missing}).`].filter(Boolean).join(" ") };
     }
     result = { ...result, faces: result.buildings.flatMap((b) => b.faces) };
   }

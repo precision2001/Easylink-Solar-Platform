@@ -20,7 +20,8 @@ import { movePoints } from "./refine.js";
  */
 
 export type LineFit = { from: string; to: string; ok: boolean; samples: number; spreadM: number | null; p: [number, number] | null; u: [number, number] | null };
-export type IntersectionReport = { lines: LineFit[]; placed: number; marked: number };
+/** `unsure`: points not fixed by two crossing measured lines (on one line only, or not calculated) — the only ones a close-up check is needed for. */
+export type IntersectionReport = { lines: LineFit[]; placed: number; marked: number; unsure: { b: number; id: string }[] };
 
 const EAVE_KINDS = new Set(["eave", "edge", "border", "parapet", "step", "box", "gable"]);
 
@@ -63,7 +64,7 @@ const centroid = (r: [number, number][]) => [r.reduce((s, p) => s + p[0], 0) / r
  * measured are marked for a site check. Returns what was done.
  */
 export function placeIntersections(photoPng: Buffer, buildings: RoofBuilding[], mpp: number, opts: { searchM?: number; tolM?: number; maxMoveM?: number } = {}): IntersectionReport {
-  const report: IntersectionReport = { lines: [], placed: 0, marked: 0 };
+  const report: IntersectionReport = { lines: [], placed: 0, marked: 0, unsure: [] };
   const img = decodePng(photoPng);
   if (!img || !(mpp > 0)) return report;
   const L = lumaOf(img);
@@ -122,6 +123,7 @@ export function placeIntersections(photoPng: Buffer, buildings: RoofBuilding[], 
     for (const p of b.points) {
       const mine = b.lines.filter((l) => l.from === p.id || l.to === p.id).map((l) => fits.get(`${l.from}|${l.to}`)).filter((x): x is { c: [number, number]; u: [number, number] } => Boolean(x));
       let q: [number, number] | null = null;
+      let crossed = false;
       if (mine.length >= 2) {
         // least squares crossing of all fitted lines through the point (normals n_i, n_i·q = n_i·c_i)
         let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0, spread = 0;
@@ -133,7 +135,10 @@ export function placeIntersections(photoPng: Buffer, buildings: RoofBuilding[], 
         }
         for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) spread = Math.max(spread, 1 - Math.abs(mine[i]!.u[0] * mine[j]!.u[0] + mine[i]!.u[1] * mine[j]!.u[1]));
         const det = a11 * a22 - a12 * a12;
-        if (spread > 0.03 && Math.abs(det) > 1e-6) q = [(b1 * a22 - b2 * a12) / det, (a11 * b2 - a12 * b1) / det];
+        if (spread > 0.03 && Math.abs(det) > 1e-6) {
+          q = [(b1 * a22 - b2 * a12) / det, (a11 * b2 - a12 * b1) / det];
+          crossed = true;
+        }
       }
       if (!q && mine.length >= 1) {
         // one measured line (or parallel ones): onto it, along it where the trace had it
@@ -144,7 +149,9 @@ export function placeIntersections(photoPng: Buffer, buildings: RoofBuilding[], 
       if (q && Math.hypot(q[0] - p.x, q[1] - p.y) <= maxMove) {
         moves.set(`${bi}|${p.id}`, q);
         report.placed++;
+        if (!crossed) report.unsure.push({ b: bi, id: p.id });
       } else {
+        report.unsure.push({ b: bi, id: p.id });
         // 4. can't be calculated: stays, its lines are marked for a site check
         for (const l of b.lines) if (l.from === p.id || l.to === p.id) l.seen = "faint";
         report.marked++;

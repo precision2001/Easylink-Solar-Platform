@@ -4,6 +4,14 @@ import type { Container } from "../container.js";
 import { readRoofFaces, type RoofBuilding, type RoofFaceReading, type RoofFacesRequest } from "./faces.js";
 
 /**
+ * One reading's time budget (11 Nov 2026). The function is stopped at 300 s;
+ * the old 360 s budget let a reading run to 296 s and risk being cut off with
+ * nothing saved. Stages check the budget before starting, so a reading ends by
+ * about 250 s at the very worst; a usual one takes 70-100 s.
+ */
+export const READING_BUDGET_MS = 200_000;
+
+/**
  * A roof reading runs in the background (event-based): the Roof Designer
  * hands over the image and gets an id straight away; RoofFacesFn reads the
  * roof with the smart model (no 29-second API limit, high effort); the
@@ -118,7 +126,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       scope: row.scope ?? "house",
       review: row.review ?? 2,
       refine: row.refine ?? false,
-    });
+    }, READING_BUDGET_MS);
     const decisionId = newId("dec_");
     await c.store.putDecision({
       id: decisionId,

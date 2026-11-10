@@ -107,36 +107,6 @@ export function closeupSheet(photo: Rgba, buildings: RoofBuilding[], pts: At[]):
   return encodePng(img);
 }
 
-export const CLOSEUP_SYSTEM = `You place roof intersection points exactly on aerial close-ups. Each numbered tile is a ${ZOOM}x close-up (${TILE} px across = ${TILE_SRC} photo pixels) of one point of a roof trace: the red ring marks where the point is now, the dashed yellow lines are the trace's lines leaving it. Find the real corner or junction this point stands for (where the roof's own edges, ridges, hips or valleys meet, as the photo shows them) and say how far to move the point, in tile pixels (right and down are positive). If the ring is already on it, move 0,0. Never jump to a different corner. Reply with JSON only: {"points":[{"tile":1,"dx":0,"dy":0},...]}`;
-
-/** Step 1: Opus moves each point onto the real corner in its close-up. Returns how many moved. */
-export async function refineByCloseups(model: ModelClient, photoPng: Buffer, buildings: RoofBuilding[], opts: { maxSheets?: number; jsonIn: (t: string) => unknown }): Promise<{ moved: number; usage: { inputTokens: number; outputTokens: number } }> {
-  const usage = { inputTokens: 0, outputTokens: 0 };
-  const photo = decodePng(photoPng);
-  if (!photo) return { moved: 0, usage };
-  const all: At[] = buildings.flatMap((b, bi) => b.points.map((p) => ({ b: bi, id: p.id, x: p.x, y: p.y })));
-  const sheets: At[][] = [];
-  for (let i = 0; i < all.length && sheets.length < (opts.maxSheets ?? 3); i += PER_SHEET) sheets.push(all.slice(i, i + PER_SHEET));
-  const moves = new Map<string, [number, number]>();
-  for (const pts of sheets) {
-    const sheet = closeupSheet(photo, buildings, pts);
-    const messages: ChatMessage[] = [{ role: "user", image: { format: "png", bytes: sheet }, text: `${pts.length} close-ups. Place each point exactly.` }];
-    const turn = await model.converse({ tier: "smart", effort: "high", maxTokens: 3000, system: CLOSEUP_SYSTEM, messages });
-    usage.inputTokens += turn.usage.inputTokens;
-    usage.outputTokens += turn.usage.outputTokens;
-    const j = opts.jsonIn(turn.text) as { points?: { tile?: number; dx?: number; dy?: number }[] } | null;
-    for (const m of j?.points ?? []) {
-      const p = pts[(m.tile ?? 0) - 1];
-      if (!p || typeof m.dx !== "number" || typeof m.dy !== "number") continue;
-      const dx = m.dx / ZOOM, dy = m.dy / ZOOM;
-      if (Math.hypot(dx, dy) < 0.5 || Math.hypot(dx, dy) > TILE_SRC / 2) continue; // no move, or off its tile
-      moves.set(`${p.b}|${p.id}`, [p.x + dx, p.y + dy]);
-    }
-  }
-  movePoints(buildings, moves);
-  return { moved: moves.size, usage };
-}
-
 /** Moves points (key "building|id") and every ring corner that sat on them. */
 export function movePoints(buildings: RoofBuilding[], moves: Map<string, [number, number]>) {
   buildings.forEach((b, bi) => {
@@ -158,95 +128,6 @@ export function movePoints(buildings: RoofBuilding[], moves: Map<string, [number
   });
 }
 
-const lumaOf = (img: Rgba) => {
-  const l = new Float32Array(img.width * img.height);
-  for (let i = 0; i < l.length; i++) l[i] = 0.299 * img.data[i * 4]! + 0.587 * img.data[i * 4 + 1]! + 0.114 * img.data[i * 4 + 2]!;
-  return l;
-};
-
-/**
- * How strongly the photo shows a line (shifted `d` px along its normal) as an
- * edge or thin line: the mean contrast across it (1-2 px either side), and
- * the share of it at or above `minC`.
- */
-function edgeScore(l: Float32Array, W: number, H: number, a: [number, number], c: [number, number], d: number, minC = 14): { mean: number; share: number } {
-  const dx = c[0] - a[0], dy = c[1] - a[1];
-  const len = Math.hypot(dx, dy);
-  if (len < 8) return { mean: 0, share: 0 };
-  const nx = -dy / len, ny = dx / len;
-  const at = (x: number, y: number) => {
-    const X = Math.round(x), Y = Math.round(y);
-    return X < 0 || Y < 0 || X >= W || Y >= H ? Number.NaN : l[Y * W + X]!;
-  };
-  let n = 0, hit = 0, sum = 0;
-  for (let s = 0.12 * len; s <= 0.88 * len; s += 2) {
-    const x = a[0] + (dx * s) / len + nx * d, y = a[1] + (dy * s) / len + ny * d;
-    let best = 0;
-    for (const k of [1, 2]) {
-      const p = at(x + nx * k, y + ny * k), q = at(x - nx * k, y - ny * k), m = at(x, y);
-      if (Number.isNaN(p) || Number.isNaN(q) || Number.isNaN(m)) continue;
-      best = Math.max(best, Math.abs(p - q), Math.abs(2 * m - p - q) / 2);
-    }
-    n++;
-    sum += best;
-    if (best >= minC) hit++;
-  }
-  return n ? { mean: sum / n, share: hit / n } : { mean: 0, share: 0 };
-}
-
-/** Step 2: lines onto the strongest edge within `maxPx`; points re-placed where their lines meet. Returns how many points moved. */
-export function snapToEdges(photoPng: Buffer, buildings: RoofBuilding[], maxPx: number): number {
-  const photo = decodePng(photoPng);
-  if (!photo || maxPx < 1) return 0;
-  const L = lumaOf(photo);
-  const W = photo.width, H = photo.height;
-  const moves = new Map<string, [number, number]>();
-  buildings.forEach((b, bi) => {
-    const at = new Map(b.points.map((p) => [p.id, [p.x, p.y] as [number, number]]));
-    const shifts: { from: string; to: string; n: [number, number]; d: number }[] = [];
-    for (const ln of b.lines) {
-      const a = at.get(ln.from), c = at.get(ln.to);
-      if (!a || !c) continue;
-      const base = edgeScore(L, W, H, a, c, 0);
-      let best = { d: 0, ...base };
-      for (let d = -Math.floor(maxPx); d <= Math.floor(maxPx); d++) {
-        if (d === 0) continue;
-        const s = edgeScore(L, W, H, a, c, d);
-        if (s.mean > best.mean + 1e-9) best = { d, ...s };
-      }
-      // Only onto an edge the photo clearly shows, and clearly stronger than where the line is.
-      if (best.d === 0 || best.share < 0.55 || best.mean < base.mean * 1.25 + 2) continue;
-      const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
-      shifts.push({ from: ln.from, to: ln.to, n: [-(c[1] - a[1]) / len, (c[0] - a[0]) / len], d: best.d });
-    }
-    for (const p of b.points) {
-      const mine = shifts.filter((s) => s.from === p.id || s.to === p.id);
-      if (!mine.length) continue;
-      // Least squares: n_i · move = d_i for each moved line through the point.
-      let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0;
-      for (const s of mine) {
-        a11 += s.n[0] * s.n[0]; a12 += s.n[0] * s.n[1]; a22 += s.n[1] * s.n[1];
-        b1 += s.n[0] * s.d; b2 += s.n[1] * s.d;
-      }
-      const det = a11 * a22 - a12 * a12;
-      let mx: number, my: number;
-      if (Math.abs(det) > 1e-3) {
-        mx = (b1 * a22 - b2 * a12) / det;
-        my = (a11 * b2 - a12 * b1) / det;
-      } else {
-        // one direction only (one line, or parallel lines): move along it
-        const s = mine[0]!;
-        mx = s.n[0] * s.d;
-        my = s.n[1] * s.d;
-      }
-      if (Math.hypot(mx, my) > maxPx * 1.5) continue; // never further than the limit allows
-      moves.set(`${bi}|${p.id}`, [p.x + mx, p.y + my]);
-    }
-  });
-  movePoints(buildings, moves);
-  return moves.size;
-}
-
 export const CLOSEUP_CHECK_SYSTEM = `You check calculated roof corners on aerial close-ups. Each numbered tile is a ${ZOOM}x close-up (${TILE} px across) of one intersection point: the red ring marks the point, which was CALCULATED as the crossing of its measured lines (dashed yellow). Say whether the ring sits on the real tile corner or junction the photo shows (where the tiles of the faces meet, not the gutter or the shadow). Do not move anything. Reply with JSON only: {"points":[{"tile":1,"on":true},{"tile":2,"on":false,"why":"..."}]}`;
 
 /** Marks every line at a point for a site check. */
@@ -259,11 +140,12 @@ function markPoint(b: RoofBuilding, id: string) {
  * checked by Opus (never moved by eye). A point Opus says is off its corner
  * is marked for a site check. Returns how many were flagged.
  */
-export async function checkByCloseups(model: ModelClient, photoPng: Buffer, buildings: RoofBuilding[], opts: { maxSheets?: number; jsonIn: (t: string) => unknown }): Promise<{ flagged: number; usage: { inputTokens: number; outputTokens: number } }> {
+export async function checkByCloseups(model: ModelClient, photoPng: Buffer, buildings: RoofBuilding[], opts: { maxSheets?: number; only?: { b: number; id: string }[]; jsonIn: (t: string) => unknown }): Promise<{ flagged: number; usage: { inputTokens: number; outputTokens: number } }> {
   const usage = { inputTokens: 0, outputTokens: 0 };
   const photo = decodePng(photoPng);
   if (!photo) return { flagged: 0, usage };
-  const all: At[] = buildings.flatMap((b, bi) => b.points.map((p) => ({ b: bi, id: p.id, x: p.x, y: p.y })));
+  const wanted = opts.only ? new Set(opts.only.map((o) => `${o.b}|${o.id}`)) : null;
+  const all: At[] = buildings.flatMap((b, bi) => b.points.filter((p) => !wanted || wanted.has(`${bi}|${p.id}`)).map((p) => ({ b: bi, id: p.id, x: p.x, y: p.y })));
   let flagged = 0;
   for (let i = 0, s = 0; i < all.length && s < (opts.maxSheets ?? 3); i += PER_SHEET, s++) {
     const pts = all.slice(i, i + PER_SHEET);

@@ -54,7 +54,7 @@ describe("trace overlay", () => {
 });
 
 describe("roof trace self-check", () => {
-  it("sends the trace drawn on the photo back and keeps the corrected one", async () => {
+  it("sends the trace drawn on the photo back once and keeps the corrected one", async () => {
     const model = new FakeModel([{ text: trace(12) }, { text: trace(0) }, { text: trace(0) }]);
     const r = await readRoofFaces(model, {
       imageBase64: photo().toString("base64"),
@@ -64,13 +64,13 @@ describe("roof trace self-check", () => {
       scope: "house",
       review: 2,
     });
-    expect(model.calls.length).toBe(3);
+    expect(model.calls.length).toBe(2);
     const second = model.calls[1]!.messages;
     expect(second.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
     const last = second[2]!;
     expect(last.role === "user" && last.image?.format).toBe("png");
     expect(last.role === "user" && last.text).toContain("5=R1 (52,50)");
-    expect(r.reviews).toBe(2);
+    expect(r.reviews).toBe(1);
     expect(r.buildings[0]!.points.find((p) => p.id === "R1")!.x).toBe(40);
   });
 
@@ -81,12 +81,13 @@ describe("roof trace self-check", () => {
     expect(model.calls.length).toBe(2);
   });
 
-  it("names the lines the photo doesn't show, and keeps checking past the usual rounds while they move", async () => {
+  it("names the lines the photo doesn't show, in one self-check round only", async () => {
     const model = new FakeModel([{ text: trace(0) }, { text: trace(-25) }, { text: trace(0) }, { text: trace(-25) }, { text: trace(0) }]);
     const r = await readRoofFaces(model, { imageBase64: photo().toString("base64"), format: "png", widthPx: 120, heightPx: 100, scope: "house", review: 2 });
     const first = model.calls[1]!.messages.at(-1)!;
     expect(first.role === "user" && first.text).toContain("NOT on any edge the photo shows");
-    expect(r.reviews).toBe(4);
+    expect(r.reviews).toBe(1);
+    expect(model.calls.length).toBe(2);
   });
 
   it("keeps the last good trace when a check reply is unreadable", async () => {
