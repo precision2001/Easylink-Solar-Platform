@@ -230,6 +230,8 @@ export async function fetchAiRoofTrace(
         lot,
         scope: "house",
         review: 2,
+        // Close-ups of every point, then the edge snap within 30 cm (owner, 10 Nov 2026).
+        refine: true,
       }),
     });
     if (!started?.id) return null;
