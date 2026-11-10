@@ -1522,7 +1522,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
                       ? "Zooming in and finding the roof lines..."
                       : readingRoof && !hasInitializedRoof
                         ? opusTracing
-                          ? "Opus is tracing the roof and checking its trace against the photo (1-4 minutes)..."
+                          ? "EasyLink AI is reading, analyzing and designing your roof..."
                           : "Reading the roof faces and checking them against Google and the image..."
                         : "Analysing solar potential..."}
               </p>
