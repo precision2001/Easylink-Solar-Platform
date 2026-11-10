@@ -246,3 +246,75 @@ export function snapToEdges(photoPng: Buffer, buildings: RoofBuilding[], maxPx: 
   movePoints(buildings, moves);
   return moves.size;
 }
+
+export const CLOSEUP_CHECK_SYSTEM = `You check calculated roof corners on aerial close-ups. Each numbered tile is a ${ZOOM}x close-up (${TILE} px across) of one intersection point: the red ring marks the point, which was CALCULATED as the crossing of its measured lines (dashed yellow). Say whether the ring sits on the real tile corner or junction the photo shows (where the tiles of the faces meet, not the gutter or the shadow). Do not move anything. Reply with JSON only: {"points":[{"tile":1,"on":true},{"tile":2,"on":false,"why":"..."}]}`;
+
+/** Marks every line at a point for a site check. */
+function markPoint(b: RoofBuilding, id: string) {
+  for (const l of b.lines) if (l.from === id || l.to === id) l.seen = "faint";
+}
+
+/**
+ * The intersection rule's step 3: every calculated point on its close-up,
+ * checked by Opus (never moved by eye). A point Opus says is off its corner
+ * is marked for a site check. Returns how many were flagged.
+ */
+export async function checkByCloseups(model: ModelClient, photoPng: Buffer, buildings: RoofBuilding[], opts: { maxSheets?: number; jsonIn: (t: string) => unknown }): Promise<{ flagged: number; usage: { inputTokens: number; outputTokens: number } }> {
+  const usage = { inputTokens: 0, outputTokens: 0 };
+  const photo = decodePng(photoPng);
+  if (!photo) return { flagged: 0, usage };
+  const all: At[] = buildings.flatMap((b, bi) => b.points.map((p) => ({ b: bi, id: p.id, x: p.x, y: p.y })));
+  let flagged = 0;
+  for (let i = 0, s = 0; i < all.length && s < (opts.maxSheets ?? 3); i += PER_SHEET, s++) {
+    const pts = all.slice(i, i + PER_SHEET);
+    const turn = await model.converse({ tier: "smart", effort: "high", maxTokens: 2000, system: CLOSEUP_CHECK_SYSTEM, messages: [{ role: "user", image: { format: "png", bytes: closeupSheet(photo, buildings, pts) }, text: `${pts.length} close-ups. Is each ring on its corner?` }] });
+    usage.inputTokens += turn.usage.inputTokens;
+    usage.outputTokens += turn.usage.outputTokens;
+    const j = opts.jsonIn(turn.text) as { points?: { tile?: number; on?: boolean }[] } | null;
+    for (const m of j?.points ?? []) {
+      const p = pts[(m.tile ?? 0) - 1];
+      if (p && m.on === false) {
+        markPoint(buildings[p.b]!, p.id);
+        flagged++;
+      }
+    }
+  }
+  return { flagged, usage };
+}
+
+export const POINTS_CONFIRM_TEXT = `These are the roof's intersection points ON THEIR OWN (numbered dots, no lines yet), calculated from the measured roof lines. Confirm each one before they are joined into lines: is it a real corner or junction of this roof (eave corner, hip or valley end, ridge end, step corner)? Also say if any corner of the roof has no point. Reply with JSON only: {"points":[{"n":1,"real":true},{"n":2,"real":false,"why":"..."}],"missing":"none, or where"}`;
+
+/**
+ * The intersection rule's step 5: the points alone, for confirmation before
+ * they're joined into lines. A point Opus doesn't confirm is marked for a
+ * site check; a missing corner is noted. Returns what Opus said.
+ */
+export async function confirmPoints(model: ModelClient, photoPng: Buffer, buildings: RoofBuilding[], opts: { jsonIn: (t: string) => unknown }): Promise<{ rejected: number; missing: string | null; usage: { inputTokens: number; outputTokens: number } }> {
+  const usage = { inputTokens: 0, outputTokens: 0 };
+  const img = decodePng(photoPng);
+  if (!img) return { rejected: 0, missing: null, usage };
+  const order: { b: number; id: string }[] = [];
+  buildings.forEach((b, bi) => b.points.forEach((p) => {
+    order.push({ b: bi, id: p.id });
+    const n = order.length;
+    for (let a = 0; a < 360; a += 4) {
+      const x = Math.round(p.x + 5 * Math.cos((a * Math.PI) / 180)), y = Math.round(p.y + 5 * Math.sin((a * Math.PI) / 180));
+      if (x >= 0 && y >= 0 && x < img.width && y < img.height) { const k = (y * img.width + x) * 4; img.data[k] = 0; img.data[k + 1] = 230; img.data[k + 2] = 255; }
+    }
+    drawNumber(img, n, Math.round(p.x + 7), Math.round(p.y - 12), 2);
+  }));
+  const turn = await model.converse({ tier: "smart", effort: "high", maxTokens: 2000, system: "You confirm roof intersection points on aerial photos. Reply with JSON only.", messages: [{ role: "user", image: { format: "png", bytes: encodePng(img) }, text: POINTS_CONFIRM_TEXT }] });
+  usage.inputTokens += turn.usage.inputTokens;
+  usage.outputTokens += turn.usage.outputTokens;
+  const j = opts.jsonIn(turn.text) as { points?: { n?: number; real?: boolean }[]; missing?: string } | null;
+  let rejected = 0;
+  for (const m of j?.points ?? []) {
+    const o = order[(m.n ?? 0) - 1];
+    if (o && m.real === false) {
+      markPoint(buildings[o.b]!, o.id);
+      rejected++;
+    }
+  }
+  const missing = typeof j?.missing === "string" && !/^\s*none\b/i.test(j.missing) ? j.missing.slice(0, 300) : null;
+  return { rejected, missing, usage };
+}

@@ -110,7 +110,7 @@ describe("the full trace (visible lines and intersection points first)", () => {
 
   it("puts every rule in the instructions", async () => {
     const { ROOF_FACES_SYSTEM } = await import("../src/roof/faces.js");
-    for (const rule of ["VISIBLE LINES AND VISIBLE INTERSECTION POINTS FIRST", "BORDERS", "FLAT OR LOW-PITCH", "faint", "SHADOWS POINT TO ROOF LINES", "OBSTRUCTIONS", "no_roof", "site"]) {
+    for (const rule of ["INTERSECTION POINTS FIRST — THE INTERSECTION RULE", "BORDERS", "FLAT OR LOW-PITCH", "faint", "SHADOWS POINT TO ROOF LINES", "OBSTRUCTIONS", "no_roof", "site"]) {
       expect(ROOF_FACES_SYSTEM).toContain(rule);
     }
   });

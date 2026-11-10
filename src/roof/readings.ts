@@ -39,7 +39,7 @@ export type RoofReading = {
   reviews?: number;
   /** Close-ups and edge snap after the self-check. */
   refine?: boolean;
-  refined?: { sections: number; closeups: number; snapped: number };
+  refined?: import("./faces.js").RefineReport;
   faces?: RoofFaceReading[];
   /** The full trace: per building its border, intersection points, lines, faces and obstructions. */
   buildings?: RoofBuilding[];
@@ -125,7 +125,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       agentId: "roof-designer",
       eventId: null,
       subject: null,
-      reasoningSummary: `Traced ${r.buildings.length} roof${r.buildings.length === 1 ? "" : "s"}: ${r.buildings.reduce((n, b) => n + b.lines.length, 0)} lines, ${r.buildings.reduce((n, b) => n + b.points.length, 0)} intersection points, ${r.faces.length} face${r.faces.length === 1 ? "" : "s"}; checked against the photo ${r.reviews} time${r.reviews === 1 ? "" : "s"}.${r.refined ? ` Missed sections added: ${r.refined.sections}. Close-ups moved ${r.refined.closeups} point${r.refined.closeups === 1 ? "" : "s"}; edge snap moved ${r.refined.snapped}.` : ""}${r.noRoof ? " No roof." : ""}${r.notes ? ` ${r.notes.slice(0, 300)}` : ""}`,
+      reasoningSummary: `Traced ${r.buildings.length} roof${r.buildings.length === 1 ? "" : "s"}: ${r.buildings.reduce((n, b) => n + b.lines.length, 0)} lines, ${r.buildings.reduce((n, b) => n + b.points.length, 0)} intersection points, ${r.faces.length} face${r.faces.length === 1 ? "" : "s"}; checked against the photo ${r.reviews} time${r.reviews === 1 ? "" : "s"}.${r.refined ? ` Missed sections added: ${r.refined.sections}. Intersection rule: ${r.refined.calculated} points calculated from measured lines, ${r.refined.marked} marked for a site check; close-ups flagged ${r.refined.closeupFlags}; ${r.refined.notConfirmed} not confirmed on their own.` : ""}${r.noRoof ? " No roof." : ""}${r.notes ? ` ${r.notes.slice(0, 300)}` : ""}`,
       action: null,
       autonomyLevel: null,
       outcome: "no_action",

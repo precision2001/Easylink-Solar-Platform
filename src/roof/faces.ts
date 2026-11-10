@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { ChatMessage, ModelClient } from "../ai/model.js";
 import { lineEvidence } from "./lineEvidence.js";
-import { enlargeRegion, mapBuildings, refineByCloseups, snapToEdges } from "./refine.js";
+import { checkByCloseups, confirmPoints, enlargeRegion, mapBuildings } from "./refine.js";
+import { placeIntersections } from "./intersections.js";
 import { decodePng, encodePng, traceOverlay } from "./overlay.js";
 
 /**
@@ -20,15 +21,16 @@ import { decodePng, encodePng, traceOverlay } from "./overlay.js";
 
 export const ROOF_FACES_SYSTEM = `You trace roofs in Sydney, Australia for solar panel layout, from zoom-21 satellite images (north is up). EasyLink's roof rules, in priority order — follow every one:
 
-1. VISIBLE LINES AND VISIBLE INTERSECTION POINTS FIRST (most important rule). Before naming any face, find every roof line you can SEE: eaves (roof edges), hips, ridges, valleys, steps between levels, the edges of raised boxes and parapets. Mark every point where two or more of those lines meet, or where a line meets the roof's border: these are the intersection points. Each intersection point is ONE point shared by every line that meets there — give it one id and reuse it. Lines run straight from intersection point to intersection point; trace them on the line seen in the image, not where geometry says they should be.
-2. BORDERS. Trace the border (outline) of every roof along its eaves, with straight walls and a corner wherever two eaves meet. Then every face gets its own border made of those lines. The border takes in roof surface only: never a courtyard, light well, void, balcony, terrace, pool, ground or the gap beside a lower roof, even where the roof wraps around it; step the border in around them.
-3. FACES FROM THE LINES. A face is one continuous plane bounded by the lines in rule 1. Find every face, including narrow strips and small triangles (a light or dark strip between faces is its own face). Never merge faces across a hip, valley or ridge. Adjacent faces share their corner points exactly.
-4. FLAT OR LOW-PITCH ROOFS (white or grey metal sheet, under about 5 degrees). There are no hips. A flat roof is ONE face unless a visible line runs between two intersection points: split ONLY where the image shows that line. No visible line connecting two intersection points means no split. Sections of a flat roof are the closed shapes the visible lines make (steps across the roof, raised boxes, folds).
-5. PITCHED ROOFS (tiles or pitched metal). A hip, valley or ridge the roof's shape requires stays even where it shows only faintly (two faces lit alike) — mark it "seen":"faint" so it is checked on site. Never drop it: a panel must never sit across one. Hips usually run at 45 degrees to the walls in plan; a hip end and a gable end look different (a gable end has no hip lines and a straight eave across the end) — read which one the image shows.
-6. SHADOWS POINT TO ROOF LINES. A shadow on a roof means something higher stands beside it, on the sun side (north). Trace the edge that casts the shadow. If that edge meets the border or another roof line at an intersection point, it IS a roof line (a step, a raised box, a parapet): trace the whole section with all its corners. Only a shadow whose casting edge connects to no other line is an obstruction (vent, whirlybird, air-conditioner, antenna). A shadow cast by something off the roof (a tree, a neighbour's wall) is "shading", not a line.
-7. OBSTRUCTIONS. Mark every vent, whirlybird, flue, antenna, skylight, air-conditioner, rooftop plant and existing solar panel as an obstruction with its true shape.
-8. WHAT IS AND ISN'T THE ROOF. Never include neighbouring buildings, or roofs across the land lot line when a lot is given. A terrace or attached house is only the strip between its party walls. Patios, carports and verandahs at a lower level are separate roofs, not part of the main roof. Bare ground, yards, building sites and car parks are NOT roofs: if there is no building roof where asked, say so with "no_roof": true.
-9. WHICH BUILDINGS. When the request says "site", trace EVERY building on the land lot, each with its own border, lines, points, faces and obstructions. Otherwise trace the building under the centre of the image only.
+1. INTERSECTION POINTS FIRST — THE INTERSECTION RULE (the first rule, above all others). Find and place the intersection points of the roof before anything else. Corners are calculated, never placed by eye: for each point, follow every line that meets there along its CLEAR length, away from the blurred corner — an eave from inside the tiles outwards (the shadow beside the house is not roof; skip the thin gutter line: the edge is where the tiles start), a hip, ridge or valley where the two faces' tiles meet — and put the point where those lines, extended straight, cross. If an edge can't be followed, put the point on the last pixel that is clearly tile and mark its lines "seen":"faint" for a site check. (After you answer, every line is measured along its length and every point is recalculated as the crossing of the fitted lines, then checked on a close-up and confirmed on its own before the lines are joined.)
+2. VISIBLE LINES (rule 1 continued). Before naming any face, find every roof line you can SEE: eaves (roof edges), hips, ridges, valleys, steps between levels, the edges of raised boxes and parapets. Mark every point where two or more of those lines meet, or where a line meets the roof's border: these are the intersection points. Each intersection point is ONE point shared by every line that meets there — give it one id and reuse it. Lines run straight from intersection point to intersection point; trace them on the line seen in the image, not where geometry says they should be.
+3. BORDERS. Trace the border (outline) of every roof along its eaves, with straight walls and a corner wherever two eaves meet. Then every face gets its own border made of those lines. The border takes in roof surface only: never a courtyard, light well, void, balcony, terrace, pool, ground or the gap beside a lower roof, even where the roof wraps around it; step the border in around them.
+4. FACES FROM THE LINES. A face is one continuous plane bounded by the lines in rule 1. Find every face, including narrow strips and small triangles (a light or dark strip between faces is its own face). Never merge faces across a hip, valley or ridge. Adjacent faces share their corner points exactly.
+5. FLAT OR LOW-PITCH ROOFS (white or grey metal sheet, under about 5 degrees). There are no hips. A flat roof is ONE face unless a visible line runs between two intersection points: split ONLY where the image shows that line. No visible line connecting two intersection points means no split. Sections of a flat roof are the closed shapes the visible lines make (steps across the roof, raised boxes, folds).
+6. PITCHED ROOFS (tiles or pitched metal). A hip, valley or ridge the roof's shape requires stays even where it shows only faintly (two faces lit alike) — mark it "seen":"faint" so it is checked on site. Never drop it: a panel must never sit across one. Hips usually run at 45 degrees to the walls in plan; a hip end and a gable end look different (a gable end has no hip lines and a straight eave across the end) — read which one the image shows.
+7. SHADOWS POINT TO ROOF LINES. A shadow on a roof means something higher stands beside it, on the sun side (north). Trace the edge that casts the shadow. If that edge meets the border or another roof line at an intersection point, it IS a roof line (a step, a raised box, a parapet): trace the whole section with all its corners. Only a shadow whose casting edge connects to no other line is an obstruction (vent, whirlybird, air-conditioner, antenna). A shadow cast by something off the roof (a tree, a neighbour's wall) is "shading", not a line.
+8. OBSTRUCTIONS. Mark every vent, whirlybird, flue, antenna, skylight, air-conditioner, rooftop plant and existing solar panel as an obstruction with its true shape.
+9. WHAT IS AND ISN'T THE ROOF. Never include neighbouring buildings, or roofs across the land lot line when a lot is given. A terrace or attached house is only the strip between its party walls. Patios, carports and verandahs at a lower level are separate roofs, not part of the main roof. Bare ground, yards, building sites and car parks are NOT roofs: if there is no building roof where asked, say so with "no_roof": true.
+10. WHICH BUILDINGS. When the request says "site", trace EVERY building on the land lot, each with its own border, lines, points, faces and obstructions. Otherwise trace the building under the centre of the image only.
 
 WORKED EXAMPLES (traced by EasyLink's owner; follow the same reading):
 A. Flat metal townhouse row (66 Frances St, Lidcombe): a long rectangle of white sheet roof, 5 units. Each unit has a RAISED BOX against the left eave: its top edge casts a dark wedge shadow onto the roof below (the wedge starts wide at the eave and tapers to a point about 6 m in); its other sides are thin light lines best seen in the contrast image. Correct trace: each box is its own section with all 4 corners (top-left on the eave, top-right where the wedge ends, bottom-right, bottom-left on the eave; where a box's bottom meets a line across the roof, that corner is shared). Only TWO lines cross the full width (eave to eave), each just below one of the first two wedges, along the thin light line where the roof steps down. The other wedges do NOT continue across the roof. Result: 3 main sections + 4 boxes = 7 faces, 18 intersection points. Wrong reading (do not do this): drawing every wedge as a full-width step line.
@@ -104,6 +106,9 @@ export type RoofBuilding = {
   faces: RoofFaceReading[];
   obstructions: RoofObstructionReading[];
 };
+
+/** What the steps after the self-check did. */
+export type RefineReport = { sections: number; calculated: number; marked: number; closeupFlags: number; notConfirmed: number };
 
 export type RoofFacesResult = {
   /** Every face of every building (kept for readers that only use faces). */
@@ -284,7 +289,7 @@ export function traceShift(a: Omit<RoofFacesResult, "usage">, b: Omit<RoofFacesR
 /** Self-check rounds while lines aren't on edges the photo shows. */
 export const REVIEW_MAX = 4;
 
-export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, budgetMs = 280_000): Promise<RoofFacesResult & { reviews: number; refined?: { sections: number; closeups: number; snapped: number } }> {
+export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, budgetMs = 360_000): Promise<RoofFacesResult & { reviews: number; refined?: RefineReport }> {
   const t0 = Date.now();
   const scale = req.metresPerPixel ? `, about ${(req.metresPerPixel * 100).toFixed(1)} cm per pixel` : "";
   const scope =
@@ -344,7 +349,7 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
     if (reviews >= req.review && !unseen.length) break;
   }
   // A missed section, then close-ups, then the bounded edge snap.
-  let refined = { sections: 0, closeups: 0, snapped: 0 };
+  const refined = { sections: 0, calculated: 0, marked: 0, closeupFlags: 0, notConfirmed: 0 };
   if (req.refine && req.format === "png" && result.buildings.length && Date.now() - t0 < budgetMs * 0.85) {
     try {
       const r = await findMissingSections(model, photo, result, req, maxTokens);
@@ -358,17 +363,35 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
       /* keep the self-checked trace */
     }
   }
-  if (req.refine && req.format === "png" && result.buildings.length && Date.now() - t0 < budgetMs * 0.9) {
-    try {
-      const r = await refineByCloseups(model, photo, result.buildings, { jsonIn, maxSheets: 3 });
-      usage.inputTokens += r.usage.inputTokens;
-      usage.outputTokens += r.usage.outputTokens;
-      refined.closeups = r.moved;
-    } catch {
-      /* keep the self-checked trace */
+  // The intersection rule: points calculated from the measured lines (2), checked on close-ups (3), confirmed on their own (5).
+  if (req.refine && req.format === "png" && result.buildings.length) {
+    const mpp = req.metresPerPixel ?? 0;
+    if (mpp > 0) {
+      const r = placeIntersections(photo, result.buildings, mpp);
+      refined.calculated = r.placed;
+      refined.marked = r.marked;
     }
-    const maxPx = req.metresPerPixel ? 0.3 / req.metresPerPixel : 0;
-    refined.snapped = snapToEdges(photo, result.buildings, maxPx);
+    if (Date.now() - t0 < budgetMs * 0.9) {
+      try {
+        const r = await checkByCloseups(model, photo, result.buildings, { jsonIn, maxSheets: 3 });
+        usage.inputTokens += r.usage.inputTokens;
+        usage.outputTokens += r.usage.outputTokens;
+        refined.closeupFlags = r.flagged;
+      } catch {
+        /* the calculated points stand */
+      }
+    }
+    if (Date.now() - t0 < budgetMs * 0.95) {
+      try {
+        const r = await confirmPoints(model, photo, result.buildings, { jsonIn });
+        usage.inputTokens += r.usage.inputTokens;
+        usage.outputTokens += r.usage.outputTokens;
+        refined.notConfirmed = r.rejected;
+        if (r.missing) result = { ...result, notes: [result.notes, `Points check: a corner may be missing (${r.missing}).`].filter(Boolean).join(" ") };
+      } catch {
+        /* unconfirmed points stay marked as calculated */
+      }
+    }
     result = { ...result, faces: result.buildings.flatMap((b) => b.faces) };
   }
   return { ...result, usage, reviews, refined };
