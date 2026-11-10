@@ -349,11 +349,8 @@ function BatterySelector({
   onCompare,
   prices,
   estimated,
-  picked = [],
   models = {},
 }: {
-  /** Batteries the customer picked on the equipment step, each listed on its own (same sizes too). */
-  picked?: PickedBattery[];
   /** The battery behind each chosen size: the customer's own pick, else the one the price list quotes. */
   models?: Record<string, { label: string; photo?: string }[]>;
   /** The battery options being compared (smallest first). */
@@ -395,58 +392,6 @@ function BatterySelector({
           · pick up to {MAX_BATTERY_OPTIONS} to compare
         </span>
       </CardTitle>
-      {picked.length ? (
-        // Every battery the customer picked, one by one, even two of the same size.
-        <div className="relative mt-1.5 flex flex-wrap items-center gap-1.5" aria-label="Batteries picked">
-          <span className="font-source-sans text-[11px] font-bold uppercase tracking-[0.5px] text-[#152238]/70">Picked</span>
-          {picked.map((b) => (
-            <span
-              key={b.key}
-              title={`${b.label} · ${b.size}`}
-              className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/85 py-[2px] pl-[3px] pr-2 font-source-sans text-[11.5px] font-bold text-[#0B2A4A] shadow-sm ring-1 ring-[#0B2A4A]/20"
-            >
-              <BatteryMark photo={b.photo} dark />
-              <span className="max-w-[160px] truncate">{b.label}</span>
-              <span className="font-semibold text-[#152238]/70">
-                {b.quantity > 1 ? `×${b.quantity} · ` : ""}
-                {b.size}
-              </span>
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {optionIds.length > 1 ? (
-        // Each chosen battery on its own, so the selection is plain to see.
-        <div className="relative mt-1.5 flex flex-wrap items-center gap-1.5" aria-label="Your battery options">
-          <span className="font-source-sans text-[11px] font-bold uppercase tracking-[0.5px] text-[#152238]/70">Your options</span>
-          {optionIds.map((id) => {
-            const b = findBatteryCapacity(id);
-            const isShown = id === shownId;
-            return (
-              <span
-                key={id}
-                className={`inline-flex items-center gap-1.5 rounded-full py-[2px] pl-[3px] pr-2 font-source-sans text-[12px] font-bold shadow-sm ${
-                  isShown ? "bg-[#0B2A4A] text-white ring-2 ring-yellow-lemon" : "bg-[#0B2A4A]/85 text-white"
-                }`}
-              >
-                <button type="button" onClick={() => !isShown && onTap(id)} aria-current={isShown} className="inline-flex items-center gap-1.5" aria-label={`Show option ${letterOf(id)}: ${b.label}`}>
-                  <span className="flex size-[16px] items-center justify-center rounded-full bg-yellow-lemon text-[10px] text-[#0B2A4A]">{letterOf(id)}</span>
-                  {id === "none" ? "No battery" : b.label}
-                  {id !== "none" && prices[id] ? (
-                    <span className="font-semibold text-yellow-lemon">
-                      +{formatAud(prices[id])}
-                      {estimated.has(id) ? " est." : ""}
-                    </span>
-                  ) : null}
-                </button>
-                <button type="button" onClick={() => onRemove(id)} aria-label={`Remove ${b.label} from the options`} className="text-[13px] leading-none text-white/70 hover:text-white">
-                  ×
-                </button>
-              </span>
-            );
-          })}
-        </div>
-      ) : null}
       <div className="relative mt-2 grid min-h-0 flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4">
         {BATTERY_CAPACITY_OPTIONS.map((battery) => {
           const inOptions = optionIds.includes(battery.id);
@@ -457,7 +402,7 @@ function BatterySelector({
               type="button"
               aria-pressed={inOptions}
               onClick={() => onTap(battery.id)}
-              className={`relative flex flex-col items-center justify-center rounded-[9px] border px-1 py-[clamp(1px,0.5vh,6px)] font-source-sans text-[12.5px] font-semibold leading-tight transition ${
+              className={`relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-[9px] border px-1 py-[clamp(1px,0.5vh,6px)] font-source-sans text-[12.5px] font-semibold leading-tight transition ${
                 inOptions
                   ? `border-white bg-[#0B2A4A]/90 text-white shadow-md ${isShown && optionIds.length > 1 ? "ring-[3px] ring-yellow-lemon" : ""}`
                   : "border-white/70 bg-white/55 text-[#152238] hover:bg-white/75"
@@ -1125,7 +1070,6 @@ export const DesignsProposalStepContent = forwardRef<
             onCompare={() => setComparing(true)}
             prices={batteryPrices}
             estimated={batteryEstimated}
-            picked={pickedBatteries}
             models={batteryModels}
           />
         </div>
