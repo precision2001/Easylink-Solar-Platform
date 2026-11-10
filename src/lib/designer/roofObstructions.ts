@@ -251,3 +251,202 @@ export function findRoofObstructions(
   }
   return out;
 }
+
+/**
+ * Existing solar panels on the roof (owner, 10 Nov 2026: 26 Bridgeview Cct,
+ * Bella Vista, new panels were laid over the existing array). Opus is asked
+ * to mark them, but doesn't always, and its outline can fall short; this
+ * finds them in the photo too, so they're always kept clear.
+ *
+ * An array is a large, very dark block on a light roof: after a light blur
+ * (so the frame lines between rows merge) the pixels well below the roof's
+ * brightness, inside a face, grouped. A group counts when it's at least
+ * `minM2` and `minWidthM` wide and fills most of its box (shadow slivers
+ * along parapets are thin; vents are small). Where Opus marked panels
+ * (`marked`), any such dark group touching its outline counts, however
+ * small; elsewhere it must be darker, two panels in size and set back
+ * from the face's edges, so shading (which lies against the wall or
+ * parapet casting it) isn't taken for panels. On dark roofs (tiles, dark sheet) panels
+ * can't be told apart by brightness, and only Opus's outlines are used.
+ * Returns each array's outline (its convex hull, padded a pixel).
+ */
+export function findExistingArrays(
+  luma: GeoTiffRaster,
+  faces: LatLng[][],
+  marked: LatLng[][] = [],
+  opts: { minM2?: number; minWidthM?: number } = {},
+): RoofObstruction[] {
+  const W = luma.width;
+  const H = luma.height;
+  const g = luma.data as ArrayLike<number>;
+  if (faces.length === 0 || W * H === 0) return [];
+  const a0 = rasterLatLngOf(luma, 0, 0);
+  const a1 = rasterLatLngOf(luma, W, 0);
+  const mpp = (Math.abs(a1.lng - a0.lng) * 111320 * Math.cos((a0.lat * Math.PI) / 180)) / W;
+  if (!(mpp > 0)) return [];
+
+  const fill = (rings: LatLng[][], shrinkPx: number) => {
+    const m = new Uint8Array(W * H);
+    for (const ring of rings) {
+      if (ring.length < 3) continue;
+      const r = ring.map((p) => rasterPixelOf(luma, p.lat, p.lng));
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const p of r) {
+        minX = Math.min(minX, p.col); maxX = Math.max(maxX, p.col);
+        minY = Math.min(minY, p.row); maxY = Math.max(maxY, p.row);
+      }
+      for (let y = Math.max(0, Math.floor(minY)); y <= Math.min(H - 1, Math.ceil(maxY)); y++) {
+        for (let x = Math.max(0, Math.floor(minX)); x <= Math.min(W - 1, Math.ceil(maxX)); x++) {
+          const cx = x + 0.5;
+          const cy = y + 0.5;
+          let isIn = false;
+          let dMin = Infinity;
+          for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+            const a = r[i];
+            const b = r[j];
+            if (a.row > cy !== b.row > cy && cx < ((b.col - a.col) * (cy - a.row)) / (b.row - a.row) + a.col) isIn = !isIn;
+            if (shrinkPx > 0) dMin = Math.min(dMin, segDist(cx, cy, a.col, a.row, b.col, b.row));
+          }
+          if (isIn && (shrinkPx <= 0 || dMin > shrinkPx)) m[y * W + x] = 1;
+        }
+      }
+    }
+    return m;
+  };
+  const inside = fill(faces, 3);
+  const vals: number[] = [];
+  for (let i = 0; i < W * H; i += 3) if (inside[i]) vals.push(g[i]);
+  if (vals.length < 100) return [];
+  vals.sort((a, b) => a - b);
+  const median = vals[Math.floor(vals.length / 2)];
+  const onLight = median >= 140;
+
+  // Opus's outlines, grown ~0.5 m so a dark group just past them still touches.
+  const near = new Uint8Array(W * H);
+  if (marked.length) {
+    const m = fill(marked, 0);
+    const grow = Math.max(1, Math.round(0.5 / mpp));
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        if (!m[y * W + x]) continue;
+        for (let dy = -grow; dy <= grow; dy += grow) for (let dx = -grow; dx <= grow; dx += grow) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < W && yy < H) near[yy * W + xx] = 1;
+        }
+        near[y * W + x] = 1;
+      }
+  }
+  const out: RoofObstruction[] = [];
+  if (!onLight) {
+    // Dark roof: Opus's outlines as they are.
+    return out;
+  }
+
+  const src = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) src[i] = g[i];
+  const soft = blur(src, W, H, 2);
+  const thr = Math.min(median - 60, median * 0.6);
+  let dark = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) if (inside[i] && soft[i] < thr) dark[i] = 1;
+  // Opening (2 px): drops thin shadow lines along parapets and steps.
+  const morph = (m: Uint8Array, keep: 0 | 1) => {
+    const r = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        const n = [m[i], x > 0 ? m[i - 1] : keep ^ 1, x < W - 1 ? m[i + 1] : keep ^ 1, y > 0 ? m[i - W] : keep ^ 1, y < H - 1 ? m[i + W] : keep ^ 1];
+        r[i] = keep ? (n.every((v) => v) ? 1 : 0) : n.some((v) => v) ? 1 : 0;
+      }
+    return r;
+  };
+  dark = morph(morph(dark, 1), 1);
+  dark = morph(morph(dark, 0), 0);
+  for (let i = 0; i < W * H; i++) if (!inside[i]) dark[i] = 0;
+
+  const minM2 = opts.minM2 ?? 1.6;
+  const minW = opts.minWidthM ?? 0.8;
+  const seen = new Uint8Array(W * H);
+  const stack: number[] = [];
+  for (let s = 0; s < W * H; s++) {
+    if (!dark[s] || seen[s]) continue;
+    const px: number[] = [];
+    let touches = false;
+    let sum = 0;
+    let rim = 0;
+    let atEdge = 0;
+    stack.push(s);
+    seen[s] = 1;
+    while (stack.length) {
+      const i = stack.pop()!;
+      px.push(i);
+      sum += g[i];
+      if (near[i]) touches = true;
+      const x = i % W;
+      const y = (i / W) | 0;
+      let isRim = false;
+      let isEdge = false;
+      for (const n of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+        if (n < 0 || !dark[n]) isRim = true;
+        if (n < 0 || !inside[n]) isEdge = true;
+        if (n >= 0 && dark[n] && !seen[n]) {
+          seen[n] = 1;
+          stack.push(n);
+        }
+      }
+      if (isRim) rim++;
+      if (isEdge) atEdge++;
+    }
+    const areaM2 = px.length * mpp * mpp;
+    if (areaM2 < (touches ? 0.5 : Math.max(minM2, 3.5))) continue;
+    let mx = 0, my = 0;
+    for (const i of px) { mx += i % W; my += (i / W) | 0; }
+    mx /= px.length; my /= px.length;
+    let sxx = 0, syy = 0, sxy = 0;
+    for (const i of px) {
+      const dx = (i % W) - mx;
+      const dy = ((i / W) | 0) - my;
+      sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+    }
+    sxx /= px.length; syy /= px.length; sxy /= px.length;
+    const tr = sxx + syy;
+    const det = sxx * syy - sxy * sxy;
+    const l1 = tr / 2 + Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
+    const l2 = Math.max(1e-6, tr - l1);
+    const widthM = 4 * Math.sqrt(l2) * mpp;
+    const boxFill = px.length / (16 * Math.sqrt(l1) * Math.sqrt(l2));
+    const mean = sum / px.length;
+    if (!touches) {
+      // A shadow lies against the wall or parapet that casts it, so it runs
+      // along the face's edge; an array is set back from the edges.
+      if (widthM < minW || boxFill < 0.55 || mean > median * 0.45 || atEdge > rim * 0.15) continue;
+    } else if (widthM < 0.4) continue;
+    // Convex hull of the group's pixel corners (only boundary pixels matter).
+    const pts: [number, number][] = [];
+    for (const i of px) {
+      const x = i % W;
+      const y = (i / W) | 0;
+      const edge = x === 0 || y === 0 || x === W - 1 || y === H - 1 || !dark[i - 1] || !dark[i + 1] || !dark[i - W] || !dark[i + W];
+      if (edge) pts.push([x - 1, y - 1], [x + 2, y - 1], [x + 2, y + 2], [x - 1, y + 2]);
+    }
+    out.push({ kind: "spot", sizePx: px.length, ring: convexHull(pts).map(([x, y]) => rasterLatLngOf(luma, x, y)) });
+  }
+  return out;
+}
+
+function convexHull(points: [number, number][]): [number, number][] {
+  const p = [...new Map(points.map((q) => [`${q[0]},${q[1]}`, q])).values()].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
+    lower.push(q);
+  }
+  const upper: [number, number][] = [];
+  for (let i = p.length - 1; i >= 0; i--) {
+    const q = p[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
+    upper.push(q);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
