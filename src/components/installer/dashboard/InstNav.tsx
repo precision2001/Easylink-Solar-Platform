@@ -41,6 +41,7 @@ const ICONS = {
   crown: "M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294zM5 21h14",
   tag: "M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42zM7 7.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0",
   link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
+  calendar: "M8 2v4M16 2v4M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM3 10h18",
   pin: "M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0",
 } as const;
 
@@ -75,6 +76,12 @@ function buildGroups(elite: boolean): NavGroup[] {
       title: "",
       items: [
         { key: "overview", label: "Home", icon: "home", href: "/installers/dashboard/home" },
+        {
+          key: "schedule",
+          label: "Schedule",
+          icon: "calendar",
+          href: "/installers/dashboard/schedule",
+        },
         {
           key: "aiAssist",
           label: "AI assistant",
@@ -312,7 +319,7 @@ const ROUTE_KEYS: [string, string][] = [
   ["/installers/dashboard/plan", "plan"],
   ["/installers/dashboard/home", "overview"],
   ["/installers/dashboard/overview", "overview"],
-  ["/installers/dashboard/schedule", "overview"],
+  ["/installers/dashboard/schedule", "schedule"],
 ];
 
 function resolveActive(pathname: string | null): string {
