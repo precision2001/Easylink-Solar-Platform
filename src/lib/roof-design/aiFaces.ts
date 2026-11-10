@@ -16,6 +16,7 @@
  */
 import sharp from "sharp";
 import { readFileSync, writeFileSync } from "node:fs";
+import { cacheRead, cacheWrite } from "@/lib/server/roofDataCache";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AiRoofFace, AiRoofTrace } from "./engine";
@@ -27,14 +28,15 @@ type Snapshot = { png: Buffer; geo: SnapshotGeo };
 /** Side of the square sent to the AI, in image pixels (about 30 m at zoom 21). */
 export const AI_CROP_PX = 960;
 /**
- * How long one design request waits for the AI's trace, inside the site's
- * 120 s request limit. Opus traces every roof first and then checks its trace
- * against the photo (owner's rules, 9 Nov 2026), which takes 1.5-4 minutes:
- * past this wait the reading keeps running, the design says Opus is still
- * tracing, and the page asks again (the next request picks up the same
- * reading instead of starting another).
+ * How long a design waits for the AI's trace. Opus traces every roof first and
+ * then checks its trace against the photo (owner's rules, 9 Nov 2026), which
+ * takes 1.5-4 minutes. The design job waits for it (inside the job's 240 s);
+ * the request answers "still designing" (202) at 100 s and the page asks again
+ * and collects it, so the engine's own reading isn't designed on meanwhile
+ * (owner, 10 Nov 2026). Past this wait the reading keeps running, the design
+ * says Opus is still tracing, and the page waits for it.
  */
-export const AI_WAIT_MS = 90_000;
+export const AI_WAIT_MS = 210_000;
 /** A reading is picked up again by later requests for the same roof for this long. */
 const READING_REUSE_MS = 30 * 60_000;
 const READINGS_FILE = join(tmpdir(), "easylink-roof-ai-readings.json");
@@ -66,6 +68,30 @@ function freshRef(key: string): ReadingRef | null {
 export function aiTraceRunning(key: string): boolean {
   return freshRef(key)?.status === "pending";
 }
+/**
+ * A roof's finished, self-checked trace is kept (owner, 10 Nov 2026: 26
+ * Bridgeview Cct was traced perfectly, then traced again after 30 minutes and
+ * the new trace was worse; meanwhile the engine's own reading was shown).
+ * The same roof gets the same trace from then on, across engine updates and
+ * restarts (the roof data cache keeps it 30 days); only a new trace version
+ * reads it again.
+ */
+const TRACE_STORE_VERSION = "v1";
+const traceStoreKey = (key: string) => `opus-trace|${TRACE_STORE_VERSION}|${key}`;
+async function keptTrace(key: string | undefined): Promise<AiRoofTrace | null> {
+  if (!key) return null;
+  try {
+    const hit = await cacheRead(traceStoreKey(key));
+    return hit ? (JSON.parse(hit.toString("utf8")) as AiRoofTrace) : null;
+  } catch {
+    return null;
+  }
+}
+/** True when this roof already has a kept trace (no Opus wait needed). */
+export async function hasKeptTrace(key: string): Promise<boolean> {
+  return (await keptTrace(key)) !== null;
+}
+
 /** The key a roof's reading is filed under: the pin to about 10 cm. */
 export const aiTraceKey = (p: LatLng) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
 const POLL_MS = 1500;
@@ -173,6 +199,8 @@ export async function fetchAiRoofTrace(
 ): Promise<AiRoofTrace | null> {
   if (!aiRoofFacesEnabled()) return null;
   const deadline = Date.now() + (opts.waitMs ?? AI_WAIT_MS);
+  const kept = await keptTrace(opts.key);
+  if (kept) return kept;
   try {
     const { geo } = image;
     const side = Math.min(AI_CROP_PX, geo.widthPx, geo.heightPx);
@@ -223,7 +251,7 @@ export async function fetchAiRoofTrace(
     const main = buildings.find((b) => b.main) ?? buildings[0];
     if (!main) return r.noRoof ? { noRoof: true, faces: [], outline: null, lines: [], obstructions: [], flat: false } : null;
     const pts = new Map(main.points.map((p) => [p.id, [p.x, p.y] as [number, number]]));
-    return {
+    const trace: AiRoofTrace = {
       noRoof: false,
       flat: main.flat,
       outline: main.outline.length >= 3 ? ring(main.outline) : null,
@@ -233,6 +261,8 @@ export async function fetchAiRoofTrace(
         .map((l) => ({ a: ll(pts.get(l.from)!), b: ll(pts.get(l.to)!), kind: l.kind, seen: l.seen })),
       obstructions: main.obstructions.map((o) => ({ kind: o.kind, ring: ring(o.ring) })),
     };
+    if (opts.key && trace.faces.length) await cacheWrite(traceStoreKey(opts.key), JSON.stringify(trace)).catch(() => {});
+    return trace;
   } catch {
     return null;
   }
