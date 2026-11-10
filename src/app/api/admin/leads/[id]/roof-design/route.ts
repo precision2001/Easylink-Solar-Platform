@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { backendAuthedFetch, forwardBackendJson } from "@/lib/server/backend-authed-fetch";
-import type { RoofDesignInputs } from "@/lib/server/auto-roof-design";
+import type { RoofDesignInputs, SavedLeadDesign } from "@/lib/server/auto-roof-design";
 import { roofJob } from "@/lib/server/roofDesignPool";
 
 export const runtime = "nodejs";
@@ -27,14 +27,14 @@ async function slot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-async function designLead(id: string): Promise<NextResponse> {
+async function designLead(id: string, saved: SavedLeadDesign | null = null): Promise<NextResponse> {
   const path = `/leads/${encodeURIComponent(id)}/roof-design`;
   const inputsRes = await backendAuthedFetch("admin", `${path}/inputs`);
   const inputsJson = (await inputsRes.json().catch(() => null)) as { success?: boolean; message?: string; data?: RoofDesignInputs } | null;
   if (!inputsRes.ok || !inputsJson?.data) {
     return NextResponse.json({ success: false, message: inputsJson?.message ?? "Could not load the lead's address." }, { status: inputsRes.status || 502 });
   }
-  const inputs = inputsJson.data;
+  const inputs = saved ? { ...inputsJson.data, saved } : inputsJson.data;
 
   let result;
   try {
@@ -79,11 +79,14 @@ async function designLead(id: string): Promise<NextResponse> {
   );
 }
 
-export async function POST(_request: Request, ctx: Ctx) {
+export async function POST(request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  let job = inFlight.get(id);
+  // The design staff just saved: the lead's picture is made from it (never joined to an automatic one).
+  const body = (await request.json().catch(() => null)) as { saved?: SavedLeadDesign } | null;
+  const saved = body?.saved?.roofs?.length && body.saved.panels?.length ? body.saved : null;
+  let job = saved ? undefined : inFlight.get(id);
   if (!job) {
-    job = designLead(id).finally(() => inFlight.delete(id));
+    job = designLead(id, saved).finally(() => inFlight.get(id) === job && inFlight.delete(id));
     job.catch(() => {});
     inFlight.set(id, job);
   }
