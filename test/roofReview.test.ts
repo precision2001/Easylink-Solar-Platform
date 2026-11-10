@@ -81,6 +81,14 @@ describe("roof trace self-check", () => {
     expect(model.calls.length).toBe(2);
   });
 
+  it("names the lines the photo doesn't show, and keeps checking past the usual rounds while they move", async () => {
+    const model = new FakeModel([{ text: trace(0) }, { text: trace(-25) }, { text: trace(0) }, { text: trace(-25) }, { text: trace(0) }]);
+    const r = await readRoofFaces(model, { imageBase64: photo().toString("base64"), format: "png", widthPx: 120, heightPx: 100, scope: "house", review: 2 });
+    const first = model.calls[1]!.messages.at(-1)!;
+    expect(first.role === "user" && first.text).toContain("NOT on any edge the photo shows");
+    expect(r.reviews).toBe(4);
+  });
+
   it("keeps the last good trace when a check reply is unreadable", async () => {
     const model = new FakeModel([{ text: trace(5) }, { text: "sorry" }]);
     const r = await readRoofFaces(model, { imageBase64: photo().toString("base64"), format: "png", widthPx: 120, heightPx: 100, scope: "house", review: 2 });
