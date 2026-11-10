@@ -320,6 +320,23 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
   let result = cleanFaces(jsonIn(turn.text), req);
   const usage = { ...turn.usage };
   let reviews = 0;
+  // STEP 1, HARD-CODED (owner, 10 Nov 2026: "identifying precise intersection
+  // points" is the first step of every roof). Before anything else looks at
+  // the trace, its corners are calculated, never kept where Opus put them by
+  // eye: every line through a point is measured every 5-10 px, fitted (±100 mm)
+  // and the point is where the fitted lines cross. It runs on the first trace,
+  // again on every self-checked trace and after any added section, so no
+  // corner placed by eye survives to the faces or the panels.
+  const refined = { sections: 0, calculated: 0, marked: 0, closeupFlags: 0, notConfirmed: 0 };
+  const placeCorners = (r: typeof result): typeof result => {
+    const mpp = req.metresPerPixel ?? 0;
+    if (req.format !== "png" || !(mpp > 0) || !r.buildings.length) return r;
+    const rep = placeIntersections(photo, r.buildings, mpp);
+    refined.calculated = rep.placed;
+    refined.marked = rep.marked;
+    return { ...r, faces: r.buildings.flatMap((b) => b.faces) };
+  };
+  result = placeCorners(result);
   // The self-check: the trace drawn on the photo, back to Opus, until it stops moving
   // (under 2 px) and every line lies on an edge the photo shows (owner, 10 Nov 2026),
   // or the time budget for a reading runs out. Lines the photo doesn't show keep
@@ -339,7 +356,7 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
     turn = await model.converse({ tier: "smart", effort: "high", maxTokens, system: ROOF_FACES_SYSTEM, messages });
     usage.inputTokens += turn.usage.inputTokens;
     usage.outputTokens += turn.usage.outputTokens;
-    const next = cleanFaces(jsonIn(turn.text), req);
+    const next = placeCorners(cleanFaces(jsonIn(turn.text), req));
     reviews += 1;
     if (!next.buildings.length && !next.noRoof) break; // a bad reply: keep the last good trace
     const moved = traceShift(result, next);
@@ -350,8 +367,7 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
     // Past the usual rounds, carry on only while some line is still off the photo's edges.
     if (reviews >= req.review && !unseen.length) break;
   }
-  // A missed section, then close-ups, then the bounded edge snap.
-  const refined = { sections: 0, calculated: 0, marked: 0, closeupFlags: 0, notConfirmed: 0 };
+  // A missed section (its corners calculated too), then close-ups, then the points on their own.
   if (req.refine && req.format === "png" && result.buildings.length && Date.now() - t0 < budgetMs * 0.85) {
     try {
       const r = await findMissingSections(model, photo, result, req, maxTokens);
@@ -359,20 +375,14 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
       usage.outputTokens += r.usage.outputTokens;
       if (r.result) {
         refined.sections = r.added;
-        result = r.result;
+        result = placeCorners(r.result);
       }
     } catch {
       /* keep the self-checked trace */
     }
   }
-  // The intersection rule: points calculated from the measured lines (2), checked on close-ups (3), confirmed on their own (5).
+  // The intersection rule, continued: the calculated points checked on close-ups (3) and confirmed on their own (5).
   if (req.refine && req.format === "png" && result.buildings.length) {
-    const mpp = req.metresPerPixel ?? 0;
-    if (mpp > 0) {
-      const r = placeIntersections(photo, result.buildings, mpp);
-      refined.calculated = r.placed;
-      refined.marked = r.marked;
-    }
     if (Date.now() - t0 < budgetMs * 0.9) {
       try {
         const r = await checkByCloseups(model, photo, result.buildings, { jsonIn, maxSheets: 3 });

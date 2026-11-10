@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { encodePng } from "../src/roof/overlay.js";
 import { placeIntersections } from "../src/roof/intersections.js";
+import { readRoofFaces } from "../src/roof/faces.js";
+import { FakeModel } from "../src/ai/model.js";
 import type { RoofBuilding } from "../src/roof/faces.js";
 
 /**
@@ -62,5 +64,23 @@ describe("the intersection rule", () => {
     expect(r.marked).toBe(4);
     expect(b[0]!.lines.every((l) => l.seen === "faint")).toBe(true);
     expect(b[0]!.points[0]).toMatchObject({ x: 50, y: 50 });
+  });
+
+  it("is the first step of every reading: Opus's corners are replaced by calculated ones before anything else, without asking for refine", async () => {
+    const d = 4;
+    const trace = JSON.stringify({
+      buildings: [{ name: "House", main: true, flat: true,
+        outline: [[50 - d, 50 + d], [150 + d, 50 - d], [150 + d, 150 + d], [50 - d, 150 - d]],
+        points: [{ id: "A", x: 50 - d, y: 50 + d }, { id: "B", x: 150 + d, y: 50 - d }, { id: "C", x: 150 + d, y: 150 + d }, { id: "D", x: 50 - d, y: 150 - d }],
+        lines: [{ from: "A", to: "B", kind: "eave", seen: "clear" }, { from: "B", to: "C", kind: "eave", seen: "clear" }, { from: "C", to: "D", kind: "eave", seen: "clear" }, { from: "D", to: "A", kind: "eave", seen: "clear" }],
+        faces: [{ name: "Flat", facing: "flat", points: ["A", "B", "C", "D"] }] }],
+    });
+    const model = new FakeModel([{ text: trace }]);
+    const r = await readRoofFaces(model, { imageBase64: photo().toString("base64"), format: "png", widthPx: 200, heightPx: 200, metresPerPixel: 0.03, scope: "house", review: 0 });
+    expect(r.refined?.calculated).toBe(4);
+    const a = r.buildings[0]!.points.find((p) => p.id === "A")!;
+    expect(Math.abs(a.x - 50)).toBeLessThanOrEqual(1.2);
+    expect(Math.abs(a.y - 50)).toBeLessThanOrEqual(1.2);
+    expect(Math.abs(r.faces[0]!.ring[0]![0] - 50)).toBeLessThanOrEqual(1.2);
   });
 });
