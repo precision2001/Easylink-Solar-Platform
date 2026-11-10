@@ -19,6 +19,8 @@ export type InstallerAppointment = {
   startAt: string;
   endAt: string;
   status: InstallerAppointmentStatus;
+  /** Set when the EasyLink AI booked it on a call. */
+  aiKind?: "SITE_VISIT" | "CALLBACK" | "SERVICE" | null;
   createdAt: string;
   updatedAt: string;
   lead?: {
