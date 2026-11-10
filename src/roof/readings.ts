@@ -37,6 +37,9 @@ export type RoofReading = {
   /** Self-check rounds asked for, and how many ran. */
   review?: number;
   reviews?: number;
+  /** Close-ups and edge snap after the self-check. */
+  refine?: boolean;
+  refined?: { closeups: number; snapped: number };
   faces?: RoofFaceReading[];
   /** The full trace: per building its border, intersection points, lines, faces and obstructions. */
   buildings?: RoofBuilding[];
@@ -75,6 +78,7 @@ export async function startRoofReading(c: Container, req: RoofFacesRequest, now 
     lot: req.lot,
     scope: req.scope,
     review: req.review,
+    refine: req.refine,
     createdAt: now.toISOString(),
   };
   await c.store.putRecord(ROOF_READING, row);
@@ -113,6 +117,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       lot: row.lot,
       scope: row.scope ?? "house",
       review: row.review ?? 2,
+      refine: row.refine ?? false,
     });
     const decisionId = newId("dec_");
     await c.store.putDecision({
@@ -120,7 +125,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       agentId: "roof-designer",
       eventId: null,
       subject: null,
-      reasoningSummary: `Traced ${r.buildings.length} roof${r.buildings.length === 1 ? "" : "s"}: ${r.buildings.reduce((n, b) => n + b.lines.length, 0)} lines, ${r.buildings.reduce((n, b) => n + b.points.length, 0)} intersection points, ${r.faces.length} face${r.faces.length === 1 ? "" : "s"}; checked against the photo ${r.reviews} time${r.reviews === 1 ? "" : "s"}.${r.noRoof ? " No roof." : ""}${r.notes ? ` ${r.notes.slice(0, 300)}` : ""}`,
+      reasoningSummary: `Traced ${r.buildings.length} roof${r.buildings.length === 1 ? "" : "s"}: ${r.buildings.reduce((n, b) => n + b.lines.length, 0)} lines, ${r.buildings.reduce((n, b) => n + b.points.length, 0)} intersection points, ${r.faces.length} face${r.faces.length === 1 ? "" : "s"}; checked against the photo ${r.reviews} time${r.reviews === 1 ? "" : "s"}.${r.refined ? ` Close-ups moved ${r.refined.closeups} point${r.refined.closeups === 1 ? "" : "s"}; edge snap moved ${r.refined.snapped}.` : ""}${r.noRoof ? " No roof." : ""}${r.notes ? ` ${r.notes.slice(0, 300)}` : ""}`,
       action: null,
       autonomyLevel: null,
       outcome: "no_action",
@@ -129,7 +134,7 @@ export async function processRoofReading(c: Container, id: string, now = () => n
       contextHash: null,
       createdAt: now().toISOString(),
     });
-    return finish({ status: "done", faces: r.faces, buildings: r.buildings, noRoof: r.noRoof, wallsDeg: r.wallsDeg, notes: r.notes, reviews: r.reviews, decisionId });
+    return finish({ status: "done", faces: r.faces, buildings: r.buildings, noRoof: r.noRoof, wallsDeg: r.wallsDeg, notes: r.notes, reviews: r.reviews, refined: r.refined, decisionId });
   } catch (err) {
     console.error("roof reading", id, err);
     return finish({ status: "error", message: "The roof could not be read." });

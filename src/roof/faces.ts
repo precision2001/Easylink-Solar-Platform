@@ -2,6 +2,7 @@ import { traceOverlay } from "./overlay.js";
 import { z } from "zod";
 import type { ChatMessage, ModelClient } from "../ai/model.js";
 import { lineEvidence } from "./lineEvidence.js";
+import { refineByCloseups, snapToEdges } from "./refine.js";
 
 /**
  * Roof faces read from a zoom-21 satellite image by the smart model
@@ -74,6 +75,11 @@ export const RoofFacesRequest = z.object({
   scope: z.enum(["house", "site"]).default("house"),
   /** Rounds of self-check: Opus sees its trace drawn on the photo and corrects it (0 = none). */
   review: z.number().int().min(0).max(3).default(2),
+  /**
+   * After the self-check: every point placed on a 4× close-up of itself, then
+   * each line snapped onto the photo's edge within 30 cm (owner, 10 Nov 2026).
+   */
+  refine: z.boolean().default(false),
 });
 export type RoofFacesRequest = z.infer<typeof RoofFacesRequest>;
 
@@ -278,7 +284,7 @@ export function traceShift(a: Omit<RoofFacesResult, "usage">, b: Omit<RoofFacesR
 /** Self-check rounds while lines aren't on edges the photo shows. */
 export const REVIEW_MAX = 4;
 
-export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, budgetMs = 280_000): Promise<RoofFacesResult & { reviews: number }> {
+export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, budgetMs = 280_000): Promise<RoofFacesResult & { reviews: number; refined?: { closeups: number; snapped: number } }> {
   const t0 = Date.now();
   const scale = req.metresPerPixel ? `, about ${(req.metresPerPixel * 100).toFixed(1)} cm per pixel` : "";
   const scope =
@@ -337,5 +343,20 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
     // Past the usual rounds, carry on only while some line is still off the photo's edges.
     if (reviews >= req.review && !unseen.length) break;
   }
-  return { ...result, usage, reviews };
+  // Close-ups, then the bounded edge snap.
+  let refined = { closeups: 0, snapped: 0 };
+  if (req.refine && req.format === "png" && result.buildings.length && Date.now() - t0 < budgetMs * 0.9) {
+    try {
+      const r = await refineByCloseups(model, photo, result.buildings, { jsonIn, maxSheets: 3 });
+      usage.inputTokens += r.usage.inputTokens;
+      usage.outputTokens += r.usage.outputTokens;
+      refined.closeups = r.moved;
+    } catch {
+      /* keep the self-checked trace */
+    }
+    const maxPx = req.metresPerPixel ? 0.3 / req.metresPerPixel : 0;
+    refined.snapped = snapToEdges(photo, result.buildings, maxPx);
+    result = { ...result, faces: result.buildings.flatMap((b) => b.faces) };
+  }
+  return { ...result, usage, reviews, refined };
 }
