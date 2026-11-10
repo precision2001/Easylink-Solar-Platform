@@ -103,6 +103,8 @@ export type AiActionResult = {
 };
 
 export class AiNotConnectedError extends Error {}
+/** The portal sign-in has expired; the person needs to sign in again. */
+export class AiSignedOutError extends Error {}
 
 type Envelope<T> = { success?: boolean; message?: string; data?: T; code?: string; errors?: unknown };
 
@@ -122,6 +124,7 @@ export async function aiRequest<T>(portal: AiPortal, path: string, init?: Reques
     /* empty body */
   }
   if (res.status === 503 && json.code === "AI_NOT_CONFIGURED") throw new AiNotConnectedError(json.message ?? "AI platform is not connected");
+  if (res.status === 401) throw new AiSignedOutError(json.message || "Signed out");
   // Action results carry their own status (proposed / denied) in data even on 4xx.
   if (!res.ok && !(json.data && typeof json.data === "object" && "status" in (json.data as object))) {
     throw new Error(json.message || `Request failed (${res.status})`);
