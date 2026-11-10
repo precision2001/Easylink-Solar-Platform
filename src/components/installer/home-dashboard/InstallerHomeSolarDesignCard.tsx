@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { SendDesignDialog } from "@/components/designs/SendDesignDialog";
-import { shareLabel } from "@/lib/designs/send-to-customer";
+import { DesignShareBadge } from "@/components/designs/DesignShareBadge";
 import Icon from "@/components/ui/Icons";
 import { DesignMapPreviewImage } from "@/components/customer/design/DesignMapPreviewImage";
 import { designMapScreenshotUrl } from "@/lib/designs/map-screenshot";
@@ -233,12 +233,12 @@ export function InstallerHomeSolarDesignCard({
   const sd = buildSolarDesignRows(design);
   const [sending, setSending] = useState(false);
   const [sharedAt, setSharedAt] = useState<{ at: string | null; channels: string | null } | null>(null);
-  const share = design
-    ? shareLabel({
+  const shareDesign = design
+    ? {
         sharedAt: sharedAt?.at ?? design.sharedWithCustomerAt ?? null,
         sharedChannels: sharedAt?.channels ?? design.sharedChannels ?? null,
         updatedAt: sharedAt?.at ?? String(design.updatedAt ?? ""),
-      })
+      }
     : null;
   const customerName = [customer?.firstName, customer?.lastName].filter(Boolean).join(" ") || "the customer";
 
@@ -264,16 +264,10 @@ export function InstallerHomeSolarDesignCard({
           <ExternalLinkGlyph className="size-[13.24px] shrink-0 text-[#333333]" />
         </Link>
       </header>
-      {design?.id ? (
+      {design?.id && shareDesign ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-warm-border px-[17px] py-2">
-          <span className={`font-dm-sans text-[12px] font-medium ${share?.stale ? "text-[#9A5B00]" : "text-[#047857]"}`}>{share?.text}</span>
-          <button
-            type="button"
-            onClick={() => setSending(true)}
-            className="inline-flex min-h-9 items-center rounded-[8px] bg-[#0B1A2E] px-3 font-dm-sans text-[12.5px] font-semibold text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
-          >
-            Send to customer
-          </button>
+          <span className="font-dm-sans text-[12px] font-medium text-warm-gray">Customer&rsquo;s copy</span>
+          <DesignShareBadge design={shareDesign} onSend={() => setSending(true)} />
         </div>
       ) : null}
       {sending && design?.id ? (

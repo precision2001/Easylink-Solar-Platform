@@ -74,3 +74,21 @@ export function shareLabel(d: Pick<LeadDesignShare, "sharedAt" | "sharedChannels
   const stale = new Date(d.updatedAt).getTime() - new Date(d.sharedAt).getTime() > 60_000;
   return { text: `${stale ? "Changed since sent" : "Sent to customer"} ${when}${how ? ` by ${how}` : ""}`, stale };
 }
+
+export type ShareState = {
+  state: "unsent" | "changed" | "sent";
+  /** "2 h ago", "just now"; null when never sent. */
+  when: string | null;
+  /** "Email + SMS", "Email"; null when never sent. */
+  how: string | null;
+};
+
+/** The indicator's state: never sent, changed since it was sent, or sent and current. */
+export function shareState(d: Pick<LeadDesignShare, "sharedAt" | "sharedChannels" | "updatedAt">, now = Date.now()): ShareState {
+  if (!d.sharedAt) return { state: "unsent", when: null, how: null };
+  const mins = Math.max(0, Math.round((now - new Date(d.sharedAt).getTime()) / 60000));
+  const when = mins < 1 ? "just now" : mins < 60 ? `${mins} min ago` : mins < 48 * 60 ? `${Math.round(mins / 60)} h ago` : `${Math.round(mins / 1440)} days ago`;
+  const how = (d.sharedChannels ?? "").split(",").filter(Boolean).map((c) => (c === "SMS" ? "SMS" : "Email")).join(" + ") || null;
+  const changed = new Date(d.updatedAt).getTime() - new Date(d.sharedAt).getTime() > 60_000;
+  return { state: changed ? "changed" : "sent", when, how };
+}
