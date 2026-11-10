@@ -37,6 +37,31 @@ function sample(img: Rgba, x: number, y: number): [number, number, number] {
   return out;
 }
 
+/** The square of the photo at (left, top), `side` px across, enlarged to `out` px. */
+export function enlargeRegion(photo: Rgba, left: number, top: number, side: number, out: number): Rgba {
+  const img: Rgba = { width: out, height: out, data: new Uint8Array(out * out * 4) };
+  const k = side / out;
+  for (let y = 0; y < out; y++)
+    for (let x = 0; x < out; x++) {
+      const [r, g, b] = sample(photo, left + x * k, top + y * k);
+      const i = (y * out + x) * 4;
+      img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b; img.data[i + 3] = 255;
+    }
+  return img;
+}
+
+/** Every coordinate of the buildings through `f` (points, borders, faces, obstructions). */
+export function mapBuildings(buildings: RoofBuilding[], f: (x: number, y: number) => [number, number]): RoofBuilding[] {
+  const ring = (r: [number, number][]) => r.map(([x, y]) => f(x, y));
+  return buildings.map((b) => ({
+    ...b,
+    outline: ring(b.outline),
+    points: b.points.map((p) => { const [x, y] = f(p.x, p.y); return { ...p, x, y }; }),
+    faces: b.faces.map((fc) => ({ ...fc, ring: ring(fc.ring) })),
+    obstructions: b.obstructions.map((o) => ({ ...o, ring: ring(o.ring) })),
+  }));
+}
+
 /** One sheet of close-ups: the tiles, numbered 1.., each centred on its point. */
 export function closeupSheet(photo: Rgba, buildings: RoofBuilding[], pts: At[]): Buffer {
   const rows = Math.ceil(pts.length / COLS);

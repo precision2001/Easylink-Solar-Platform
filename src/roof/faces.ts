@@ -1,8 +1,8 @@
-import { traceOverlay } from "./overlay.js";
 import { z } from "zod";
 import type { ChatMessage, ModelClient } from "../ai/model.js";
 import { lineEvidence } from "./lineEvidence.js";
-import { refineByCloseups, snapToEdges } from "./refine.js";
+import { enlargeRegion, mapBuildings, refineByCloseups, snapToEdges } from "./refine.js";
+import { decodePng, encodePng, traceOverlay } from "./overlay.js";
 
 /**
  * Roof faces read from a zoom-21 satellite image by the smart model
@@ -284,7 +284,7 @@ export function traceShift(a: Omit<RoofFacesResult, "usage">, b: Omit<RoofFacesR
 /** Self-check rounds while lines aren't on edges the photo shows. */
 export const REVIEW_MAX = 4;
 
-export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, budgetMs = 280_000): Promise<RoofFacesResult & { reviews: number; refined?: { closeups: number; snapped: number } }> {
+export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, budgetMs = 280_000): Promise<RoofFacesResult & { reviews: number; refined?: { sections: number; closeups: number; snapped: number } }> {
   const t0 = Date.now();
   const scale = req.metresPerPixel ? `, about ${(req.metresPerPixel * 100).toFixed(1)} cm per pixel` : "";
   const scope =
@@ -343,8 +343,21 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
     // Past the usual rounds, carry on only while some line is still off the photo's edges.
     if (reviews >= req.review && !unseen.length) break;
   }
-  // Close-ups, then the bounded edge snap.
-  let refined = { closeups: 0, snapped: 0 };
+  // A missed section, then close-ups, then the bounded edge snap.
+  let refined = { sections: 0, closeups: 0, snapped: 0 };
+  if (req.refine && req.format === "png" && result.buildings.length && Date.now() - t0 < budgetMs * 0.85) {
+    try {
+      const r = await findMissingSections(model, photo, result, req, maxTokens);
+      usage.inputTokens += r.usage.inputTokens;
+      usage.outputTokens += r.usage.outputTokens;
+      if (r.result) {
+        refined.sections = r.added;
+        result = r.result;
+      }
+    } catch {
+      /* keep the self-checked trace */
+    }
+  }
   if (req.refine && req.format === "png" && result.buildings.length && Date.now() - t0 < budgetMs * 0.9) {
     try {
       const r = await refineByCloseups(model, photo, result.buildings, { jsonIn, maxSheets: 3 });
@@ -359,4 +372,64 @@ export async function readRoofFaces(model: ModelClient, req: RoofFacesRequest, b
     result = { ...result, faces: result.buildings.flatMap((b) => b.faces) };
   }
   return { ...result, usage, reviews, refined };
+}
+
+export const MISSING_SECTION_TEXT = (list: string) => `This is an enlarged view of the roof with your trace drawn on it (border magenta, lines yellow/orange, points numbered). Check ONE thing: is any part of this roof NOT traced? Look along the whole building for a wing, a lower roof, a porch, garage or entry roof, a step in the ridge, or a hip or valley you haven't drawn (a section with its own hips or ridge needs its own faces, ridge, hips and corners on its own eaves).
+If nothing is missing, reply with JSON only: {"missing": false}.
+If something is missing, reply with the WHOLE corrected trace in the same JSON format as before, in THIS enlarged image's pixels, plus "missing": true and a short "notes" naming what you added. Keep every line that is right exactly where it is.
+Points by number: ${list}`;
+
+/**
+ * Whether the trace misses a roof section (owner, 10 Nov 2026: 53 Turffontein
+ * Ave's front wing was traced as part of the main roof three times). Opus sees
+ * the roof alone, enlarged (the trace's extent plus a third), with its trace
+ * drawn, and is asked only that. A new trace is kept when it adds faces and
+ * keeps the old border's area; otherwise the old one stays.
+ */
+async function findMissingSections(
+  model: ModelClient,
+  photoPng: Buffer,
+  result: Omit<RoofFacesResult, "usage">,
+  req: RoofFacesRequest,
+  maxTokens: number,
+): Promise<{ result: Omit<RoofFacesResult, "usage"> | null; added: number; usage: { inputTokens: number; outputTokens: number } }> {
+  const usage = { inputTokens: 0, outputTokens: 0 };
+  const photo = decodePng(photoPng);
+  const main = result.buildings.find((b) => b.main) ?? result.buildings[0];
+  if (!photo || !main) return { result: null, added: 0, usage };
+  const xs = [...main.outline.map((p) => p[0]), ...main.points.map((p) => p.x)];
+  const ys = [...main.outline.map((p) => p[1]), ...main.points.map((p) => p.y)];
+  const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+  const side = Math.min(Math.min(photo.width, photo.height), Math.round(Math.max(w, h) * 1.35 + 40));
+  const cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+  const left = Math.round(Math.min(Math.max(0, cx - side / 2), photo.width - side));
+  const top = Math.round(Math.min(Math.max(0, cy - side / 2), photo.height - side));
+  const out = Math.min(1100, Math.max(side, Math.round(side * 2.5)));
+  const k = side / out;
+  const big = encodePng(enlargeRegion(photo, left, top, side, out));
+  const bigTrace = mapBuildings([main], (x, y) => [(x - left) / k, (y - top) / k]);
+  const drawn = traceOverlay(big, bigTrace);
+  if (!drawn) return { result: null, added: 0, usage };
+  const list = bigTrace[0]!.points.map((p) => `${drawn.numbers[0]!.get(p.id)}=${p.id} (${Math.round(p.x)},${Math.round(p.y)})`).join(", ");
+  const turn = await model.converse({
+    tier: "smart",
+    effort: "high",
+    maxTokens,
+    system: ROOF_FACES_SYSTEM,
+    messages: [{ role: "user", image: { format: "png", bytes: drawn.png }, text: MISSING_SECTION_TEXT(list) }],
+  });
+  usage.inputTokens += turn.usage.inputTokens;
+  usage.outputTokens += turn.usage.outputTokens;
+  const raw = jsonIn(turn.text) as { missing?: boolean } | null;
+  if (!raw || raw.missing !== true) return { result: null, added: 0, usage };
+  const next = cleanFaces(raw, { widthPx: out, heightPx: out, metresPerPixel: req.metresPerPixel ? req.metresPerPixel * k : undefined });
+  const nb = next.buildings.find((b) => b.main) ?? next.buildings[0];
+  if (!nb) return { result: null, added: 0, usage };
+  const [back] = mapBuildings([nb], (x, y) => [left + x * k, top + y * k]);
+  const area = (r: [number, number][]) => Math.abs(r.reduce((s2, p, i) => { const q = r[(i + 1) % r.length]!; return s2 + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+  const added = back!.faces.length - main.faces.length;
+  // Kept only when it adds faces and keeps (about) the old border's area.
+  if (added < 1 || (main.outline.length >= 3 && area(back!.outline) < area(main.outline) * 0.9)) return { result: null, added: 0, usage };
+  const buildings = result.buildings.map((b) => (b === main ? { ...back!, main: true } : b));
+  return { result: { ...result, buildings, faces: buildings.flatMap((b) => b.faces), notes: [result.notes, (raw as { notes?: string }).notes].filter(Boolean).join(" ") }, added, usage };
 }
