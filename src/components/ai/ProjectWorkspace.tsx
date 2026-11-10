@@ -63,7 +63,26 @@ export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPor
   const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    Promise.all([ai.project(portal, project), ai.projectFiles(portal, project), ai.projectHistory(portal, project), ai.projectItems(portal, project).catch(() => ({ items: [], kinds: [] }))])
+    // A slow or briefly unavailable AI platform (cold start, deploy) shouldn't blank the panel:
+    // retry the project itself, and let files, history and items fall back to empty.
+    const isFinal = (e: unknown) => e instanceof AiNotConnectedError || (e instanceof Error && /Not your|403|404/.test(e.message));
+    const retry = async <T,>(fn: () => Promise<T>, tries = 3): Promise<T> => {
+      for (let i = 1; ; i++) {
+        try {
+          return await fn();
+        } catch (e) {
+          if (i >= tries || isFinal(e)) throw e;
+          await new Promise((r) => setTimeout(r, 600 * i));
+        }
+      }
+    };
+    const soft = <T,>(fn: () => Promise<T>, empty: T) => retry(fn, 2).catch(() => empty);
+    Promise.all([
+      retry(() => ai.project(portal, project)),
+      soft(() => ai.projectFiles(portal, project), [] as ProjectFile[]),
+      soft(() => ai.projectHistory(portal, project), [] as HistoryLine[]),
+      soft(() => ai.projectItems(portal, project), { items: [], kinds: [] } as ItemsView),
+    ])
       .then(([d, f, h, it]) => {
         setDetail(d);
         setItems(it);
@@ -109,7 +128,22 @@ export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPor
     );
   if (state === "denied")
     return <div className="rounded-[14px] border border-[#E3E8EF] bg-white p-6 text-[14px] text-[#334155]">This project isn&apos;t assigned to you.</div>;
-  if (state === "error" || !detail) return <div className="rounded-[14px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-[14px] text-[#991B1B]">Couldn&apos;t load this project.</div>;
+  if (state === "error" || !detail)
+    return (
+      <div className="flex flex-wrap items-center gap-3 rounded-[14px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-[14px] text-[#991B1B]">
+        <span className="flex-1">Couldn&apos;t load this customer right now.</span>
+        <button
+          type="button"
+          onClick={() => {
+            setState("loading");
+            load();
+          }}
+          className="rounded-[10px] border border-[#991B1B] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#991B1B] hover:bg-[#FEE2E2]"
+        >
+          Try again
+        </button>
+      </div>
+    );
 
   const counts = { everything: items?.items.length ?? 0, files: files?.length ?? 0, history: history?.length ?? 0, installer: detail.installerHistory.length };
 
