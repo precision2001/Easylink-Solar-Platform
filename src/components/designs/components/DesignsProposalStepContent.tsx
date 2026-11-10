@@ -893,6 +893,16 @@ export const DesignsProposalStepContent = forwardRef<
   );
   const selectedQuote = priced?.selected ?? null;
   const arrayKw = selectedQuote?.arrayKw ?? 0;
+  // The system size follows the panel actually chosen (tier or the customer's
+  // own pick): the roof step sized it with the design's 400 W panel, so 11
+  // panels showed 4.4 kW after a 510 W panel was picked (owner, 10 Nov 2026).
+  // The priced array (panels × the chosen panel's watts) replaces it, so the
+  // card, the Energy step, the PDF and the lead all show the same size.
+  useEffect(() => {
+    if (!(arrayKw > 0)) return;
+    const size = `${Number(arrayKw.toFixed(2))} kW`;
+    if (size !== proposal.summary.systemSize) dispatch(mergeProposalData({ summary: { systemSize: size } }));
+  }, [arrayKw, proposal.summary.systemSize, dispatch]);
   const savings = useMemo(
     () => estimateSavings(monthlyBill, arrayKw, batteryKwh),
     [monthlyBill, arrayKw, batteryKwh],
