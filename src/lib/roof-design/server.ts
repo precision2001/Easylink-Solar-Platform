@@ -36,21 +36,41 @@ export async function fetchSnapshot(pin: LatLng, zoom: number, key = googleMapsK
 }
 
 /** An image already fetched (or a test image), decoded for analysis. */
-/**
- * The zoom Opus traces at: 21, or 20 when the building (its footprint) or,
- * without one, the land lot spans more than fits in the zoom-21 cut.
- */
-export function traceZoomFor(ctx: Pick<RoofDesignContext, "footprint" | "parcel"> | null | undefined): number {
-  const ring = ctx?.footprint?.length ? ctx.footprint : ctx?.parcel?.ring;
-  if (!ring?.length) return ROOF_SNAPSHOT.zoom;
-  const lat0 = ring[0].lat;
+/** A lot bigger than this is not a house block (factories, warehouses, schools): the building may fill it. */
+export const BIG_SITE_LOT_M2 = 2000;
+/** The widest picture Opus traces on (zoom 18: about 230 m across the cut in Sydney). */
+export const MIN_TRACE_ZOOM = 18;
+
+const spanM = (ring: LatLng[] | null | undefined): number => {
+  if (!ring?.length) return 0;
   const mLat = 111_320;
-  const mLng = mLat * Math.cos((lat0 * Math.PI) / 180);
+  const mLng = mLat * Math.cos((ring[0].lat * Math.PI) / 180);
   let span = 0;
   for (const a of ring) for (const b of ring) span = Math.max(span, Math.hypot((a.lat - b.lat) * mLat, (a.lng - b.lng) * mLng));
-  // The cut is AI_CROP_PX at zoom 21 (about 29 m in Sydney); keep a margin.
-  const cutM = AI_CROP_PX * 0.0373 * Math.cos((lat0 * Math.PI) / 180) * 0.85;
-  return span > cutM ? ROOF_SNAPSHOT.zoom - 1 : ROOF_SNAPSHOT.zoom;
+  return span;
+};
+
+/**
+ * The zoom Opus traces at: the closest picture the whole building fits in —
+ * 21 for a house, 20 for a long row (~58 m), 19 (~115 m) or 18 (~230 m) for a
+ * factory or warehouse (owner, 11 Nov 2026: big sites were traced only in the
+ * middle of the zoom-21/20 cut). The building's size is its footprint; on a
+ * big lot (not a house block) the lot too, as Google's footprint of a large
+ * roof is often only part of it; without a footprint, the lot.
+ */
+export function traceZoomFor(ctx: Pick<RoofDesignContext, "footprint" | "parcel"> | null | undefined): number {
+  const foot = spanM(ctx?.footprint);
+  const lot = spanM(ctx?.parcel?.ring);
+  const bigLot = (ctx?.parcel?.areaM2 ?? 0) > BIG_SITE_LOT_M2;
+  const span = !foot ? lot : bigLot ? Math.max(foot, lot) : foot;
+  if (!span) return ROOF_SNAPSHOT.zoom;
+  const lat0 = (ctx?.footprint?.[0] ?? ctx?.parcel?.ring?.[0])!.lat;
+  for (let z = ROOF_SNAPSHOT.zoom; z > MIN_TRACE_ZOOM; z--) {
+    // The cut is AI_CROP_PX at this zoom (about 29 m in Sydney at 21, doubling per step out); keep a margin.
+    const cutM = AI_CROP_PX * 0.0373 * 2 ** (ROOF_SNAPSHOT.zoom - z) * Math.cos((lat0 * Math.PI) / 180) * 0.85;
+    if (span <= cutM) return z;
+  }
+  return MIN_TRACE_ZOOM;
 }
 
 /** A reading is picked up again only for the same pin and the same picture (zoom). */
