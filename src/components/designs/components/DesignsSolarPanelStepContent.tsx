@@ -457,6 +457,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
   // starting roof; the page reads faces and lines on it locally. Only when it
   // can't be had does the page run the outline search itself.
   const [serverDesign, setServerDesign] = useState<{ key: string; design: RoofDesignResponse | null } | null>(null);
+  /** Opus is still tracing and checking this roof: nothing is designed until it's done. */
+  const [opusTracing, setOpusTracing] = useState(false);
   const pinKey = selectedLocation ? `${selectedLocation.lat.toFixed(6)},${selectedLocation.lng.toFixed(6)}` : null;
   // Asked once per pin: the location object changes identity on re-renders,
   // and re-asking after a failure on each one piled up 504s (7 Nov 2026).
@@ -471,15 +473,22 @@ export const DesignsSolarPanelStepContent = forwardRef<
     // (owner's rules). One request waits up to 90 s, inside the site's 120 s;
     // while Opus is still at it, the engine's design shows and the page asks
     // again every 20 s (up to 5 minutes) until the checked trace is in.
-    const giveUp = window.setTimeout(() => live && setServerDesign((cur) => cur ?? { key: pinKey, design: null }), 115_000);
+    // No answer at all (not even "still tracing") within 4 minutes: the page reads the roof itself.
+    const giveUp = window.setTimeout(() => live && setServerDesign((cur) => cur ?? { key: pinKey, design: null }), 240_000);
+    // While Opus is still tracing, the engine's own reading is not shown or
+    // designed on (owner, 10 Nov 2026: panels went outside the roof on the
+    // engine's interim reading of 26 Bridgeview Cct): the page waits for the
+    // checked trace, and only after 5 minutes without one shows the engine's.
     const take = (d: RoofDesignResponse, tries: number) => {
       if (!live) return;
-      setServerDesign({ key: pinKey, design: d });
-      if (stillTracing(d) && tries < 15)
+      const tracing = stillTracing(d) && tries < 15;
+      setOpusTracing(tracing);
+      if (!tracing) setServerDesign({ key: pinKey, design: d });
+      if (tracing)
         timer = window.setTimeout(() => {
           refreshRoofDesign(pin)
             .then((n) => take(n, tries + 1))
-            .catch(() => {});
+            .catch(() => live && (setOpusTracing(false), setServerDesign({ key: pinKey, design: d })));
         }, 20_000);
     };
     roofDesignFor(pin)
@@ -1512,7 +1521,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
                     : roofSnapshot.loading
                       ? "Zooming in and finding the roof lines..."
                       : readingRoof && !hasInitializedRoof
-                        ? "Reading the roof faces and checking them against Google and the image..."
+                        ? opusTracing
+                          ? "Opus is tracing the roof and checking its trace against the photo (1-4 minutes)..."
+                          : "Reading the roof faces and checking them against Google and the image..."
                         : "Analysing solar potential..."}
               </p>
             )}
