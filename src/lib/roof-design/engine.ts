@@ -118,7 +118,7 @@ export type AiRoofTrace = {
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-10.2";
+export const ROOF_ENGINE_VERSION = "2026-11-11.1";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
