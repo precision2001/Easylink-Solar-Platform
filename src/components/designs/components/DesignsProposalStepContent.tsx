@@ -51,6 +51,15 @@ import {
 import { estimateSavings } from "@/lib/proposal/proposalPricing";
 import {
   batteryOptionRows,
+  batteryTiles,
+  choiceKwh,
+  isPickId,
+  itemKwh,
+  pickId,
+  pickIndex,
+  pickMode,
+  shownBatteryItems,
+  type BatteryTile,
   MAX_BATTERY_OPTIONS,
   OPTION_LETTERS,
   sortOptions,
@@ -322,8 +331,6 @@ function PanelTierSelector({
   );
 }
 
-/** A battery the customer picked, as the battery card lists it. */
-type PickedBattery = { key: string; label: string; size: string; quantity: number; photo?: string };
 
 /** The battery's photo when the product library has one, else a battery mark. */
 function BatteryMark({ photo, dark }: { photo?: string; dark?: boolean }) {
@@ -342,6 +349,7 @@ function BatteryMark({ photo, dark }: { photo?: string; dark?: boolean }) {
 }
 
 function BatterySelector({
+  tiles,
   optionIds,
   shownId,
   onTap,
@@ -351,6 +359,8 @@ function BatterySelector({
   estimated,
   models = {},
 }: {
+  /** The tiles: None, each picked battery on its own, the standard sizes. */
+  tiles: BatteryTile[];
   /** The battery behind each chosen size: the customer's own pick, else the one the price list quotes. */
   models?: Record<string, { label: string; photo?: string }[]>;
   /** The battery options being compared (smallest first). */
@@ -382,7 +392,7 @@ function BatterySelector({
             </button>
           ) : (
             <span className="rounded-full bg-black/70 px-2.5 py-[1px] font-source-sans text-[12px] font-semibold text-yellow-lemon">
-              {findBatteryCapacity(shownId).label}
+              {tiles.find((t) => t.id === shownId)?.label ?? findBatteryCapacity(shownId).label}
             </span>
           )
         }
@@ -393,7 +403,7 @@ function BatterySelector({
         </span>
       </CardTitle>
       <div className="relative mt-2 grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-1.5 sm:grid-cols-4">
-        {BATTERY_CAPACITY_OPTIONS.map((battery) => {
+        {tiles.map((battery) => {
           const inOptions = optionIds.includes(battery.id);
           const isShown = battery.id === shownId;
           return (
@@ -438,12 +448,12 @@ function BatterySelector({
                   ×
                 </span>
               ) : null}
-              {inOptions && battery.id !== "none" && models[battery.id]?.length ? (
+              {(inOptions || battery.pick) && battery.id !== "none" && models[battery.id]?.length ? (
                 // Which batteries this option is: a small label each in the top-right corner (mark and name), even two of the same.
-                <span className={`pointer-events-none absolute top-1 flex max-w-[calc(100%-2.6rem)] flex-col items-end gap-[2px] ${optionIds.length > 1 ? "right-4" : "right-1"}`}>
+                <span className={`pointer-events-none absolute top-1 flex max-w-[calc(100%-2.6rem)] flex-col items-end gap-[2px] ${inOptions && optionIds.length > 1 ? "right-4" : "right-1"}`}>
                   {models[battery.id].slice(0, 2).map((m, i) => (
-                    <span key={i} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/10 px-1.5 py-[1px] text-[9.5px] font-semibold leading-tight text-white/90" title={m.label}>
-                      <BatteryMark photo={m.photo} />
+                    <span key={i} className={`inline-flex max-w-full items-center gap-1 rounded-full px-1.5 py-[1px] text-[9.5px] font-semibold leading-tight ${inOptions ? "bg-white/10 text-white/90" : "bg-[#0B2A4A]/10 text-[#0B2A4A]"}`} title={m.label}>
+                      <BatteryMark photo={m.photo} dark={!inOptions} />
                       <span className="truncate">{m.label}</span>
                     </span>
                   ))}
@@ -575,14 +585,15 @@ function BatteryCompare({
 }
 
 /** One draft quote per battery option for a lead's design; returns the quote references made. */
-async function createOptionQuotes(leadId: string, designId: string, kwhs: number[]): Promise<string[]> {
+async function createOptionQuotes(leadId: string, designId: string, options: { kwh: number; pick?: string }[]): Promise<string[]> {
   const made: string[] = [];
-  for (const batteryKwh of kwhs) {
+  for (const { kwh: batteryKwh, pick } of options) {
     try {
       const res = await fetch("/api/admin/quotes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId, designId, batteryKwh }),
+        // A picked battery is quoted as that product; a size, as the price list's battery that size.
+        body: JSON.stringify({ leadId, designId, batteryKwh, ...(pick ? { batteryPick: pick } : {}) }),
       });
       const json = (await res.json().catch(() => null)) as { data?: { number?: number; reference?: string } } | null;
       if (res.ok && json?.data) made.push(json.data.reference ?? (json.data.number ? `Q-${String(json.data.number).padStart(6, "0")}` : "quote"));
@@ -655,10 +666,12 @@ export const DesignsProposalStepContent = forwardRef<
         const r = await saveLeadDesign(leadId, input);
         // Each battery option the customer compared becomes its own quote
         // (same design, that battery); accepting one supersedes the others.
-        const options = sortOptions(proposal.equipment.batteryOptionIds ?? []);
+        const picks = proposal.equipment.items.battery ?? [];
+        const kwhOfId = (id: string) => choiceKwh(id, picks);
+        const options = sortOptions(proposal.equipment.batteryOptionIds ?? [], kwhOfId);
         let quoted: string[] = [];
         if (options.length > 1) {
-          quoted = await createOptionQuotes(leadId, r.designId, options.map((id) => batteryKwhOf(id)));
+          quoted = await createOptionQuotes(leadId, r.designId, options.map((id) => ({ kwh: kwhOfId(id), ...(isPickId(id) ? { pick: id } : {}) })));
         }
         // The lead's roof picture follows the latest design (it was only made once).
         fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/roof-design`, { method: "POST", keepalive: true }).catch(() => {});
@@ -792,13 +805,10 @@ export const DesignsProposalStepContent = forwardRef<
    * battery set on the Energy step was neither priced nor selected here.
    */
   const itemsBatteryKwh = useMemo(() => {
-    const items = proposal.equipment.items.battery ?? [];
-    const total = items.reduce((sum, it) => {
-      const kwh = Number.parseFloat(it.ratingLabel);
-      return Number.isFinite(kwh) && /kwh/i.test(it.ratingLabel) ? sum + kwh * Math.max(1, it.quantity) : sum;
-    }, 0);
+    // The shown picked battery only (each picked battery is its own option).
+    const total = shownBatteryItems(proposal.equipment).reduce((sum, it) => sum + itemKwh(it), 0);
     return total > 0 ? total : undefined;
-  }, [proposal.equipment.items.battery]);
+  }, [proposal.equipment]);
   // Batteries picked on the equipment step come first, then the Energy
   // step's size, then this step's pick (same rule as the PDF).
   const designBatteryKwh =
@@ -809,13 +819,18 @@ export const DesignsProposalStepContent = forwardRef<
   const chosenProducts = useMemo(() => chosenProductsOf(proposal), [proposal]);
   const chosenPanel = proposal.equipment.items.solarPanel?.[0] ?? null;
   /** The battery button that matches the design's size (the nearest one). */
+  const batteryPicks = useMemo(() => proposal.equipment.items.battery ?? [], [proposal.equipment.items.battery]);
   const batteryCapacityId = useMemo(() => {
+    const id = proposal.equipment.batteryCapacityId;
+    // A picked battery shown: that pick's own tile.
+    if (isPickId(id) && batteryPicks[pickIndex(id)]) return id;
     let best = BATTERY_CAPACITY_OPTIONS[0];
     for (const b of BATTERY_CAPACITY_OPTIONS) {
       if (Math.abs(batteryKwhOf(b.id) - designBatteryKwh) < Math.abs(batteryKwhOf(best.id) - designBatteryKwh)) best = b;
     }
     return best.id;
-  }, [designBatteryKwh]);
+  }, [designBatteryKwh, proposal.equipment.batteryCapacityId, batteryPicks]);
+  const kwhOfChoice = (id: string) => choiceKwh(id, batteryPicks);
 
   /**
    * Pricing engine: the design's panels, tier and battery priced with the
@@ -830,8 +845,8 @@ export const DesignsProposalStepContent = forwardRef<
   // Priced at the design's exact size (the Energy step can set e.g. 13 kWh).
   const batteryKwh = designBatteryKwh;
   const batteryOptionsKwh = useMemo(
-    () => BATTERY_CAPACITY_OPTIONS.map((b) => batteryKwhOf(b.id)),
-    [],
+    () => [...new Set([...BATTERY_CAPACITY_OPTIONS.map((b) => batteryKwhOf(b.id)), ...batteryPicks.map(itemKwh).filter((k) => k > 0)])],
+    [batteryPicks],
   );
   const tierIds = useMemo(() => PANEL_TIER_OPTIONS.map((x) => x.id), []);
   const { data: priced, loading: pricingLoading, error: pricingError } = useProposalPricing(
@@ -857,61 +872,12 @@ export const DesignsProposalStepContent = forwardRef<
     ) as Record<string, number>;
   }, [priced]);
   /** Battery buttons priced by estimate (no single product that size in the price list). */
-  const batteryEstimated = useMemo(() => {
-    const info = priced?.batteryInfo ?? {};
-    return new Set(BATTERY_CAPACITY_OPTIONS.filter((b) => info[String(batteryKwhOf(b.id))]?.estimated).map((b) => b.id));
-  }, [priced]);
-  const batteryPrices = useMemo(() => {
-    const totals = priced?.batteryTotals ?? {};
-    const none = totals["0"] ?? 0;
-    return Object.fromEntries(
-      BATTERY_CAPACITY_OPTIONS.map((b) => {
-        const t = totals[String(batteryKwhOf(b.id))];
-        return [b.id, t != null ? Math.max(0, t - none) : 0];
-      }),
-    ) as Record<string, number>;
-  }, [priced]);
-
   const batteryCatalogue = useAppSelector(selectBuilderCatalogue).Battery;
-  /** The equipment step's batteries, each on its own (two of the same size stay two). */
-  const pickedBatteries = useMemo((): PickedBattery[] => {
-    const items = proposal.equipment.items.battery ?? [];
-    return items.map((it, i) => {
-      const product = (batteryCatalogue ?? []).find((p) => p.id === it.productId);
-      return {
-        key: `${it.productId}-${i}`,
-        label: [it.brand, it.name].filter(Boolean).join(" ") || "Battery",
-        size: it.ratingLabel,
-        quantity: Math.max(1, it.quantity),
-        photo: product ? productImage(product)?.thumbUrl : undefined,
-      };
-    });
-  }, [proposal.equipment.items.battery, batteryCatalogue]);
-  /** The battery behind each size button: a picked one that size, else the price list's. */
-  const batteryModels = useMemo(() => {
-    const items = proposal.equipment.items.battery ?? [];
-    const info = priced?.batteryInfo ?? {};
-    const out: Record<string, { label: string; photo?: string }[]> = {};
-    for (const b of BATTERY_CAPACITY_OPTIONS) {
-      const kwh = batteryKwhOf(b.id);
-      if (kwh <= 0) continue;
-      const mine = items.filter((it) => {
-        const k = Number.parseFloat(it.ratingLabel);
-        return Number.isFinite(k) && /kwh/i.test(it.ratingLabel) && Math.abs(k * Math.max(1, it.quantity) - kwh) < 0.6;
-      });
-      const total = Math.abs(designBatteryKwh - kwh) < 0.6 && items.length ? items : mine;
-      if (total.length) {
-        out[b.id] = total.map((it) => {
-          const pick = pickedBatteries[items.indexOf(it)];
-          return { label: `${it.quantity > 1 ? `${it.quantity}× ` : ""}${pick?.label ?? it.name}`, photo: pick?.photo };
-        });
-      } else if (info[String(kwh)]?.model) {
-        out[b.id] = [{ label: info[String(kwh)].model }];
-      }
-    }
-    return out;
-  }, [proposal.equipment.items.battery, priced, pickedBatteries, designBatteryKwh]);
-
+  /** A picked battery's photo from the product library, if it has one. */
+  const pickPhoto = (productId: string) => {
+    const product = (batteryCatalogue ?? []).find((p) => p.id === productId);
+    return product ? productImage(product)?.thumbUrl : undefined;
+  };
   /** null until the backend has priced this design. */
   /** Why the design can't be priced from the price list (e.g. no battery that size), if so. */
   const pricingBlock = selectedQuote?.blocks?.length ? selectedQuote.blocks[0] : null;
@@ -959,13 +925,45 @@ export const DesignsProposalStepContent = forwardRef<
 
   /** The battery options being compared; the shown battery is always one of them. */
   const batteryOptionIds = useMemo(() => {
-    const saved = (proposal.equipment.batteryOptionIds ?? []).filter((id) => BATTERY_CAPACITY_OPTIONS.some((b) => b.id === id));
-    return sortOptions(saved.includes(batteryCapacityId) ? saved : [...saved, batteryCapacityId]).slice(0, MAX_BATTERY_OPTIONS + 1);
-  }, [proposal.equipment.batteryOptionIds, batteryCapacityId]);
+    const valid = (id: string) => (isPickId(id) ? Boolean(batteryPicks[pickIndex(id)]) : BATTERY_CAPACITY_OPTIONS.some((b) => b.id === id));
+    const saved = (proposal.equipment.batteryOptionIds ?? []).filter(valid);
+    const kwhOf = (id: string) => choiceKwh(id, batteryPicks);
+    return sortOptions(saved.includes(batteryCapacityId) ? saved : [...saved, batteryCapacityId], kwhOf).slice(0, MAX_BATTERY_OPTIONS + 1);
+  }, [proposal.equipment.batteryOptionIds, batteryCapacityId, batteryPicks]);
+  /** The card's tiles: None, every picked battery on its own tile, and the standard sizes (eight in all). */
+  const tiles = useMemo(() => batteryTiles(BATTERY_CAPACITY_OPTIONS, batteryPicks, batteryOptionIds), [batteryPicks, batteryOptionIds]);
+  /** Batteries priced by estimate (no single product that size in the price list). */
+  const batteryEstimated = useMemo(() => {
+    const info = priced?.batteryInfo ?? {};
+    return new Set(tiles.filter((t) => !t.pick && info[String(t.kwh)]?.estimated).map((t) => t.id));
+  }, [priced, tiles]);
+  /** Added cost of each tile over no battery: the shown one as quoted, the others by size. */
+  const batteryPrices = useMemo(() => {
+    const totals = priced?.batteryTotals ?? {};
+    const none = totals["0"] ?? 0;
+    return Object.fromEntries(
+      tiles.map((t) => {
+        const exact = t.id === batteryCapacityId && selectedQuote && !selectedQuote.blocks?.length ? selectedQuote.net : undefined;
+        const total = exact ?? totals[String(t.kwh)];
+        return [t.id, total != null ? Math.max(0, total - none) : 0];
+      }),
+    ) as Record<string, number>;
+  }, [priced, tiles, batteryCapacityId, selectedQuote]);
+  /** The battery behind each tile, named in its corner: the picked one, else the price list's. */
+  const batteryModels = useMemo(() => {
+    const info = priced?.batteryInfo ?? {};
+    const out: Record<string, { label: string; photo?: string }[]> = {};
+    for (const t of tiles) {
+      if (t.pick) out[t.id] = [{ label: `${t.pick.quantity > 1 ? `${t.pick.quantity}× ` : ""}${t.pick.name}`, photo: pickPhoto(t.pick.productId) }];
+      else if (t.kwh > 0 && info[String(t.kwh)]?.model) out[t.id] = [{ label: info[String(t.kwh)].model }];
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pickPhoto reads the catalogue below
+  }, [priced, tiles, batteryCatalogue]);
   const [comparing, setComparing] = useState(false);
   const optionRows = useMemo(
-    () => batteryOptionRows(batteryOptionIds, priced ?? null, monthlyBill, arrayKw),
-    [batteryOptionIds, priced, monthlyBill, arrayKw],
+    () => batteryOptionRows(batteryOptionIds, priced ?? null, monthlyBill, arrayKw, batteryPicks),
+    [batteryOptionIds, priced, monthlyBill, arrayKw, batteryPicks],
   );
 
   function setBatteryOptions(ids: string[], shown: string) {
@@ -974,15 +972,23 @@ export const DesignsProposalStepContent = forwardRef<
         equipment: {
           batteryOptionIds: ids,
           batteryCapacityId: shown,
-          batteryCapacityKwh: batteryKwhOf(shown),
-          ...(proposal.equipment.items.battery?.length ? { items: { ...proposal.equipment.items, battery: [] } } : {}),
+          batteryCapacityKwh: kwhOfChoice(shown),
         },
       }),
     );
   }
 
+  // Batteries picked on the equipment step are options of their own, one tile
+  // each (owner, 10 Nov 2026), not added together into one battery.
+  useEffect(() => {
+    if (!batteryPicks.length || pickMode(proposal.equipment)) return;
+    const ids = batteryPicks.slice(0, MAX_BATTERY_OPTIONS).map((_, i) => pickId(i));
+    setBatteryOptions(ids, ids[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when picks arrive
+  }, [batteryPicks.length]);
+
   function handleTapBattery(id: string) {
-    const next = tapBatteryOption(batteryOptionIds, batteryCapacityId, id);
+    const next = tapBatteryOption(batteryOptionIds, batteryCapacityId, id, MAX_BATTERY_OPTIONS, kwhOfChoice);
     if (next.full) {
       toast.info(`Up to ${MAX_BATTERY_OPTIONS} battery options. Take one out (×) to add another.`);
       return;
@@ -1064,6 +1070,7 @@ export const DesignsProposalStepContent = forwardRef<
             info={priced?.tierInfo}
           />
           <BatterySelector
+            tiles={tiles}
             optionIds={batteryOptionIds}
             shownId={batteryCapacityId}
             onTap={handleTapBattery}
@@ -1088,14 +1095,15 @@ export const DesignsProposalStepContent = forwardRef<
                 <ProposalDetailRow label="Supply" value={proposal.customer.supplyPhase === 3 ? "Three phase" : "Single phase"} />
               ) : null}
               {EQUIPMENT_CATEGORY_KEYS.map((key) => {
-                const items = proposal.equipment.items[key];
+                // The battery shown on the card, not every picked one.
+                const items = key === "battery" ? shownBatteryItems(proposal.equipment) : proposal.equipment.items[key];
                 if (!items || items.length === 0) return null;
                 const value = items
                   .map((item) => `${item.name}${item.quantity > 1 ? ` ×${item.quantity}` : ""} ${item.ratingLabel}`.trim())
                   .join(", ");
                 return <ProposalDetailRow key={key} label={CATEGORY_DETAIL_LABEL[key]} value={value} />;
               })}
-              {batteryKwh > 0 && !(proposal.equipment.items.battery?.length) ? (
+              {batteryKwh > 0 && !shownBatteryItems(proposal.equipment).length ? (
                 <ProposalDetailRow
                   label="Battery"
                   value={(() => {

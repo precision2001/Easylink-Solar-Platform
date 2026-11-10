@@ -9,7 +9,7 @@
  * customer saw on screen: savings from `estimateSavings` (same tariffs), price
  * from the pricing engine, and the battery size the step reads.
  */
-import { batteryOptionRows } from "./batteryOptions";
+import { batteryOptionRows, itemKwh, shownBatteryItems } from "./batteryOptions";
 import type { ChosenProducts } from "@/lib/proposal/proposalPricing";
 import {
   CONSUMPTION_SEASONALITY,
@@ -201,13 +201,8 @@ function capacityKwhOf(id: string): number {
 export function designBatteryKwh(proposal: DesignProposalState): number {
   // Batteries the customer picked come first (7 Nov 2026: the Energy step's
   // 70 kWh was quoted over three picked 17.7 kWh batteries).
-  const items = proposal.equipment.items?.battery ?? [];
-  const fromItems = items.reduce((sum, it) => {
-    const kwh = Number.parseFloat(it.ratingLabel);
-    return Number.isFinite(kwh) && /kwh/i.test(it.ratingLabel)
-      ? sum + kwh * Math.max(1, it.quantity)
-      : sum;
-  }, 0);
+  // Each picked battery is its own option (10 Nov 2026): the shown one only.
+  const fromItems = shownBatteryItems(proposal.equipment).reduce((sum, it) => sum + itemKwh(it), 0);
   if (fromItems > 0) return fromItems;
   if (proposal.equipment.batteryCapacityKwh !== undefined) {
     return Math.max(0, proposal.equipment.batteryCapacityKwh);
@@ -227,7 +222,7 @@ export function chosenProductsOf(proposal: DesignProposalState): ChosenProducts 
   const panelId = items.solarPanel?.map((i) => i.productId).find(isId);
   const inverterId = items.inverter?.map((i) => i.productId).find(isId);
   const qty = new Map<string, number>();
-  for (const b of items.battery ?? []) if (isId(b.productId)) qty.set(b.productId, (qty.get(b.productId) ?? 0) + Math.max(1, b.quantity));
+  for (const b of shownBatteryItems(proposal.equipment)) if (isId(b.productId)) qty.set(b.productId, (qty.get(b.productId) ?? 0) + Math.max(1, b.quantity));
   const batteries = [...qty].map(([id, q]) => ({ id, qty: q }));
   if (!panelId && !inverterId && !batteries.length) return undefined;
   return { ...(panelId ? { panelId } : {}), ...(inverterId ? { inverterId } : {}), ...(batteries.length ? { batteries } : {}) };
@@ -305,22 +300,23 @@ function buildOptions(
   pricing: ProposalPricingResponse | null,
   chosenIds: string[] = [],
   shownId?: string,
+  pickedBatteries: Parameters<typeof batteryOptionRows>[4] = [],
 ): ProposalOption[] {
   const totals = pricing?.batteryTotals ?? {};
   // The battery options the customer compared (owner, 9 Nov 2026): exactly
   // those, as options A, B and C, the quickest payback recommended.
   if (chosenIds.length > 1 && pricing) {
-    const rows = batteryOptionRows(chosenIds, pricing, monthly, arrayKw);
+    const rows = batteryOptionRows(chosenIds, pricing, monthly, arrayKw, pickedBatteries);
     return rows.map((r) => {
       const isDesign = r.id === shownId;
       const s = estimateSavings(monthly, arrayKw, r.kwh);
       const price = isDesign ? pricing.selected.net : (r.total ?? 0);
       const quoted = pricing.batteryInfo?.[String(r.kwh)];
-      const kwhLabel = quoted && r.kwh > 0 ? +quoted.kwh.toFixed(1) : r.kwh;
+      const kwhLabel = r.id.startsWith("pick:") ? r.kwh : quoted && r.kwh > 0 ? +quoted.kwh.toFixed(1) : r.kwh;
       return {
-        key: `b${r.kwh}`,
+        key: `b${r.id}`,
         label: `Option ${r.letter}${r.recommended ? " · Recommended" : ""}`,
-        title: r.kwh === 0 ? "Solar only" : `Solar + ${kwhLabel} kWh battery`,
+        title: r.kwh === 0 ? "Solar only" : r.id.startsWith("pick:") && r.model ? `Solar + ${r.model} (${kwhLabel} kWh)` : `Solar + ${kwhLabel} kWh battery`,
         batteryKwh: kwhLabel,
         price,
         yearlySavings: Math.round(s.yearlySavings),
@@ -410,7 +406,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
 
   const firstPanel = proposal.equipment.items?.solarPanel?.[0];
   const firstInverter = proposal.equipment.items?.inverter?.[0];
-  const firstBattery = proposal.equipment.items?.battery?.[0];
+  const firstBattery = shownBatteryItems(proposal.equipment)[0];
 
   const panelModel =
     quote?.panel?.model ??
@@ -492,7 +488,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
     co2TonnesYear: Math.round(co2Year * 10) / 10,
     co2Tonnes25: Math.round(co225),
 
-    options: buildOptions(monthly, systemKw, batteryKwh, pricing, proposal.equipment.batteryOptionIds ?? [], proposal.equipment.batteryCapacityId),
+    options: buildOptions(monthly, systemKw, batteryKwh, pricing, proposal.equipment.batteryOptionIds ?? [], proposal.equipment.batteryCapacityId, proposal.equipment.items?.battery ?? []),
     roofAreaM2: proposal.solarDesign?.polygonTotalAreaM2
       ? Math.round(proposal.solarDesign.polygonTotalAreaM2)
       : null,

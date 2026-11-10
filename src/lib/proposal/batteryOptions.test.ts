@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { batteryOptionRows, optionKwh, sortOptions, tapBatteryOption } from "./batteryOptions";
+import { batteryOptionRows, batteryTiles, choiceKwh, optionKwh, shownBatteryItems, sortOptions, tapBatteryOption } from "./batteryOptions";
 
 describe("battery options", () => {
   it("reads the size from an option id", () => {
@@ -50,5 +50,33 @@ describe("battery options", () => {
     const rows = batteryOptionRows(["none", "100kwh"], { batteryTotals: { "0": 20000 } }, 300, 8);
     expect(rows[1]).toMatchObject({ total: null, paybackYears: null, net25: null });
     expect(rows[0].recommended).toBe(true);
+  });
+});
+
+describe("picked batteries, one option each (10 Nov 2026)", () => {
+  const sizes = ["none", "9.2kwh", "14.6kwh", "20kwh", "40kwh", "60kwh", "80kwh", "100kwh"].map((id) => ({ id, label: id === "none" ? "None" : id.replace("kwh", "kWh") }));
+  const picks = [
+    { productId: "a", brand: "Sigenergy", name: "SigenStor 20", quantity: 1, ratingLabel: "20 kWh" },
+    { productId: "b", brand: "FOX ESS", name: "EQ4800 20", quantity: 1, ratingLabel: "20 kWh" },
+  ];
+
+  it("gives every picked battery its own tile, keeping eight tiles", () => {
+    const tiles = batteryTiles(sizes, picks, ["pick:0", "pick:1"]);
+    expect(tiles).toHaveLength(8);
+    expect(tiles.map((t) => t.id)).toEqual(["none", "9.2kwh", "14.6kwh", "pick:0", "pick:1", "40kwh", "60kwh", "80kwh"]);
+    expect(tiles[3]).toMatchObject({ kwh: 20, label: "20kWh", pick: { name: "Sigenergy SigenStor 20" } });
+  });
+
+  it("keeps a chosen size even when a picked battery is that size", () => {
+    expect(batteryTiles(sizes, picks, ["20kwh", "pick:0"]).map((t) => t.id)).toContain("20kwh");
+  });
+
+  it("prices the design with the shown pick only; older designs add them together", () => {
+    const items = { battery: picks };
+    expect(shownBatteryItems({ batteryCapacityId: "pick:1", batteryOptionIds: ["pick:0", "pick:1"], items })).toEqual([picks[1]]);
+    expect(shownBatteryItems({ batteryCapacityId: "40kwh", batteryOptionIds: ["pick:0", "40kwh"], items })).toEqual([]);
+    expect(shownBatteryItems({ batteryCapacityId: "20kwh", items })).toEqual(picks);
+    expect(choiceKwh("pick:1", picks)).toBe(20);
+    expect(choiceKwh("60kwh", picks)).toBe(60);
   });
 });
