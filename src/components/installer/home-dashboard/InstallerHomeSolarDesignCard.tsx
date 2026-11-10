@@ -267,7 +267,9 @@ export function InstallerHomeSolarDesignCard({
       {design?.id && shareDesign ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-warm-border px-[17px] py-2">
           <span className="font-dm-sans text-[12px] font-medium text-warm-gray">Customer&rsquo;s copy</span>
-          <DesignShareBadge design={shareDesign} onSend={() => setSending(true)} />
+          <span className="block w-[200px] max-w-full">
+            <DesignShareBadge design={shareDesign} onSend={() => setSending(true)} />
+          </span>
         </div>
       ) : null}
       {sending && design?.id ? (

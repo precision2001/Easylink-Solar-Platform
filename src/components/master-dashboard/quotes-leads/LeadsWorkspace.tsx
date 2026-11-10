@@ -150,7 +150,7 @@ function PillSelect({
 function SolarDesignButton({ lead, onSend }: { lead: PipelineLead; onSend?: () => void }) {
   const kind = sourceKind(lead.source);
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="inline-flex max-w-full flex-col items-stretch gap-1">
       <Link
         href={leadDesignHref(lead)}
         title={`Design a system for ${lead.customerName}${lead.address ? ` at ${lead.address}` : ""}`}
@@ -164,7 +164,12 @@ function SolarDesignButton({ lead, onSend }: { lead: PipelineLead; onSend?: () =
       <span className="truncate text-[11.5px] text-[#64748B]" title={lead.source ?? undefined}>
         {kind.label} · {ago(lead.createdAt)}
       </span>
-      {lead.design ? <DesignShareBadge design={lead.design} onSend={onSend} size="sm" /> : null}
+      {lead.design ? (
+        // Takes the Solar Design button's width, never widens it.
+        <span className="block w-0 min-w-full">
+          <DesignShareBadge design={lead.design} onSend={onSend} size="sm" />
+        </span>
+      ) : null}
     </div>
   );
 }
