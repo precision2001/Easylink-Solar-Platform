@@ -517,6 +517,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
     return () => window.clearTimeout(id);
   }, [roofCtx, serverReady]);
   const readingRoof = Boolean(roofCtx) && bestState?.ctx !== roofCtx;
+  /** Until the green roof is drawn, the roof view and its buttons are frozen. */
+  const roofAnalysing =
+    Boolean(selectedLocation) &&
+    !hasInitializedRoof &&
+    (loading || layersLoading || roofSnapshot.loading || readingRoof || opusTracing);
   const bestAvailable = bestState && bestState.ctx === roofCtx ? bestState.result : null;
   const bestAvailableOutlines = bestAvailable?.rings ?? null;
   /** True when the starting shape is a real trace of the roof, not a footprint or rectangle guess. */
@@ -1535,6 +1540,28 @@ export const DesignsSolarPanelStepContent = forwardRef<
         <div className="w-full min-w-0 overflow-hidden rounded-[28px] border-[3px] border-design-accent-cyan shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] lg:h-full lg:min-h-0">
           {/* Outer wrapper: overlays (RGB/Panels/Save) sit outside capture ref */}
           <div className="relative aspect-[649/525] h-full w-full min-h-[280px] overflow-hidden rounded-[25px] lg:aspect-auto lg:min-h-0">
+            {/* Frozen while the AI reads the roof: no buttons or map until the
+                green roof is drawn (owner, 10 Nov 2026). Outside the capture
+                target, so it never shows in a saved picture. */}
+            {roofAnalysing && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="absolute inset-0 z-[60] flex cursor-wait items-center justify-center bg-[#0B1424]/55 p-4 backdrop-blur-[1.5px]"
+                onPointerDownCapture={(e) => e.stopPropagation()}
+                onWheelCapture={(e) => e.stopPropagation()}
+              >
+                <div className="flex max-w-[460px] flex-col items-center gap-4 rounded-[20px] border border-white/20 bg-[#0F1E36]/90 px-7 py-6 text-center shadow-[0_10px_40px_rgba(0,0,0,0.45)]">
+                  <span className="h-12 w-12 animate-spin rounded-full border-[4px] border-design-accent-cyan/30 border-t-design-accent-cyan" aria-hidden="true" />
+                  <p className="m-0 font-source-sans text-[22px] font-bold leading-tight text-white sm:text-[26px]">
+                    AI is Analyzing Roof, Area, Size and Designing Panels
+                  </p>
+                  <p className="m-0 animate-pulse font-inter text-[13px] font-medium text-white/75">
+                    The roof view unlocks as soon as your roof is drawn.
+                  </p>
+                </div>
+              </div>
+            )}
             {/* Capture target = satellite map + roof/panel overlays only (no UI chrome) */}
             <div
               ref={mapCaptureRef}
