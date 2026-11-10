@@ -76,7 +76,7 @@ export function aiTraceRunning(key: string): boolean {
  * restarts (the roof data cache keeps it 30 days); only a new trace version
  * reads it again.
  */
-const TRACE_STORE_VERSION = "v2"; // v2: roof surface only (10 Nov 2026)
+const TRACE_STORE_VERSION = "v3"; // v2: roof surface only; v3: every line on a visible edge (10 Nov 2026)
 const traceStoreKey = (key: string) => `opus-trace|${TRACE_STORE_VERSION}|${key}`;
 async function keptTrace(key: string | undefined): Promise<AiRoofTrace | null> {
   if (!key) return null;
