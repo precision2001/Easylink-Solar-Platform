@@ -392,7 +392,7 @@ function BatterySelector({
           · pick up to {MAX_BATTERY_OPTIONS} to compare
         </span>
       </CardTitle>
-      <div className="relative mt-2 grid min-h-0 flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4">
+      <div className="relative mt-2 grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-1.5 sm:grid-cols-4">
         {BATTERY_CAPACITY_OPTIONS.map((battery) => {
           const inOptions = optionIds.includes(battery.id);
           const isShown = battery.id === shownId;
@@ -438,18 +438,11 @@ function BatterySelector({
                   ×
                 </span>
               ) : null}
-              {battery.label}
-              {battery.id !== "none" && prices[battery.id] ? (
-                <span className={`text-[10px] font-normal ${inOptions ? "text-yellow-lemon" : "text-[#152238]/70"}`}>
-                  +{formatAud(prices[battery.id])}
-                  {estimated.has(battery.id) ? " est." : ""}
-                </span>
-              ) : null}
               {inOptions && battery.id !== "none" && models[battery.id]?.length ? (
-                // Which batteries this option is: one small label each (mark and name), even two of the same.
-                <span className="mt-0.5 flex w-full flex-col items-center gap-[2px]">
+                // Which batteries this option is: a small label each in the top-right corner (mark and name), even two of the same.
+                <span className={`pointer-events-none absolute top-1 flex max-w-[calc(100%-2.6rem)] flex-col items-end gap-[2px] ${optionIds.length > 1 ? "right-4" : "right-1"}`}>
                   {models[battery.id].slice(0, 2).map((m, i) => (
-                    <span key={i} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/10 px-1.5 py-[1px] text-[9.5px] font-semibold text-white/90" title={m.label}>
+                    <span key={i} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/10 px-1.5 py-[1px] text-[9.5px] font-semibold leading-tight text-white/90" title={m.label}>
                       <BatteryMark photo={m.photo} />
                       <span className="truncate">{m.label}</span>
                     </span>
@@ -457,6 +450,14 @@ function BatterySelector({
                   {models[battery.id].length > 2 ? <span className="text-[9px] text-white/70">+{models[battery.id].length - 2} more</span> : null}
                 </span>
               ) : null}
+              {battery.label}
+              {battery.id !== "none" && prices[battery.id] ? (
+                <span className={`text-[10px] font-normal ${inOptions ? "text-yellow-lemon" : "text-[#152238]/70"}`}>
+                  +{formatAud(prices[battery.id])}
+                  {estimated.has(battery.id) ? " est." : ""}
+                </span>
+              ) : null}
+
             </button>
           );
         })}
