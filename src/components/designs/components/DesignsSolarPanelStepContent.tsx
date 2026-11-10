@@ -76,8 +76,9 @@ const MAX_MAP_SOLAR_PANEL_POLYGONS = 1500;
 // Roof-design limits (mask coverage, box distance, footprint check, lot clip) live in
 // the shared engine: ROOF_DESIGN_LIMITS in src/lib/roof-design/engine.ts.
 
-function formatNumber(n: number): string {
-  return n.toLocaleString("en-AU", { maximumFractionDigits: 0 });
+/** A whole number for the metrics, or "—" when there is none (no Google Solar data for a new estate: 53 Turffontein Ave, Box Hill crashed the page, 10 Nov 2026). */
+function formatNumber(n: number | null | undefined): string {
+  return typeof n === "number" && Number.isFinite(n) ? n.toLocaleString("en-AU", { maximumFractionDigits: 0 }) : "—";
 }
 
 function coordsMatchPin(
