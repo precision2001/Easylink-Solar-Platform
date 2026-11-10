@@ -25,7 +25,7 @@ import { fitRoofJunctions } from "./junctions";
 import { flatSectionsFromLines } from "./flatSections";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
-import { findExistingArrays, findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
+import { findExistingArrays, findRoofObstructions, panelsOffRoof, type RoofObstruction } from "@/lib/designer/roofObstructions";
 import { keepPanelsClear } from "@/lib/designer/panelClearance";
 import { bestSquareRoof, rankSquareReadings, wallAxisDeg, type SquareReading } from "@/lib/designer/squareRoof";
 import { DESIGN_RULES, inverterSizingFor, roofPitchDegrees, type InverterSizing, type PanelOrientation } from "@/lib/designer/designRules";
@@ -51,6 +51,7 @@ import {
   type LatLngBox,
   type LatLngRing,
   type PanelDims,
+  panelCorners,
 } from "./geometry";
 import { alignWalls, withoutNotches, singleStepRemovals, splitByRoofLevel, squareWalls, withoutSmallSteps } from "./roofLevels";
 import { imageLines, unexplainedLength, type ImageLine } from "./roofLineEvidence";
@@ -117,7 +118,7 @@ export type AiRoofTrace = {
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-10.1";
+export const ROOF_ENGINE_VERSION = "2026-11-10.2";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -1120,7 +1121,12 @@ export function layoutRoofPanels(paths: LatLngRing[], faceSet: RoofFaceSet, ctx:
   const axis = largest ? longestEdgeAngleDegrees(largest) : undefined;
   const options = { orientation, pitchDeg: roofPitchOf(ctx), obstructions: obstructions.map((o) => o.ring) };
   const packed = req.beautify ? beautifyPanelsForFaces(faces, dims, options, axis) : generatePanelsForFaces(faces, dims, options, axis);
-  return dedupePanels(keepPanelsClear(packed, faces.map((f) => f.ring), paths, dims, { clearM: DESIGN_RULES.edgeSetbackM }));
+  const kept = dedupePanels(keepPanelsClear(packed, faces.map((f) => f.ring), paths, dims, { clearM: DESIGN_RULES.edgeSetbackM }));
+  // Nothing on what isn't the roof's surface (a courtyard, a gap, an existing array).
+  const luma = ctx.snapshot?.luma;
+  if (!luma) return kept;
+  const off = new Set(panelsOffRoof(luma, faces.map((f) => f.ring), kept.map((p) => panelCorners(p, dims))));
+  return off.size ? kept.filter((_, i) => !off.has(i)) : kept;
 }
 
 /* ── Relook ─────────────────────────────────────────────────────────── */

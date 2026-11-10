@@ -450,3 +450,68 @@ function convexHull(points: [number, number][]): [number, number][] {
   }
   return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
+
+/**
+ * Panels that sit on something that isn't the roof's surface (owner, 10 Nov
+ * 2026: at 26 Bridgeview Cct panels ran over the dark courtyard beside the
+ * roof). On a light roof (sheet, membrane), a panel whose footprint is more
+ * than `maxDarkShare` (6%) very dark (well below the roof's brightness after a
+ * light blur: a courtyard, a gap between buildings, an existing array, a
+ * deep void) is not on the roof. Returns the indexes of the panels to take
+ * out. Dark roofs (tiles) can't be told this way: nothing is taken out.
+ */
+export function panelsOffRoof(
+  luma: GeoTiffRaster,
+  faces: LatLng[][],
+  panels: LatLng[][],
+  opts: { maxDarkShare?: number } = {},
+): number[] {
+  const W = luma.width;
+  const H = luma.height;
+  const g = luma.data as ArrayLike<number>;
+  if (!panels.length || !faces.length || W * H === 0) return [];
+  // The roof's brightness: the median over the faces (sampled).
+  const vals: number[] = [];
+  for (const f of faces) {
+    if (f.length < 3) continue;
+    const r = f.map((p) => rasterPixelOf(luma, p.lat, p.lng));
+    const xs = r.map((p) => p.col);
+    const ys = r.map((p) => p.row);
+    for (let y = Math.max(0, Math.floor(Math.min(...ys))); y <= Math.min(H - 1, Math.ceil(Math.max(...ys))); y += 3)
+      for (let x = Math.max(0, Math.floor(Math.min(...xs))); x <= Math.min(W - 1, Math.ceil(Math.max(...xs))); x += 3) {
+        let inside = false;
+        for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+          const a = r[i], b = r[j];
+          if (a.row > y !== b.row > y && x < ((b.col - a.col) * (y - a.row)) / (b.row - a.row) + a.col) inside = !inside;
+        }
+        if (inside) vals.push(g[y * W + x]);
+      }
+  }
+  if (vals.length < 50) return [];
+  vals.sort((a, b) => a - b);
+  const median = vals[Math.floor(vals.length / 2)];
+  if (median < 140) return [];
+  const thr = Math.min(median - 70, median * 0.5);
+  const maxShare = opts.maxDarkShare ?? 0.06;
+  const out: number[] = [];
+  panels.forEach((ring, idx) => {
+    if (ring.length < 4) return;
+    const q = ring.slice(0, 4).map((p) => rasterPixelOf(luma, p.lat, p.lng));
+    // A 9×9 grid over the panel, each point's 3×3 mean (a light blur).
+    let dark = 0, n = 0;
+    for (let i = 0; i < 9; i++)
+      for (let j = 0; j < 9; j++) {
+        const u = (i + 0.5) / 9, v = (j + 0.5) / 9;
+        const x = (1 - u) * (1 - v) * q[0].col + u * (1 - v) * q[1].col + u * v * q[2].col + (1 - u) * v * q[3].col;
+        const y = (1 - u) * (1 - v) * q[0].row + u * (1 - v) * q[1].row + u * v * q[2].row + (1 - u) * v * q[3].row;
+        const cx = Math.round(x), cy = Math.round(y);
+        if (cx < 1 || cy < 1 || cx >= W - 1 || cy >= H - 1) continue;
+        let s = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) s += g[(cy + dy) * W + cx + dx];
+        n++;
+        if (s / 9 < thr) dark++;
+      }
+    if (n > 0 && dark / n > maxShare) out.push(idx);
+  });
+  return out;
+}
