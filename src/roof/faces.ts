@@ -79,7 +79,7 @@ export const RoofFacesRequest = z.object({
    * After the self-check: every point placed on a 4× close-up of itself, then
    * each line snapped onto the photo's edge within 30 cm (owner, 10 Nov 2026).
    */
-  refine: z.boolean().default(false),
+  refine: z.boolean().optional(),
 });
 export type RoofFacesRequest = z.infer<typeof RoofFacesRequest>;
 
