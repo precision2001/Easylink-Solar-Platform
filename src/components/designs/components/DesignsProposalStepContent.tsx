@@ -6,6 +6,8 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "r
 import { toast } from "react-toastify";
 
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
+import { selectBuilderCatalogue } from "@/lib/store/builderCatalogueSlice";
+import { productImage } from "@/lib/designs/product-specs";
 import {
   EQUIPMENT_CATEGORY_KEYS,
   selectDesignProposal,
@@ -320,6 +322,25 @@ function PanelTierSelector({
   );
 }
 
+/** A battery the customer picked, as the battery card lists it. */
+type PickedBattery = { key: string; label: string; size: string; quantity: number; photo?: string };
+
+/** The battery's photo when the product library has one, else a battery mark. */
+function BatteryMark({ photo, dark }: { photo?: string; dark?: boolean }) {
+  return photo ? (
+    // eslint-disable-next-line @next/next/no-img-element -- library thumbnail
+    <img src={photo} alt="" className="size-[14px] shrink-0 rounded-[3px] bg-white object-contain" />
+  ) : (
+    <span className={`flex size-[14px] shrink-0 items-center justify-center rounded-[3px] ${dark ? "bg-[#0B2A4A] text-yellow-lemon" : "bg-yellow-lemon text-[#0B2A4A]"}`}>
+      <svg viewBox="0 0 16 16" className="size-[10px]" aria-hidden="true">
+        <rect x="2" y="4" width="11" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        <rect x="13.2" y="6.5" width="1.6" height="3" rx="0.5" fill="currentColor" />
+        <rect x="4" y="6" width="4" height="4" fill="currentColor" />
+      </svg>
+    </span>
+  );
+}
+
 function BatterySelector({
   optionIds,
   shownId,
@@ -328,7 +349,13 @@ function BatterySelector({
   onCompare,
   prices,
   estimated,
+  picked = [],
+  models = {},
 }: {
+  /** Batteries the customer picked on the equipment step, each listed on its own (same sizes too). */
+  picked?: PickedBattery[];
+  /** The battery behind each chosen size: the customer's own pick, else the one the price list quotes. */
+  models?: Record<string, { label: string; photo?: string }[]>;
   /** The battery options being compared (smallest first). */
   optionIds: string[];
   /** The option the screen shows. */
@@ -368,6 +395,26 @@ function BatterySelector({
           · pick up to {MAX_BATTERY_OPTIONS} to compare
         </span>
       </CardTitle>
+      {picked.length ? (
+        // Every battery the customer picked, one by one, even two of the same size.
+        <div className="relative mt-1.5 flex flex-wrap items-center gap-1.5" aria-label="Batteries picked">
+          <span className="font-source-sans text-[11px] font-bold uppercase tracking-[0.5px] text-[#152238]/70">Picked</span>
+          {picked.map((b) => (
+            <span
+              key={b.key}
+              title={`${b.label} · ${b.size}`}
+              className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/85 py-[2px] pl-[3px] pr-2 font-source-sans text-[11.5px] font-bold text-[#0B2A4A] shadow-sm ring-1 ring-[#0B2A4A]/20"
+            >
+              <BatteryMark photo={b.photo} dark />
+              <span className="max-w-[160px] truncate">{b.label}</span>
+              <span className="font-semibold text-[#152238]/70">
+                {b.quantity > 1 ? `×${b.quantity} · ` : ""}
+                {b.size}
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : null}
       {optionIds.length > 1 ? (
         // Each chosen battery on its own, so the selection is plain to see.
         <div className="relative mt-1.5 flex flex-wrap items-center gap-1.5" aria-label="Your battery options">
@@ -451,6 +498,18 @@ function BatterySelector({
                 <span className={`text-[10px] font-normal ${inOptions ? "text-yellow-lemon" : "text-[#152238]/70"}`}>
                   +{formatAud(prices[battery.id])}
                   {estimated.has(battery.id) ? " est." : ""}
+                </span>
+              ) : null}
+              {inOptions && battery.id !== "none" && models[battery.id]?.length ? (
+                // Which batteries this option is: one small label each (mark and name), even two of the same.
+                <span className="mt-0.5 flex w-full flex-col items-center gap-[2px]">
+                  {models[battery.id].slice(0, 2).map((m, i) => (
+                    <span key={i} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/10 px-1.5 py-[1px] text-[9.5px] font-semibold text-white/90" title={m.label}>
+                      <BatteryMark photo={m.photo} />
+                      <span className="truncate">{m.label}</span>
+                    </span>
+                  ))}
+                  {models[battery.id].length > 2 ? <span className="text-[9px] text-white/70">+{models[battery.id].length - 2} more</span> : null}
                 </span>
               ) : null}
             </button>
@@ -867,6 +926,46 @@ export const DesignsProposalStepContent = forwardRef<
     ) as Record<string, number>;
   }, [priced]);
 
+  const batteryCatalogue = useAppSelector(selectBuilderCatalogue).Battery;
+  /** The equipment step's batteries, each on its own (two of the same size stay two). */
+  const pickedBatteries = useMemo((): PickedBattery[] => {
+    const items = proposal.equipment.items.battery ?? [];
+    return items.map((it, i) => {
+      const product = (batteryCatalogue ?? []).find((p) => p.id === it.productId);
+      return {
+        key: `${it.productId}-${i}`,
+        label: [it.brand, it.name].filter(Boolean).join(" ") || "Battery",
+        size: it.ratingLabel,
+        quantity: Math.max(1, it.quantity),
+        photo: product ? productImage(product)?.thumbUrl : undefined,
+      };
+    });
+  }, [proposal.equipment.items.battery, batteryCatalogue]);
+  /** The battery behind each size button: a picked one that size, else the price list's. */
+  const batteryModels = useMemo(() => {
+    const items = proposal.equipment.items.battery ?? [];
+    const info = priced?.batteryInfo ?? {};
+    const out: Record<string, { label: string; photo?: string }[]> = {};
+    for (const b of BATTERY_CAPACITY_OPTIONS) {
+      const kwh = batteryKwhOf(b.id);
+      if (kwh <= 0) continue;
+      const mine = items.filter((it) => {
+        const k = Number.parseFloat(it.ratingLabel);
+        return Number.isFinite(k) && /kwh/i.test(it.ratingLabel) && Math.abs(k * Math.max(1, it.quantity) - kwh) < 0.6;
+      });
+      const total = Math.abs(designBatteryKwh - kwh) < 0.6 && items.length ? items : mine;
+      if (total.length) {
+        out[b.id] = total.map((it) => {
+          const pick = pickedBatteries[items.indexOf(it)];
+          return { label: `${it.quantity > 1 ? `${it.quantity}× ` : ""}${pick?.label ?? it.name}`, photo: pick?.photo };
+        });
+      } else if (info[String(kwh)]?.model) {
+        out[b.id] = [{ label: info[String(kwh)].model }];
+      }
+    }
+    return out;
+  }, [proposal.equipment.items.battery, priced, pickedBatteries, designBatteryKwh]);
+
   /** null until the backend has priced this design. */
   /** Why the design can't be priced from the price list (e.g. no battery that size), if so. */
   const pricingBlock = selectedQuote?.blocks?.length ? selectedQuote.blocks[0] : null;
@@ -1026,6 +1125,8 @@ export const DesignsProposalStepContent = forwardRef<
             onCompare={() => setComparing(true)}
             prices={batteryPrices}
             estimated={batteryEstimated}
+            picked={pickedBatteries}
+            models={batteryModels}
           />
         </div>
 
