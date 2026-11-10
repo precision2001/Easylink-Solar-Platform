@@ -83,38 +83,83 @@ export function DesignShareBadge({
   );
 }
 
-const LIGHT = {
-  unsent: { core: "#FF3B4E", deep: "#9F1239", glow: "rgba(255,59,78,0.85)" },
-  edited: { core: "#3B82F6", deep: "#1E3A8A", glow: "rgba(59,130,246,0.85)" },
-  sent: { core: "#22C55E", deep: "#166534", glow: "rgba(34,197,94,0.8)" },
+const GLITTER = {
+  unsent: {
+    base: "#E11D48",
+    deep: "#881337",
+    glow: "rgba(244,63,94,0.75)",
+    specks: ["#FFFFFF", "#FFD1D9", "#FF8FA3", "#FDE68A"],
+  },
+  edited: {
+    base: "#2563EB",
+    deep: "#1E3A8A",
+    glow: "rgba(59,130,246,0.75)",
+    specks: ["#FFFFFF", "#DBEAFE", "#93C5FD", "#C4B5FD"],
+  },
+  sent: {
+    base: "#16A34A",
+    deep: "#14532D",
+    glow: "rgba(34,197,94,0.7)",
+    specks: ["#FFFFFF", "#DCFCE7", "#86EFAC", "#FDE68A"],
+  },
 } as const;
 
+/** Tiny round specks at fixed spots, each a hard-edged dot. */
+const specks = (
+  spots: Array<[number, number, number]>,
+  colours: readonly string[],
+) =>
+  spots
+    .map(
+      ([x, y, r], i) =>
+        `radial-gradient(circle at ${x}% ${y}%, ${colours[i % colours.length]} 0 ${r}px, transparent ${r + 0.35}px)`,
+    )
+    .join(", ");
+
+const SPOTS_A: Array<[number, number, number]> = [
+  [28, 30, 0.9],
+  [66, 22, 0.7],
+  [78, 60, 0.85],
+  [42, 74, 0.7],
+  [18, 55, 0.6],
+];
+const SPOTS_B: Array<[number, number, number]> = [
+  [52, 46, 0.8],
+  [34, 16, 0.6],
+  [72, 82, 0.6],
+  [86, 38, 0.65],
+  [24, 80, 0.55],
+  [58, 64, 0.5],
+];
+
 /**
- * A round holographic light: an iridescent rim that slowly turns around a
- * lit core in the state's colour (red not sent, blue edited since sent,
- * green sent). Unsent and edited breathe; sent holds steady. Motion stops
- * for people who ask for reduced motion.
+ * A round glitter light in the state's colour (red not sent, blue edited
+ * since sent, green sent): a deep base dusted with tinted specks in two
+ * layers that twinkle out of step. Unsent and edited glow; sent sparkles
+ * quietly. No motion for people who ask for reduced motion.
  */
-function StateLight({ tone }: { tone: keyof typeof LIGHT }) {
-  const c = LIGHT[tone];
+function StateLight({ tone }: { tone: keyof typeof GLITTER }) {
+  const g = GLITTER[tone];
   return (
     <span
       aria-hidden="true"
       className="relative ml-1 inline-flex size-[14px] shrink-0"
     >
       <span
-        className="absolute inset-0 rounded-full motion-safe:animate-[spin_3.5s_linear_infinite]"
+        className="absolute inset-0 rounded-full"
         style={{
-          background:
-            "conic-gradient(from 0deg, #ff7ad9, #8cf6ff, #b9ff8a, #ffe46b, #c4a1ff, #ff7ad9)",
+          background: `radial-gradient(circle at 35% 30%, ${g.base} 0 40%, ${g.deep} 100%)`,
+          boxShadow:
+            tone === "sent" ? `0 0 4px ${g.glow}` : `0 0 7px 1px ${g.glow}`,
         }}
       />
       <span
-        className={`absolute inset-[2.5px] rounded-full ${tone === "sent" ? "" : "motion-safe:animate-pulse"}`}
-        style={{
-          background: `radial-gradient(circle at 34% 30%, #ffffff 0 16%, ${c.core} 48%, ${c.deep} 100%)`,
-          boxShadow: `0 0 6px 1px ${c.glow}, inset 0 0 2px rgba(255,255,255,0.6)`,
-        }}
+        className="absolute inset-0 rounded-full motion-safe:animate-[glitter-twinkle_1.8s_ease-in-out_infinite]"
+        style={{ background: specks(SPOTS_A, g.specks) }}
+      />
+      <span
+        className="absolute inset-0 rounded-full motion-safe:animate-[glitter-twinkle_1.8s_ease-in-out_-0.9s_infinite]"
+        style={{ background: specks(SPOTS_B, [...g.specks].reverse()) }}
       />
     </span>
   );
