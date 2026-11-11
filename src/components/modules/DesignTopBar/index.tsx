@@ -48,7 +48,7 @@ export function DesignTopBar({ center }: DesignTopBarProps = {}) {
 
   return (
     <div
-      className={`flex w-[min(1284px,calc(100%-148px))] mx-auto ${
+      className={`flex w-[calc(100%-32px)] sm:w-[min(1284px,calc(100%-148px))] mx-auto ${
         center ? "items-center justify-between gap-4" : "items-start justify-between"
       }`}
     >
@@ -58,15 +58,15 @@ export function DesignTopBar({ center }: DesignTopBarProps = {}) {
           alt="EasyLink Solar"
           width={isDesignPage ? 66 : 80}
           height={isDesignPage ? 66 : 80}
-          className="opacity-90 cursor-pointer"
+          className="size-14 cursor-pointer opacity-90 sm:size-auto"
           onClick={() => router.push("/")}
         />
       </div>
 
       {center ? (
-        <p className="min-w-0 flex-1 text-center font-source-sans text-[16px] leading-[22px] text-white relative">
+        <p className="relative min-w-0 flex-1 text-center font-source-sans text-[14px] leading-[20px] text-white sm:text-[16px] sm:leading-[22px]">
           <span className="font-bold text-white">{center.title}</span>
-          <span className="text-white/60"> — {center.subtitle}</span>
+          <span className="hidden text-white/60 sm:inline"> — {center.subtitle}</span>
         </p>
       ) : null}
 

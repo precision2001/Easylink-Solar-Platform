@@ -130,7 +130,7 @@ export function InstallerCampaigns() {
   return (
     <div className="flex min-h-screen flex-col bg-[#F4F6FA]" style={{ color: INK }}>
       <header
-        className="flex flex-wrap items-center gap-3 bg-white px-7 py-3.5"
+        className="flex flex-wrap items-center gap-3 bg-white px-4 py-3.5 sm:px-7"
         style={{ borderBottom: `1px solid ${BORDER}` }}
       >
         <nav aria-label="Breadcrumb" className="grow text-[13px]" style={{ color: MUTED }}>
@@ -154,7 +154,7 @@ export function InstallerCampaigns() {
         </span>
       </header>
 
-      <div className="flex w-full max-w-[1400px] flex-col gap-[18px] px-7 pt-6 pb-14">
+      <div className="flex w-full max-w-[1400px] flex-col gap-[18px] px-4 pt-6 pb-14 sm:px-7">
         <div className="flex flex-wrap items-end gap-3.5">
           <div className="grow">
             <h1 className="m-0 font-source-sans text-[28px] font-bold">

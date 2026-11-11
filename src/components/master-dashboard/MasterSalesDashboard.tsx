@@ -365,7 +365,7 @@ export function MasterSalesDashboard() {
           )}
         </Panel>
 
-        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))" }}>
           <Panel>
             <div className="flex items-center">
               <h2 className="m-0 flex-grow text-[16px] font-bold text-[#0F172A]">Sales funnel · shared 8 stages</h2>
@@ -422,7 +422,7 @@ export function MasterSalesDashboard() {
           </Panel>
         </div>
 
-        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))" }}>
           <Panel>
             <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Team &amp; installer performance</h2>
             <div className="overflow-x-auto">
@@ -479,7 +479,7 @@ export function MasterSalesDashboard() {
           </Panel>
         </div>
 
-        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))" }}>
           <Panel>
             <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Lead follow-ups due</h2>
             {OUTREACH.map((o) => (
@@ -516,7 +516,7 @@ export function MasterSalesDashboard() {
           </Panel>
         </div>
 
-        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))" }}>
           <Panel>
             <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Regional breakdown</h2>
             <table className="w-full border-collapse text-[13px]">
@@ -569,7 +569,7 @@ export function MasterSalesDashboard() {
           </Panel>
         </div>
 
-        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))" }}>
           <Panel>
             <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">Customer satisfaction</h2>
             <div className="grid grid-cols-3 gap-2">

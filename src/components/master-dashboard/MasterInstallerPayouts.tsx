@@ -204,7 +204,7 @@ export function MasterInstallerPayouts() {
 
         <div
           className="grid gap-3.5"
-          style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(140px, 100%), calc(100% / 4 - 16px)), 1fr))" }}
         >
           {kpis.map((k) => (
             <div
@@ -290,7 +290,7 @@ export function MasterInstallerPayouts() {
 
         <div
           className="grid items-start gap-4"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))" }}
         >
           <section
             aria-label="Held and pending"

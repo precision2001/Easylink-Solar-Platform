@@ -591,7 +591,7 @@ export function MasterPriceBook({ role = "operations" }: { role?: BookRole } = {
 
         {/* EasyLink owns the CER rules and the published book, so an installer sees neither. */}
         {ops ? (
-        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+        <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))" }}>
           <Card label="STC rules">
             <div className="flex flex-wrap items-baseline gap-2.5">
               <h2 className="m-0 flex-grow text-[16px] font-bold">STC rules in force</h2>

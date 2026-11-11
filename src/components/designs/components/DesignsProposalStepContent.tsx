@@ -1,4 +1,5 @@
 "use client";
+import { netSavings, paybackLabel } from "@/lib/proposal/savingsProjection";
 
 import { describeShare } from "@/lib/designs/send-to-customer";
 import { chosenProductsOf, inverterMatchedToBattery, MATCHED_INVERTER_NOTE } from "@/lib/proposal/proposalDocument";
@@ -44,10 +45,6 @@ import {
   findBatteryCapacity,
   findPanelTier,
 } from "@/lib/designs/proposalOptions";
-import {
-  DEFAULT_FINANCIAL_PROJECTION_ASSUMPTIONS,
-  buildFinancialProjectionFromProposal,
-} from "@/lib/proposal/financialProjection";
 import { estimateSavings } from "@/lib/proposal/proposalPricing";
 import {
   batteryOptionRows,
@@ -135,7 +132,13 @@ function parseMoneyToNumber(raw: string): number {
 }
 
 function formatAud(n: number): string {
-  return `$${Math.round(n).toLocaleString("en-AU")}`;
+  const sign = Math.round(n) < 0 ? "−" : "";
+  return `${sign}$${Math.abs(Math.round(n)).toLocaleString("en-AU")}`;
+}
+
+/** A bill: "$145", or "$145 credit" when export credits are more than the bill. */
+function formatBill(n: number): string {
+  return Math.round(n) < 0 ? `${formatAud(-n)} credit` : formatAud(n);
 }
 
 /** Frosted glass card: translucent fill, blur, light edge, soft depth. */
@@ -272,12 +275,12 @@ function PanelTierSelector({
   info?: Record<string, { model: string; w: number }>;
 }) {
   return (
-    <div className={`${GLASS} ${TINT.slate} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
+    <div className={`${GLASS} ${TINT.slate} flex h-full w-full flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
       <Sheen />
       <CardTitle>Panel Tier</CardTitle>
-      <div className="relative mt-2 flex min-h-0 flex-1 flex-col justify-evenly gap-1.5">
+      <div className="relative mt-2 flex flex-1 flex-col gap-1.5 lg:min-h-0">
         {chosen ? (
-          <div className="flex w-full items-center justify-between gap-2 rounded-[10px] border border-yellow-lemon/70 bg-[#0B2A4A]/90 px-2.5 py-[clamp(3px,0.8vh,8px)] text-left shadow-md">
+          <div className="flex min-h-[52px] w-full flex-1 items-center justify-between gap-2 rounded-[10px] lg:min-h-0 border border-yellow-lemon/70 bg-[#0B2A4A]/90 px-2.5 py-[clamp(2px,0.6vh,8px)] text-left shadow-md">
             <span className="flex min-w-0 items-center gap-2">
               <span className="flex size-3.5 shrink-0 items-center justify-center rounded-full border-2 border-yellow-lemon">
                 <span className="size-1.5 rounded-full bg-yellow-lemon" />
@@ -299,7 +302,7 @@ function PanelTierSelector({
               key={tier.id}
               type="button"
               onClick={() => onSelect(tier.id)}
-              className={`flex w-full items-center justify-between gap-2 rounded-[10px] border px-2.5 py-[clamp(3px,0.8vh,8px)] text-left transition ${
+              className={`flex min-h-[52px] w-full flex-1 items-center justify-between gap-2 rounded-[10px] lg:min-h-0 border px-2.5 py-[clamp(2px,0.6vh,8px)] text-left transition ${
                 selected
                   ? "border-[#7DD3FC]/70 bg-[linear-gradient(90deg,#1E9BEF_0%,#0E86E0_60%,#22B5F5_100%)] shadow-[0_4px_18px_rgba(14,134,224,0.45)]"
                   : "border-white/15 bg-[#1F2937]/45 hover:bg-[#1F2937]/65"
@@ -386,7 +389,7 @@ function BatterySelector({
 }) {
   const letterOf = (id: string) => OPTION_LETTERS[optionIds.indexOf(id)] ?? "";
   return (
-    <div className={`${GLASS} ${TINT.slate} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
+    <div className={`${GLASS} ${TINT.slate} flex h-full w-full flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
       <Sheen />
       <CardTitle
         right={
@@ -410,7 +413,7 @@ function BatterySelector({
           · pick up to {MAX_BATTERY_OPTIONS} to compare
         </span>
       </CardTitle>
-      <div className="relative mt-2 grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-1.5 sm:grid-cols-4">
+      <div className="relative mt-2 grid flex-1 auto-rows-[minmax(64px,1fr)] grid-cols-2 gap-1.5 sm:grid-cols-4 lg:min-h-0 lg:auto-rows-fr">
         {tiles.map((battery) => {
           const inOptions = optionIds.includes(battery.id);
           const isShown = battery.id === shownId;
@@ -526,7 +529,7 @@ function BatteryCompare({
       ),
     },
     { label: "Monthly savings", value: (r) => formatAud(r.monthlySavings) },
-    { label: "New bill", value: (r) => `${formatAud(r.newBill)}/mth` },
+    { label: "New bill", value: (r) => `${formatBill(r.newBill)}/mth` },
     { label: "Payback", value: (r) => (r.paybackYears != null ? `${r.paybackYears.toFixed(1)} yrs` : "—") },
     { label: "25-year net savings", value: (r) => money(r.net25) },
   ];
@@ -622,6 +625,8 @@ export type DesignsProposalStepContentProps = {
 export type DesignsProposalStepHandle = {
   /** Invoked by the wizard's Finish button — same persistence the old standalone Save button used. */
   save: () => void;
+  /** Opens the proposal download (the footer's centre button). */
+  openDownload: () => void;
 };
 
 /**
@@ -817,6 +822,7 @@ export const DesignsProposalStepContent = forwardRef<
     ref,
     () => ({
       save: () => void handleSaveToAccount(),
+      openDownload: () => setDownloadModalOpen(true),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [proposal, isInstallerEditing, editingDesignId, customerUser, leadId],
@@ -928,7 +934,7 @@ export const DesignsProposalStepContent = forwardRef<
   const yearlySavingsNum = savings.yearlySavings;
   const computedPayback =
     computedTotalPrice != null && yearlySavingsNum > 0
-      ? `${(computedTotalPrice / yearlySavingsNum).toFixed(1)} yrs`
+      ? paybackLabel(computedTotalPrice, yearlySavingsNum)
       : proposal.summary.payback;
 
   /**
@@ -941,19 +947,8 @@ export const DesignsProposalStepContent = forwardRef<
     return pricingLoading ? "Calculating…" : "—";
   };
 
-  const netSavings25yr = useMemo(() => {
-    const { rows } = buildFinancialProjectionFromProposal(
-      {
-        ...proposal,
-        pricing: {
-          ...proposal.pricing,
-          totalSystemPrice: formatAud(computedTotalPrice ?? 0),
-        },
-      },
-      { ...DEFAULT_FINANCIAL_PROJECTION_ASSUMPTIONS, projectionYears: 25 },
-    );
-    return rows.at(-1)?.cumulativeImpacts ?? 0;
-  }, [proposal, computedTotalPrice]);
+  // The same projection as Payback, the PDF and the battery comparison.
+  const netSavings25yr = netSavings(yearlySavingsNum, computedTotalPrice);
 
   // Picking a tier or a battery size here replaces the panel or batteries
   // picked on the equipment step (one choice at a time, so the screen, the
@@ -1056,7 +1051,7 @@ export const DesignsProposalStepContent = forwardRef<
     const next = {
       totalSystemPrice: formatAud(computedTotalPrice),
       monthlySavings: formatAud(savings.monthlySavings),
-      newBill: formatAud(savings.newBill),
+      newBill: formatBill(savings.newBill),
       yearlySavings: formatAud(savings.yearlySavings),
       payback: computedPayback,
     };
@@ -1086,8 +1081,8 @@ export const DesignsProposalStepContent = forwardRef<
     // One screen, no page scroll on desktop: a stat strip, then four frosted
     // glass columns that share the remaining height (details, panel tier,
     // battery, price). Phones stack and scroll as before.
-    <div className="flex h-full min-h-0 w-full flex-1 self-stretch overflow-y-auto lg:overflow-hidden">
-      <div className="relative z-10 mx-auto flex h-full min-h-0 w-full max-w-[1446px] flex-col gap-[clamp(6px,1.2vh,12px)] px-4 py-[clamp(4px,1vh,10px)] sm:px-8 lg:px-[81px]">
+    <div className="flex w-full flex-1 self-stretch lg:h-full lg:min-h-0 lg:overflow-hidden">
+      <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-col lg:h-full lg:min-h-0 gap-[clamp(6px,1.2vh,12px)] px-4 py-[clamp(4px,1vh,10px)] sm:px-8 lg:px-[81px]">
         <div className="grid shrink-0 grid-cols-2 gap-[clamp(6px,1vw,12px)] lg:grid-cols-4">
           <ProposalStatCard label="System Size" value={proposal.summary.systemSize} variant="steel" />
           <ProposalStatCard label="Total Panels" value={proposal.summary.totalPanels} variant="slate" />
@@ -1096,7 +1091,7 @@ export const DesignsProposalStepContent = forwardRef<
         </div>
 
         {/* Row 1: panel tier and battery side by side (the placement the owner chose). */}
-        <div className="grid min-h-0 flex-[1.05] grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:grid-cols-[1fr_1.33fr]">
+        <div className="grid grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:min-h-0 lg:flex-[1.5] lg:grid-cols-[1fr_1.33fr]">
           <PanelTierSelector
             selectedId={chosenPanel ? "" : panelTierId}
             chosen={
@@ -1126,11 +1121,11 @@ export const DesignsProposalStepContent = forwardRef<
         </div>
 
         {/* Row 2: system details, price, 25-year net savings. */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-[clamp(6px,1vw,12px)] md:grid-cols-3">
-          <div className={`${GLASS} ${TINT.brandGold} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+        <div className="grid grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:min-h-0 lg:flex-1 lg:grid-cols-3">
+          <div className={`${GLASS} ${TINT.brandGold} flex flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
             <Sheen />
             <CardTitle dark>System Details</CardTitle>
-            <div className="relative mt-1.5 flex min-h-0 flex-1 flex-col justify-evenly overflow-hidden">
+            <div className="relative mt-1.5 flex flex-1 flex-col justify-evenly gap-1 lg:min-h-0 lg:gap-0 lg:overflow-hidden">
               <ProposalDetailRow label="Customer" value={displayCustomerName} mask />
               <ProposalDetailRow label="Address" value={proposal.customer.address} mask />
               <ProposalDetailRow label="Property" value={proposal.customer.property} />
@@ -1165,9 +1160,9 @@ export const DesignsProposalStepContent = forwardRef<
             </div>
           </div>
 
-          <div className={`${GLASS} ${TINT.navy} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.navy} flex flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
             <Sheen />
-            <div className="relative flex min-h-0 flex-1 flex-col justify-evenly gap-1 text-center">
+            <div className="relative flex flex-1 flex-col justify-evenly gap-1 text-center lg:min-h-0">
               <p className="font-source-sans text-[11px] font-semibold uppercase tracking-[0.8px] text-white/85">
                 Total System Price
               </p>
@@ -1197,9 +1192,9 @@ export const DesignsProposalStepContent = forwardRef<
               </p>
               <div className="flex gap-1.5">
                 <ProposalSubMetric label="Monthly Savings" value={proposal.pricing.monthlySavings} />
-                <ProposalSubMetric label="Current Bill" value={proposal.pricing.currentBill} />
+                <ProposalSubMetric label="Current Bill /mth" value={proposal.pricing.currentBill} />
                 <ProposalSubMetric
-                  label="New Bill"
+                  label="New Bill /mth"
                   value={proposal.pricing.newBill}
                   valueClassName="inline-block bg-[linear-gradient(142.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent"
                 />
@@ -1207,26 +1202,19 @@ export const DesignsProposalStepContent = forwardRef<
             </div>
           </div>
 
-          <div className={`${GLASS} ${TINT.charcoal} flex min-h-0 flex-col items-center justify-center p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.charcoal} flex min-h-[120px] flex-col items-center justify-center p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
             <Sheen />
             <p className="relative font-source-sans text-[12px] font-semibold uppercase tracking-[0.8px] text-white/80">
               25-Year Net Savings
             </p>
             <p className="relative font-source-sans text-[clamp(26px,5vh,40px)] font-bold leading-[1.1]">
               <span className="bg-[linear-gradient(154.98deg,#34D399_0%,#2DD4BF_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
-                {formatAud(netSavings25yr)}
+                {pricedFigure(netSavings25yr != null ? formatAud(netSavings25yr) : "")}
               </span>
             </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          className="mx-auto w-full max-w-[478px] shrink-0 rounded-[12px] bg-[linear-gradient(90deg,#22D3EE_0%,#1E9BEF_100%)] py-[clamp(4px,1vh,10px)] font-source-sans text-[clamp(14px,2.2vh,18px)] font-semibold uppercase tracking-[0.9px] text-[#0B1E3F] shadow-[0px_0px_30px_0px_rgba(32,148,243,0.45)] ring-1 ring-white/40 transition hover:brightness-110"
-          onClick={() => setDownloadModalOpen(true)}
-        >
-          Download your proposal
-        </button>
       </div>
 
       {comparing ? (

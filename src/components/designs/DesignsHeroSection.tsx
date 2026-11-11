@@ -588,7 +588,13 @@ export function DesignsHeroSection({
   };
 
   return (
-    <section className="relative flex h-screen flex-col overflow-hidden">
+    // Phones and tablets: the proposal grows and the page scrolls (12 Nov 2026:
+    // its cards were squeezed into one screen); desktop keeps it on one screen.
+    <section
+      className={`relative flex flex-col overflow-x-hidden ${
+        activeScreen === "proposal" ? "min-h-[100dvh] lg:h-screen lg:overflow-hidden" : "h-screen overflow-hidden"
+      }`}
+    >
       <DesignsHeroBackground variant={activeScreen === "proposal" ? "slate" : "circuit"} />
       <DesignTopBar
         center={
@@ -704,6 +710,11 @@ export function DesignsHeroSection({
         finishing={finishing}
         finishLabel={leadPrefill ? "Save design" : undefined}
         slate={activeScreen === "proposal"}
+        centre={
+          activeScreen === "proposal"
+            ? { label: "Download your proposal", onClick: () => proposalStepRef.current?.openDownload() }
+            : null
+        }
       />
     </section>
   );

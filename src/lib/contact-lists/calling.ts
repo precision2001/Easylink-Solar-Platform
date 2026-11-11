@@ -1,3 +1,4 @@
+import { paybackYears } from "@/lib/proposal/savingsProjection";
 /**
  * The calling database behind "Contact lists", ported from the Easylink
  * Designer mock (ContactListsBody.dc.html).
@@ -277,7 +278,7 @@ export function priceOptions(
       limitPercent,
     }).total;
     const extras = (s.ev ? EV_CHARGER_COST : 0) + (s.heatPump ? HEAT_PUMP_COST : 0);
-    return { ...s, kw, ratio, limitPercent, price: system + extras, yearly, generation: gen, payback: system / yearly };
+    return { ...s, kw, ratio, limitPercent, price: system + extras, yearly, generation: gen, payback: paybackYears(system, yearly) ?? Infinity };
   });
 }
 

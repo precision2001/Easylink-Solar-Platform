@@ -330,7 +330,7 @@ export function CloseOutPanel({ portal, ctl, view }: { portal: AiPortal; ctl: Jo
         )}
       </div>
       {view.viewer !== "customer" && st.checks.length > 0 && (
-        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-1 p-0 text-[13.5px]">
+        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-1 p-0 text-[13.5px]">
           {st.checks.map((c) => (
             <li key={c.label} className="flex items-start gap-2">
               <span aria-hidden className={c.ok ? "text-[#166534]" : "text-[#B45309]"}>
@@ -364,7 +364,7 @@ export function CloseOutPanel({ portal, ctl, view }: { portal: AiPortal; ctl: Jo
           {j.handover.sentAt ? <Pill tone="good">Sent {day(j.handover.sentAt)}</Pill> : null}
         </div>
         {j.handover.sentAt ? (
-          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-1 p-0 text-[13.5px]">
+          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(min(240px,100%),1fr))] gap-1 p-0 text-[13.5px]">
             {j.handover.documents.map((d) => (
               <li key={d}>· {d}</li>
             ))}

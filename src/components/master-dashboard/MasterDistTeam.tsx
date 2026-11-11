@@ -161,7 +161,7 @@ export function MasterDistTeam() {
           <h2 className="m-0 text-[16px] font-bold">What a trade account can see and do</h2>
           <div
             className="grid gap-3"
-            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}
           >
             <div className="flex flex-col gap-1.5 rounded-[12px] bg-[#F0FDF4] p-3.5 text-[13px]">
               <strong className="text-[#166534]">Can</strong>

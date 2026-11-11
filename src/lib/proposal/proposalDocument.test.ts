@@ -1,3 +1,4 @@
+import { paybackYears } from "./savingsProjection";
 import { describe, expect, it } from "vitest";
 
 import { buildProposalDocument, cumulativeGain, designBatteryKwh, greetingName } from "./proposalDocument";
@@ -61,7 +62,7 @@ describe("buildProposalDocument", () => {
     expect(doc.gst).toBeCloseTo(1753.64, 2);
     expect(doc.validUntil).toBe("30 November 2026");
     expect(doc.rebateLines.map((l) => l.value)).toEqual([2700, 5460]);
-    expect(doc.paybackYears).toBe(Math.round((19290 / doc.yearlyGain) * 10) / 10);
+    expect(doc.paybackYears).toBe(paybackYears(19290, doc.yearlyGain));
   });
 
   it("shows bills in the customer's own period", () => {

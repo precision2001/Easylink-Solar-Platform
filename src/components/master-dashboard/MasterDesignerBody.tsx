@@ -534,7 +534,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
 
   return (
     <div
-      className="flex min-h-full w-full flex-col gap-[18px] px-7 pb-7 pt-[18px] text-white"
+      className="flex min-h-full w-full flex-col gap-[18px] px-4 pb-7 pt-[18px] text-white sm:px-7"
       style={{
         backgroundColor: NAVY,
         backgroundImage:
@@ -686,7 +686,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             role="radiogroup"
             aria-label="Property type"
             className="grid w-full max-w-[960px] gap-4"
-            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))" }}
           >
             {PROPERTY_TYPES.map(([k, n, s, path]) => (
               <button
@@ -926,7 +926,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               Satellite imagery · zoom {zoom}
             </span>
           </div>
-          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))" }}>
             {[
               ["Network", p.network],
               ["Supply", "Single phase · up to 10 kVA inverter"],
@@ -959,7 +959,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               How we use AI
             </span>
           </p>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(150px, 100%), calc(100% / 3 - 16px)), 1fr))" }}>
             {[
               ["Total roof area", `${p.total} m²`, roof ? "Measured by the Roof Designer" : "Sample roof"],
               ["Usable roof area", `${p.usable} m²`, "After edges, vents and shade"],
@@ -1074,7 +1074,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
         <div className="flex flex-wrap items-start gap-4">
           <section
             aria-label="Your usage"
-            className="flex max-w-[400px] flex-[1_1_320px] flex-col gap-2.5 rounded-[18px] p-[18px]"
+            className="flex min-w-0 max-w-[400px] flex-[1_1_300px] flex-col gap-2.5 rounded-[18px] p-[18px]"
             style={{ background: SUN_GRAD_135, color: SUN_INK }}
           >
             <h1 className="m-0 font-source-sans text-[26px] font-bold">Design your path to $0 grid bills</h1>
@@ -1224,7 +1224,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
           <div className="flex min-w-0 flex-[2_1_520px] flex-col gap-3">
             <section aria-label="System performance" className={CARD_W}>
               <h2 className="m-0 text-[15px] font-bold">System performance</h2>
-              <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+              <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(150px, 100%), calc(100% / 3 - 16px)), 1fr))" }}>
                 {statCards.map((s) => (
                   <div key={s.l} className="flex flex-col gap-0.5 rounded-[12px] bg-[#F4F6FA] p-3">
                     <span className="text-[12px] font-semibold" style={{ color: SLATE }}>
@@ -1257,7 +1257,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
                   ))}
                 </div>
               </div>
-              <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+              <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(140px, 100%), calc(100% / 4 - 16px)), 1fr))" }}>
                 {valueCards.map((v) => (
                   <div key={v.l} className="flex flex-col gap-1 rounded-[10px] bg-[#F8FAFC] p-2.5">
                     <span className="text-[11px] font-bold" style={{ color: SLATE }}>
@@ -1286,7 +1286,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               </div>
             </section>
 
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
               <section aria-label="Grid import vs battery size" className={`${CARD_W} gap-2`}>
                 <h2 className="m-0 text-[15px] font-bold">Grid import vs battery size</h2>
                 <div
@@ -1375,7 +1375,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             Every model comes from the EasyLink catalogue, so the same SKUs carry into your proposal, the
             installer&rsquo;s kit and the distributor&rsquo;s order.
           </p>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))" }}>
             {/* Panels */}
             <EquipCard
               kind="Panels"
@@ -1538,7 +1538,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             style={{
               background: NAVY_2,
               border: `1px solid ${NAVY_LINE}`,
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
             }}
           >
             {checks.map((c) => (
@@ -1576,7 +1576,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               {blocked ? "Needs a change before approval" : "Passes all design checks"}
             </span>
           </div>
-          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(140px, 100%), calc(100% / 4 - 16px)), 1fr))" }}>
             {[
               ["System size", `${kwdc} kW`, `${inverter.kw} kW inverter · ${ratio}%`],
               ["Panels", String(panels), `${TIERS[tier].n} 440 W`],
@@ -1598,7 +1598,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             <div className="flex min-w-0 flex-[3_1_520px] flex-col gap-3.5">
               <section aria-label="Panel tier" className={CARD_W}>
                 <h2 className="m-0 text-[15px] font-bold">Panel tier</h2>
-                <div role="radiogroup" aria-label="Panel tier" className="grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+                <div role="radiogroup" aria-label="Panel tier" className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(150px, 100%), calc(100% / 3 - 16px)), 1fr))" }}>
                   {Object.entries(TIERS).map(([k, t]) => {
                     const on = k === tier;
                     const totals = priced.data?.tierTotals ?? {};
@@ -1727,7 +1727,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               <section
                 aria-label="Savings"
                 className="grid gap-2 rounded-[16px] bg-white p-4 text-[#0F172A]"
-                style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+                style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(150px, 100%), calc(100% / 3 - 16px)), 1fr))" }}
               >
                 {[
                   ["Monthly savings", money(yearly / 12), GREEN],
