@@ -1,3 +1,4 @@
+import { paybackLabel } from "@/lib/proposal/savingsProjection";
 import type {
   ComparisonRow,
   DesignColumn,
@@ -156,10 +157,7 @@ export function buildPerformanceEstimates(design: CustomerDesign): SpecLine[] {
   const daily = annual ? annual / 365 : undefined;
   const savings = design.estimatedSavings;
   const equipmentCost = designProductsTotal(design);
-  const payback =
-    savings && savings > 0 && equipmentCost > 0
-      ? `${(equipmentCost / savings).toFixed(1)} yrs`
-      : "—";
+  const payback = paybackLabel(equipmentCost, savings) || "—";
 
   return [
     { label: "Daily Output", value: daily ? `${formatNumber(daily)} kWh` : "—" },
