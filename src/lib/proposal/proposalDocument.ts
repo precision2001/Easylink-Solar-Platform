@@ -493,6 +493,11 @@ export function formatAud(n: number): string {
   return `${sign}$${Math.abs(Math.round(n)).toLocaleString("en-AU")}`;
 }
 
+/** A bill: "$145", or "$145 credit" when export credits are more than the bill. */
+export function formatBill(n: number): string {
+  return Math.round(n) < 0 ? `${formatAud(-n)} credit` : formatAud(n);
+}
+
 export function formatKwh(n: number): string {
   return `${Math.round(n).toLocaleString("en-AU")} kWh`;
 }

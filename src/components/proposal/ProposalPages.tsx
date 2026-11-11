@@ -17,6 +17,7 @@ import {
   COMPANY,
   PREPARED_BY,
   formatAud,
+  formatBill,
   formatKwh,
   type ProposalDocument,
 } from "@/lib/proposal/proposalDocument";
@@ -279,7 +280,7 @@ function Cover({ doc, images }: PageProps) {
           {doc.firstName}, run your home on <span style={{ color: C.sun }}>free sunshine</span>. Get paid for the rest.
         </h1>
         <p style={{ margin: "16px 0 0 0", fontSize: 18, lineHeight: 1.5, color: C.mutedOnDark, maxWidth: 600 }}>
-          Your bill drops from {formatAud(doc.billBefore)} to about {formatAud(doc.billAfter)} a {doc.billPeriodLabel}
+          Your bill drops from {formatAud(doc.billBefore)} {doc.billAfter < 0 ? `to a ${formatBill(doc.billAfter)}` : `to about ${formatAud(doc.billAfter)}`} a {doc.billPeriodLabel}
           {doc.exportIncome > 0 ? `, and your spare power earns you ${formatAud(doc.exportIncome)} a year` : ""}.
           {doc.address ? ` Designed for ${doc.address}.` : ""}
         </p>
@@ -403,7 +404,7 @@ function FreeEnergy({ doc, images }: PageProps) {
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 6 }}>
             <span style={{ fontFamily: DISPLAY, fontWeight: 800, fontSize: 30, color: C.muted, textDecoration: "line-through" }}>{formatAud(doc.billBefore)}</span>
             <span aria-hidden="true" style={{ fontSize: 22, color: C.muted }}>→</span>
-            <span style={big(44, C.navy)}>{formatAud(doc.billAfter)}</span>
+            <span style={big(44, C.navy)}>{formatBill(doc.billAfter)}</span>
           </div>
           <div style={{ fontSize: 13, lineHeight: 1.5, color: C.body, marginTop: 6 }}>
             Your export credits help pay the daily supply charge. No more bill shock.
@@ -648,7 +649,7 @@ function Savings({ doc, images }: PageProps) {
               { v: doc.annualBillAfter, l: doc.batteryKwh > 0 ? "With solar + battery" : "With solar", c: C.sun },
             ].map((b) => (
               <div key={b.l} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>{formatAud(b.v)}</div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{formatBill(b.v)}</div>
                 <div style={{ width: 76, height: Math.max(8, Math.round((b.v / maxBill) * 120)), borderRadius: "10px 10px 0 0", background: b.c }} />
                 <div style={{ fontSize: 12, color: C.muted }}>{b.l}</div>
               </div>

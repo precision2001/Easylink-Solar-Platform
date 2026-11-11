@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { estimateSavings } from "./proposalPricing";
 import { cumulativeGain, netSavings, paybackLabel, paybackYears } from "./savingsProjection";
 
 describe("the shared savings projection", () => {
@@ -21,5 +22,10 @@ describe("the shared savings projection", () => {
     expect(paybackYears(null, 1_000)).toBeNull();
     expect(paybackLabel(20_000, 0)).toBe("");
     expect(paybackYears(1_000_000, 100)).toBeNull();
+  });
+  it("counts export credits past the bill: the retailer pays them", () => {
+    const s = estimateSavings(150, 28.16, 69.6);
+    expect(s.newBill).toBeLessThan(0);
+    expect(s.yearlySavings).toBeGreaterThan(150 * 12);
   });
 });

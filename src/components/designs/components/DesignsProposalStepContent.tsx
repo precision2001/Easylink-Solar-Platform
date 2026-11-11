@@ -132,7 +132,13 @@ function parseMoneyToNumber(raw: string): number {
 }
 
 function formatAud(n: number): string {
-  return `$${Math.round(n).toLocaleString("en-AU")}`;
+  const sign = Math.round(n) < 0 ? "−" : "";
+  return `${sign}$${Math.abs(Math.round(n)).toLocaleString("en-AU")}`;
+}
+
+/** A bill: "$145", or "$145 credit" when export credits are more than the bill. */
+function formatBill(n: number): string {
+  return Math.round(n) < 0 ? `${formatAud(-n)} credit` : formatAud(n);
 }
 
 /** Frosted glass card: translucent fill, blur, light edge, soft depth. */
@@ -523,7 +529,7 @@ function BatteryCompare({
       ),
     },
     { label: "Monthly savings", value: (r) => formatAud(r.monthlySavings) },
-    { label: "New bill", value: (r) => `${formatAud(r.newBill)}/mth` },
+    { label: "New bill", value: (r) => `${formatBill(r.newBill)}/mth` },
     { label: "Payback", value: (r) => (r.paybackYears != null ? `${r.paybackYears.toFixed(1)} yrs` : "—") },
     { label: "25-year net savings", value: (r) => money(r.net25) },
   ];
@@ -1042,7 +1048,7 @@ export const DesignsProposalStepContent = forwardRef<
     const next = {
       totalSystemPrice: formatAud(computedTotalPrice),
       monthlySavings: formatAud(savings.monthlySavings),
-      newBill: formatAud(savings.newBill),
+      newBill: formatBill(savings.newBill),
       yearlySavings: formatAud(savings.yearlySavings),
       payback: computedPayback,
     };
