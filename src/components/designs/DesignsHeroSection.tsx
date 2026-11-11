@@ -704,6 +704,11 @@ export function DesignsHeroSection({
         finishing={finishing}
         finishLabel={leadPrefill ? "Save design" : undefined}
         slate={activeScreen === "proposal"}
+        centre={
+          activeScreen === "proposal"
+            ? { label: "Download your proposal", onClick: () => proposalStepRef.current?.openDownload() }
+            : null
+        }
       />
     </section>
   );

@@ -275,9 +275,9 @@ function PanelTierSelector({
     <div className={`${GLASS} ${TINT.slate} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
       <Sheen />
       <CardTitle>Panel Tier</CardTitle>
-      <div className="relative mt-2 flex min-h-0 flex-1 flex-col justify-evenly gap-1.5">
+      <div className="relative mt-2 flex min-h-0 flex-1 flex-col gap-1.5">
         {chosen ? (
-          <div className="flex w-full items-center justify-between gap-2 rounded-[10px] border border-yellow-lemon/70 bg-[#0B2A4A]/90 px-2.5 py-[clamp(3px,0.8vh,8px)] text-left shadow-md">
+          <div className="flex min-h-0 w-full flex-1 items-center justify-between gap-2 rounded-[10px] border border-yellow-lemon/70 bg-[#0B2A4A]/90 px-2.5 py-[clamp(2px,0.6vh,8px)] text-left shadow-md">
             <span className="flex min-w-0 items-center gap-2">
               <span className="flex size-3.5 shrink-0 items-center justify-center rounded-full border-2 border-yellow-lemon">
                 <span className="size-1.5 rounded-full bg-yellow-lemon" />
@@ -299,7 +299,7 @@ function PanelTierSelector({
               key={tier.id}
               type="button"
               onClick={() => onSelect(tier.id)}
-              className={`flex w-full items-center justify-between gap-2 rounded-[10px] border px-2.5 py-[clamp(3px,0.8vh,8px)] text-left transition ${
+              className={`flex min-h-0 w-full flex-1 items-center justify-between gap-2 rounded-[10px] border px-2.5 py-[clamp(2px,0.6vh,8px)] text-left transition ${
                 selected
                   ? "border-[#7DD3FC]/70 bg-[linear-gradient(90deg,#1E9BEF_0%,#0E86E0_60%,#22B5F5_100%)] shadow-[0_4px_18px_rgba(14,134,224,0.45)]"
                   : "border-white/15 bg-[#1F2937]/45 hover:bg-[#1F2937]/65"
@@ -622,6 +622,8 @@ export type DesignsProposalStepContentProps = {
 export type DesignsProposalStepHandle = {
   /** Invoked by the wizard's Finish button — same persistence the old standalone Save button used. */
   save: () => void;
+  /** Opens the proposal download (the footer's centre button). */
+  openDownload: () => void;
 };
 
 /**
@@ -817,6 +819,7 @@ export const DesignsProposalStepContent = forwardRef<
     ref,
     () => ({
       save: () => void handleSaveToAccount(),
+      openDownload: () => setDownloadModalOpen(true),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [proposal, isInstallerEditing, editingDesignId, customerUser, leadId],
@@ -1096,7 +1099,7 @@ export const DesignsProposalStepContent = forwardRef<
         </div>
 
         {/* Row 1: panel tier and battery side by side (the placement the owner chose). */}
-        <div className="grid min-h-0 flex-[1.05] grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:grid-cols-[1fr_1.33fr]">
+        <div className="grid min-h-0 flex-[1.5] grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:grid-cols-[1fr_1.33fr]">
           <PanelTierSelector
             selectedId={chosenPanel ? "" : panelTierId}
             chosen={
@@ -1220,13 +1223,6 @@ export const DesignsProposalStepContent = forwardRef<
           </div>
         </div>
 
-        <button
-          type="button"
-          className="mx-auto w-full max-w-[478px] shrink-0 rounded-[12px] bg-[linear-gradient(90deg,#22D3EE_0%,#1E9BEF_100%)] py-[clamp(4px,1vh,10px)] font-source-sans text-[clamp(14px,2.2vh,18px)] font-semibold uppercase tracking-[0.9px] text-[#0B1E3F] shadow-[0px_0px_30px_0px_rgba(32,148,243,0.45)] ring-1 ring-white/40 transition hover:brightness-110"
-          onClick={() => setDownloadModalOpen(true)}
-        >
-          Download your proposal
-        </button>
       </div>
 
       {comparing ? (
