@@ -9,6 +9,7 @@
  * customer saw on screen: savings from `estimateSavings` (same tariffs), price
  * from the pricing engine, and the battery size the step reads.
  */
+import { isSizeId } from "@/lib/batteries/sizeId";
 import { batteryOptionRows, itemKwh, shownBatteryItems } from "./batteryOptions";
 import type { ChosenProducts } from "@/lib/proposal/proposalPricing";
 import {
@@ -222,7 +223,8 @@ export function chosenProductsOf(proposal: DesignProposalState): ChosenProducts 
   const panelId = items.solarPanel?.map((i) => i.productId).find(isId);
   const inverterId = items.inverter?.map((i) => i.productId).find(isId);
   const qty = new Map<string, number>();
-  for (const b of shownBatteryItems(proposal.equipment)) if (isId(b.productId)) qty.set(b.productId, (qty.get(b.productId) ?? 0) + Math.max(1, b.quantity));
+  // A catalogue battery, or a battery size picked by range and modules ("size:…").
+  for (const b of shownBatteryItems(proposal.equipment)) if (isId(b.productId) || isSizeId(b.productId)) qty.set(b.productId, (qty.get(b.productId) ?? 0) + Math.max(1, b.quantity));
   const batteries = [...qty].map(([id, q]) => ({ id, qty: q }));
   if (!panelId && !inverterId && !batteries.length) return undefined;
   return { ...(panelId ? { panelId } : {}), ...(inverterId ? { inverterId } : {}), ...(batteries.length ? { batteries } : {}) };

@@ -1,4 +1,5 @@
 import { shownBatteryItems } from "@/lib/proposal/batteryOptions";
+import { isSizeId } from "@/lib/batteries/sizeId";
 import { fetchWithCustomerSession } from "@/lib/customers/customer-fetch-client";
 import type { CustomerDesign, CustomerDesignProduct } from "@/lib/customers/designs";
 import {
@@ -111,7 +112,11 @@ export function proposalProducts(
       })),
   );
 
-  return picks.length > 0 ? picks : undefined;
+  // Batteries picked by size ("size:…") are battery systems, not catalogue
+  // products: they stay in wizardData (equipment.items) for pricing and quotes,
+  // but there is no product row to attach.
+  const catalogued = picks.filter((p) => !isSizeId(p.productId));
+  return catalogued.length > 0 ? catalogued : undefined;
 }
 
 /**
@@ -294,9 +299,18 @@ export function designToProposalPayload(
 
   if (!stored || typeof stored !== "object") return derived;
 
+  const equipment = { ...stored.equipment, ...derived.equipment };
+  // Batteries picked by size have no product row, so the attached products
+  // can't rebuild them: keep the builder's own battery list (its order is
+  // what "pick:<index>" options point at) when it has any.
+  const storedBatteries = stored.equipment?.items?.battery ?? [];
+  if (storedBatteries.some((b) => isSizeId(b.productId)) && equipment.items) {
+    equipment.items = { ...equipment.items, battery: storedBatteries };
+  }
+
   return {
     summary: { ...stored.summary, ...derived.summary },
-    equipment: { ...stored.equipment, ...derived.equipment },
+    equipment,
     pricing: { ...stored.pricing, ...derived.pricing },
     customer: { ...stored.customer, ...derived.customer },
     ...(stored.solarDesign !== undefined

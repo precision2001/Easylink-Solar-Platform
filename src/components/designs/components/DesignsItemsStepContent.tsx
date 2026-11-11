@@ -33,6 +33,16 @@ import {
   DesignsSelectField,
   type DesignsSelectOption,
 } from "./DesignsSelectField";
+import {
+  CEC_LABEL,
+  batteryBrands,
+  brandSizeOptions,
+  findSize,
+  isSizeId,
+  sizeLayout,
+  useBatteryOptions,
+  type BatteryOptions,
+} from "@/lib/batteries/batteryOptions";
 
 const SECTION_CATEGORY: Record<EquipmentCategoryKey, BuilderProductCategory> = {
   solarPanel: "Solar Panel",
@@ -107,7 +117,24 @@ function entriesToItems(
 function itemToSummary(
   item: EquipmentItem,
   product: BuilderProduct | undefined,
+  batteryOptions: BatteryOptions | null = null,
 ): { leftCol: SpecLine[]; rightCol: SpecLine[] } {
+  // A battery picked by size (range + modules): its system and CEC status from the size list.
+  const picked = findSize(batteryOptions, item.productId);
+  if (picked) {
+    return {
+      leftCol: [
+        { label: "Brand -", value: item.brand },
+        { label: "Model -", value: item.name },
+        { label: "Type -", value: `${picked.size.phase === 1 ? "Single" : "Three"}-phase system` },
+        { label: "CEC Approved -", value: CEC_LABEL[picked.range.cecStatus] },
+      ],
+      rightCol: [
+        { label: "Rating -", value: item.ratingLabel || "—" },
+        { label: "Qty -", value: String(item.quantity) },
+      ],
+    };
+  }
   return {
     leftCol: [
       { label: "Brand -", value: item.brand },
@@ -250,12 +277,14 @@ function DesignsItemsStack({
   category,
   entries,
   catalogueProducts,
+  batteryOptions,
   onRemove,
   onBringToFront,
 }: {
   category: EquipmentCategoryKey;
   entries: StackEntry[];
   catalogueProducts: BuilderProduct[];
+  batteryOptions: BatteryOptions | null;
   onRemove: (index: number) => void;
   onBringToFront: (index: number) => void;
 }) {
@@ -279,7 +308,7 @@ function DesignsItemsStack({
         const isFront = stackPos === 0;
         const item = entry.item;
         const product = catalogueProducts.find((p) => p.id === item.productId);
-        const { leftCol, rightCol } = itemToSummary(item, product);
+        const { leftCol, rightCol } = itemToSummary(item, product, batteryOptions);
         return (
           <div
             key={entry.key}
@@ -339,10 +368,17 @@ function DesignsItemsGradientCard({
   onAdd,
   entries,
   catalogueProducts,
+  batteryOptions,
+  secondPlaceholder = "Select Model",
+  hint,
   onRemove,
   onBringToFront,
 }: {
   category: EquipmentCategoryKey;
+  batteryOptions: BatteryOptions | null;
+  secondPlaceholder?: string;
+  /** A line under the pickers (batteries: the inverters the picked size runs on). */
+  hint?: string;
   firstSelectId: string;
   secondSelectId: string;
   draftBrand: string;
@@ -399,11 +435,14 @@ function DesignsItemsGradientCard({
               <DesignsSelectField
                 id={secondSelectId}
                 ariaLabel={`${title}: select model`}
-                placeholder="Select Model"
+                placeholder={secondPlaceholder}
                 value={draftSize}
                 onChange={onSizeChange}
                 options={modelOptions}
               />
+              {hint ? (
+                <p className="font-inter text-[12px] font-medium leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">{hint}</p>
+              ) : null}
               <button
                 type="button"
                 onClick={onAdd}
@@ -418,6 +457,7 @@ function DesignsItemsGradientCard({
             category={category}
             entries={entries}
             catalogueProducts={catalogueProducts}
+            batteryOptions={batteryOptions}
             onRemove={onRemove}
             onBringToFront={onBringToFront}
           />
@@ -436,6 +476,14 @@ export type DesignsItemsStepHandle = {
 };
 
 type Draft = { brand: string; size: string };
+
+/** Under the battery pickers: the inverters the drafted size runs on, and whether its price is an estimate. */
+function batteryHint(options: BatteryOptions | null, sizeId: string): string | undefined {
+  const picked = isSizeId(sizeId) ? findSize(options, sizeId) : null;
+  if (!picked) return undefined;
+  const est = picked.size.priced === "estimate" ? " Price estimated from the range (no kit that exact size in our price list)." : "";
+  return `Works with: ${picked.size.inverters.join("; ")}.${est}`;
+}
 
 const EMPTY_DRAFTS: Record<EquipmentCategoryKey, Draft> = {
   solarPanel: { brand: "", size: "" },
@@ -462,6 +510,16 @@ export const DesignsItemsStepContent = forwardRef<
     (s) => s.designProposal.equipment,
   ) as DesignProposalEquipment;
   const groupedCatalogue = useAppSelector(selectBuilderCatalogue);
+  /**
+   * Batteries are picked by size (11 Nov 2026): brand, then one battery
+   * system of that brand by usable kWh, modules and phase, from the makers'
+   * datasheets, with the inverters it runs on. The home's supply (Energy
+   * step) narrows the sizes; unknown shows both. The product catalogue's
+   * battery models are the fallback when the size list can't load.
+   */
+  const supplyPhase = useAppSelector((s) => s.designProposal.customer.supplyPhase);
+  const { options: batteryOptions } = useBatteryOptions();
+  const bySize = Boolean(batteryOptions?.ranges.length);
   const [entriesByCategory, setEntriesByCategory] = useState<
     Record<EquipmentCategoryKey, StackEntry[]>
   >(() => {
@@ -524,6 +582,19 @@ export const DesignsItemsStepContent = forwardRef<
   /** Commits the draft into the category's list and resets the compose dropdowns. */
   const handleAdd = (key: EquipmentCategoryKey) => {
     const draft = drafts[key];
+    const picked = key === "battery" ? findSize(batteryOptions, draft.size) : null;
+    if (picked) {
+      const sizeItem: EquipmentItem = {
+        productId: picked.size.id,
+        brand: picked.range.brand,
+        name: `${picked.range.range} · ${sizeLayout(picked.size)}`,
+        quantity: 1,
+        ratingLabel: `${+picked.size.kwh.toFixed(2)} kWh`,
+      };
+      setEntriesByCategory((prev) => ({ ...prev, [key]: [...prev[key], toEntry(sizeItem)] }));
+      setDrafts((prev) => ({ ...prev, [key]: { brand: "", size: "" } }));
+      return;
+    }
     const product = catalogue[key].find((p) => p.id === draft.size);
     if (!product) return;
 
@@ -563,6 +634,12 @@ export const DesignsItemsStepContent = forwardRef<
   const optionsFor = (key: EquipmentCategoryKey) => {
     const products = catalogue[key];
     const brand = drafts[key].brand;
+    if (key === "battery" && bySize && batteryOptions) {
+      return {
+        brandOptions: batteryBrands(batteryOptions, supplyPhase).map((value) => ({ value, label: value })),
+        modelOptions: brand ? brandSizeOptions(batteryOptions, brand, supplyPhase) : [],
+      };
+    }
     return {
       brandOptions: brandsOf(products).map((value) => ({
         value,
@@ -601,6 +678,9 @@ export const DesignsItemsStepContent = forwardRef<
               onAdd={() => handleAdd(key)}
               entries={entriesByCategory[key]}
               catalogueProducts={catalogue[key]}
+              batteryOptions={batteryOptions}
+              secondPlaceholder={key === "battery" && bySize ? "Select Size" : "Select Model"}
+              hint={key === "battery" ? batteryHint(batteryOptions, drafts.battery.size) : undefined}
               onRemove={(index) => handleRemove(key, index)}
               onBringToFront={(index) => handleBringToFront(key, index)}
             />
