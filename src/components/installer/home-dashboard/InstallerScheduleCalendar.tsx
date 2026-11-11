@@ -60,7 +60,24 @@ type CalendarAppointmentEvent = Event & {
   status: InstallerAppointmentStatus;
   notes: string | null;
   customerName?: string;
+  aiKind?: InstallerAppointment["aiKind"];
 };
+
+const AI_KIND_LABEL: Record<NonNullable<InstallerAppointment["aiKind"]>, string> = {
+  SITE_VISIT: "Site visit",
+  CALLBACK: "Call back",
+  SERVICE: "Service call",
+};
+
+/** Small tag on bookings the EasyLink AI made on a phone call. */
+function AiBookedTag({ kind }: { kind: InstallerAppointment["aiKind"] }) {
+  if (!kind) return null;
+  return (
+    <span className="rounded-full bg-[#FFF4E5] px-2 py-1 font-inter text-[10px] font-semibold text-[#9A4B00]">
+      {AI_KIND_LABEL[kind]} · booked by EasyLink AI
+    </span>
+  );
+}
 
 function customerDisplayName(customer: InstallerCustomerSummary) {
   const full = `${customer.firstName ?? ""} ${customer.lastName ?? ""}`.trim();
@@ -234,11 +251,12 @@ export function InstallerScheduleCalendar() {
       appointments.map((a) => ({
         id: a.id,
         appointmentId: a.id,
-        title: a.title,
+        title: a.aiKind ? `★ ${a.title}` : a.title,
         start: new Date(a.startAt),
         end: new Date(a.endAt),
         status: a.status,
         notes: a.notes,
+        aiKind: a.aiKind ?? null,
         customerName:
           a.lead?.customerName ||
           (a.customer
@@ -637,6 +655,7 @@ export function InstallerScheduleCalendar() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <AiBookedTag kind={appointment.aiKind} />
                   <span className="rounded-full bg-cream-100 px-2 py-1 font-inter text-[10px] font-semibold text-warm-ink">
                     {appointment.status}
                   </span>
