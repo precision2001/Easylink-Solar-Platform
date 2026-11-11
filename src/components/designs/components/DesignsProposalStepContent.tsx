@@ -275,12 +275,12 @@ function PanelTierSelector({
   info?: Record<string, { model: string; w: number }>;
 }) {
   return (
-    <div className={`${GLASS} ${TINT.slate} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
+    <div className={`${GLASS} ${TINT.slate} flex h-full w-full flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
       <Sheen />
       <CardTitle>Panel Tier</CardTitle>
-      <div className="relative mt-2 flex min-h-0 flex-1 flex-col gap-1.5">
+      <div className="relative mt-2 flex flex-1 flex-col gap-1.5 lg:min-h-0">
         {chosen ? (
-          <div className="flex min-h-0 w-full flex-1 items-center justify-between gap-2 rounded-[10px] border border-yellow-lemon/70 bg-[#0B2A4A]/90 px-2.5 py-[clamp(2px,0.6vh,8px)] text-left shadow-md">
+          <div className="flex min-h-[52px] w-full flex-1 items-center justify-between gap-2 rounded-[10px] lg:min-h-0 border border-yellow-lemon/70 bg-[#0B2A4A]/90 px-2.5 py-[clamp(2px,0.6vh,8px)] text-left shadow-md">
             <span className="flex min-w-0 items-center gap-2">
               <span className="flex size-3.5 shrink-0 items-center justify-center rounded-full border-2 border-yellow-lemon">
                 <span className="size-1.5 rounded-full bg-yellow-lemon" />
@@ -302,7 +302,7 @@ function PanelTierSelector({
               key={tier.id}
               type="button"
               onClick={() => onSelect(tier.id)}
-              className={`flex min-h-0 w-full flex-1 items-center justify-between gap-2 rounded-[10px] border px-2.5 py-[clamp(2px,0.6vh,8px)] text-left transition ${
+              className={`flex min-h-[52px] w-full flex-1 items-center justify-between gap-2 rounded-[10px] lg:min-h-0 border px-2.5 py-[clamp(2px,0.6vh,8px)] text-left transition ${
                 selected
                   ? "border-[#7DD3FC]/70 bg-[linear-gradient(90deg,#1E9BEF_0%,#0E86E0_60%,#22B5F5_100%)] shadow-[0_4px_18px_rgba(14,134,224,0.45)]"
                   : "border-white/15 bg-[#1F2937]/45 hover:bg-[#1F2937]/65"
@@ -389,7 +389,7 @@ function BatterySelector({
 }) {
   const letterOf = (id: string) => OPTION_LETTERS[optionIds.indexOf(id)] ?? "";
   return (
-    <div className={`${GLASS} ${TINT.slate} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
+    <div className={`${GLASS} ${TINT.slate} flex h-full w-full flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
       <Sheen />
       <CardTitle
         right={
@@ -413,7 +413,7 @@ function BatterySelector({
           · pick up to {MAX_BATTERY_OPTIONS} to compare
         </span>
       </CardTitle>
-      <div className="relative mt-2 grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-1.5 sm:grid-cols-4">
+      <div className="relative mt-2 grid flex-1 auto-rows-[minmax(64px,1fr)] grid-cols-2 gap-1.5 sm:grid-cols-4 lg:min-h-0 lg:auto-rows-fr">
         {tiles.map((battery) => {
           const inOptions = optionIds.includes(battery.id);
           const isShown = battery.id === shownId;
@@ -1081,8 +1081,8 @@ export const DesignsProposalStepContent = forwardRef<
     // One screen, no page scroll on desktop: a stat strip, then four frosted
     // glass columns that share the remaining height (details, panel tier,
     // battery, price). Phones stack and scroll as before.
-    <div className="flex h-full min-h-0 w-full flex-1 self-stretch overflow-y-auto lg:overflow-hidden">
-      <div className="relative z-10 mx-auto flex h-full min-h-0 w-full max-w-[1446px] flex-col gap-[clamp(6px,1.2vh,12px)] px-4 py-[clamp(4px,1vh,10px)] sm:px-8 lg:px-[81px]">
+    <div className="flex w-full flex-1 self-stretch lg:h-full lg:min-h-0 lg:overflow-hidden">
+      <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-col lg:h-full lg:min-h-0 gap-[clamp(6px,1.2vh,12px)] px-4 py-[clamp(4px,1vh,10px)] sm:px-8 lg:px-[81px]">
         <div className="grid shrink-0 grid-cols-2 gap-[clamp(6px,1vw,12px)] lg:grid-cols-4">
           <ProposalStatCard label="System Size" value={proposal.summary.systemSize} variant="steel" />
           <ProposalStatCard label="Total Panels" value={proposal.summary.totalPanels} variant="slate" />
@@ -1091,7 +1091,7 @@ export const DesignsProposalStepContent = forwardRef<
         </div>
 
         {/* Row 1: panel tier and battery side by side (the placement the owner chose). */}
-        <div className="grid min-h-0 flex-[1.5] grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:grid-cols-[1fr_1.33fr]">
+        <div className="grid grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:min-h-0 lg:flex-[1.5] lg:grid-cols-[1fr_1.33fr]">
           <PanelTierSelector
             selectedId={chosenPanel ? "" : panelTierId}
             chosen={
@@ -1121,11 +1121,11 @@ export const DesignsProposalStepContent = forwardRef<
         </div>
 
         {/* Row 2: system details, price, 25-year net savings. */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-[clamp(6px,1vw,12px)] md:grid-cols-3">
-          <div className={`${GLASS} ${TINT.brandGold} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+        <div className="grid grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:min-h-0 lg:flex-1 lg:grid-cols-3">
+          <div className={`${GLASS} ${TINT.brandGold} flex flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
             <Sheen />
             <CardTitle dark>System Details</CardTitle>
-            <div className="relative mt-1.5 flex min-h-0 flex-1 flex-col justify-evenly overflow-hidden">
+            <div className="relative mt-1.5 flex flex-1 flex-col justify-evenly gap-1 lg:min-h-0 lg:gap-0 lg:overflow-hidden">
               <ProposalDetailRow label="Customer" value={displayCustomerName} mask />
               <ProposalDetailRow label="Address" value={proposal.customer.address} mask />
               <ProposalDetailRow label="Property" value={proposal.customer.property} />
@@ -1160,9 +1160,9 @@ export const DesignsProposalStepContent = forwardRef<
             </div>
           </div>
 
-          <div className={`${GLASS} ${TINT.navy} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.navy} flex flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
             <Sheen />
-            <div className="relative flex min-h-0 flex-1 flex-col justify-evenly gap-1 text-center">
+            <div className="relative flex flex-1 flex-col justify-evenly gap-1 text-center lg:min-h-0">
               <p className="font-source-sans text-[11px] font-semibold uppercase tracking-[0.8px] text-white/85">
                 Total System Price
               </p>
@@ -1202,7 +1202,7 @@ export const DesignsProposalStepContent = forwardRef<
             </div>
           </div>
 
-          <div className={`${GLASS} ${TINT.charcoal} flex min-h-0 flex-col items-center justify-center p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.charcoal} flex min-h-[120px] flex-col items-center justify-center p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
             <Sheen />
             <p className="relative font-source-sans text-[12px] font-semibold uppercase tracking-[0.8px] text-white/80">
               25-Year Net Savings

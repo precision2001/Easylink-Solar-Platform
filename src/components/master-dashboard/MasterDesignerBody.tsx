@@ -534,7 +534,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
 
   return (
     <div
-      className="flex min-h-full w-full flex-col gap-[18px] px-7 pb-7 pt-[18px] text-white"
+      className="flex min-h-full w-full flex-col gap-[18px] px-4 pb-7 pt-[18px] text-white sm:px-7"
       style={{
         backgroundColor: NAVY,
         backgroundImage:
@@ -1074,7 +1074,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
         <div className="flex flex-wrap items-start gap-4">
           <section
             aria-label="Your usage"
-            className="flex max-w-[400px] flex-[1_1_320px] flex-col gap-2.5 rounded-[18px] p-[18px]"
+            className="flex min-w-0 max-w-[400px] flex-[1_1_300px] flex-col gap-2.5 rounded-[18px] p-[18px]"
             style={{ background: SUN_GRAD_135, color: SUN_INK }}
           >
             <h1 className="m-0 font-source-sans text-[26px] font-bold">Design your path to $0 grid bills</h1>

@@ -45,7 +45,7 @@ export function DesignsHeroFooter({
           <DesignsHeroProgressBar fillPercent={fillPercent} />
         )}
         {(showBack || showNext) && (
-          <div className="mt-2 flex items-center justify-between gap-4">
+          <div className={`mt-2 flex items-center justify-between ${centre ? "flex-wrap gap-2 sm:flex-nowrap sm:gap-4" : "gap-4"}`}>
             <div className="flex-1">
               {showBack && (
                 <button
@@ -66,7 +66,7 @@ export function DesignsHeroFooter({
               <button
                 type="button"
                 onClick={centre.onClick}
-                className="inline-flex min-h-12 w-full max-w-[478px] shrink items-center justify-center rounded-xl bg-[linear-gradient(90deg,#22D3EE_0%,#1E9BEF_100%)] px-4 font-source-sans text-[clamp(14px,1.6vw,18px)] font-semibold uppercase leading-6 tracking-[0.9px] text-[#0B1E3F] shadow-[0px_0px_30px_0px_rgba(32,148,243,0.45)] ring-1 ring-white/40 transition hover:brightness-110"
+                className="order-first inline-flex min-h-12 w-full basis-full items-center sm:order-none sm:max-w-[478px] sm:shrink sm:basis-auto justify-center rounded-xl bg-[linear-gradient(90deg,#22D3EE_0%,#1E9BEF_100%)] px-4 font-source-sans text-[clamp(14px,1.6vw,18px)] font-semibold uppercase leading-6 tracking-[0.9px] text-[#0B1E3F] shadow-[0px_0px_30px_0px_rgba(32,148,243,0.45)] ring-1 ring-white/40 transition hover:brightness-110"
               >
                 {centre.label}
               </button>
