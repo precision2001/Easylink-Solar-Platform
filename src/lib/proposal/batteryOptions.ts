@@ -1,3 +1,4 @@
+import { netSavings, paybackYears, PRICE_RISE_A_YEAR } from "./savingsProjection";
 /**
  * Battery options (owner, 9 Nov 2026): the customer can pick up to three
  * battery sizes for the same roof design and compare them side by side;
@@ -147,8 +148,8 @@ export type BatteryOptionRow = {
   recommended: boolean;
 };
 
-/** Yearly power-price rise used for the 25-year figure (same as the proposal's projection). */
-export const PRICE_RISE = 0.035;
+/** Yearly power-price rise used for the 25-year figure (the shared projection). */
+export const PRICE_RISE = PRICE_RISE_A_YEAR;
 
 export function batteryOptionRows(
   ids: string[],
@@ -166,9 +167,7 @@ export function batteryOptionRows(
     const total = priced?.batteryTotals?.[key] ?? null;
     const info = priced?.batteryInfo?.[key];
     const s = estimateSavings(monthlyBill, arrayKw, kwh);
-    const payback = total != null && s.yearlySavings > 0 ? total / s.yearlySavings : null;
-    let saved = 0;
-    for (let y = 0; y < 25; y++) saved += s.yearlySavings * (1 + PRICE_RISE) ** y;
+    const payback = paybackYears(total, s.yearlySavings);
     return {
       id,
       letter: OPTION_LETTERS[i] ?? String(i + 1),
@@ -181,7 +180,7 @@ export function batteryOptionRows(
       newBill: s.newBill,
       yearlySavings: s.yearlySavings,
       paybackYears: payback,
-      net25: total != null ? saved - total : null,
+      net25: total != null ? netSavings(s.yearlySavings, total) ?? -total : null,
       recommended: false,
     };
   });

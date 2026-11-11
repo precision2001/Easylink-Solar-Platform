@@ -1,3 +1,4 @@
+import { paybackLabel } from "@/lib/proposal/savingsProjection";
 import { shownBatteryItems } from "@/lib/proposal/batteryOptions";
 import { isSizeId } from "@/lib/batteries/sizeId";
 import { fetchWithCustomerSession } from "@/lib/customers/customer-fetch-client";
@@ -242,8 +243,8 @@ function derivedFromDesign(design: CustomerDesign): DesignProposalPayload {
       ...(currency(design.estimatedSavings)
         ? { yearlySavings: currency(design.estimatedSavings)! }
         : {}),
-      ...(design.estimatedSavings && equipmentCost
-        ? { payback: `${(equipmentCost / design.estimatedSavings).toFixed(1)} yrs` }
+      ...(paybackLabel(equipmentCost, design.estimatedSavings)
+        ? { payback: paybackLabel(equipmentCost, design.estimatedSavings) }
         : {}),
     },
     equipment: {

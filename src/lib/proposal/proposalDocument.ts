@@ -1,3 +1,4 @@
+import { cumulativeGain, PANEL_LOSS_A_YEAR, paybackYears, PROJECTION_YEARS } from "./savingsProjection";
 /**
  * Everything the 10-page customer proposal prints, worked out from one design.
  *
@@ -52,9 +53,6 @@ export const COMPANY = {
 /** NSW grid emissions, kg CO2-e per kWh (National Greenhouse Accounts). */
 const NSW_KG_CO2_PER_KWH = 0.64;
 const PRICE_HELD_DAYS = 30;
-const PROJECTION_YEARS = 25;
-const PRICE_RISE_A_YEAR = 0.03;
-const PANEL_LOSS_A_YEAR = 0.004;
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -279,21 +277,10 @@ function rebateLabel(label: string, count: number): string {
   return label;
 }
 
-function payback(price: number | null, yearly: number): number | null {
-  if (price == null || price <= 0 || yearly <= 0) return null;
-  return Math.round((price / yearly) * 10) / 10;
-}
+const payback = (price: number | null, yearly: number): number | null => paybackYears(price, yearly);
 
-/** Cumulative gain after paying for the system, rising 3% a year, panels losing 0.4%. */
-export function cumulativeGain(yearly: number, price: number | null, years = PROJECTION_YEARS): number[] {
-  const out: number[] = [];
-  let total = -(price ?? 0);
-  for (let i = 0; i < years; i++) {
-    total += yearly * (1 + PRICE_RISE_A_YEAR) ** i * (1 - PANEL_LOSS_A_YEAR) ** i;
-    out.push(total);
-  }
-  return out;
-}
+/** Cumulative gain after paying for the system (the shared projection). */
+export { cumulativeGain };
 
 function buildOptions(
   monthly: number,

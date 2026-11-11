@@ -49,7 +49,7 @@ describe("buildDesignSpecSheet", () => {
     expect(s.price).toBe(11000);
     expect(s.priceBasis).toBe("after-stc");
     expect(s.stcDiscount).toBe(3000);
-    expect(s.paybackYears).toBe(4.6);
+    expect(s.paybackYears).toBe(4.4); // the shared projection, not price ÷ year-one savings
     expect(s.hasBattery).toBe(false);
   });
 

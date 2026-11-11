@@ -1,4 +1,5 @@
 "use client";
+import { netSavings, paybackLabel } from "@/lib/proposal/savingsProjection";
 
 import { describeShare } from "@/lib/designs/send-to-customer";
 import { chosenProductsOf, inverterMatchedToBattery, MATCHED_INVERTER_NOTE } from "@/lib/proposal/proposalDocument";
@@ -44,10 +45,6 @@ import {
   findBatteryCapacity,
   findPanelTier,
 } from "@/lib/designs/proposalOptions";
-import {
-  DEFAULT_FINANCIAL_PROJECTION_ASSUMPTIONS,
-  buildFinancialProjectionFromProposal,
-} from "@/lib/proposal/financialProjection";
 import { estimateSavings } from "@/lib/proposal/proposalPricing";
 import {
   batteryOptionRows,
@@ -928,7 +925,7 @@ export const DesignsProposalStepContent = forwardRef<
   const yearlySavingsNum = savings.yearlySavings;
   const computedPayback =
     computedTotalPrice != null && yearlySavingsNum > 0
-      ? `${(computedTotalPrice / yearlySavingsNum).toFixed(1)} yrs`
+      ? paybackLabel(computedTotalPrice, yearlySavingsNum)
       : proposal.summary.payback;
 
   /**
@@ -941,19 +938,8 @@ export const DesignsProposalStepContent = forwardRef<
     return pricingLoading ? "Calculating…" : "—";
   };
 
-  const netSavings25yr = useMemo(() => {
-    const { rows } = buildFinancialProjectionFromProposal(
-      {
-        ...proposal,
-        pricing: {
-          ...proposal.pricing,
-          totalSystemPrice: formatAud(computedTotalPrice ?? 0),
-        },
-      },
-      { ...DEFAULT_FINANCIAL_PROJECTION_ASSUMPTIONS, projectionYears: 25 },
-    );
-    return rows.at(-1)?.cumulativeImpacts ?? 0;
-  }, [proposal, computedTotalPrice]);
+  // The same projection as Payback, the PDF and the battery comparison.
+  const netSavings25yr = netSavings(yearlySavingsNum, computedTotalPrice);
 
   // Picking a tier or a battery size here replaces the panel or batteries
   // picked on the equipment step (one choice at a time, so the screen, the
@@ -1197,9 +1183,9 @@ export const DesignsProposalStepContent = forwardRef<
               </p>
               <div className="flex gap-1.5">
                 <ProposalSubMetric label="Monthly Savings" value={proposal.pricing.monthlySavings} />
-                <ProposalSubMetric label="Current Bill" value={proposal.pricing.currentBill} />
+                <ProposalSubMetric label="Current Bill /mth" value={proposal.pricing.currentBill} />
                 <ProposalSubMetric
-                  label="New Bill"
+                  label="New Bill /mth"
                   value={proposal.pricing.newBill}
                   valueClassName="inline-block bg-[linear-gradient(142.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent"
                 />
@@ -1214,7 +1200,7 @@ export const DesignsProposalStepContent = forwardRef<
             </p>
             <p className="relative font-source-sans text-[clamp(26px,5vh,40px)] font-bold leading-[1.1]">
               <span className="bg-[linear-gradient(154.98deg,#34D399_0%,#2DD4BF_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
-                {formatAud(netSavings25yr)}
+                {pricedFigure(netSavings25yr != null ? formatAud(netSavings25yr) : "")}
               </span>
             </p>
           </div>
