@@ -1120,7 +1120,7 @@ export function MasterAdminBody({ screen = "home" }: { screen?: AdminScreen }) {
       {/* ===== HOME ===== */}
       {screen === "home" ? (
         <>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-[14px]">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-[14px]">
             {kpis.map((k) => (
               <Go
                 key={k.l}
@@ -1139,7 +1139,7 @@ export function MasterAdminBody({ screen = "home" }: { screen?: AdminScreen }) {
             ))}
           </div>
 
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(400px,1fr))] items-start gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(400px,100%),1fr))] items-start gap-4">
             <section className={CARD}>
               <div className="flex items-center">
                 <h2 className={`${H2} grow`}>Waiting for you</h2>
@@ -1213,7 +1213,7 @@ export function MasterAdminBody({ screen = "home" }: { screen?: AdminScreen }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(440px,1fr))] items-start gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(440px,100%),1fr))] items-start gap-4">
             <section
               className={`${CARD} gap-0 overflow-hidden p-0`}
               aria-label="Accounts"
@@ -1453,7 +1453,7 @@ export function MasterAdminBody({ screen = "home" }: { screen?: AdminScreen }) {
             />
           </label>
 
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(440px,1fr))] items-start gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(440px,100%),1fr))] items-start gap-4">
             <section className={`${CARD} gap-0 overflow-hidden p-0`} aria-label="Customers">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[560px] border-collapse">
@@ -1573,7 +1573,7 @@ export function MasterAdminBody({ screen = "home" }: { screen?: AdminScreen }) {
 
       {/* ===== APPROVALS ===== */}
       {screen === "approvals" ? (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(420px,1fr))] items-start gap-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(420px,100%),1fr))] items-start gap-4">
           {queues.map((qq) => (
             <section key={qq.title} className={CARD}>
               <div className="flex items-center gap-2">
@@ -1610,7 +1610,7 @@ export function MasterAdminBody({ screen = "home" }: { screen?: AdminScreen }) {
 
       {/* ===== PLANS ===== */}
       {screen === "plans" ? (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] items-start gap-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(320px,100%),1fr))] items-start gap-4">
           {plans.map((p, i) => (
             <section
               key={p.key}
@@ -1679,7 +1679,7 @@ export function MasterAdminBody({ screen = "home" }: { screen?: AdminScreen }) {
       {/* ===== STAFF ===== */}
       {screen === "staff" ? (
         <>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(420px,1fr))] items-start gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(420px,100%),1fr))] items-start gap-4">
             <section className={`${CARD} gap-0 overflow-hidden p-0`} aria-label="Staff">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] border-collapse">
@@ -1907,7 +1907,7 @@ export function MasterAdminBody({ screen = "home" }: { screen?: AdminScreen }) {
 
       {/* ===== SETTINGS ===== */}
       {screen === "settings" ? (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(420px,1fr))] items-start gap-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(420px,100%),1fr))] items-start gap-4">
           <section className={CARD}>
             <h2 className={H2}>Switches</h2>
             <label className={LBL}>

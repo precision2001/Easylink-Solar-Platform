@@ -146,7 +146,7 @@ export function ForYourSystemSection({
           <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-[#FFE866]">
             <PortalIcon name="design" size={20} />
           </span>
-          <p className="m-0 min-w-0 flex-1 text-[14px] leading-[1.5] text-[#D6E1F0]">
+          <p className="m-0 min-w-0 flex-[1_1_200px] text-[14px] leading-[1.5] text-[#D6E1F0]">
             Not sure what you need? EasyLink AI can suggest a size from your bill and roof.
           </p>
           <button

@@ -375,7 +375,7 @@ function JobDetail({ detail }: { detail: AppointmentDetail }) {
 
       <div
         className="grid gap-4"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}
       >
         <div className="flex flex-col gap-2">
           <h3 className="m-0 text-[14px] font-bold text-[#0F172A]">

@@ -249,7 +249,7 @@ export function MasterHandoverReview() {
 
         <div
           className="grid items-start gap-4"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))" }}
         >
           <section
             aria-label="Queue"
