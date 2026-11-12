@@ -588,8 +588,14 @@ export function DesignsHeroSection({
   };
 
   return (
-    <section className="relative flex h-screen flex-col overflow-hidden">
-      <DesignsHeroBackground />
+    // Phones and tablets: the proposal grows and the page scrolls (12 Nov 2026:
+    // its cards were squeezed into one screen); desktop keeps it on one screen.
+    <section
+      className={`relative flex flex-col overflow-x-hidden ${
+        activeScreen === "proposal" ? "min-h-[100dvh] lg:h-screen lg:overflow-hidden" : "h-screen overflow-hidden"
+      }`}
+    >
+      <DesignsHeroBackground variant={activeScreen === "proposal" ? "slate" : "circuit"} />
       <DesignTopBar
         center={
           activeScreen === "proposal"
@@ -631,15 +637,21 @@ export function DesignsHeroSection({
         </div>
       ) : leadPrefill ? (
         <div className="relative z-10 mx-auto w-full max-w-[1446px] px-4 pt-3 sm:px-8 lg:px-[81px]">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[14px] border-[1.5px] border-solid border-design-accent-cyan bg-[rgba(255,255,255,0.08)] px-4 py-2.5">
-            <p className="font-source-sans text-[14px] leading-[21px] text-white/80">
+          <div
+            className={`flex flex-wrap items-center justify-between gap-2 rounded-[14px] px-4 py-2.5 ${
+              activeScreen === "proposal"
+                ? "bg-[linear-gradient(90deg,#FDE047_0%,#FACC15_60%,#F5B50A_100%)] shadow-[0_4px_20px_rgba(250,204,21,0.25)]"
+                : "border-[1.5px] border-solid border-design-accent-cyan bg-[rgba(255,255,255,0.08)]"
+            }`}
+          >
+            <p className={`font-source-sans text-[14px] leading-[21px] ${activeScreen === "proposal" ? "text-[#1F2937]" : "text-white/80"}`}>
               Designing for {leadPrefill.name || "this lead"}
               {leadPrefill.address ? ` · ${leadPrefill.address}` : ""}. Their
               details are filled in; Back changes the address or property type.
             </p>
             <Link
               href="/master/quotes-leads"
-              className="font-source-sans text-[13px] font-medium uppercase tracking-[0.5px] text-white underline"
+              className={`font-source-sans text-[13px] font-medium uppercase tracking-[0.5px] underline ${activeScreen === "proposal" ? "text-[#1F2937]" : "text-white"}`}
             >
               Back to leads
             </Link>
@@ -647,7 +659,11 @@ export function DesignsHeroSection({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 items-center overflow-y-auto">
+      {/*
+        Safe centring: a step centres while it fits; a taller one starts at the
+        top and scrolls, instead of being cut off top and bottom.
+      */}
+      <div className="flex min-h-0 flex-1 items-center-safe overflow-y-auto">
         {hydrating || leadLocating ? (
           <p className="relative z-10 mx-auto px-4 font-source-sans text-[16px] text-white/80">
             {leadLocating ? `Finding ${leadPrefill?.address ?? "the address"}…` : "Loading your design…"}
@@ -693,6 +709,12 @@ export function DesignsHeroSection({
         fillPercent={fillPercent}
         finishing={finishing}
         finishLabel={leadPrefill ? "Save design" : undefined}
+        slate={activeScreen === "proposal"}
+        centre={
+          activeScreen === "proposal"
+            ? { label: "Download your proposal", onClick: () => proposalStepRef.current?.openDownload() }
+            : null
+        }
       />
     </section>
   );

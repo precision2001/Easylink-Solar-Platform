@@ -281,7 +281,7 @@ export function MasterPolicies() {
                   </p>
                   <div
                     className="grid gap-2.5"
-                    style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+                    style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(150px, 100%), calc(100% / 3 - 16px)), 1fr))" }}
                   >
                     <div className="rounded-[12px] bg-[#DCFCE7] p-3.5 text-[#052E16]">
                       <div className="text-[12px] font-semibold">Automatic</div>

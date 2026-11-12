@@ -8,15 +8,28 @@ import type { RoofJob, RoofJobResult } from "@/lib/roof-design/jobs";
  * kept Node busy for up to 5 s at a time, so every page and API stalled while
  * designs ran, and preloads for each pin nudge piled up into 504s).
  *
- * - One worker thread, one job at a time; the rest wait in order.
+ * - One worker thread, up to MAX_RUNNING jobs at a time; the rest wait in
+ *   order. (9 Nov 2026: since Opus traces every roof first, a design spends
+ *   most of its time waiting on Opus, not computing; one at a time queued
+ *   designs behind each other's waits until the site's 120 s limit cut them
+ *   off with 504s. The worker's waits overlap; its computing still takes turns.)
  * - The same job asked for again while it's waiting or running is shared.
  * - A waiting job whose every asker has gone (the browser moved the pin or
  *   left) is dropped before it starts.
- * - A job that runs past JOB_TIMEOUT_MS is failed and the worker replaced.
+ * - A job that runs past JOB_TIMEOUT_MS is failed; the worker is replaced only
+ *   when it stops answering altogether (no job finishing for that long).
  * - Without the built worker (local dev, tests) jobs run in-process.
  */
 
-export const JOB_TIMEOUT_MS = 120_000;
+/**
+ * Longest a design may run. Longer than one request (the API answers 202 at
+ * 100 s and the page asks again): with several designs at once on one thread
+ * and Opus's trace and check taking up to 4 minutes, 120 s cut good designs
+ * off ("took too long", 9 Nov 2026).
+ */
+export const JOB_TIMEOUT_MS = 240_000;
+/** Jobs running on the worker at once. */
+export const MAX_RUNNING = 4;
 
 type Entry = {
   key: string;
@@ -33,7 +46,9 @@ const queue: Entry[] = [];
 let worker: Worker | null = null;
 /** The worker failed to start or crashed twice: run jobs in-process from now on. */
 let workerFailures = 0;
-let busy = false;
+let running = 0;
+/** When the worker last finished a job (or started): a worker silent past JOB_TIMEOUT_MS while busy is stuck. */
+let lastAnswer = Date.now();
 let nextId = 1;
 
 function workerPath(): string {
@@ -70,11 +85,15 @@ function runOnWorker(w: Worker, job: RoofJob): Promise<unknown> {
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error("The roof design took too long."));
-      // A stuck job holds the thread: replace the worker.
-      w.terminate().catch(() => {});
-      if (worker === w) worker = null;
+      // A worker that has finished nothing for that long is stuck (a job
+      // holding the thread): replace it. Otherwise only this job was slow.
+      if (Date.now() - lastAnswer >= JOB_TIMEOUT_MS) {
+        w.terminate().catch(() => {});
+        if (worker === w) worker = null;
+      }
     }, JOB_TIMEOUT_MS);
     const onMessage = (m: { id: number; ok: boolean; result?: unknown; error?: string }) => {
+      lastAnswer = Date.now();
       if (m.id !== id) return;
       cleanup();
       if (m.ok) resolve(m.result);
@@ -95,11 +114,15 @@ function runOnWorker(w: Worker, job: RoofJob): Promise<unknown> {
   });
 }
 
-async function pump(): Promise<void> {
-  if (busy) return;
+function pump(): void {
+  while (running < MAX_RUNNING && queue.length) void runNext();
+}
+
+async function runNext(): Promise<void> {
   const entry = queue.shift();
   if (!entry) return;
-  busy = true;
+  if (running === 0) lastAnswer = Date.now();
+  running++;
   entry.started = true;
   try {
     const w = getWorker();
@@ -116,8 +139,8 @@ async function pump(): Promise<void> {
     entry.reject(e instanceof Error ? e : new Error(String(e)));
   } finally {
     byKey.delete(entry.key);
-    busy = false;
-    void pump();
+    running--;
+    pump();
   }
 }
 
@@ -157,11 +180,16 @@ export function roofJob<J extends RoofJob>(job: J, opts: { key: string; signal?:
     else signal.addEventListener("abort", onAbort, { once: true });
     e.promise.finally(() => signal.removeEventListener("abort", onAbort)).catch(() => {});
   }
-  void pump();
+  pump();
   return e.promise as Promise<RoofJobResult<J>>;
+}
+
+/** True while a job with this key is waiting or running (asking again joins it). */
+export function roofJobPending(key: string): boolean {
+  return byKey.has(key);
 }
 
 /** For the tests and the status line: how many jobs are waiting / running. */
 export function roofJobStats(): { waiting: number; running: boolean; worker: boolean } {
-  return { waiting: queue.length, running: busy, worker: Boolean(worker) };
+  return { waiting: queue.length, running: running > 0, worker: Boolean(worker) };
 }

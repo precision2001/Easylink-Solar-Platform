@@ -25,7 +25,7 @@ import { fitRoofJunctions } from "./junctions";
 import { flatSectionsFromLines } from "./flatSections";
 import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
 import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
-import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
+import { findExistingArrays, findRoofObstructions, panelsOffRoof, type RoofObstruction } from "@/lib/designer/roofObstructions";
 import { keepPanelsClear } from "@/lib/designer/panelClearance";
 import { bestSquareRoof, rankSquareReadings, wallAxisDeg, type SquareReading } from "@/lib/designer/squareRoof";
 import { DESIGN_RULES, inverterSizingFor, roofPitchDegrees, type InverterSizing, type PanelOrientation } from "@/lib/designer/designRules";
@@ -51,6 +51,7 @@ import {
   type LatLngBox,
   type LatLngRing,
   type PanelDims,
+  panelCorners,
 } from "./geometry";
 import { alignWalls, withoutNotches, singleStepRemovals, splitByRoofLevel, squareWalls, withoutSmallSteps } from "./roofLevels";
 import { imageLines, unexplainedLength, type ImageLine } from "./roofLineEvidence";
@@ -85,10 +86,31 @@ export type RoofDesignContext = {
    * given.
    */
   aiFaces?: AiRoofFace[] | null;
+  /**
+   * Opus's full trace of the roof (owner's rule, 9 Nov 2026: Opus traces every
+   * roof first). When present it IS the design: its border and faces are
+   * used, the engine only snaps its intersection points onto the image and
+   * checks every line. `undefined`: not asked (no AI); `null`: asked, but no
+   * trace came back — the design says it needs a hand trace.
+   */
+  aiTrace?: AiRoofTrace | null;
+  /** Opus is still tracing and checking this roof (past this request's wait): ask again shortly. */
+  aiTracePending?: boolean;
 };
 
 /** A face the AI read from the image, in map coordinates. */
 export type AiRoofFace = { ring: LatLngRing; azimuthDeg?: number; name?: string };
+
+/** Opus's trace of the main roof, in map coordinates. */
+export type AiRoofTrace = {
+  noRoof: boolean;
+  flat: boolean;
+  outline: LatLngRing | null;
+  faces: AiRoofFace[];
+  /** Every visible line, intersection point to intersection point; "faint" = check on site. */
+  lines: { a: LatLng; b: LatLng; kind: string; seen: "clear" | "faint" }[];
+  obstructions: { kind: string; ring: LatLngRing }[];
+};
 
 /* ── Constants (shared by every caller) ─────────────────────────────── */
 
@@ -96,7 +118,7 @@ export type AiRoofFace = { ring: LatLngRing; azimuthDeg?: number; name?: string 
  * Changes whenever the engine's decisions change: finished designs are kept
  * per version, so an engine change never serves a design made by an older one.
  */
-export const ROOF_ENGINE_VERSION = "2026-11-09.5";
+export const ROOF_ENGINE_VERSION = "2026-11-11.1";
 
 export const ROOF_DESIGN_LIMITS = {
   /** Google's mask trace must cover this share of Google's whole-roof area to be trusted. */
@@ -210,7 +232,7 @@ export function lotForDesign(
 
 /* ── Step 1: the starting roof outline ──────────────────────────────── */
 
-export type InitialRoofSource = "square-walls" | "snapshot" | "footprint" | "google-mask" | "google-box" | "placeholder";
+export type InitialRoofSource = "ai-trace" | "square-walls" | "snapshot" | "footprint" | "google-mask" | "google-box" | "placeholder";
 
 export type InitialRoofs = {
   rings: LatLngRing[];
@@ -768,7 +790,7 @@ export function confirmRoofOutlines(
 
 export type RoofFace = { ring: LatLngRing; eaveDeg: number; pitchDeg?: number; azimuthDeg?: number };
 
-export type FaceSource = "square-hip" | "ai-image" | "height-model" | "assumed-hip";
+export type FaceSource = "ai-trace" | "square-hip" | "ai-image" | "height-model" | "assumed-hip";
 
 export type RoofFaceSet = {
   source: FaceSource;
@@ -784,6 +806,8 @@ export type RoofFaceSet = {
   evidence: RoofEvidence[];
   /** Every roof's reading passes Google and the image shows its lines: the roof lines are determined. */
   determined: boolean;
+  /** When Opus traced the roof: its lines, how many it saw only faintly, and how many the image doesn't confirm. */
+  trace?: { lines: number; faint: number; unconfirmed: number };
 };
 
 /**
@@ -802,6 +826,8 @@ export type RoofFaceSet = {
  * 9 Nov 2026, 12 Fursorb St). Lines stay straight and connected.
  */
 export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, opts: { relook?: boolean } = {}): RoofFaceSet {
+  const traced = tracedFaces(paths, ctx);
+  if (traced) return traced;
   const found = readRoofFaces(paths, ctx, opts);
   if (typeof process !== "undefined" && process.env?.ROOF_JUNCTIONS === "0") return found;
   const luma = lineLumaOf(ctx);
@@ -827,6 +853,83 @@ export function findRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, opts:
     faces,
     interiorChecks: interiorEdges(faces, paths).map(([a, b]) => checkInteriorLine(a, b, luma)),
     obstructions: snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)) : found.obstructions,
+  };
+}
+
+/** Metres from p to segment a-b (local flat frame). */
+function distanceToSegmentM(p: LatLng, a: LatLng, b: LatLng): number {
+  const mLng = 111320 * Math.cos((p.lat * Math.PI) / 180);
+  const X = (q: LatLng) => ({ x: (q.lng - p.lng) * mLng, y: (q.lat - p.lat) * 111320 });
+  const A = X(a), B = X(b);
+  const dx = B.x - A.x, dy = B.y - A.y;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, -(A.x * dx + A.y * dy) / l2)) : 0;
+  return Math.hypot(A.x + t * dx, A.y + t * dy);
+}
+
+/** The trace must cover this share of the roof to be the design. */
+export const AI_TRACE_MIN_COVERAGE = 0.6;
+
+/**
+ * Opus's trace as the roof's faces (owner's rule: Opus traces every roof
+ * first; the engine only checks). Its faces are kept as traced; their shared
+ * intersection points are snapped onto the lines in the image
+ * (fitRoofJunctions); every line is checked against the image; faint lines
+ * and lines the image doesn't confirm are reported for an on-site check.
+ * Obstructions: Opus's, plus the engine's small spots (vents it may have
+ * missed). Null when there is no trace or it covers too little of the roof.
+ */
+function tracedFaces(paths: LatLngRing[], ctx: RoofDesignContext): RoofFaceSet | null {
+  const t = ctx.aiTrace;
+  if (!t || t.noRoof || t.faces.length === 0) return null;
+  const roofM2 = paths.reduce((s, p) => s + ringAreaM2(p), 0);
+  const mine = t.faces.filter((f) => f.ring.length >= 3 && paths.some((p) => pointInRing(ringCentroid(f.ring), p)));
+  const coveredM2 = mine.reduce((s, f) => s + ringAreaM2(f.ring), 0);
+  if (roofM2 <= 0 || coveredM2 / roofM2 < AI_TRACE_MIN_COVERAGE) return null;
+  const pitchDeg = roofPitchOf(ctx);
+  let faces: RoofFace[] = mine.map((f) => {
+    const az = f.azimuthDeg;
+    const azRad = ((az ?? 0) * Math.PI) / 180;
+    return {
+      ring: f.ring,
+      eaveDeg: az === undefined || t.flat ? longestEdgeAngleDegrees(f.ring) : (Math.atan2(Math.sin(azRad), -Math.cos(azRad)) * 180) / Math.PI,
+      azimuthDeg: az,
+      pitchDeg: t.flat ? pitchDeg : undefined,
+    };
+  });
+  const luma = lineLumaOf(ctx);
+  // Fine-tuning only: a traced point moves at most 0.3 m, and only on a clear
+  // gain (12 Fursorb St, 9 Nov 2026: a 1 m allowance pulled Opus's points onto
+  // other edges and the faces no longer matched the trace). Opus's lines are
+  // not fitted further to the photo's edges (owner, 9 Nov 2026).
+  const fit = fitRoofJunctions(paths, faces, luma, { junctionM: 0.3, minGain: 0.2 });
+  faces = fit.faces;
+  const checks = interiorEdges(faces, paths).map(([a, b]) => checkInteriorLine(a, b, luma));
+  const snap = ctx.snapshot ?? null;
+  // The engine's own spots, except along a traced line (hip capping reads as spots).
+  const edges = interiorEdges(faces, paths);
+  const nearLine = (ring: LatLngRing) => {
+    const c = ringCentroid(ring);
+    return edges.some(([a, b]) => distanceToSegmentM(c, a, b) < 0.35);
+  };
+  const spots = snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)).filter((o) => o.kind === "spot" && !nearLine(o.ring)) : [];
+  const traced: RoofObstruction[] = t.obstructions.filter((o) => o.ring.length >= 3).map((o) => ({ kind: o.kind === "shading" ? "step" : "spot", ring: o.ring, sizePx: 0 }));
+  // Existing solar panels, from the photo as well as Opus's outlines: Opus
+  // doesn't always mark them, or falls short of their edges (26 Bridgeview Cct,
+  // 10 Nov 2026: new panels laid over the existing array).
+  const arrays = snap ? findExistingArrays(snap.luma, faces.map((f) => f.ring), t.obstructions.filter((o) => o.kind === "panels" && o.ring.length >= 3).map((o) => o.ring)) : [];
+  const faint = t.lines.filter((l) => l.seen === "faint").length;
+  const unconfirmed = checks.filter((c) => c.status === "unconfirmed").length;
+  return {
+    source: "ai-trace",
+    faces,
+    interiorChecks: checks,
+    moved: fit.moved,
+    obstructions: [...traced, ...arrays, ...spots],
+    gables: 0,
+    evidence: [],
+    determined: faint === 0 && unconfirmed === 0,
+    trace: { lines: t.lines.length, faint, unconfirmed },
   };
 }
 
@@ -907,7 +1010,7 @@ function readRoofFaces(paths: LatLngRing[], ctx: RoofDesignContext, { relook = f
     gables += best.gables;
     sources.add(best.source);
   }
-  const obstructions = snap ? findRoofObstructions(snap.luma, faces.map((f) => f.ring)) : [];
+  const obstructions = snap ? [...findRoofObstructions(snap.luma, faces.map((f) => f.ring)), ...findExistingArrays(snap.luma, faces.map((f) => f.ring))] : [];
   const source: FaceSource = sources.has("assumed-hip")
     ? "assumed-hip"
     : sources.has("height-model")
@@ -1018,7 +1121,12 @@ export function layoutRoofPanels(paths: LatLngRing[], faceSet: RoofFaceSet, ctx:
   const axis = largest ? longestEdgeAngleDegrees(largest) : undefined;
   const options = { orientation, pitchDeg: roofPitchOf(ctx), obstructions: obstructions.map((o) => o.ring) };
   const packed = req.beautify ? beautifyPanelsForFaces(faces, dims, options, axis) : generatePanelsForFaces(faces, dims, options, axis);
-  return dedupePanels(keepPanelsClear(packed, faces.map((f) => f.ring), paths, dims, { clearM: DESIGN_RULES.edgeSetbackM }));
+  const kept = dedupePanels(keepPanelsClear(packed, faces.map((f) => f.ring), paths, dims, { clearM: DESIGN_RULES.edgeSetbackM }));
+  // Nothing on what isn't the roof's surface (a courtyard, a gap, an existing array).
+  const luma = ctx.snapshot?.luma;
+  if (!luma) return kept;
+  const off = new Set(panelsOffRoof(luma, faces.map((f) => f.ring), kept.map((p) => panelCorners(p, dims))));
+  return off.size ? kept.filter((_, i) => !off.has(i)) : kept;
 }
 
 /* ── Relook ─────────────────────────────────────────────────────────── */
@@ -1075,11 +1183,36 @@ export type DesignRoofOptions = {
  * Pin + data in, finished design out: the Designs page's steps (initial
  * outline → Save Roof → faces → panels) without the screen.
  */
+/**
+ * Opus's border, straightened; as traced when straightening throws corners
+ * far outside it (66 Frances St south-east row, 9 Nov 2026: a corner landed
+ * 100+ m away and the border crossed itself).
+ */
+function straightenedOrAsTraced(outline: LatLngRing): LatLngRing[] {
+  const rings = regularizeRoofOutlines([outline]);
+  const lat0 = outline[0].lat;
+  const mLat = 111_320;
+  const mLng = mLat * Math.cos((lat0 * Math.PI) / 180);
+  const lats = outline.map((p) => p.lat);
+  const lngs = outline.map((p) => p.lng);
+  const [s0, n0, w0, e0] = [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs)];
+  const out = (p: { lat: number; lng: number }) =>
+    Math.max(s0 - p.lat, p.lat - n0, 0) * mLat > 3 || Math.max(w0 - p.lng, p.lng - e0, 0) * mLng > 3;
+  return rings.length && !rings.some((r) => r.some(out)) ? rings : [outline];
+}
+
 export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {}): RoofDesign | null {
-  const initial: InitialRoofs | null = opts.outline ? { rings: opts.outline, source: "snapshot", traced: true } : initialRoofs(ctx, { placeholder: false });
+  // Owner's rule: Opus traces every roof first. Its border is the outline
+  // (straightened, corners kept); a person's outline (Edit, the API) still wins.
+  const trace = !opts.outline && ctx.aiTrace?.outline && ctx.aiTrace.faces.length ? ctx.aiTrace : null;
+  const initial: InitialRoofs | null = opts.outline
+    ? { rings: opts.outline, source: "snapshot", traced: true }
+    : trace
+      ? { rings: straightenedOrAsTraced(trace.outline!), source: "ai-trace", traced: true }
+      : initialRoofs(ctx, { placeholder: false });
   if (!initial) return null;
-  // An outline given by a person (Edit, or the API's `outline`) is theirs: kept, not replaced by another reading.
-  const outline = confirmRoofOutlines(initial.rings, ctx, { userEdit: Boolean(opts.outline) });
+  // An outline given by a person (Edit, or the API's `outline`) or traced by Opus is kept, not replaced by another reading.
+  const outline = confirmRoofOutlines(initial.rings, ctx, { userEdit: Boolean(opts.outline) || Boolean(trace) });
   if (outline.length === 0) return null;
   const faceSet = findRoofFaces(outline, ctx);
   const dims = opts.dims ?? panelDimsOf(ctx);
@@ -1092,7 +1225,16 @@ export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {})
   const panelWatts = opts.panelWatts ?? ctx.estimate?.panelCapacityWatts ?? DEFAULT_PANEL.watts;
   const lines = checkRoofLines(outline, faceSet, ctx);
   const needsVerification = !initial.traced;
+  const t = faceSet.trace;
   const notes = [
+    ctx.aiTrace === null && !opts.outline && ctx.aiTracePending
+      ? "Opus is still tracing and checking this roof against the photo: the design refreshes when it's done. Lines below are the engine's own reading for now."
+      : ctx.aiTrace === null && !opts.outline
+      ? "Opus couldn't trace this roof in time: it needs a hand trace (Edit the roof) before quoting. Lines below are the engine's own reading."
+      : null,
+    t && (t.faint > 0 || t.unconfirmed > 0)
+      ? `Traced by Opus: ${t.lines} roof lines; ${t.faint} seen only faintly and ${t.unconfirmed} not confirmed in the image: check on site.`
+      : null,
     needsVerification ? "Roof outline from Google's data or a building footprint, not traced from the image: check the roof shape." : null,
     panels.length === 0 ? "Roof found, but no face is big enough for a panel." : null,
     faceSet.evidence.some((e) => e.googleStale)

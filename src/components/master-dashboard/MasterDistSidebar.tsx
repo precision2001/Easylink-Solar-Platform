@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePortalLogout } from "@/hooks/usePortalLogout";
 
 /**
@@ -175,6 +176,7 @@ const GROUPS: NavGroup[] = [
     tag: "shared",
     items: [
       { key: "designs", label: "Solar designer · SLD", icon: "layers", href: "/master/solar-designer" },
+      { key: "validity", label: "Equipment validity", icon: "shield", href: "/master/equipment-validity" },
     ],
   },
   {
@@ -252,7 +254,78 @@ type Props = {
   personName?: string;
 };
 
-export function MasterDistSidebar({
+/**
+ * Phones and tablets (below 1024 px) get a top bar with a menu button; the
+ * full menu slides in over the page. Before, the 248 px menu stayed open and
+ * pushed every screen below a long list of links (12 Nov 2026).
+ */
+export function MasterDistSidebar(props: Props) {
+  const [open, setOpen] = useState(false);
+  const activeLabel = GROUPS.flatMap((g) => g.items).find((i) => i.key === props.active)?.label;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  return (
+    <>
+      {/* Phones and tablets: a fixed top bar, and a spacer so the page starts below it. */}
+      <div className="h-14 lg:hidden" aria-hidden="true" />
+      <div
+        className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-3 px-3 font-inter shadow-[0_2px_10px_rgba(0,0,0,0.25)] lg:hidden"
+        style={{ background: "#0B1A2E", color: "#E6EDF7" }}
+      >
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Open menu"
+          aria-expanded={open}
+          className="flex size-10 shrink-0 items-center justify-center rounded-[10px] hover:bg-white/10"
+        >
+          <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
+        <Link href="/master/dashboard" className="flex min-w-0 items-center gap-2 text-white no-underline">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-[#F68A0A]">
+            <Image src="/images/solarDesignLogo.png" alt="" width={20} height={20} className="size-5 object-contain" />
+          </span>
+          <span className="truncate font-source-sans text-[16px] font-bold">EasyLink Solar</span>
+        </Link>
+        {activeLabel ? <span className="ml-auto truncate text-[13px] font-semibold text-[#9FB0C8]">{activeLabel}</span> : null}
+      </div>
+      {open ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Main menu">
+          <button type="button" aria-label="Close menu" className="absolute inset-0 bg-slate-950/55" onClick={() => setOpen(false)} />
+          <div className="absolute inset-y-0 left-0 w-[86vw] max-w-[320px] overflow-y-auto shadow-2xl" style={{ background: "#0B1A2E" }}>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close menu"
+              className="absolute right-2 top-2 z-10 flex size-10 items-center justify-center rounded-[10px] text-[22px] leading-none text-[#C3CFDF] hover:bg-white/10"
+            >
+              ×
+            </button>
+            <SidebarNav {...props} />
+          </div>
+        </div>
+      ) : null}
+      {/* Desktop: the menu as before. */}
+      <div className="hidden h-full lg:block">
+        <SidebarNav {...props} />
+      </div>
+    </>
+  );
+}
+
+function SidebarNav({
   active,
   accountName = "Easylink Plus Pty Ltd",
   personName = "Daniel Shaw · Owner",

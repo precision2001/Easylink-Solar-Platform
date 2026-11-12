@@ -56,6 +56,10 @@ export type Battery = Sourced & {
    * same-brand inverters outside these are skipped when auto-sizing and warned on.
    */
   pairsWith?: string[];
+  /** false: not on the CEC approved battery list, so no battery STCs (backend sets it from its battery ranges table). */
+  cecListed?: boolean;
+  /** Last day of the CEC listing (YYYY-MM-DD): installs after it get no battery STCs. */
+  cecExpires?: string;
 };
 export type EvCharger = Sourced & { id: string; model: string; kw: number; phase: 1 | 3; supply: number };
 export type Extra = Sourced & {
@@ -451,6 +455,10 @@ export function priceQuote(
   if (stc && canClaim && battery) {
     if (type === 'battery' && q.existing === false) {
       notes.push('No battery STCs: the battery must connect to solar panels on the site.');
+    } else if (battery.cecListed === false) {
+      warns.push(`No battery STCs: ${battery.model} is not on the CEC approved battery list.`);
+    } else if (battery.cecExpires && q.date > battery.cecExpires) {
+      warns.push(`No battery STCs: the CEC listing for ${battery.model} ends ${battery.cecExpires.split('-').reverse().join('/')}, before the install date.`);
     } else {
       const r = batteryStcs(battery.kwh, q.date);
       if (r.count > 0) {

@@ -294,7 +294,7 @@ export function MasterLiveJourneys() {
 
             <dl
               className="m-0 grid gap-x-[18px] gap-y-2.5 text-[13px]"
-              style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}
+              style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))" }}
             >
               {(
                 [

@@ -1,4 +1,5 @@
 "use client";
+import { paybackLabel } from "@/lib/proposal/savingsProjection";
 
 import {
   forwardRef,
@@ -497,10 +498,7 @@ function deriveEnergyValues(
   const yearlyNum = monthlySavings * 12;
 
   // No payback until real pricing exists — the proposal step fills it in.
-  let payback = "";
-  if (totalSystemPrice != null && totalSystemPrice > 0 && yearlyNum > 0) {
-    payback = `${(totalSystemPrice / yearlyNum).toFixed(1)} yrs`;
-  }
+  const payback = paybackLabel(totalSystemPrice, yearlyNum);
 
   return {
     currentBill: formatAud(currentMonthly),

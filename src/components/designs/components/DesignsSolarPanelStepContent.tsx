@@ -60,7 +60,7 @@ import {
 import { mergeProposalData } from "@/lib/store/designProposalSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
 import { compressCanvasSnapshot } from "@/lib/images/compress-browser";
-import { roofDesignFor, type RoofDesignResponse } from "@/lib/roof-design/client";
+import { refreshRoofDesign, roofDesignFor, stillTracing, type RoofDesignResponse } from "@/lib/roof-design/client";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -76,8 +76,9 @@ const MAX_MAP_SOLAR_PANEL_POLYGONS = 1500;
 // Roof-design limits (mask coverage, box distance, footprint check, lot clip) live in
 // the shared engine: ROOF_DESIGN_LIMITS in src/lib/roof-design/engine.ts.
 
-function formatNumber(n: number): string {
-  return n.toLocaleString("en-AU", { maximumFractionDigits: 0 });
+/** A whole number for the metrics, or "—" when there is none (no Google Solar data for a new estate: 53 Turffontein Ave, Box Hill crashed the page, 10 Nov 2026). */
+function formatNumber(n: number | null | undefined): string {
+  return typeof n === "number" && Number.isFinite(n) ? n.toLocaleString("en-AU", { maximumFractionDigits: 0 }) : "—";
 }
 
 function coordsMatchPin(
@@ -457,6 +458,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
   // starting roof; the page reads faces and lines on it locally. Only when it
   // can't be had does the page run the outline search itself.
   const [serverDesign, setServerDesign] = useState<{ key: string; design: RoofDesignResponse | null } | null>(null);
+  /** Opus is still tracing and checking this roof: nothing is designed until it's done. */
+  const [opusTracing, setOpusTracing] = useState(false);
   const pinKey = selectedLocation ? `${selectedLocation.lat.toFixed(6)},${selectedLocation.lng.toFixed(6)}` : null;
   // Asked once per pin: the location object changes identity on re-renders,
   // and re-asking after a failure on each one piled up 504s (7 Nov 2026).
@@ -466,14 +469,37 @@ export const DesignsSolarPanelStepContent = forwardRef<
     const pin = selectedLocationRef.current;
     if (!pin || !pinKey) return;
     let live = true;
-    const giveUp = window.setTimeout(() => live && setServerDesign({ key: pinKey, design: null }), 45_000);
+    let timer: number | undefined;
+    // Opus traces the roof first and checks its trace against the photo
+    // (owner's rules). One request waits up to 90 s, inside the site's 120 s;
+    // while Opus is still at it, the engine's design shows and the page asks
+    // again every 20 s (up to 5 minutes) until the checked trace is in.
+    // No answer at all (not even "still tracing") within 4 minutes: the page reads the roof itself.
+    const giveUp = window.setTimeout(() => live && setServerDesign((cur) => cur ?? { key: pinKey, design: null }), 240_000);
+    // While Opus is still tracing, the engine's own reading is not shown or
+    // designed on (owner, 10 Nov 2026: panels went outside the roof on the
+    // engine's interim reading of 26 Bridgeview Cct): the page waits for the
+    // checked trace, and only after 5 minutes without one shows the engine's.
+    const take = (d: RoofDesignResponse, tries: number) => {
+      if (!live) return;
+      const tracing = stillTracing(d) && tries < 15;
+      setOpusTracing(tracing);
+      if (!tracing) setServerDesign({ key: pinKey, design: d });
+      if (tracing)
+        timer = window.setTimeout(() => {
+          refreshRoofDesign(pin)
+            .then((n) => take(n, tries + 1))
+            .catch(() => live && (setOpusTracing(false), setServerDesign({ key: pinKey, design: d })));
+        }, 20_000);
+    };
     roofDesignFor(pin)
-      .then((d) => live && setServerDesign({ key: pinKey, design: d }))
+      .then((d) => take(d, 0))
       .catch(() => live && setServerDesign({ key: pinKey, design: null }))
       .finally(() => window.clearTimeout(giveUp));
     return () => {
       live = false;
       window.clearTimeout(giveUp);
+      if (timer) window.clearTimeout(timer);
     };
   }, [pinKey]);
   const serverReady = serverDesign?.key === pinKey ? serverDesign : null;
@@ -491,6 +517,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
     return () => window.clearTimeout(id);
   }, [roofCtx, serverReady]);
   const readingRoof = Boolean(roofCtx) && bestState?.ctx !== roofCtx;
+  /** Until the green roof is drawn, the roof view and its buttons are frozen. */
+  const roofAnalysing =
+    Boolean(selectedLocation) &&
+    !hasInitializedRoof &&
+    (loading || layersLoading || roofSnapshot.loading || readingRoof || opusTracing);
   const bestAvailable = bestState && bestState.ctx === roofCtx ? bestState.result : null;
   const bestAvailableOutlines = bestAvailable?.rings ?? null;
   /** True when the starting shape is a real trace of the roof, not a footprint or rectangle guess. */
@@ -825,12 +856,18 @@ export const DesignsSolarPanelStepContent = forwardRef<
   // The AI platform's reading of the roof (Opus 5.5), from the Roof Designer's
   // design for this pin: one more reading the engine scores with the others.
   const serverAiFaces = serverReady?.design?.status === "READY" ? serverReady.design.faces.ai : undefined;
+  // Owner's rule: Opus traces every roof first — the page uses the same trace as the server.
+  const serverTrace = serverReady?.design?.status === "READY" ? serverReady.design.faces.trace : undefined;
   const facesCtx = useMemo(
     (): RoofDesignContext | null =>
-      roofCtx && serverAiFaces?.length
-        ? { ...roofCtx, aiFaces: serverAiFaces.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? undefined })) }
+      roofCtx && (serverAiFaces?.length || serverTrace)
+        ? {
+            ...roofCtx,
+            aiFaces: serverAiFaces?.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? undefined })),
+            aiTrace: serverTrace ?? roofCtx.aiTrace,
+          }
         : roofCtx,
-    [roofCtx, serverAiFaces],
+    [roofCtx, serverAiFaces, serverTrace],
   );
   const facesFor = useCallback(
     (paths: google.maps.LatLngLiteral[][]): RoofFaceSet =>
@@ -1217,6 +1254,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
 
   /* GeoTIFF imagery overlays */
   useImperativeOverlay(mapReady, rgbOverlay, 0.92, showSolarRgb);
+
+  // NSW Spatial Services aerial photos beside Google's (owner, 9 Nov 2026):
+  // flip the map to compare roof lines, or use them when Google's is unclear.
+  const [imagery, setImagery] = useState<"google" | "nsw">("google");
+  const nswInfo = useNswImagery(selectedLocation?.lat ?? null, selectedLocation?.lng ?? null);
+  useEffect(() => {
+    if (!mapReady || imagery !== "nsw" || !nswInfo?.available) return;
+    const layer = new google.maps.ImageMapType({
+      getTileUrl: (c, z) => `/api/imagery/nsw/tile/${z}/${c.x}/${c.y}`,
+      tileSize: new google.maps.Size(256, 256),
+      maxZoom: 23,
+      name: "NSW imagery",
+    });
+    mapReady.overlayMapTypes.insertAt(0, layer);
+    return () => {
+      const i = mapReady.overlayMapTypes.getArray().indexOf(layer);
+      if (i >= 0) mapReady.overlayMapTypes.removeAt(i);
+    };
+  }, [mapReady, imagery, nswInfo?.available]);
   useImperativeOverlay(mapReady, maskOverlay, 0.45, showSolarRgb);
 
   /* Solar panels + roof outline (building footprint, else mask-traced perimeter, else API bounding box) */
@@ -1471,7 +1527,9 @@ export const DesignsSolarPanelStepContent = forwardRef<
                     : roofSnapshot.loading
                       ? "Zooming in and finding the roof lines..."
                       : readingRoof && !hasInitializedRoof
-                        ? "Reading the roof faces and checking them against Google and the image..."
+                        ? opusTracing
+                          ? "EasyLink AI is reading, analyzing and designing your roof..."
+                          : "Reading the roof faces and checking them against Google and the image..."
                         : "Analysing solar potential..."}
               </p>
             )}
@@ -1482,6 +1540,28 @@ export const DesignsSolarPanelStepContent = forwardRef<
         <div className="w-full min-w-0 overflow-hidden rounded-[28px] border-[3px] border-design-accent-cyan shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] lg:h-full lg:min-h-0">
           {/* Outer wrapper: overlays (RGB/Panels/Save) sit outside capture ref */}
           <div className="relative aspect-[649/525] h-full w-full min-h-[280px] overflow-hidden rounded-[25px] lg:aspect-auto lg:min-h-0">
+            {/* Frozen while the AI reads the roof: no buttons or map until the
+                green roof is drawn (owner, 10 Nov 2026). Outside the capture
+                target, so it never shows in a saved picture. */}
+            {roofAnalysing && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="absolute inset-0 z-[60] flex cursor-wait items-center justify-center bg-[#0B1424]/55 p-4 backdrop-blur-[1.5px]"
+                onPointerDownCapture={(e) => e.stopPropagation()}
+                onWheelCapture={(e) => e.stopPropagation()}
+              >
+                <div className="flex max-w-[460px] flex-col items-center gap-4 rounded-[20px] border border-white/20 bg-[#0F1E36]/90 px-7 py-6 text-center shadow-[0_10px_40px_rgba(0,0,0,0.45)]">
+                  <span className="h-12 w-12 animate-spin rounded-full border-[4px] border-design-accent-cyan/30 border-t-design-accent-cyan" aria-hidden="true" />
+                  <p className="m-0 font-source-sans text-[22px] font-bold leading-tight text-white sm:text-[26px]">
+                    AI is Analyzing Roof, Area, Size and Designing Panels
+                  </p>
+                  <p className="m-0 animate-pulse font-inter text-[13px] font-medium text-white/75">
+                    The roof view unlocks as soon as your roof is drawn.
+                  </p>
+                </div>
+              </div>
+            )}
             {/* Capture target = satellite map + roof/panel overlays only (no UI chrome) */}
             <div
               ref={mapCaptureRef}
@@ -1703,8 +1783,17 @@ export const DesignsSolarPanelStepContent = forwardRef<
               )}
             </div>
 
+            {imagery === "nsw" && nswInfo?.available ? (
+              <div className="pointer-events-none absolute bottom-[6px] left-[10px] z-10 rounded-[4px] bg-black/55 px-2 py-[2px] font-inter text-[10.5px] text-white/90">
+                {nswInfo.attribution}
+                {nswInfo.capturedOn ? ` · flown ${formatFlown(nswInfo.capturedOn)}` : ""}
+                {nswInfo.resolutionCm ? ` · ${nswInfo.resolutionCm} cm` : ""}
+              </div>
+            ) : null}
+
             {/* Top-right controls — excluded from proposal screenshot */}
             <div className="pointer-events-auto absolute left-[14px] right-[14px] top-[14px] z-10 flex flex-wrap items-center justify-end gap-[8px]">
+              {nswInfo?.available ? <ImageryToggle value={imagery} onChange={setImagery} nswDate={nswInfo.capturedOn} /> : null}
               <LayerToggle active={activeLayer} onChange={setActiveLayer} />
               <OrientationToggle
                 value={panelOrientation}
@@ -1901,6 +1990,59 @@ function OrientationToggle({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+type NswImageryInfo = { available: boolean; capturedOn: string | null; resolutionCm: number | null; attribution: string };
+
+/** Whether NSW aerial photos cover the pin, and when they were flown. */
+function useNswImagery(lat: number | null, lng: number | null): NswImageryInfo | null {
+  const key = lat != null && lng != null ? `${lat},${lng}` : null;
+  const [info, setInfo] = useState<{ key: string; data: NswImageryInfo } | null>(null);
+  useEffect(() => {
+    if (key == null) return;
+    let live = true;
+    fetch(`/api/imagery/nsw?lat=${lat}&lng=${lng}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { data?: NswImageryInfo } | null) => {
+        if (live && j?.data) setInfo({ key, data: j.data });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [key, lat, lng]);
+  return info && info.key === key ? info.data : null;
+}
+
+/** "2022-05-01" → "May 2022". */
+function formatFlown(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-AU", { month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+function ImageryToggle({ value, onChange, nswDate }: { value: "google" | "nsw"; onChange: (v: "google" | "nsw") => void; nswDate: string | null }) {
+  const options: { value: "google" | "nsw"; label: string; title: string }[] = [
+    { value: "google", label: "Google", title: "Google satellite imagery" },
+    { value: "nsw", label: nswDate ? `NSW ${nswDate.slice(0, 4)}` : "NSW", title: "NSW Spatial Services aerial photo, to compare roof lines" },
+  ];
+  return (
+    <div className="flex overflow-hidden rounded-[6px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]" role="group" aria-label="Imagery">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          title={opt.title}
+          aria-pressed={value === opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`h-[33px] px-[11px] font-inter text-[12px] font-semibold tracking-[-0.1px] transition ${
+            value === opt.value ? "bg-white text-[#2094F3]" : "bg-white/60 text-[#333] hover:bg-white/80"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }

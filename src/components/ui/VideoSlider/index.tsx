@@ -160,7 +160,7 @@ export function VideoSlider({
       <button
         onClick={() => goToSlide(currentSlide - 1)}
         className={classNames(
-          "absolute left-3 top-1/2 z-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-gray-7/50 bg-surface-50/60 backdrop-blur-[15px] transition-colors hover:bg-surface-50/80 sm:left-[19px] sm:size-[54px]",
+          "absolute left-3 top-1/2 z-3 hidden size-11 -translate-y-1/2 items-center justify-center rounded-full border border-gray-7/50 bg-surface-50/60 backdrop-blur-[15px] transition-colors hover:bg-surface-50/80 sm:left-[19px] sm:flex sm:size-[54px]",
           navButtonClassName,
         )}
         aria-label="Previous slide"
@@ -182,7 +182,7 @@ export function VideoSlider({
       <button
         onClick={() => goToSlide(currentSlide + 1)}
         className={classNames(
-          "absolute right-3 top-1/2 z-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-gray-7/50 bg-surface-50/60 backdrop-blur-[15px] transition-colors hover:bg-surface-50/80 sm:right-[19px] sm:size-[54px]",
+          "absolute right-3 top-1/2 z-3 hidden size-11 -translate-y-1/2 items-center justify-center rounded-full border border-gray-7/50 bg-surface-50/60 backdrop-blur-[15px] transition-colors hover:bg-surface-50/80 sm:right-[19px] sm:flex sm:size-[54px]",
           navButtonClassName,
         )}
         aria-label="Next slide"

@@ -1,3 +1,5 @@
+import type { DesignShareResult } from "@/lib/designs/send-to-customer";
+
 /**
  * Operations portal → Quotes & Leads → "Solar Design": staff start a manual
  * design for a lead. The lead's contact details and address travel in the
@@ -61,13 +63,13 @@ export function leadPrefillFrom(params: { get(name: string): string | null }): L
 export async function saveLeadDesign(
   leadId: string,
   input: unknown,
-): Promise<{ leadId: string; designId: string; updated: boolean; createdAccount: boolean }> {
+): Promise<{ leadId: string; designId: string; updated: boolean; createdAccount: boolean; sent?: DesignShareResult | null }> {
   const res = await fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/design`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  const json = (await res.json().catch(() => ({}))) as { message?: string; data?: { leadId: string; designId: string; updated: boolean; createdAccount: boolean } };
+  const json = (await res.json().catch(() => ({}))) as { message?: string; data?: { leadId: string; designId: string; updated: boolean; createdAccount: boolean; sent?: DesignShareResult | null } };
   if (res.status === 401) throw new Error("Sign in to the Operations portal to save designs for leads.");
   if (!res.ok || !json.data) throw new Error(json.message || "Could not save the design to this lead.");
   return json.data;

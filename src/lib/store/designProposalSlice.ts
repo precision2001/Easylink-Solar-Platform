@@ -127,6 +127,12 @@ export type DesignProposalEquipment = {
   panelTierId?: string;
   batteryCapacityId?: string;
   /**
+   * Battery options the customer is comparing (up to three ids from
+   * BATTERY_CAPACITY_OPTIONS, smallest first); `batteryCapacityId` is the
+   * one shown. Each option is quoted on its own.
+   */
+  batteryOptionIds?: string[];
+  /**
    * Energy step's continuous battery sizing (kWh) — independent of the
    * proposal step's discrete `batteryCapacityId` catalogue picks, but kept
    * on the same slice so both steps' choices persist together.

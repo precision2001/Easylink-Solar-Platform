@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { SendDesignDialog } from "@/components/designs/SendDesignDialog";
+import { DesignShareBadge } from "@/components/designs/DesignShareBadge";
 import Icon from "@/components/ui/Icons";
 import { DesignMapPreviewImage } from "@/components/customer/design/DesignMapPreviewImage";
 import { designMapScreenshotUrl } from "@/lib/designs/map-screenshot";
@@ -228,6 +231,16 @@ export function InstallerHomeSolarDesignCard({
   customer?: InstallerCustomerSummary | null;
 }) {
   const sd = buildSolarDesignRows(design);
+  const [sending, setSending] = useState(false);
+  const [sharedAt, setSharedAt] = useState<{ at: string | null; channels: string | null } | null>(null);
+  const shareDesign = design
+    ? {
+        sharedAt: sharedAt?.at ?? design.sharedWithCustomerAt ?? null,
+        sharedChannels: sharedAt?.channels ?? design.sharedChannels ?? null,
+        updatedAt: sharedAt?.at ?? String(design.updatedAt ?? ""),
+      }
+    : null;
+  const customerName = [customer?.firstName, customer?.lastName].filter(Boolean).join(" ") || "the customer";
 
   return (
     <section
@@ -251,6 +264,27 @@ export function InstallerHomeSolarDesignCard({
           <ExternalLinkGlyph className="size-[13.24px] shrink-0 text-[#333333]" />
         </Link>
       </header>
+      {design?.id && shareDesign ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-warm-border px-[17px] py-2">
+          <span className="font-dm-sans text-[12px] font-medium text-warm-gray">Customer&rsquo;s copy</span>
+          <span className="block w-[200px] max-w-full">
+            <DesignShareBadge design={shareDesign} onSend={() => setSending(true)} />
+          </span>
+        </div>
+      ) : null}
+      {sending && design?.id ? (
+        <SendDesignDialog
+          portal="installers"
+          designId={design.id}
+          customerName={customerName}
+          phone={customer?.phone}
+          email={customer?.email}
+          onClose={() => setSending(false)}
+          onSent={(r) => {
+            if (r.sharedAt) setSharedAt({ at: r.sharedAt, channels: [r.email === "sent" ? "EMAIL" : null, r.sms === "sent" ? "SMS" : null].filter(Boolean).join(",") });
+          }}
+        />
+      ) : null}
 
       {/* Three-column body (Figma 3:8636): image | specs | performance */}
       <div className="grid gap-[17px] px-[17px] pt-[17px] lg:grid-cols-[minmax(0,375px)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-x-[17px] lg:gap-y-0">

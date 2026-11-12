@@ -462,7 +462,7 @@ export function InstallerReadyDeals() {
           </table>
         </section>
       ) : tab === "create" ? (
-        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(440px,1fr))]">
+        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(440px,100%),1fr))]">
           <div className="flex min-w-0 flex-col gap-4">
             <section className={`${CARD} flex flex-col gap-3`}>
               <div className="flex items-center gap-2.5">
@@ -806,7 +806,7 @@ export function InstallerReadyDeals() {
           </aside>
         </div>
       ) : (
-        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(420px,1fr))]">
+        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr))]">
           <section
             aria-label="Deal orders"
             className="overflow-hidden rounded-[14px] border border-[#E3E8EF] bg-white"

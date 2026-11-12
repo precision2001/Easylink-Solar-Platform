@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { backendAuthedFetch, forwardBackendJson } from "@/lib/server/backend-authed-fetch";
-import type { RoofDesignInputs } from "@/lib/server/auto-roof-design";
+import type { RoofDesignInputs, SavedLeadDesign } from "@/lib/server/auto-roof-design";
 import { roofJob } from "@/lib/server/roofDesignPool";
 
 export const runtime = "nodejs";
@@ -27,14 +27,14 @@ async function slot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-async function designLead(id: string): Promise<NextResponse> {
+async function designLead(id: string, saved: SavedLeadDesign | null = null): Promise<NextResponse> {
   const path = `/leads/${encodeURIComponent(id)}/roof-design`;
   const inputsRes = await backendAuthedFetch("admin", `${path}/inputs`);
   const inputsJson = (await inputsRes.json().catch(() => null)) as { success?: boolean; message?: string; data?: RoofDesignInputs } | null;
   if (!inputsRes.ok || !inputsJson?.data) {
     return NextResponse.json({ success: false, message: inputsJson?.message ?? "Could not load the lead's address." }, { status: inputsRes.status || 502 });
   }
-  const inputs = inputsJson.data;
+  const inputs = saved ? { ...inputsJson.data, saved } : inputsJson.data;
 
   let result;
   try {
@@ -46,6 +46,10 @@ async function designLead(id: string): Promise<NextResponse> {
     console.error("auto roof design failed", id, err);
     result = { status: "FAILED" as const, message: "The designer couldn't finish. Try again." };
   }
+
+  // Opus is still tracing (it takes longer than one request): keep the lead's
+  // current design and tell the page to ask again shortly.
+  if (result.status === "TRACING") return NextResponse.json({ success: false, retry: true, message: result.message }, { status: 202 });
 
   const body =
     result.status === "READY"
@@ -75,11 +79,20 @@ async function designLead(id: string): Promise<NextResponse> {
   );
 }
 
-export async function POST(_request: Request, ctx: Ctx) {
+export async function POST(request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const existing = inFlight.get(id);
-  if (existing) return (await existing).clone() as NextResponse;
-  const job = designLead(id).finally(() => inFlight.delete(id));
-  inFlight.set(id, job);
-  return (await job).clone() as NextResponse;
+  // The design staff just saved: the lead's picture is made from it (never joined to an automatic one).
+  const body = (await request.json().catch(() => null)) as { saved?: SavedLeadDesign } | null;
+  const saved = body?.saved?.roofs?.length && body.saved.panels?.length ? body.saved : null;
+  let job = saved ? undefined : inFlight.get(id);
+  if (!job) {
+    job = designLead(id, saved).finally(() => inFlight.get(id) === job && inFlight.delete(id));
+    job.catch(() => {});
+    inFlight.set(id, job);
+  }
+  // Answer inside the site's 120 s limit: a design still going keeps going
+  // (and is saved to the lead when done); the leads page asks again.
+  const done = await Promise.race([job, new Promise<null>((r) => setTimeout(() => r(null), 100_000))]);
+  if (!done) return NextResponse.json({ success: false, retry: true, message: "Still designing this roof." }, { status: 202 });
+  return done.clone() as NextResponse;
 }

@@ -18,7 +18,7 @@ import type { CustomerPortalNavKey } from "@/utils/constant";
  * bar on every screen. Pages render inside it and only own their content.
  */
 
-type NavItem = { key: CustomerPortalNavKey; label: string; href: string; icon: PortalIconName };
+type NavItem = { key: CustomerPortalNavKey; label: string; href: string; icon: PortalIconName; soon?: boolean };
 
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
@@ -26,24 +26,33 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { key: "dashboard", label: "Home", href: "/customers/dashboard", icon: "home" },
       { key: "designs", label: "My design", href: "/customers/design", icon: "design" },
-      { key: "project", label: "My project", href: "/customers/project", icon: "project" },
+      { key: "ar", label: "See it on my home", href: "/customers/see-it", icon: "sun", soon: true },
     ],
   },
   {
-    label: "Buy and pay",
+    label: "Build and price",
     items: [
+      { key: "pricing", label: "Price and rebates", href: "/customers/pricing", icon: "dollar" },
+      { key: "works", label: "Additional works", href: "/customers/works", icon: "bolt" },
       { key: "products", label: "Products", href: "/customers/products", icon: "products" },
       { key: "payments", label: "Payments", href: "/customers/payments", icon: "payments" },
     ],
   },
   {
-    label: "Stay in touch",
-    items: [{ key: "messages", label: "Messages", href: "/customers/messages", icon: "messages" }],
+    label: "Go ahead",
+    items: [
+      { key: "project", label: "My project", href: "/customers/project", icon: "project" },
+      { key: "installer", label: "My installer", href: "/customers/installer", icon: "profile" },
+      { key: "messages", label: "Messages", href: "/customers/messages", icon: "messages" },
+      { key: "voice", label: "Talk to EasyLink AI", href: "/customers/voice", icon: "spark" },
+    ],
   },
   {
     label: "After install",
     items: [
+      { key: "coach", label: "Energy coach", href: "/customers/energy-coach", icon: "leaf", soon: true },
       { key: "maintenance", label: "Maintenance plan", href: "/customers/solar-maintenance", icon: "maintenance" },
+      { key: "privacy", label: "My data and consent", href: "/customers/privacy", icon: "shield" },
       { key: "profile", label: "My account", href: "/customers/profile", icon: "profile" },
     ],
   },
@@ -85,6 +94,9 @@ function SideMenu({ active, onNavigate }: { active: CustomerPortalNavKey; onNavi
               >
                 <PortalIcon name={item.icon} size={19} className={on ? "text-[#F68A0A]" : "text-[#7F93B2] group-hover:text-[#C9D6EA]"} />
                 {item.label}
+                {item.soon ? (
+                  <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold ${on ? "bg-[#FFF4D6] text-[#7A3E00]" : "bg-white/10 text-[#C9D6EA]"}`}>Soon</span>
+                ) : null}
               </Link>
             );
           })}

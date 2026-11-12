@@ -213,7 +213,8 @@ describe("the four options quoted on the call", () => {
   it("reports payback on the system alone", () => {
     // The extras save on fuel and hot water, not on the power bill, so
     // counting them in the payback would flatter it.
-    expect(opts.map((o) => o.payback.toFixed(1))).toEqual(["3.3", "5.4", "6.1", "7.1"]);
+    // On the shared projection (3% power-price rise, 0.4% panel loss a year).
+    expect(opts.map((o) => o.payback.toFixed(1))).toEqual(["3.2", "5.1", "5.7", "6.6"]);
   });
 
   it("keeps every option inside its certificate limit", () => {

@@ -100,7 +100,7 @@ export function MasterAiQuality() {
         <section
           aria-label="Promotion rules"
           className="grid gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))" }}
         >
           {RULES.map(([title, body, bg, border]) => (
             <div

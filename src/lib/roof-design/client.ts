@@ -1,3 +1,4 @@
+import type { AiRoofTrace } from "./engine";
 /**
  * How the platform's pages (installer, customer and operations portals, the
  * website) get a system designed: they ask the Roof Designer. Platform rule
@@ -32,6 +33,9 @@ export type RoofDesignResponse =
         items: RoofDesignFace[];
         /** The AI platform's reading of the roof from the image (Opus 5.5), when it was had. */
         ai?: { ring: LatLngRing; azimuthDeg: number | null }[];
+        /** Opus's full trace (it traces every roof first): border, faces, lines, obstructions. */
+        trace?: AiRoofTrace;
+        traceLines?: { lines: number; faint: number; unconfirmed: number };
       };
       obstructions: { ring: LatLngRing; kind: "spot" | "step" }[];
       lines: { total: number; checked: number; ok: number };
@@ -53,15 +57,29 @@ export type RoofDesignResponse =
 
 /** Ask the Roof Designer for a design. Throws with the API's message on failure. */
 export async function requestRoofDesign(req: RoofDesignRequest, init?: { signal?: AbortSignal; baseUrl?: string }): Promise<RoofDesignResponse> {
-  const res = await fetch(`${init?.baseUrl ?? ""}/api/roof-design`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
-    signal: init?.signal,
-  });
-  const json = (await res.json().catch(() => ({}))) as RoofDesignResponse & { message?: string };
-  if (!res.ok) throw new Error(json.message ?? `Roof design failed (${res.status})`);
-  return json;
+  // 202: the design is still being worked on past one request's time (it
+  // keeps going on the server); ask again shortly and collect it.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${init?.baseUrl ?? ""}/api/roof-design`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+      signal: init?.signal,
+    });
+    const json = (await res.json().catch(() => ({}))) as RoofDesignResponse & { message?: string };
+    if (res.status === 202 && attempt < 8) {
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, 10_000);
+        init?.signal?.addEventListener("abort", () => {
+          clearTimeout(t);
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+      });
+      continue;
+    }
+    if (!res.ok || res.status === 202) throw new Error(json.message ?? `Roof design failed (${res.status})`);
+    return json;
+  }
 }
 
 const COMPASS = ["North", "North-east", "East", "South-east", "South", "South-west", "West", "North-west"];
@@ -111,6 +129,18 @@ export function roofDesignFor(pin: LatLng): Promise<RoofDesignResponse> {
   const e = ask(pin);
   e.used = true;
   return e.promise;
+}
+
+/** Asks again for a pin (Opus was still tracing it): the earlier answer is dropped. */
+export function refreshRoofDesign(pin: LatLng): Promise<RoofDesignResponse> {
+  early.delete(pinKey(pin));
+  return roofDesignFor(pin);
+}
+
+/** True when the design says Opus is still tracing and checking the roof. */
+export function stillTracing(d: RoofDesignResponse | null | undefined): boolean {
+  const notes = (d as { notes?: string[] } | null | undefined)?.notes ?? [];
+  return notes.some((n) => n.startsWith("Opus is still"));
 }
 
 /**
