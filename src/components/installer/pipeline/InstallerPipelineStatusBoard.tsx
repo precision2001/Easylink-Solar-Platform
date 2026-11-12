@@ -1,5 +1,6 @@
 "use client";
 
+import { customerRecordHref } from "@/components/contact-centre/api";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -79,8 +80,7 @@ export function InstallerPipelineStatusBoard() {
   }, [leads]);
 
   const shown = useMemo(
-    () =>
-      (leads ?? []).filter((lead) => !owner || lead.assignedToId === owner),
+    () => (leads ?? []).filter((lead) => !owner || lead.assignedToId === owner),
     [leads, owner],
   );
 
@@ -213,9 +213,13 @@ export function InstallerPipelineStatusBoard() {
                 return (
                   <tr key={lead.id}>
                     <td className="border-b border-[#EEF2F6] p-3">
-                      <strong className="text-[13px] text-[#0F172A]">
-                        {lead.customerName}
-                      </strong>
+                      <Link
+                        href={customerRecordHref("installers", lead.id)}
+                        title="Open customer record"
+                        className="text-[13px] text-[#0F172A] no-underline hover:text-[#1565C0] hover:underline"
+                      >
+                        <strong>{lead.customerName}</strong>
+                      </Link>
                       <br />
                       <span className="text-[12px] text-[#5B6B80]">
                         {systemLabel(lead)}
@@ -286,9 +290,13 @@ export function InstallerPipelineStatusBoard() {
                       key={lead.id}
                       className="flex flex-col gap-1 rounded-[10px] border border-[#E3E8EF] bg-white p-2.5"
                     >
-                      <strong className="text-[13px] text-[#0F172A]">
-                        {lead.customerName}
-                      </strong>
+                      <Link
+                        href={customerRecordHref("installers", lead.id)}
+                        title="Open customer record"
+                        className="text-[13px] text-[#0F172A] no-underline hover:text-[#1565C0] hover:underline"
+                      >
+                        <strong>{lead.customerName}</strong>
+                      </Link>
                       <span className="text-[12px] text-[#5B6B80]">
                         {systemLabel(lead)}
                       </span>

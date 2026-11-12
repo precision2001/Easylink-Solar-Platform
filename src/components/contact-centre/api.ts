@@ -218,3 +218,7 @@ export const phoneFmt = (n: string | null | undefined) => {
   if (local.length !== 10) return n ?? "";
   return local.startsWith("04") ? `${local.slice(0, 4)} ${local.slice(4, 7)} ${local.slice(7)}` : `${local.slice(0, 2)} ${local.slice(2, 6)} ${local.slice(6)}`;
 };
+
+/** Where a portal opens a lead's full Customer record. */
+export const customerRecordHref = (portal: Portal, leadId: string) =>
+  portal === "admin" ? `/master/customers/${leadId}` : `/installers/dashboard/customers/record/${leadId}`;

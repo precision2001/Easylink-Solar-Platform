@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { customerRecordHref } from "@/components/contact-centre/api";
 import classNames from "classnames";
 import { formatDistanceToNow } from "date-fns";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -99,7 +101,11 @@ export function InstallerLeadsWorkspace() {
   const loadSeqRef = useRef(0);
 
   const refreshList = useCallback(
-    async (opts?: { silent?: boolean; signal?: AbortSignal; force?: boolean }) => {
+    async (opts?: {
+      silent?: boolean;
+      signal?: AbortSignal;
+      force?: boolean;
+    }) => {
       const loadSeq = ++loadSeqRef.current;
       const isStale = () => loadSeq !== loadSeqRef.current;
 
@@ -113,7 +119,9 @@ export function InstallerLeadsWorkspace() {
       }
       setListError(null);
       try {
-        const result = await fetchInstallerLeads(params, { signal: opts?.signal });
+        const result = await fetchInstallerLeads(params, {
+          signal: opts?.signal,
+        });
         if (isStale()) return;
         setList(result.leads);
         setListMeta(
@@ -285,8 +293,8 @@ export function InstallerLeadsWorkspace() {
               Leads
             </h2>
             <p className="mt-1 font-dm-sans text-xs text-warm-gray">
-              Filter and manage assigned leads. Changes sync to the server
-              after you save.
+              Filter and manage assigned leads. Changes sync to the server after
+              you save.
             </p>
           </div>
           <button
@@ -401,9 +409,7 @@ export function InstallerLeadsWorkspace() {
                       key={row.id}
                       className={classNames(
                         "cursor-pointer border-b border-warm-border/80 font-dm-sans text-sm transition-colors",
-                        selected
-                          ? "bg-sky-wash/80"
-                          : "hover:bg-cream-50/90",
+                        selected ? "bg-sky-wash/80" : "hover:bg-cream-50/90",
                       )}
                       onClick={() => setSelectedId(row.id)}
                       onKeyDown={(e) => {
@@ -466,9 +472,7 @@ export function InstallerLeadsWorkspace() {
                 <button
                   type="button"
                   disabled={page >= totalPages || listLoading}
-                  onClick={() =>
-                    setPage((p) => (p < totalPages ? p + 1 : p))
-                  }
+                  onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
                   className="rounded-lg border border-warm-border bg-white px-3 py-1.5 font-medium hover:bg-cream-50 disabled:opacity-40"
                 >
                   Next
@@ -501,6 +505,12 @@ export function InstallerLeadsWorkspace() {
                 >
                   {detail.customerName}
                 </h3>
+                <Link
+                  href={customerRecordHref("installers", detail.id)}
+                  className="mt-1 inline-block font-inter text-sm font-semibold text-[#1565C0] no-underline hover:underline"
+                >
+                  Open customer record →
+                </Link>
                 {detail.customerEmail ? (
                   <p
                     className="mt-1 font-dm-sans text-sm text-warm-gray"

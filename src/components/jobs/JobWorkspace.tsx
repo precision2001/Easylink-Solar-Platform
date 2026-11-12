@@ -1,5 +1,6 @@
 "use client";
 
+import { customerRecordHref } from "@/components/contact-centre/api";
 import { CustomerRecordView } from "@/components/contact-centre/CustomerRecord";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -86,6 +87,11 @@ export function JobWorkspace({ portal, jobId, backHref }: { portal: AiPortal; jo
             {j.site.address} · {j.selection.kw.toFixed(1)} kW{j.selection.battery ? ` + ${j.selection.battery.usableKwh} kWh battery` : ""} · {aud(j.selection.price)}
           </span>
           {!customer && (j.customerEmail || j.customerPhone) && !offer && <span className="text-[12.5px] text-[#475569]">{[j.customerEmail, j.customerPhone].filter(Boolean).join(" · ")}</span>}
+          {!customer && !offer && UUID.test(j.leadId) && (
+            <Link href={customerRecordHref(v.viewer === "staff" ? "admin" : "installers", j.leadId)} className="w-fit text-[13px] font-semibold text-[#1565C0] no-underline hover:underline">
+              Open customer record →
+            </Link>
+          )}
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#5B6B80]">{customer ? "Your installer" : "Installer"}</span>
