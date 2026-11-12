@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Btn, Field, inputCls, Modal, Pill } from "@/components/jobs/ui";
-import { cc, dur, OUTCOMES, outcomeLabel, phoneFmt, when, type CallDetail as Detail, type CoachingComment, type Outcome, type Portal } from "./api";
+import { cc, dur, OUTCOMES, outcomeLabel, phoneFmt, when, type CallDetail as Detail, type CoachingComment, type Outcome, type Portal, customerRecordHref } from "./api";
 import { FollowUpForm } from "./FollowUpForm";
 
 const KIND_LABEL = { CALLBACK: "Call back", SITE_VISIT: "Site visit", TASK: "Task" } as const;
@@ -120,7 +120,7 @@ export function CallDetailModal({ portal, callId, onClose, onChanged }: { portal
                 <span className="text-[#475569]"> · {call.lead.address ?? "No address"} · {call.lead.status.replace(/_/g, " ").toLowerCase()}</span>
               </span>
               {staff && (
-                <Link href={`/master/customers/${call.lead.id}`} className="text-[13px] font-bold text-[#0B4A7A] no-underline hover:underline">
+                <Link href={customerRecordHref(portal, call.lead.id)} className="text-[13px] font-bold text-[#0B4A7A] no-underline hover:underline">
                   Open customer record
                 </Link>
               )}

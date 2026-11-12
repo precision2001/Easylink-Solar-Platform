@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { customerRecordHref } from "@/components/contact-centre/api";
 import classNames from "classnames";
 import { format, getDay, startOfWeek } from "date-fns";
 import { enUS } from "date-fns/locale";
@@ -560,6 +562,14 @@ export function InstallerScheduleCalendar() {
                 className="rounded-md border border-warm-border bg-white px-3 py-2 font-inter text-sm text-warm-ink"
               />
             </label>
+            {formState.leadId ? (
+              <Link
+                href={customerRecordHref("installers", formState.leadId)}
+                className="w-fit font-inter text-sm font-semibold text-[#1565C0] no-underline hover:underline"
+              >
+                Open customer record →
+              </Link>
+            ) : null}
             {formState.leadId ? (
               <InstallerWelcomeFollowupEmailAction
                 key={`welcome-${formState.leadId}`}
