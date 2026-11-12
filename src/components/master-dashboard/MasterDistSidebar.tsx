@@ -89,7 +89,7 @@ const GROUPS: NavGroup[] = [
     tag: "new",
     items: [
       { key: "dispatch", label: "Dispatch", icon: "send", href: "/master/dispatch" },
-      { key: "aiBookings", label: "AI bookings", icon: "spark", href: "/master/ai-bookings" },
+      { key: "easylinkContainer", label: "EasyLink container", icon: "spark", href: "/master/easylink-container" },
       { key: "jobs", label: "Jobs & Installs", icon: "box", href: "/master/jobs" },
       { key: "journeys", label: "Job journeys", icon: "route", href: "/master/job-journeys" },
       {
