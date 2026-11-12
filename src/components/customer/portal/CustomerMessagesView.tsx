@@ -45,15 +45,43 @@ function Initials({ name, tone }: { name: string; tone: "navy" | "sun" }) {
   );
 }
 
+/**
+ * Before an installer is assigned there is no conversation to open, but the
+ * design still shows the two-column frame — a list on the left and the thread
+ * pane on the right. Rendering the same frame here, with the explanation
+ * inside the thread pane, keeps the page recognisably the same screen rather
+ * than swapping to a different one-off layout.
+ */
 export function NoConversationYet() {
   return (
-    <div className="grid gap-5 lg:grid-cols-[1.25fr_1fr]">
-      <Panel title="Your installer chat">
+    <div className="grid min-h-0 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <section
+        aria-label="Conversations"
+        className="flex min-w-0 flex-col gap-2 self-start rounded-[14px] border border-[#E3E8EF] bg-white p-3"
+      >
+        <h2 className="m-0 px-2 pt-2 pb-1 font-source-sans text-[22px] font-bold text-[#0F172A]">
+          Messages
+        </h2>
+        <p className="m-1.5 text-[12px] text-[#5B6B80]">
+          You can message an installer once they&rsquo;re assigned to your
+          project.
+        </p>
+      </section>
+
+      <section
+        aria-label="Conversation"
+        className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]"
+      >
         <EmptyNote icon="messages" title="Your installer chat opens once your job is booked">
-          When EasyLink books your installation, your accredited installer is linked to your account and a conversation with them appears here. You can send
-          messages, photos of your switchboard or roof, and start a call.
+          When EasyLink books your installation, your accredited installer is
+          linked to your account and a conversation with them appears here. You
+          can send messages, photos of your switchboard or roof, and start a
+          call.
         </EmptyNote>
-        <p className="m-0 text-[14px] leading-[1.55] text-[#475569]">Have a question before then? EasyLink AI can answer most things straight away, or our team can help.</p>
+        <p className="m-0 text-[14px] leading-[1.55] text-[#475569]">
+          Have a question before then? EasyLink AI can answer most things
+          straight away, or our team can help.
+        </p>
         <div className="flex flex-wrap gap-2.5">
           <button
             type="button"
@@ -67,23 +95,18 @@ export function NoConversationYet() {
             Contact the EasyLink team
           </ButtonLink>
         </div>
-      </Panel>
 
-      <section aria-labelledby="ask-now" className="flex flex-col gap-4 rounded-[22px] bg-[#0B1A2E] p-6 text-white sm:p-7">
-        <p className="m-0 flex items-center gap-2 text-[13px] font-bold text-[#FFE866]">
-          <PortalIcon name="spark" size={16} />
-          EasyLink AI, any time of day
-        </p>
-        <h2 id="ask-now" className="m-0 font-source-sans text-[24px] font-extrabold leading-[1.2]">
-          Ask while you wait
-        </h2>
-        <div className="flex flex-col gap-2">
+        <div className="mt-1 flex flex-col gap-2 rounded-[12px] bg-[#0B1A2E] p-4 text-white">
+          <p className="m-0 flex items-center gap-2 text-[13px] font-bold text-[#FFE866]">
+            <PortalIcon name="spark" size={16} />
+            Ask while you wait
+          </p>
           {PRE_JOB_QUESTIONS.map((q) => (
             <button
               key={q}
               type="button"
               onClick={() => askEasylinkAi(q)}
-              className="flex min-h-[46px] items-center gap-3 rounded-[12px] border border-[#3E5A80] px-3.5 text-left text-[14px] font-semibold text-white hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFE866]"
+              className="flex min-h-[44px] items-center gap-3 rounded-[10px] border border-[#3E5A80] px-3.5 text-left text-[14px] font-semibold text-white hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFE866]"
             >
               <span className="flex-1">{q}</span>
               <PortalIcon name="arrow" size={16} className="text-[#FFE866]" />
@@ -94,7 +117,6 @@ export function NoConversationYet() {
     </div>
   );
 }
-
 function displayName(u: CustomerUser | null) {
   const n = [u?.firstName?.trim(), u?.lastName?.trim()].filter(Boolean).join(" ");
   return n || "You";
@@ -175,7 +197,7 @@ export function CustomerMessagesView({ user }: { user: CustomerUser | null }) {
         aria-label="Conversations"
         className={`flex min-w-0 flex-col gap-2 self-start rounded-[20px] border border-[#E2E8F0] bg-white p-3 ${phonePane === "thread" ? "hidden lg:flex" : "flex"}`}
       >
-        <h2 className="m-0 px-2 pb-1 pt-2 text-[15px] font-bold text-[#0F172A]">Conversations</h2>
+        <h2 className="m-0 px-2 pt-2 pb-1 font-source-sans text-[22px] font-bold text-[#0F172A]">Messages</h2>
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {chat.contacts.map((c) => {
             const on = c.id === activeId;
@@ -210,6 +232,10 @@ export function CustomerMessagesView({ user }: { user: CustomerUser | null }) {
             );
           })}
         </ul>
+        <p className="m-1.5 text-[12px] text-[#5B6B80]">
+          You can message an installer once they&rsquo;re assigned to your
+          project.
+        </p>
         <div className="mt-1 border-t border-[#E2E8F0] px-2 pt-3">
           <button
             type="button"
@@ -252,8 +278,54 @@ export function CustomerMessagesView({ user }: { user: CustomerUser | null }) {
             <PortalIcon name="spark" size={15} />
             Help me write
           </button>
+          {/* The mock's two call buttons. Both open the same LiveKit call —
+              startCall() takes no mode, and the camera is turned on once
+              connected, so "Video call" starts with it enabled. */}
+          <button
+            type="button"
+            onClick={() => void chat.voiceCall.startCall()}
+            disabled={!live || callLive}
+            className="hidden min-h-[40px] items-center rounded-[10px] border border-[#CBD5E1] bg-white px-3 text-[13px] font-semibold text-[#0F172A] hover:border-[#64748B] disabled:cursor-not-allowed disabled:opacity-40 sm:flex"
+          >
+            Call
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void chat.voiceCall.startCall();
+              void chat.voiceCall.toggleCamera();
+            }}
+            disabled={!live || callLive || !chat.voiceCall.hasVideoDevice}
+            className="hidden min-h-[40px] items-center rounded-[10px] border border-[#CBD5E1] bg-white px-3 text-[13px] font-semibold text-[#0F172A] hover:border-[#64748B] disabled:cursor-not-allowed disabled:opacity-40 sm:flex"
+          >
+            Video call
+          </button>
         </header>
 
+        {/* The mock's AI notice. EasyLink AI is real and reachable from
+            every screen, so "Talk to a person" opens this same thread with
+            the installer rather than pretending to route a handover. */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#9CCFF3] bg-[#EEF7FE] px-3 py-2.5 text-[13px] sm:px-5">
+          <span className="min-w-65 flex-1">
+            Some replies come from our AI assistant and are marked{" "}
+            <strong>AI</strong>. Ask &ldquo;why&rdquo; about any decision, or
+            reach a person any time.
+          </span>
+          <button
+            type="button"
+            onClick={() => setPhonePane("thread")}
+            className="h-9 rounded-lg bg-[#0B4A7A] px-3 text-[13px] font-semibold text-white"
+          >
+            Talk to a person
+          </button>
+          <button
+            type="button"
+            onClick={() => askEasylinkAi("How does EasyLink use AI in my messages?")}
+            className="text-[13px] font-semibold text-[#1565C0]"
+          >
+            How we use AI
+          </button>
+        </div>
         <ChatThreadScrollPane scrollKey={scrollKey} className="bg-[#FAFBFD]">
           {!chat.conversationReady ? (
             <p className="m-0 py-6 text-center text-[14px] text-[#5B6B80]">Opening your conversation…</p>

@@ -3385,7 +3385,13 @@ export type CustomerPortalNavKey =
   | "messages"
   | "products"
   | "payments"
-  | "profile";
+  | "profile"
+  /**
+   * In the top bar from the CustNav design, but with no page or data behind
+   * them yet — see CustomerTopNav, which renders these as inert.
+   */
+  | "energy"
+  | "vpp";
 
 export const CUSTOMER_PORTAL = {
   title: "My Solar Portal",

@@ -69,8 +69,17 @@ export type PublicProductRow = BackendProduct & {
  * Every active product in the catalogue, all categories. The API pages at
  * 100 rows, so this walks the pages (the catalogue is a few hundred rows).
  */
+/**
+ * Every active product, read a page at a time.
+ *
+ * Rows are keyed by id as they arrive. The backend orders by createdAt with
+ * id as a tiebreaker, so pages should not overlap — but a paginated read is
+ * several round trips, and a product created between them would shift the
+ * window and repeat a row. Callers render these by id, and React throws on a
+ * duplicate key, so the guarantee is made here rather than at each call site.
+ */
 export async function fetchAllActiveProductRows(): Promise<PublicProductRow[]> {
-  const rows: PublicProductRow[] = [];
+  const byId = new Map<string, PublicProductRow>();
   for (let page = 1; page <= 20; page++) {
     const res = await fetch(`/api/products?limit=100&page=${page}&active=true`, {
       cache: "no-store",
@@ -78,11 +87,14 @@ export async function fetchAllActiveProductRows(): Promise<PublicProductRow[]> {
     const json = (await res.json()) as CatalogApiEnvelope<PublicProductRow[]>;
     if (!res.ok) throw new Error(json.message || "Failed to load products");
     const batch = Array.isArray(json.data) ? json.data : [];
-    rows.push(...batch);
+    for (const row of batch) {
+      // First write wins: an earlier page is the more stable position.
+      if (!byId.has(row.id)) byId.set(row.id, row);
+    }
     const totalPages = json.meta?.pagination?.totalPages ?? 1;
     if (batch.length === 0 || page >= totalPages) break;
   }
-  return rows;
+  return [...byId.values()];
 }
 
 /** Every active product for the customer portal; best sellers first, then category and name. */

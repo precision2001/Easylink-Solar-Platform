@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import { askEasylinkAi } from "@/components/ai-chat/EasylinkAiChatbot";
 import { ProjectWorkspace } from "@/components/ai/ProjectWorkspace";
 import { useCustomerProjectJourney } from "@/components/customer/dashboard/useCustomerProjectJourney";
-import { CustomerPortalShell, PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { CustomerTopNav } from "@/components/customer/portal/CustomerTopNav";
+import {
+  phasesFromMilestones,
+  ProjectDocuments,
+  ProjectPhaseCards,
+  WhatWeNeedPanel,
+  WhoDoesWhat,
+} from "@/components/customer/project/ProjectMockSections";
 import { PortalIcon } from "@/components/customer/portal/PortalIcon";
 import { ButtonLink, EmptyNote, Panel, Skeleton } from "@/components/customer/portal/PortalParts";
 import { MyJob } from "@/components/jobs/JobWorkspace";
@@ -95,13 +103,16 @@ export default function CustomerProjectPage() {
   const lastDone = [...milestones].reverse().find((m) => m.state === "completed" && m.completedAt);
 
   return (
-    <CustomerPortalShell active="project">
+    <div className="flex min-h-screen flex-col bg-[#F4F6FA] text-[#0F172A]">
+      <CustomerTopNav active="project" />
+      <main className="mx-auto flex w-full max-w-[1240px] flex-col gap-[18px] px-6 pt-6 pb-14">
       <PortalPageHeader
         eyebrow={pct !== null ? `Your project is ${pct}% complete` : "Your installation"}
         title="My project"
         intro="Your installation step by step, and every document, photo and certificate from EasyLink and your installer."
       />
 
+      <WhatWeNeedPanel />
       {journeyLoading ? (
         <div className="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
           <Skeleton className="h-[420px]" />
@@ -193,6 +204,15 @@ export default function CustomerProjectPage() {
         </div>
       )}
 
+      {/* The mock's four phase cards, grouped from the real milestones. */}
+      {milestones.length > 0 ? (
+        <ProjectPhaseCards phases={phasesFromMilestones(milestones)} />
+      ) : null}
+
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        <ProjectDocuments designHref="/customers/design" />
+        <WhoDoesWhat />
+      </div>
       <section aria-labelledby="files-title" className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
           <h2 id="files-title" className="m-0 font-source-sans text-[24px] font-extrabold text-[#0F172A]">
@@ -213,6 +233,7 @@ export default function CustomerProjectPage() {
           </Panel>
         )}
       </section>
-    </CustomerPortalShell>
+      </main>
+    </div>
   );
 }
