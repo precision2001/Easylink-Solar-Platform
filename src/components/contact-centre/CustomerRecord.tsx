@@ -6,6 +6,7 @@ import { cc, day, outcomeLabel, phoneFmt, when, type CustomerRecord as Rec, type
 import { CallDetailModal } from "./CallDetail";
 import { FollowUpForm } from "./FollowUpForm";
 import { CustomerAiSummary } from "./LiveCalls";
+import { CustomerProposal } from "./CustomerProposal";
 
 const KIND_LABEL = { CALLBACK: "Call back", SITE_VISIT: "Site visit", TASK: "Task" } as const;
 const FILTERS: { key: string; label: string; kinds: TimelineItem["kind"][] }[] = [
@@ -139,6 +140,8 @@ export function CustomerRecordView({ portal, leadId, compact }: { portal: Portal
           </div>
         </section>
       )}
+
+      {!compact && <CustomerProposal portal={portal} leadId={leadId} lead={{ name: l.name, email: l.email, phone: l.phone, address: l.address }} />}
 
       <div className={`grid grid-cols-1 items-start gap-4 ${compact ? "" : "lg:grid-cols-[1fr_360px]"}`}>
         <section className="order-2 flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-5 lg:order-1">
