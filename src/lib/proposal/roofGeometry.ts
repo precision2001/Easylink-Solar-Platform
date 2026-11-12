@@ -5,9 +5,9 @@
  * Built from what the designer saved — the faces it packed on, the panels
  * where it placed them, the panel size — so each proposal draws its own roof.
  */
-import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
 import type { DesignProposalSolarDesign } from "@/lib/store/designProposalSlice";
 import type { SolarPanel } from "@/types/solar";
+import { panelCorners, standardHipFaces } from "@/lib/roof-design";
 
 type LatLng = { lat: number; lng: number };
 export type XY = { x: number; y: number };
@@ -52,23 +52,9 @@ export function toXY(p: LatLng, c: LatLng): XY {
   };
 }
 
-/** Same corners the designer's map draws (long side up the slope in portrait). */
+/** Same corners the designer's map draws (the shared roof-design geometry), in metres around `c`. */
 export function panelCornersXY(p: SolarPanel, dims: { heightM: number; widthM: number }, c: LatLng): XY[] {
-  const longSide = Math.max(dims.heightM, dims.widthM);
-  const shortSide = Math.min(dims.heightM, dims.widthM);
-  const land = p.orientation === "LANDSCAPE";
-  const hh = ((land ? shortSide : longSide) / 2) * Math.cos(((p.slopeDegrees ?? 0) * Math.PI) / 180);
-  const hw = (land ? longSide : shortSide) / 2;
-  const a = ((p.rotationDegrees ?? 0) * Math.PI) / 180;
-  const co = Math.cos(a);
-  const si = Math.sin(a);
-  const o = toXY(p.center, c);
-  return [
-    [-hw, hh],
-    [hw, hh],
-    [hw, -hh],
-    [-hw, -hh],
-  ].map(([x, y]) => ({ x: o.x + x * co - y * si, y: o.y + x * si + y * co }));
+  return panelCorners(p, dims).map((q) => toXY(q, c));
 }
 
 function centroid(points: XY[]): XY {
@@ -97,7 +83,7 @@ export function buildRoofDrawing(sd: DesignProposalSolarDesign | null | undefine
   let faceRings: { ring: LatLng[]; azimuthDeg?: number }[] = (sd.roofFaces ?? []).filter((f) => f.ring.length >= 3);
   if (faceRings.length === 0 && outlines.length > 0) {
     try {
-      faceRings = splitRoofsIntoFaces(outlines).map((f) => ({ ring: f.ring }));
+      faceRings = standardHipFaces(outlines).map((f) => ({ ring: f.ring }));
     } catch {
       faceRings = [];
     }

@@ -2,6 +2,7 @@
 
 import { askEasylinkAi } from "@/components/ai-chat/EasylinkAiChatbot";
 import { ProductImageTile } from "@/components/customer/products/ProductImageTile";
+import { ProductDocumentLinks } from "@/components/products/ProductDocumentLinks";
 import { PortalIcon } from "@/components/customer/portal/PortalIcon";
 import { formatOptionPrice } from "@/lib/customers/design-options";
 import { SHOP_CATEGORY_LABEL, productQuestion, type DesignSystemSize, type ShopProduct } from "@/lib/customers/shop-products";
@@ -46,6 +47,7 @@ export function ShopProductCard({
           {specLine(product)}
         </p>
         <h3 className="m-0 line-clamp-2 text-[15px] font-bold leading-[1.35] sm:text-[15.5px] text-[#0F172A] [overflow-wrap:anywhere]">{product.fullName}</h3>
+        <ProductDocumentLinks specs={product.specs} label={product.fullName} className="text-[12.5px]" linkClassName="font-semibold text-[#1D4ED8]" />
         {product.rating ? (
           <p className="m-0 flex items-center gap-1 text-[13px] text-[#475569]">
             <svg viewBox="0 0 20 20" className="size-4 text-[#F68A0A]" aria-hidden="true">

@@ -14,9 +14,12 @@ export type AfterpayConfig = {
   /** Minor units (cents). Null means Afterpay did not state a bound. */
   min: number | null;
   max: number | null;
+  /** The percentage built into Afterpay sale prices. */
+  pricePercent: number;
+  priceFixedMinor: number;
 };
 
-const UNAVAILABLE: AfterpayConfig = { configured: false, min: null, max: null };
+const UNAVAILABLE: AfterpayConfig = { configured: false, min: null, max: null, pricePercent: 0, priceFixedMinor: 0 };
 
 function backendBaseUrl(): string | null {
   const url = process.env.NEXT_PUBLIC_BACKEND_API_BASE_URL;
@@ -47,6 +50,8 @@ export function fetchAfterpayConfig(): Promise<AfterpayConfig> {
         configured: data.configured,
         min: typeof data.min === "number" ? data.min : null,
         max: typeof data.max === "number" ? data.max : null,
+        pricePercent: typeof data.pricePercent === "number" ? data.pricePercent : 0,
+        priceFixedMinor: typeof data.priceFixedMinor === "number" ? data.priceFixedMinor : 0,
       };
     })
     // Afterpay being unreachable must never break the catalogue — it just
@@ -75,6 +80,8 @@ export function fetchZipConfig(): Promise<AfterpayConfig> {
         configured: data.configured,
         min: typeof data.min === "number" ? data.min : null,
         max: typeof data.max === "number" ? data.max : null,
+        pricePercent: typeof data.pricePercent === "number" ? data.pricePercent : 0,
+        priceFixedMinor: typeof data.priceFixedMinor === "number" ? data.priceFixedMinor : 0,
       };
     })
     .catch(() => UNAVAILABLE);

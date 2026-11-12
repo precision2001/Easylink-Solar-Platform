@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ai,
   AiNotConnectedError,
+  AiSignedOutError,
   LABEL_NAMES,
   ROLE_NAMES,
   timeAgo,
@@ -58,12 +59,31 @@ export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPor
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [files, setFiles] = useState<ProjectFile[] | null>(null);
   const [history, setHistory] = useState<HistoryLine[] | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "offline" | "denied" | "error">("loading");
+  const [state, setState] = useState<"loading" | "ready" | "offline" | "denied" | "signedOut" | "error">("loading");
   const [message, setMessage] = useState<MessageCopyView | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    Promise.all([ai.project(portal, project), ai.projectFiles(portal, project), ai.projectHistory(portal, project), ai.projectItems(portal, project).catch(() => ({ items: [], kinds: [] }))])
+    // A slow or briefly unavailable AI platform (cold start, deploy) shouldn't blank the panel:
+    // retry the project itself, and let files, history and items fall back to empty.
+    const isFinal = (e: unknown) => e instanceof AiNotConnectedError || e instanceof AiSignedOutError || (e instanceof Error && /Not your|403|404/.test(e.message));
+    const retry = async <T,>(fn: () => Promise<T>, tries = 3): Promise<T> => {
+      for (let i = 1; ; i++) {
+        try {
+          return await fn();
+        } catch (e) {
+          if (i >= tries || isFinal(e)) throw e;
+          await new Promise((r) => setTimeout(r, 600 * i));
+        }
+      }
+    };
+    const soft = <T,>(fn: () => Promise<T>, empty: T) => retry(fn, 2).catch(() => empty);
+    Promise.all([
+      retry(() => ai.project(portal, project)),
+      soft(() => ai.projectFiles(portal, project), [] as ProjectFile[]),
+      soft(() => ai.projectHistory(portal, project), [] as HistoryLine[]),
+      soft(() => ai.projectItems(portal, project), { items: [], kinds: [] } as ItemsView),
+    ])
       .then(([d, f, h, it]) => {
         setDetail(d);
         setItems(it);
@@ -73,6 +93,7 @@ export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPor
       })
       .catch((e: unknown) => {
         if (e instanceof AiNotConnectedError) setState("offline");
+        else if (e instanceof AiSignedOutError) setState("signedOut");
         else if (e instanceof Error && /Not your|403/.test(e.message)) setState("denied");
         else setState("error");
       });
@@ -107,9 +128,25 @@ export function ProjectWorkspace({ portal, project, onChanged }: { portal: AiPor
         Files and history will appear here once the EasyLink AI platform is connected.
       </div>
     );
+  if (state === "signedOut") return <SignedOutNotice />;
   if (state === "denied")
     return <div className="rounded-[14px] border border-[#E3E8EF] bg-white p-6 text-[14px] text-[#334155]">This project isn&apos;t assigned to you.</div>;
-  if (state === "error" || !detail) return <div className="rounded-[14px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-[14px] text-[#991B1B]">Couldn&apos;t load this project.</div>;
+  if (state === "error" || !detail)
+    return (
+      <div className="flex flex-wrap items-center gap-3 rounded-[14px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-[14px] text-[#991B1B]">
+        <span className="flex-1">Couldn&apos;t load this customer right now.</span>
+        <button
+          type="button"
+          onClick={() => {
+            setState("loading");
+            load();
+          }}
+          className="rounded-[10px] border border-[#991B1B] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#991B1B] hover:bg-[#FEE2E2]"
+        >
+          Try again
+        </button>
+      </div>
+    );
 
   const counts = { everything: items?.items.length ?? 0, files: files?.length ?? 0, history: history?.length ?? 0, installer: detail.installerHistory.length };
 
@@ -514,9 +551,70 @@ function MessageDrawer({ m, onClose, onOpenFile }: { m: MessageCopyView; onClose
   );
 }
 
+function SignedOutNotice() {
+  const from = typeof window === "undefined" ? "" : `${window.location.pathname}${window.location.search}`;
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-[14px] border border-[#FCD34D] bg-[#FFFBEB] p-4 text-[14px] text-[#92400E]">
+      <span className="flex-1">Your sign-in has expired. Sign in again to see this customer.</span>
+      <a
+        href={`/installers/auth?from=${encodeURIComponent(from)}`}
+        className="rounded-[10px] border border-[#92400E] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#92400E] hover:bg-[#FEF3C7]"
+      >
+        Sign in
+      </a>
+    </div>
+  );
+}
+
+type BrowserRow = { ref: RecordRef; name: string; address: string; status: string; installers: { id: string; name: string }[] };
+/** One person in the list: their customer record and any lead records for the same name and address. */
+type Person = { key: string; name: string; address: string; status: string; installers: { id: string; name: string }[]; records: BrowserRow[] };
+
+const ADDRESS_WORDS: Record<string, string> = { avenue: "ave", street: "st", road: "rd", circuit: "cct", drive: "dr", place: "pl", court: "ct", crescent: "cres", parade: "pde", highway: "hwy", lane: "ln", terrace: "tce", boulevard: "blvd", close: "cl" };
+const normName = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+const normAddress = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/,?\s*australia\s*$/, "")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => ADDRESS_WORDS[w] ?? w)
+    .join(" ");
+const RECORD_ORDER: Record<string, number> = { customer: 0, lead: 1 };
+
+/** Folds lead and customer records for the same person into one row; the customer record comes first. */
+function groupPeople(rows: BrowserRow[]): Person[] {
+  const byKey = new Map<string, Person>();
+  for (const r of rows) {
+    const key = r.name.trim() ? `${normName(r.name)}|${normAddress(r.address)}` : `${r.ref.type}:${r.ref.id}`;
+    const p = byKey.get(key);
+    if (p) p.records.push(r);
+    else byKey.set(key, { key, name: r.name, address: r.address, status: r.status, installers: [], records: [r] });
+  }
+  return [...byKey.values()].map((p) => {
+    p.records.sort((a, b) => (RECORD_ORDER[a.ref.type] ?? 2) - (RECORD_ORDER[b.ref.type] ?? 2));
+    const main = p.records[0];
+    const seen = new Set<string>();
+    return {
+      ...p,
+      name: main.name,
+      address: main.address,
+      status: p.records.find((r) => r.status)?.status ?? "",
+      installers: p.records.flatMap((r) => r.installers).filter((i) => !seen.has(i.id) && seen.add(i.id)),
+    };
+  });
+}
+const recordLabel = (records: BrowserRow[], r: BrowserRow) => {
+  const same = records.filter((x) => x.ref.type === r.ref.type);
+  const base = r.ref.type === "customer" ? "Customer" : r.ref.type === "lead" ? "Lead" : r.ref.type;
+  return same.length > 1 ? `${base} ${same.indexOf(r) + 1}` : base;
+};
+const sameRef = (a: RecordRef | null, b: RecordRef) => !!a && a.type === b.type && a.id === b.id;
+
 /** A list of projects on the left, the chosen one on the right (installer and master portals). */
 export function ProjectBrowser({ portal, title }: { portal: AiPortal; title: string }) {
-  const [rows, setRows] = useState<{ ref: RecordRef; name: string; address: string; status: string; installers: { id: string; name: string }[] }[] | null>(null);
+  const [rows, setRows] = useState<BrowserRow[] | null>(null);
   const [selected, setSelected] = useState<RecordRef | null>(null);
   const [q, setQ] = useState("");
   const [state, setState] = useState<"loading" | "ready" | "offline" | "error">("loading");
@@ -528,7 +626,7 @@ export function ProjectBrowser({ portal, title }: { portal: AiPortal; title: str
         .then((r) => {
           setRows(r);
           setState("ready");
-          setSelected((s) => s ?? r[0]?.ref ?? null);
+          setSelected((s) => s ?? groupPeople(r)[0]?.records[0]?.ref ?? null);
         })
         .catch((e: unknown) => setState(e instanceof AiNotConnectedError ? "offline" : "error")),
     [portal],
@@ -538,7 +636,9 @@ export function ProjectBrowser({ portal, title }: { portal: AiPortal; title: str
     return () => clearTimeout(t);
   }, [load]);
 
-  const filtered = (rows ?? []).filter((r) => portal === "admin" || !q || `${r.name} ${r.address}`.toLowerCase().includes(q.toLowerCase()));
+  const people = useMemo(() => groupPeople(rows ?? []), [rows]);
+  const filtered = people.filter((r) => portal === "admin" || !q || `${r.name} ${r.address}`.toLowerCase().includes(q.toLowerCase()));
+  const current = people.find((p) => p.records.some((r) => sameRef(selected, r.ref)));
 
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 px-4 py-5 md:px-8 md:py-6">
@@ -568,24 +668,49 @@ export function ProjectBrowser({ portal, title }: { portal: AiPortal; title: str
           <nav aria-label="Customers" className="flex max-h-[75vh] w-full flex-col gap-1 overflow-y-auto rounded-[14px] border border-[#E3E8EF] bg-white p-2 md:w-[300px]">
             {filtered.length === 0 && <span className="p-3 text-[13px] text-[#475569]">{portal === "installer" ? "No customers are assigned to you yet." : "No customers found."}</span>}
             {filtered.map((r) => {
-              const on = selected?.type === r.ref.type && selected.id === r.ref.id;
+              const on = r === current;
               return (
                 <button
-                  key={`${r.ref.type}:${r.ref.id}`}
+                  key={r.key}
                   type="button"
-                  onClick={() => setSelected(r.ref)}
+                  onClick={() => setSelected(r.records[0].ref)}
                   aria-current={on ? "true" : undefined}
                   className="flex flex-col items-start gap-0.5 rounded-[10px] px-3 py-2 text-left"
                   style={{ background: on ? "#EEF7FE" : "transparent" }}
                 >
                   <span className="text-[14px] font-semibold text-[#0F172A]">{r.name || "Unnamed"}</span>
                   <span className="text-[12px] text-[#5B6B80]">{r.address}</span>
+                  {r.status && <span className="text-[11.5px] font-semibold capitalize text-[#0B4A7A]">{r.status.replace(/_/g, " ").toLowerCase()}</span>}
                   {portal === "admin" && <span className="text-[11.5px] text-[#475569]">{r.installers.map((i) => i.name).join(", ") || "No installer"}</span>}
                 </button>
               );
             })}
           </nav>
-          <div className="min-w-0 flex-[1_1_560px]">{selected ? <ProjectWorkspace key={`${selected.type}:${selected.id}`} portal={portal} project={selected} onChanged={() => void load(portal === "admin" ? q : "")} /> : null}</div>
+          <div className="flex min-w-0 flex-[1_1_560px] flex-col gap-3">
+            {current && current.records.length > 1 && (
+              <div role="tablist" aria-label="Records for this customer" className="flex flex-wrap items-center gap-2 text-[13px]">
+                <span className="text-[#5B6B80]">Records:</span>
+                {current.records.map((rec) => {
+                  const on = sameRef(selected, rec.ref);
+                  return (
+                    <button
+                      key={`${rec.ref.type}:${rec.ref.id}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={on}
+                      onClick={() => setSelected(rec.ref)}
+                      className="rounded-full border px-3 py-1 font-semibold"
+                      style={{ background: on ? "#0B4A7A" : "white", color: on ? "white" : "#0B4A7A", borderColor: "#0B4A7A" }}
+                    >
+                      {recordLabel(current.records, rec)}
+                      {rec.status ? ` · ${rec.status.replace(/_/g, " ").toLowerCase()}` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {selected ? <ProjectWorkspace key={`${selected.type}:${selected.id}`} portal={portal} project={selected} onChanged={() => void load(portal === "admin" ? q : "")} /> : null}
+          </div>
         </div>
       )}
     </div>

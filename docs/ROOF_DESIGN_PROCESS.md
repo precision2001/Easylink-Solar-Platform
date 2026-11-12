@@ -6,6 +6,33 @@ St, Lidcombe (Oct 2026). Code lives in `src/lib/designer/`. **Keep the
 lessons log at the bottom up to date**: every time a roof comes out wrong,
 write down what happened, why, and what changed in the code.
 
+## Most important rule — visible lines and visible intersections (owner, 9 Nov 2026)
+
+On every roof, first identify the **visible lines** (hips, ridges, valleys,
+steps, box edges seen in the zoom-21 image) and the **visible intersections**
+(where two or more of them meet, or meet the border). Faces follow them.
+- **Flat roofs (under 5°):** only visible lines are roof lines. Sections are
+  the closed shapes the visible lines make; no visible line between two
+  intersection points, no split (`flatSectionsFromLines`).
+- **Pitched roofs (owner's choice (a), shown on g25):** a line the roof's
+  shape needs stays even where it shows only faintly, marked "check on
+  site" — dropping it put panels across real hips (55 panels instead of 47,
+  several across two slopes).
+
+### Shadows (owner, 9 Nov 2026, 66 Frances St townhouse row)
+
+A shadow on a roof means something higher stands beside it, on the sun side
+(north in Sydney imagery, shadows fall roughly south). **Roof lines take
+priority**: trace the edge that casts the shadow. If that edge meets the
+border or another roof line at an intersection point, it is a **roof line**
+(a step, a raised box, a parapet) and its section is traced with all its
+corners. Only a shadow whose casting edge connects to no other line (a
+vent, whirlybird, air-conditioner, antenna) is an **obstruction**. A shadow
+from something off the roof (a neighbour's wall, a tree) is shading, not a
+line. Lesson: on the row the four raised boxes were boxed as obstructions
+from their shadow triangles; traced as roof lines they gave 7 sections and
+18 intersection points.
+
 ## Top priority — never missed (owner's rule, 30 Oct 2026)
 
 Every design, by hand or on the live page, whatever found the roof:
@@ -19,6 +46,23 @@ Every design, by hand or on the live page, whatever found the roof:
    100 mm clear of every line of that face and of the outline. The live page
    checks this last, after any packer or Beautify (`keepPanelsClear` in
    `panelClearance.ts`), and removes any panel that fails.
+4. **Intersection points (owner's rule, 9 Nov 2026).** Every point where two
+   or more roof lines meet — an apex, hips meeting a ridge, a wing's ridge
+   meeting a valley — is ONE point shared by all those lines, placed where
+   they meet in the image. It is fitted once for all its lines (up to 1 m,
+   only on a clear 10% better match), never line by line; lines stay
+   straight and connected, faces simple and inside the roof. Applied last
+   in `findRoofFaces`, so every page and API gets it
+   (`DESIGN_RULES.roofJunctions`, `src/lib/roof-design/junctions.ts`).
+5. **Visible lines only on flat roofs (owner's rule, 9 Nov 2026).** If there
+   is no visible roof line connecting two intersection points, there is no
+   split. A roof can be flat: under 5° (`DESIGN_RULES.flatRoofMaxPitchDeg`)
+   a line between faces stays only where the image shows it (a brightness
+   step or capping line clearly stronger than the roof beside it); faces
+   either side of an unseen line are one face, and a roof with no visible
+   lines is one flat face (`src/lib/roof-design/visibleLines.ts`). Pitched
+   roofs keep their hips even where the image shows them faintly — a panel
+   must never sit across one.
 
 ## Rules (always)
 
@@ -30,6 +74,8 @@ Every design, by hand or on the live page, whatever found the roof:
 | Rows parallel to the main walls (alignment rule) | snap within 30° | `alignmentSnapDeg` |
 | Roof lines straight: along the walls, square to them, or at 45° | snap within 20° | `regularizeRoofOutlines` |
 | Line check against the image | ±100 mm | `roofLineToleranceM` |
+| Intersection points: one shared point per junction, fitted to the image for all its lines | up to 1 m | `roofJunctions` |
+| Flat roof: only visible lines split faces; none visible = one face | under 5° | `flatRoofMaxPitchDeg` |
 | Panel : inverter limit — hybrid inverter or battery / standard | 200% / 133% | `dcAcLimitPercent` |
 | Export limit (Ausgrid, Endeavour) | 10 kW per phase | `exportLimitKwPerPhase` |
 
@@ -136,9 +182,243 @@ Every design, by hand or on the live page, whatever found the roof:
    (665 kW). The walkways also give access for maintenance and the wind
    edge zones that commercial roofs need.
 
+## Priority tests — how the Roof Designer chooses (owner, 5 Nov 2026)
+
+"The order should not matter, the roof lines have to be 100% determined
+because they will actually determine the faces and borders of the roof."
+Every reading of a roof — whole or split by level, each outline variant
+(as traced, walls squared, steps merged, walls lined up with the image's
+square outline), trigonometry or height model — is scored on the same tests,
+in this priority (`compareEvidence` in `engine.ts`):
+
+1. **Google**: its faces match Google's segments *inside that roof* (share of
+   roof facing each wall direction, within 10%).
+2. **The image, both ways**: metres of its hips, valleys and ridges not seen
+   in the image, plus metres of lines the image shows on the roof that its
+   face borders don't explain (`roofLineEvidence.ts`; obstructions such as
+   existing panels left out). Compared in 2 m bands.
+3. Closest to Google.
+
+Hard rules alongside the tests:
+- Wall *positions* come from the image's square-walled outline (alternative
+  measurements of the same walls are settled by the confirmed square-roof
+  rule); the tests decide *structure* — splits, steps, faces.
+- A step stays only when the lines it adds are seen in the image; notches
+  and tabs (short runs beside short runs) are merged away.
+- A new structure (split, step, cleaned trace) needs 80% of its lines seen.
+- The height model is used only where no trigonometry reading is confirmed:
+  its lines are fitted to the image before being checked against it.
+- A roof whose reading fails these is reported **not determined** (page,
+  API `determined: false`, design notes) with Relook / Edit offered.
+
+## Speed — how a design gets to the customer fast (6 Nov 2026)
+
+- **Address cache** (`src/lib/server/roofDataCache.ts`): Google Solar's
+  estimate and data-layer files, the zoomed satellite images, the land lot and
+  the building footprint are kept on the server by address for up to 30 days
+  (size-capped, oldest first out; `ROOF_DATA_CACHE_DIR`,
+  `ROOF_DATA_CACHE_MAX_MB`). The Designs page's data routes and the Roof
+  Designer share it. Data-layer links expire within the hour, so files are
+  kept by address and layer, with the link → file mapping recorded when the
+  links are issued.
+- **Kept designs**: `POST /api/roof-design` keeps finished designs by
+  address, options and `ROOF_ENGINE_VERSION` (bump it whenever the engine's
+  decisions change). A kept design costs no rate limit. An outline given by a
+  person is its own entry.
+- **Start early**: the address step asks the Roof Designer as soon as the pin
+  settles (`roofDesignFor`); the roof step uses that design's outline and
+  reads faces locally, running the outline search itself only if the design
+  can't be had (45 s limit).
+- **Parallel loading**: the satellite image is fetched alongside Google's
+  data, not after it.
+- **Edits win**: an outline drawn or edited by a person (Edit → Save, the
+  API's `outline`) is kept — corners squared (≤ 0.6 m) and eaves only snapped
+  to the edge in the image (≤ 0.3 m, `editSnapM`), never pushed back to where
+  the customer moved them from, and never replaced by another reading
+  (`confirmRoofOutlines(…, { userEdit })`). Tested live on 57 Harry Ave: a
+  north wall moved in 1.5 m stays moved (98 m² sent, 99 m² designed).
+
+## Code base — one roof designer for the whole platform (`src/lib/roof-design`)
+
+**Rule (owner, 5 Nov 2026):** any portal or website, and every outside
+request, uses the Roof Designer to design its systems — installers,
+customers, operations, the website and outside websites. Pages call
+`requestRoofDesign()` (`@/lib/roof-design/client`) or the engine; outside
+websites and systems call `POST /api/roof-design` (`docs/ROOF_DESIGN_API.md`).
+No other code finds roofs, faces or panel layouts itself:
+`src/lib/roof-design/rule.test.ts` fails the build's tests if it does.
+
+Every module that designs a roof runs the same code, so a fix reaches all of
+them at once. Never copy a step into a page, route or script; call the engine.
+
+| File | Runs in | What it holds |
+| --- | --- | --- |
+| `geometry.ts` | browser + Node | lat/lng maths: distance, area, centroid, clip to lot or box, panel corners, de-duplicate |
+| `engine.ts` | browser + Node | every design step as a pure function of a `RoofDesignContext` (pin, Google estimate, zoom-21 analysis, mask, height model, lot, footprint) |
+| `server.ts` | Node only | loads the context (platform backend, or Google with a key), fetches and analyses the satellite image (zoom 21, retry 20), draws the design (JPEG 4:3), `designRoofAt(pin)` |
+| `index.ts` | — | the barrel: `import { … } from "@/lib/roof-design"` |
+
+Engine steps (the Designs page's steps, in order):
+
+1. `initialRoofs` / `bestAvailableRoofs`: the starting outline — square-walled
+   reading confirmed by Google → zoomed-image trace → footprint (trimmed to the
+   lot, dropped if Google disagrees) → Google's mask (if it covers half the
+   roof) → Google's box (only near the pin) → placeholder.
+2. `confirmRoofOutlines` (Save Roof): straight lines, then eaves fitted to the
+   image unless a square-walled reading is confirmed.
+3. `findRoofFaces`: square-walled reading (hip or gable per end) → height
+   model filled to the outline → hip split; interior lines corrected against
+   the image; obstructions found. `{ relook: true }` for Relook roof.
+4. `checkRoofLines`: every eave, hip, valley and ridge against the image.
+5. `layoutRoofPanels`: one orientation, rows along the main walls, roof pitch,
+   packed (or Beautify) around obstructions, then `keepPanelsClear` (inside one
+   face, 100 mm from every line) and de-duplicated.
+6. `relookReadings`: the other confirmed readings, best first.
+7. `designRoof`: all of the above in one call, with counts for both
+   orientations, kW and inverter sizing (`inverterSizingFor`).
+
+Who uses it:
+- Designs page (`DesignsSolarPanelStepContent.tsx`): builds the context from
+  its hooks; Save, Relook, orientation, Beautify, side walls all call the engine.
+- Quotes & Leads (`src/lib/server/auto-roof-design.ts`): `designRoofAt` +
+  `renderRoofDesign` on the backend's inputs for a lead.
+- Roof-design API (`POST /api/roof-design`, `docs/ROOF_DESIGN_API.md`):
+  for systems outside the platform, by API key.
+- `GET /api/solar/roof-lines-check` (localhost only) and
+  `scripts/roof-design/live-pipeline.ts`: checks on real Google data.
+- The portals' Solar designer (installer, customer and operations;
+  `MasterDesignerBody`): "Find my roof" asks the Roof Designer for the
+  address and shows its drawing, faces and panel count; without it the
+  sample roof is marked as a sample.
+- The proposal drawing and the clearance check use `geometry.panelCorners`.
+
 ## Lessons log
 
 Newest first. Add an entry whenever a design comes out wrong.
+
+### 2026-11-09: 66 Frances St, Lidcombe — hip lines drawn on a flat roof
+
+- **What went wrong:** a 2.8° white metal roof was split into hip faces
+  (assumed-hip) whose lines aren't on the roof; one "intersection point"
+  wasn't real. Splitting along the step shadows was tried and rejected by
+  the owner: it is a flat roof.
+- **Owner's rule:** no visible line connecting two intersection points = no
+  split; roofs can be flat (rule 5, cut-off 5° confirmed by the owner).
+- **Fix:** flat roofs are read as sections from visible lines and their
+  intersections (`flatSectionsFromLines`): 3 sections, the left step following
+  its visible jogs, 122 portrait panels clear of the step shadows.
+- **Still open:** the owner's drawing has about 8 sections (a fold, two
+  lower-left blocks, a narrow middle block, the framed box). On this white
+  roof only the shaded side of each step shows as a line; the sunlit sides
+  (box bottom and right) are too faint, so those sections don't close. Next:
+  local-contrast lines for white metal roofs.
+
+### 2026-11-09: 12 Fursorb St, Marayong — intersection points off, so lines and faces didn't line up
+
+- **What went wrong:** the hip reading's junctions are computed from the
+  border (equal-pitch geometry), so where the border or pitch is a little off
+  every junction is 0.5–1 m from where the lines meet in the image. The
+  existing line correction moved lines one at a time and averaged shared
+  corners, so junctions drifted.
+- **Owner's rule:** use the intersection points that connect two or more
+  lines — fit the points, and the lines follow.
+- **Fix:** `fitRoofJunctions` (rule 4 above). On 12 Fursorb the centre, the
+  wing's ridge end and apex, south and west points landed on the owner's
+  marked points. Outline corners stay fixed for now (moving them broke fr1's
+  eave). Also: stale (2018) Google data can no longer turn a hip end into a
+  gable when the image shows the hips.
+- **Still open:** the north-west wing is left out of the border — Google's
+  2018 data doesn't have it and the border search only counts image lines
+  inside each border, so leaving a wing out costs nothing.
+
+### 2026-11-06: 108 Delhi St, Lidcombe — Google's data from 2018, a ragged border
+1. **Seen:** a jagged border (24 corners) taking in driveway clutter and
+   cutting the rear section; faces crossing the roof.
+2. **Why:** Google's roof data for the address is from imagery of
+   3 Dec 2018; the roof in today's (2026) image no longer matches it. The
+   image's square outline was read correctly but failed Google's share test
+   (Google: 57% facing ESE; the hip on today's roof: mostly NNE/SSW), so the
+   engine fell back to the raw trace and Google's 2018 height model.
+3. **Fix (owner agreed):** Google's data 3+ years old (`staleGoogleYears`) is
+   out of date: it can't veto the image. A trigonometry reading may stand on
+   the image alone (80% of its lines seen) but must also beat the height
+   model on the image test; the height model and the plain hip split compete
+   on the image alone; the design says "Google's roof data is from 2018 …
+   confirm on site". A traced border of more than 20 corners
+   (`maxTraceCorners`) is replaced by straight walls (the image's square
+   outline, squared walls or notches merged), chosen on the image test.
+4. **Result:** 108 Delhi St gets a straight four-wall border with the date
+   note, still *not determined*: the house is a hip roof with a front bay and
+   a lower rear section that no single reading fits, and the image's outline
+   still takes in about 1.5 m of the west yard — Relook / Edit. Test roofs
+   unchanged except 61 Harry Ave and 66 Frances St, now with straight
+   borders round the same faces.
+5. **Tried and dropped:** letting borders compete on the image test alone,
+   or on how much of the trace they keep, or on whether the dropped part
+   looks like roof: none separated 108 Delhi St's clutter from 24 Derwent
+   St's real roof, and Derwent lost 7 panels.
+
+### 2026-11-05: 264 Wangee Rd, Greenacre (hip roof, stepped north wing, rear skillion): faces by the priority tests
+1. **Seen (owner's drawing):** six faces on the main roof — west, south, east
+   from the centre apex, a north triangle, a narrow strip from the step in
+   the north eave, and the north-east face; the engine drew a pyramid or
+   wiggly height-model faces.
+2. **Why:** (a) the main roof and the lower rear roof traced as one outline,
+   so Google's low-pitch rear segments failed the trigonometry reading;
+   (b) the eave step traced at 45°, and the reading only takes walls along or
+   square to the main walls, so it was refused before Google was consulted;
+   (c) ranking by lines seen alone let a plain pyramid win — it saw all its
+   own hips but left the strip lines in the image unexplained.
+3. **Fix:** split by roof level (`splitByRoofLevel`: two pitch groups either
+   side of a wall-parallel line, cut on the eave seen in the image); walls
+   squared and lined up with the image's square outline; steps kept only when
+   their lines are seen; every reading scored on the priority tests above.
+4. **Result:** the main roof read exactly as drawn (Google within 5%, 99% of
+   its lines seen). The rear roof has no confirmed reading: height model,
+   reported not determined. All other test roofs unchanged (Gilbert 43/48,
+   Melton 21/29, Old Canterbury 52/60, Frampton, Derwent, Harry 57 and 61,
+   Frances).
+
+### 2026-11-05: 264 Wangee Rd, Greenacre (house built across two lots): east faces missed
+1. **Seen:** the live design drew only the western strip of the roof; the
+   whole east face and most of the south and north faces were missing.
+2. **Why:** the NSW cadastre returns the one lot under the pin (Lot 2110
+   DP1092512, 307 m²). The house stands across that lot and the next, so 60%
+   of Google's building for the address lay outside it. The roof finder keeps
+   to the lot (to stay off neighbours' roofs), so it cut the house in half.
+3. **Fix (engine, `lotForDesign`):** when the lot holds less than 60% of
+   Google's building for the pin (real segments, building centred within 15 m
+   of the pin), the property is more than that lot: the lot is widened to the
+   convex hull of the lot and Google's segment boxes. Terraces keep their lot
+   (24 Derwent St's lot holds 78% of its house; every other test roof 94–100%).
+   Used by the Designs page, Quotes & Leads and the API alike.
+4. **Result:** the whole roof is found, with all 5 faces from the height model,
+   and 86 portrait / 99 landscape panels fit, where the clipped roof gave
+   45 / 47.
+5. **Still open on this roof:** existing panels on the west and north faces
+   are only partly packed around. The north wing's ridge is not drawn as a
+   face border, and the rear skillion lines are not straight (height-model
+   faces).
+
+### 2026-11-05: One roof-design code base for every module
+1. **Owner's request:** "Build code base for roof design that is accessible by
+   other modules (internal and external) to avoid duplication of code and
+   process throughout the platform."
+2. **Found:** the pipeline existed four times — the Designs page (with its own
+   private copies of the geometry helpers), the Quotes & Leads designer (a
+   copy of the page "so the page is never edited"), the roof-lines check
+   route (an older copy without the square-roof, obstruction and clearance
+   steps) and the live-pipeline script (another copy, fixed 25° pitch and
+   panel size). Panel corners were computed three different ways.
+3. **Built:** `src/lib/roof-design` (see Code base above). The page, Quotes &
+   Leads, the check route and the script now call it; their copies are gone
+   (the page lost about 530 lines). External systems use `POST /api/roof-design`.
+4. **Checked:** the old Quotes & Leads copy and the engine on the same Google
+   inputs for 25 Gilbert St, 11 Melton St S, 1 Frampton St, 134 Old
+   Canterbury Rd, 24 Derwent St, 57 and 61 Harry Ave and 66 Frances St:
+   identical outlines, faces and panels on all eight.
+5. **Rule:** a change to how roofs are designed goes into the engine, never
+   into one module.
 
 ### 2026-10-31: 11 Melton St S, Auburn (L-shaped hip roof with a gable street end): rules, not assumptions
 1. **Owner's question:** "on what basis was this assumption?" The square-roof
@@ -651,7 +931,7 @@ in `scripts/roof-design/roofs/85-bombay-st.json`.
 - `pack-faces.ts roofs/x.json out.json`: packs image-read faces (any roof json with scale and centre).
 - `find-obstructions.py roofs/x.json crop.png out.png [--thr]`: every dark spot (vent, fan, antenna) and thin line (level difference) inside the faces, for review (step 6).
 - `check-eaves.py roofs/x.json crop.png [--metal]`: where the tiles or sheets end across every eave (step 5).
-- `live-pipeline.ts <lat> <lng> <outDir>` (set GKEY, NODE_USE_ENV_PROXY=1 in the workspace) and `live-draw.py <outDir>`: run and draw the live page's pipeline on Google data.
+- `live-pipeline.ts <lat> <lng> <outDir>` (set GKEY, NODE_USE_ENV_PROXY=1 in the workspace; PARCEL, BEAUTIFY, RELOOK, SQ_DEBUG optional) and `live-draw.py <outDir>`: run the shared engine on Google data and draw it.
 - `beautify.py sections.json out.json [--rows --cols --walk --orient --min-block]`: Beautify Design (step 9).
 - `local-contrast.py x0 y0 x1 y1 scale out.png`: local-contrast gridded view for white or grey metal roofs.
 - `layout.ts`: packs the faces with the live site's packer (all rules,

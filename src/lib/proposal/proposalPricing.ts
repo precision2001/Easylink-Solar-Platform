@@ -37,8 +37,19 @@ export const TARIFF_DEFAULTS = {
   zone: 3,
 };
 
+/** Products picked on the equipment step (catalogue product ids). */
+export type ChosenProducts = {
+  panelId?: string;
+  inverterId?: string;
+  batteries?: { id: string; qty: number }[];
+};
+
 export type ProposalPricingRequest = {
   panelCount: number;
+  /** The customer's own products; the engine picks only what isn't here. */
+  products?: ChosenProducts;
+  /** The home's supply when the customer said (Energy step). */
+  phase?: 1 | 3;
   panelTierId?: string;
   /** Usable kWh, or 0 for no battery. */
   batteryKwh?: number;
@@ -71,6 +82,8 @@ export type ProposalQuote = {
 
 export type ProposalPricingResponse = {
   selected: ProposalQuote;
+  /** Which picked products were priced as picked (unmatched: not in the price list). */
+  chosen?: { panel: boolean; inverter: boolean; battery: boolean; batteryKwh: number | null; unmatched: string[] } | null;
   /** Net price for each panel tier, same battery. */
   tierTotals: Record<string, number>;
   /** The panel behind each tier. */
@@ -112,7 +125,7 @@ export type SavingsEstimate = {
   selfUsedKwh: number;
   batteryKwh: number;
   exportedKwh: number;
-  /** Monthly, $. */
+  /** Monthly, $. `newBill` below zero is a credit from the retailer. */
   currentBill: number;
   newBill: number;
   monthlySavings: number;
@@ -144,8 +157,10 @@ export function estimateSavings(
       : 0;
   const exported = Math.max(0, generation - direct - stored / t.batteryRoundTrip);
   const gridKwh = Math.max(0, consumption - direct - stored);
-  // The bill keeps the supply charge; feed-in credits can bring it to zero but not below.
-  const newAnnual = Math.max(0, supply + gridKwh * t.usagePerKwh - exported * t.feedInPerKwh);
+  // The bill keeps the supply charge. Export credits are paid by the retailer
+  // in full, even past the bill (owner, 12 Nov 2026), so the bill can go into
+  // credit: a negative new bill, and every credit counted as a saving.
+  const newAnnual = supply + gridKwh * t.usagePerKwh - exported * t.feedInPerKwh;
   const yearly = Math.max(0, annualBill - newAnnual);
   return {
     consumptionKwh: Math.round(consumption),

@@ -25,23 +25,32 @@ import { useBuildingFootprint } from "@/hooks/useBuildingFootprint";
 import { useCadastralParcel } from "@/hooks/useCadastralParcel";
 import { useRoofSnapshot } from "@/hooks/useRoofSnapshot";
 import type { GeoTiffOverlay } from "@/utils/geotiff";
-import {
-  extractRoofOutlinesFromMask,
-  type LatLngRing,
-  type RoofOutline,
-} from "@/utils/roofMaskContour";
 import type { SolarEstimateResult, SolarPanel } from "@/types/solar";
-import { generatePanelsForFaces, longestEdgeAngleDegrees } from "@/lib/designer/panelLayout";
-import { splitRoofsIntoFaces } from "@/lib/designer/roofFaces";
-import { detectRoofFaces } from "@/lib/designer/roofFaceDetect";
-import { bestSquareRoof, rankSquareReadings, type SquareReading } from "@/lib/designer/squareRoof";
-import { keepPanelsClear } from "@/lib/designer/panelClearance";
-import { regularizeRoofOutlines } from "@/lib/designer/roofLines";
-import { correctInteriorLines, fillFacesOnRoofs } from "@/lib/designer/roofLineCorrect";
-import { fitEavesToMask, type LineCheck } from "@/lib/designer/roofLineCheck";
-import { findRoofObstructions, type RoofObstruction } from "@/lib/designer/roofObstructions";
+import {
+  bestAvailableRoofs,
+  boundingBoxNearPin as engineBoundingBoxNearPin,
+  boxToRing,
+  checkRoofLines,
+  clipRingToConvexPolygon,
+  confirmRoofOutlines,
+  findRoofFaces,
+  layoutRoofPanels,
+  lotForDesign,
+  panelCorners as roofPanelCorners,
+  relookReadings,
+  ringAreaM2,
+  roofPitchOf,
+  squareAround,
+  straightenOutlines,
+  type InitialRoofSource,
+  type LatLngBox,
+  type LatLngRing,
+  type LineCheck,
+  type SquareReading,
+  type RoofDesignContext,
+  type RoofFaceSet,
+} from "@/lib/roof-design";
 import { StreetViewThumb } from "./StreetViewThumb";
-import { beautifyPanelsForFaces } from "@/lib/designer/beautify";
 import {
   DESIGN_RULES,
   inverterSizingFor,
@@ -51,6 +60,7 @@ import {
 import { mergeProposalData } from "@/lib/store/designProposalSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
 import { compressCanvasSnapshot } from "@/lib/images/compress-browser";
+import { refreshRoofDesign, roofDesignFor, stillTracing, type RoofDesignResponse } from "@/lib/roof-design/client";
 
 const MAP_CONTAINER: React.CSSProperties = {
   width: "100%",
@@ -63,38 +73,12 @@ const ACTIVE_LAYERS: SolarLayerType[] = ["rgb", "mask", "dsm"];
 /** Hard cap on Google Maps Polygon instances for generated panels (perf). Keep ≥ typical “panels that fit” so the map matches the left-panel count. */
 const MAX_MAP_SOLAR_PANEL_POLYGONS = 1500;
 
-/**
- * Minimum fraction of Google's own `wholeRoofAreaM2` the mask trace has to
- * cover before it's trusted as "the roof". A simple house roof is usually
- * one solid, confidently-classified blob close to 100% coverage. A complex
- * or steeply sloped roof can end up with the mask only flagging a small
- * flat/confident section — a trace that is *present* but covers, say, 15%
- * of the real building is a worse starting point than a rectangle roughly
- * covering the real footprint, even though "present" would otherwise look
- * like a trustworthy result.
- */
-const MIN_MASK_COVERAGE_FRACTION = 0.5;
+// Roof-design limits (mask coverage, box distance, footprint check, lot clip) live in
+// the shared engine: ROOF_DESIGN_LIMITS in src/lib/roof-design/engine.ts.
 
-/**
- * Beyond this, Google's "nearest building" bounding box is almost certainly
- * a different building, not this one — see `boundingBoxDistanceFromPinM`.
- */
-const MAX_BOUNDING_BOX_DISTANCE_M = 80;
-
-/**
- * Beyond this, a footprint match and Google's own (real, non-estimated)
- * match for the same location almost certainly disagree about which
- * building this is — e.g. the footprint dataset matching a shed or garage
- * near the house instead of the house itself. Google's AU imagery is often
- * too dated to trust over a footprint match (the whole reason footprint is
- * preferred in the first place), but when Google DID return a genuine match
- * this far from the footprint, that's independent corroboration something's
- * wrong with the footprint pick, worth falling back to the mask trace for.
- */
-const MAX_FOOTPRINT_GOOGLE_DISAGREEMENT_M = 40;
-
-function formatNumber(n: number): string {
-  return n.toLocaleString("en-AU", { maximumFractionDigits: 0 });
+/** A whole number for the metrics, or "—" when there is none (no Google Solar data for a new estate: 53 Turffontein Ave, Box Hill crashed the page, 10 Nov 2026). */
+function formatNumber(n: number | null | undefined): string {
+  return typeof n === "number" && Number.isFinite(n) ? n.toLocaleString("en-AU", { maximumFractionDigits: 0 }) : "—";
 }
 
 function coordsMatchPin(
@@ -107,50 +91,17 @@ function coordsMatchPin(
 
 /* ── Geo helpers ─────────────────────────────────────────────── */
 
-/**
- * Convert a panel center + dimensions to the four corner lat/lng coords.
- * Rotation is measured in planar degrees from the east axis counter-clockwise.
- */
+/** A panel's corners as the map draws them (shared roof-design geometry, the packer's convention). */
 function panelCorners(
   center: { lat: number; lng: number },
   heightM: number,
   widthM: number,
   orientation: "PORTRAIT" | "LANDSCAPE",
   rotationDegrees = 0,
-  /** Roof pitch: the up-slope side looks shorter from above by cos(pitch). */
   slopeDegrees = 0,
 ): google.maps.LatLngLiteral[] {
-  const metersPerLat = 111320;
-  const metersPerLng = 111320 * Math.cos((center.lat * Math.PI) / 180);
-
-  // Same convention as the packer (panelLayout.ts): portrait = long side up
-  // the slope, whichever field the data source calls height — otherwise a
-  // swapped height/width draws every panel turned 90° from where it was packed.
-  const longSide = Math.max(heightM, widthM);
-  const shortSide = Math.min(heightM, widthM);
-  const halfHeightMeters =
-    ((orientation === "LANDSCAPE" ? shortSide : longSide) / 2) *
-    Math.cos((slopeDegrees * Math.PI) / 180);
-  const halfWidthMeters = (orientation === "LANDSCAPE" ? longSide : shortSide) / 2;
-  const angle = (rotationDegrees * Math.PI) / 180;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-
-  return [
-    { x: -halfWidthMeters, y: halfHeightMeters },
-    { x: halfWidthMeters, y: halfHeightMeters },
-    { x: halfWidthMeters, y: -halfHeightMeters },
-    { x: -halfWidthMeters, y: -halfHeightMeters },
-  ].map((point) => {
-    const rotatedX = point.x * cos - point.y * sin;
-    const rotatedY = point.x * sin + point.y * cos;
-    return {
-      lat: center.lat + rotatedY / metersPerLat,
-      lng: center.lng + rotatedX / metersPerLng,
-    };
-  });
+  return roofPanelCorners({ center, orientation, rotationDegrees, slopeDegrees }, { heightM, widthM });
 }
-
 
 /* ── Imperative overlay hook ─────────────────────────────────── */
 
@@ -298,272 +249,7 @@ type RoofPolygon = {
   paths: google.maps.LatLngLiteral[];
 };
 
-function makeDefaultPolygon(
-  center: { lat: number; lng: number },
-  offsetDeg = 0,
-): google.maps.LatLngLiteral[] {
-  const d = 0.00008;
-  return [
-    { lat: center.lat - d + offsetDeg, lng: center.lng - d + offsetDeg },
-    { lat: center.lat + d + offsetDeg, lng: center.lng - d + offsetDeg },
-    { lat: center.lat + d + offsetDeg, lng: center.lng + d + offsetDeg },
-    { lat: center.lat - d + offsetDeg, lng: center.lng + d + offsetDeg },
-  ];
-}
-
-function boundingBoxToPolygon(
-  box: SolarEstimateResult["boundingBox"],
-): google.maps.LatLngLiteral[] {
-  return [
-    { lat: box.ne.lat, lng: box.sw.lng },
-    { lat: box.ne.lat, lng: box.ne.lng },
-    { lat: box.sw.lat, lng: box.ne.lng },
-    { lat: box.sw.lat, lng: box.sw.lng },
-  ];
-}
-
-/** Planar-approximation distance between two lat/lng points, in meters — fine at building/block scale. */
-function distanceM(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number },
-): number {
-  const metersPerDegLat = 111_320;
-  const metersPerDegLng = 111_320 * Math.cos((a.lat * Math.PI) / 180);
-  const dLat = (b.lat - a.lat) * metersPerDegLat;
-  const dLng = (b.lng - a.lng) * metersPerDegLng;
-  return Math.sqrt(dLat * dLat + dLng * dLng);
-}
-
-/**
- * Google's Solar API finds the *nearest* building to the queried point, not
- * necessarily a building *at* it — on vacant/cleared/under-construction
- * blocks (no roof for either data source to find) it can snap to a
- * neighbour's house across the street instead. Distance from the pin to the
- * box's own center.
- */
-function boundingBoxDistanceFromPinM(
-  box: SolarEstimateResult["boundingBox"],
-  pin: { lat: number; lng: number },
-): number {
-  return distanceM(pin, {
-    lat: (box.ne.lat + box.sw.lat) / 2,
-    lng: (box.ne.lng + box.sw.lng) / 2,
-  });
-}
-
-function ringCentroid(ring: LatLngRing): { lat: number; lng: number } {
-  const sum = ring.reduce(
-    (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
-    { lat: 0, lng: 0 },
-  );
-  return { lat: sum.lat / ring.length, lng: sum.lng / ring.length };
-}
-
-type ParcelBounds = { sw: { lat: number; lng: number }; ne: { lat: number; lng: number } };
-
-/**
- * Sutherland–Hodgman clip of a ring against an axis-aligned lat/lng box, one
- * edge at a time. Used to trim a building-footprint polygon down to one
- * address's parcel: attached/terrace buildings share one continuous
- * roofline from above, so the footprint dataset returns a single polygon
- * for the whole row — Google's per-premise geocode `bounds`, when present,
- * is roughly the parcel, so clipping against it keeps just this address's
- * slice instead of the whole row.
- */
-function clipRingToBounds(
-  ring: LatLngRing,
-  bounds: ParcelBounds,
-): LatLngRing {
-  type Pt = { lat: number; lng: number };
-  const clipEdge = (
-    points: Pt[],
-    inside: (p: Pt) => boolean,
-    intersect: (a: Pt, b: Pt) => Pt,
-  ): Pt[] => {
-    if (points.length === 0) return [];
-    const out: Pt[] = [];
-    for (let i = 0; i < points.length; i++) {
-      const curr = points[i];
-      const prev = points[(i - 1 + points.length) % points.length];
-      const currIn = inside(curr);
-      const prevIn = inside(prev);
-      if (currIn) {
-        if (!prevIn) out.push(intersect(prev, curr));
-        out.push(curr);
-      } else if (prevIn) {
-        out.push(intersect(prev, curr));
-      }
-    }
-    return out;
-  };
-
-  let pts: Pt[] = ring;
-  pts = clipEdge(
-    pts,
-    (p) => p.lng >= bounds.sw.lng,
-    (a, b) => {
-      const t = (bounds.sw.lng - a.lng) / (b.lng - a.lng);
-      return { lat: a.lat + t * (b.lat - a.lat), lng: bounds.sw.lng };
-    },
-  );
-  pts = clipEdge(
-    pts,
-    (p) => p.lng <= bounds.ne.lng,
-    (a, b) => {
-      const t = (bounds.ne.lng - a.lng) / (b.lng - a.lng);
-      return { lat: a.lat + t * (b.lat - a.lat), lng: bounds.ne.lng };
-    },
-  );
-  pts = clipEdge(
-    pts,
-    (p) => p.lat >= bounds.sw.lat,
-    (a, b) => {
-      const t = (bounds.sw.lat - a.lat) / (b.lat - a.lat);
-      return { lat: bounds.sw.lat, lng: a.lng + t * (b.lng - a.lng) };
-    },
-  );
-  pts = clipEdge(
-    pts,
-    (p) => p.lat <= bounds.ne.lat,
-    (a, b) => {
-      const t = (bounds.ne.lat - a.lat) / (b.lat - a.lat);
-      return { lat: bounds.ne.lat, lng: a.lng + t * (b.lng - a.lng) };
-    },
-  );
-  return pts;
-}
-
-function ringSignedArea(ring: LatLngRing): number {
-  let sum = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i];
-    const b = ring[(i + 1) % ring.length];
-    sum += a.lng * b.lat - b.lng * a.lat;
-  }
-  return sum / 2;
-}
-
-/**
- * Sutherland–Hodgman clip of a ring against an arbitrary convex polygon
- * (not just an axis-aligned box) — e.g. a real NSW cadastral lot boundary,
- * which is rarely a clean rectangle. Clips sequentially against each edge
- * of `clip`, so a genuinely non-convex clip polygon (an L-shaped lot, say)
- * can clip incorrectly — the caller's coverage sanity check is what catches
- * that case, same as it catches a misaligned box clip.
- */
-function clipRingToConvexPolygon(subject: LatLngRing, clip: LatLngRing): LatLngRing {
-  if (subject.length < 3 || clip.length < 3) return [];
-  const ccw = ringSignedArea(clip) > 0;
-
-  const inside = (
-    p: { lat: number; lng: number },
-    a: { lat: number; lng: number },
-    b: { lat: number; lng: number },
-  ): boolean => {
-    const cross = (b.lng - a.lng) * (p.lat - a.lat) - (b.lat - a.lat) * (p.lng - a.lng);
-    return ccw ? cross >= 0 : cross <= 0;
-  };
-
-  const intersection = (
-    p1: { lat: number; lng: number },
-    p2: { lat: number; lng: number },
-    a: { lat: number; lng: number },
-    b: { lat: number; lng: number },
-  ): { lat: number; lng: number } => {
-    const x1 = p1.lng,
-      y1 = p1.lat,
-      x2 = p2.lng,
-      y2 = p2.lat;
-    const x3 = a.lng,
-      y3 = a.lat,
-      x4 = b.lng,
-      y4 = b.lat;
-    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-    if (Math.abs(denom) < 1e-15) return p2;
-    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
-    return { lng: x1 + t * (x2 - x1), lat: y1 + t * (y2 - y1) };
-  };
-
-  let output: LatLngRing = subject;
-  for (let i = 0; i < clip.length; i++) {
-    if (output.length === 0) break;
-    const a = clip[i];
-    const b = clip[(i + 1) % clip.length];
-    const input = output;
-    output = [];
-    for (let j = 0; j < input.length; j++) {
-      const curr = input[j];
-      const prev = input[(j - 1 + input.length) % input.length];
-      const currIn = inside(curr, a, b);
-      const prevIn = inside(prev, a, b);
-      if (currIn) {
-        if (!prevIn) output.push(intersection(prev, curr, a, b));
-        output.push(curr);
-      } else if (prevIn) {
-        output.push(intersection(prev, curr, a, b));
-      }
-    }
-  }
-  return output;
-}
-
-/** Shoelace formula over a planar meters projection — fine at building scale. */
-function ringAreaM2(ring: LatLngRing): number {
-  if (ring.length < 3) return 0;
-  const avgLat = ring.reduce((sum, p) => sum + p.lat, 0) / ring.length;
-  const metersPerDegLat = 111_320;
-  const metersPerDegLng = 111_320 * Math.cos((avgLat * Math.PI) / 180);
-  let area = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i];
-    const b = ring[(i + 1) % ring.length];
-    const ax = a.lng * metersPerDegLng;
-    const ay = a.lat * metersPerDegLat;
-    const bx = b.lng * metersPerDegLng;
-    const by = b.lat * metersPerDegLat;
-    area += ax * by - bx * ay;
-  }
-  return Math.abs(area / 2);
-}
-
-function parcelBoundsAreaM2(bounds: ParcelBounds): number {
-  const widthM = distanceM(bounds.sw, { lat: bounds.sw.lat, lng: bounds.ne.lng });
-  const heightM = distanceM(bounds.sw, { lat: bounds.ne.lat, lng: bounds.sw.lng });
-  return widthM * heightM;
-}
-
-/**
- * Below this, the clip is almost certainly a misalignment, not a legitimate
- * trim — e.g. a large/irregular commercial footprint where Google's parcel
- * box only grazes one corner, clipping away nearly the whole real roof
- * rather than isolating one address's share of a shared building.
- */
-const MIN_CLIP_COVERAGE_FRACTION = 0.35;
-
-/** Dedupe key must include roof segment so nearby/overlapping polygons do not steal each other's panels. */
-function getSolarPanelKey(panel: SolarPanel): string {
-  return [
-    panel.segmentIndex,
-    panel.center.lat.toFixed(7),
-    panel.center.lng.toFixed(7),
-    panel.orientation,
-    (panel.rotationDegrees ?? 0).toFixed(2),
-  ].join(":");
-}
-
-function dedupeSolarPanels(panels: SolarPanel[]): SolarPanel[] {
-  const seen = new Set<string>();
-  const unique: SolarPanel[] = [];
-
-  for (const panel of panels) {
-    const key = getSolarPanelKey(panel);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(panel);
-  }
-
-  return unique;
-}
+type ParcelBounds = LatLngBox;
 
 function balancePanelsAcrossSegments(
   panels: SolarPanel[],
@@ -723,203 +409,137 @@ export const DesignsSolarPanelStepContent = forwardRef<
    * found by its colour and traced (see roofSnapshot.ts). Its mask fits the
    * eaves and its brightness finds the hips, ridges and valleys.
    */
-  // The land lot keeps the roof finder off the neighbours' roofs; wait for it.
-  const parcelRing = cadastralParcel.data?.ring ?? null;
+  // The land lot keeps the roof finder off the neighbours' roofs; wait for
+  // it, and for Google's building, which widens a lot that doesn't hold the
+  // whole house (a property over two lots — the engine's `lotForDesign`).
+  const designLot = useMemo(
+    () => (cadastralParcel.loading || loading ? null : lotForDesign(cadastralParcel.data, data, selectedLocation ?? undefined)),
+    [cadastralParcel.data, cadastralParcel.loading, data, loading, selectedLocation],
+  );
+  const parcelRing = designLot?.ring ?? null;
   const roofSnapshot = useRoofSnapshot(
     selectedLocation ?? null,
     maskRaster,
-    layersLoading || cadastralParcel.loading,
+    layersLoading || cadastralParcel.loading || loading,
     dsmRaster,
     parcelRing,
   );
-  const snapshotOutlines = useMemo((): LatLngRing[] | null => {
-    const found = roofSnapshot.analysis?.outlines;
-    if (!found || found.length === 0) return null;
-    // Roof-line rule: straight lines along / square to the main walls (and
-    // 45° hips), shared corners; then eaves fitted to the zoomed roof edge.
-    // Square-walled hip roof, confirmed by Google's roof segments: the outline
-    // drawn along the walls (as by hand — 25 Gilbert St, Colyton).
-    const squared = roofSnapshot.analysis?.squared;
-    const sq = !data?.estimated ? bestSquareRoof(squared, data?.roofSegments, roofSnapshot.analysis?.luma ?? null) : null;
-    if (sq) return [sq.ring];
-    const straight = regularizeRoofOutlines(found.map((o) => o.ring));
-    const mask = roofSnapshot.analysis!.mask;
-    return regularizeRoofOutlines(straight.map((r) => fitEavesToMask(r, mask).ring));
-  }, [roofSnapshot.analysis, data?.estimated, data?.roofSegments]);
-  /** Roof edge and brightness to check lines against — the zoomed image when found, else Google Solar's layers. */
-  const lineMask = roofSnapshot.analysis?.mask ?? maskRaster;
-  const lineLuma = roofSnapshot.analysis?.luma ?? rgbOverlay?.luma ?? null;
-
   /**
-   * Every roof section traced from the mask, largest first — a large
-   * commercial/industrial roof commonly comes back as several disconnected
-   * blobs (ridge lines, rooftop plant, vents), so this is a list rather than
-   * one outline.
+   * Everything the shared roof-design engine (src/lib/roof-design) reads for
+   * this address. The engine makes every decision — which outline to start
+   * from, the faces, the lines, the panels — the same way for this page, the
+   * Quotes & Leads designer and the roof-design API.
    */
-  const maskTracedOutlines = useMemo((): RoofOutline[] => {
-    if (!maskRaster || !selectedLocation) return [];
-    return extractRoofOutlinesFromMask(maskRaster);
-  }, [maskRaster, selectedLocation]);
+  const roofCtx = useMemo((): RoofDesignContext | null => {
+    if (!selectedLocation) return null;
+    return {
+      pin: selectedLocation,
+      estimate: data ?? null,
+      snapshot: roofSnapshot.analysis ?? null,
+      mask: maskRaster,
+      dsm: dsmRaster ?? null,
+      rgbLuma: rgbOverlay?.luma ?? null,
+      parcel: designLot,
+      parcelBounds,
+      footprint: footprint.data?.ring ?? null,
+    };
+  }, [selectedLocation, data, roofSnapshot.analysis, maskRaster, dsmRaster, rgbOverlay?.luma, designLot, parcelBounds, footprint.data?.ring]);
 
-  const roofMaskOutlines = useMemo((): LatLngRing[] | null => {
-    if (maskTracedOutlines.length === 0) return null;
-    const rings = maskTracedOutlines.map((o) => o.ring);
-    // Google's mask joins houses built close together: keep only what lies
-    // on this property's lot (134 Old Canterbury Rd, Summer Hill).
-    if (!parcelRing) return rings;
-    const clipped = rings
-      .map((r) => clipRingToConvexPolygon(r, parcelRing))
-      .filter((r) => r.length >= 3 && ringAreaM2(r) >= 4);
-    return clipped.length > 0 ? clipped : rings;
-  }, [maskTracedOutlines, parcelRing]);
-
-  /**
-   * True once the mask trace covers enough of Google's own whole-roof figure
-   * to be trusted as "the roof" — see `MIN_MASK_COVERAGE_FRACTION`. With no
-   * whole-roof figure to compare against, any non-empty trace is accepted
-   * (nothing better to fall back to anyway, short of the bounding box).
-   */
-  const maskOutlinesCoverEnoughOfRoof = useMemo(() => {
-    if (maskTracedOutlines.length === 0) return false;
-    const wholeRoofAreaM2 = data?.wholeRoofAreaM2;
-    if (!wholeRoofAreaM2) return true;
-    const tracedAreaM2 = maskTracedOutlines.reduce(
-      (sum, o) => sum + o.areaM2,
-      0,
-    );
-    return tracedAreaM2 >= wholeRoofAreaM2 * MIN_MASK_COVERAGE_FRACTION;
-  }, [data?.wholeRoofAreaM2, maskTracedOutlines]);
-
-  /**
-   * Microsoft's free building-footprint outline (see useBuildingFootprint) —
-   * current, Australia-covering satellite data, used ahead of Google's Solar
-   * mask trace: Google's Australian imagery is years out of date (see the
-   * client doc), so even where its mask trace "covers enough" of the roof it
-   * can be tracing a building that no longer looks like this. A footprint
-   * match is still just one outline per building (no roof-plane/pitch
-   * segmentation), so it's always flagged for the installer to verify below.
-   *
-   * Clipped to the parcel bounds when available (see `clipRingToBounds`) —
-   * attached/terrace buildings share one continuous roofline, so the raw
-   * footprint can span several neighbours' addresses, not just this one. A
-   * degenerate clip (bounds barely grazing the footprint, or none at all)
-   * falls back to the unclipped match rather than a near-empty sliver.
-   */
-  /**
-   * Trims a merged footprint match (e.g. a terrace row, or several close
-   * industrial buildings) down to one address's own parcel — cadastral
-   * first (a real NSW land-parcel polygon, available for most NSW
-   * addresses), falling back to Google's sparser `bounds` rectangle when
-   * no cadastral match exists. Both apply the same coverage sanity check:
-   * a legitimate trim uses up most of the clip shape's own area; a clip
-   * that only grazes a corner of a much bigger footprint signals
-   * misalignment, not a real boundary — safer to show the whole
-   * (still-flagged-unverified) match than a nonsensical sliver.
-   */
-  const footprintOutline: LatLngRing | null = useMemo(() => {
-    const raw = footprint.data?.ring ?? null;
-    if (!raw) return raw;
-
-    const cadastralRing = cadastralParcel.data?.ring ?? null;
-    if (cadastralRing) {
-      const clipped = clipRingToConvexPolygon(raw, cadastralRing);
-      if (clipped.length >= 3) {
-        const coverage = ringAreaM2(clipped) / cadastralParcel.data!.areaM2;
-        if (coverage >= MIN_CLIP_COVERAGE_FRACTION) return clipped;
-      }
-    }
-
-    if (parcelBounds) {
-      const clipped = clipRingToBounds(raw, parcelBounds);
-      if (clipped.length >= 3) {
-        const coverage = ringAreaM2(clipped) / parcelBoundsAreaM2(parcelBounds);
-        if (coverage >= MIN_CLIP_COVERAGE_FRACTION) return clipped;
-      }
-    }
-
-    return raw;
-  }, [cadastralParcel.data, footprint.data?.ring, parcelBounds]);
-
-  const maskIsGood = Boolean(roofMaskOutlines?.length && maskOutlinesCoverEnoughOfRoof);
-
-  /**
-   * True when a footprint match and a *genuine* (non-estimated) Google match
-   * for the same point are far enough apart that they're probably different
-   * buildings — see `MAX_FOOTPRINT_GOOGLE_DISAGREEMENT_M`. Google's real
-   * match is the arbiter here precisely because it's real: when Google did
-   * find actual imagery for this address, its own result is independent
-   * corroboration the footprint dataset picked the wrong nearby structure
-   * (a shed, garage, outbuilding) rather than the house itself.
-   */
-  const footprintDisagreesWithGoogle = useMemo(() => {
-    if (!footprintOutline || !data || data.estimated) return false;
-    return (
-      distanceM(ringCentroid(footprintOutline), data.center) >
-      MAX_FOOTPRINT_GOOGLE_DISAGREEMENT_M
-    );
-  }, [data, footprintOutline]);
-
-  /**
-   * Google's own bounding box, but only when it's actually near the pin —
-   * see `boundingBoxDistanceFromPinM`. `undefined` (not just falsy) so call
-   * sites can tell "no bounding box" apart from "don't trust this one".
-   */
-  const boundingBoxNearPin = useMemo((): SolarEstimateResult["boundingBox"] | undefined => {
-    if (!data?.boundingBox || !selectedLocation) return undefined;
-    const distance = boundingBoxDistanceFromPinM(data.boundingBox, selectedLocation);
-    return distance <= MAX_BOUNDING_BOX_DISTANCE_M ? data.boundingBox : undefined;
-  }, [data?.boundingBox, selectedLocation]);
-
-  /** A disagreeing footprint is untrusted outright — not just "beaten if something better shows up" — so it never wins over a worse-but-plausible fallback either. */
-  const trustedFootprintOutline = footprintDisagreesWithGoogle
-    ? null
-    : footprintOutline;
-
-  /** True when the starting shape is a real trace of the roof, not a footprint or rectangle guess. */
-  const initialRoofIsTraced = Boolean(snapshotOutlines || (!trustedFootprintOutline && maskIsGood));
+  /** Google's own bounding box, only when it's near the pin (on a vacant block Google snaps to a neighbour). */
+  const boundingBoxNearPin = useMemo(() => (roofCtx ? engineBoundingBoxNearPin(roofCtx) ?? undefined : undefined), [roofCtx]);
 
   /** Best roof outline available right now — null while still waiting on a source that could still beat the next fallback. */
-  const bestAvailableOutlines = useMemo((): LatLngRing[] | null => {
-    // Zoom and image analysis first: the roof as it looks in the image.
-    if (snapshotOutlines) return snapshotOutlines;
-    if (trustedFootprintOutline) return [trustedFootprintOutline];
-    if (maskIsGood) return roofMaskOutlines as LatLngRing[];
-    // Google's real match disagreed with the footprint and the mask trace
-    // didn't independently pan out — trust Google's own (real, near-pin)
-    // bounding box over the footprint rather than showing the wrong building.
-    if (footprintDisagreesWithGoogle && boundingBoxNearPin) {
-      return [boundingBoxToPolygon(boundingBoxNearPin)];
+  // The Roof Designer reads every outline and face candidate on the priority
+  // tests (a few seconds on a complex roof): run it after the page has shown
+  // "Reading the roof faces…", not inside render.
+  const [bestState, setBestState] = useState<{ ctx: RoofDesignContext; result: ReturnType<typeof bestAvailableRoofs> } | null>(null);
+  // The Roof Designer's design for this pin, usually already made while the
+  // customer confirmed the address (roofDesignFor). Its outline is the
+  // starting roof; the page reads faces and lines on it locally. Only when it
+  // can't be had does the page run the outline search itself.
+  const [serverDesign, setServerDesign] = useState<{ key: string; design: RoofDesignResponse | null } | null>(null);
+  /** Opus is still tracing and checking this roof: nothing is designed until it's done. */
+  const [opusTracing, setOpusTracing] = useState(false);
+  const pinKey = selectedLocation ? `${selectedLocation.lat.toFixed(6)},${selectedLocation.lng.toFixed(6)}` : null;
+  // Asked once per pin: the location object changes identity on re-renders,
+  // and re-asking after a failure on each one piled up 504s (7 Nov 2026).
+  const selectedLocationRef = useRef(selectedLocation);
+  selectedLocationRef.current = selectedLocation;
+  useEffect(() => {
+    const pin = selectedLocationRef.current;
+    if (!pin || !pinKey) return;
+    let live = true;
+    let timer: number | undefined;
+    // Opus traces the roof first and checks its trace against the photo
+    // (owner's rules). One request waits up to 90 s, inside the site's 120 s;
+    // while Opus is still at it, the engine's design shows and the page asks
+    // again every 20 s (up to 5 minutes) until the checked trace is in.
+    // No answer at all (not even "still tracing") within 4 minutes: the page reads the roof itself.
+    const giveUp = window.setTimeout(() => live && setServerDesign((cur) => cur ?? { key: pinKey, design: null }), 240_000);
+    // While Opus is still tracing, the engine's own reading is not shown or
+    // designed on (owner, 10 Nov 2026: panels went outside the roof on the
+    // engine's interim reading of 26 Bridgeview Cct): the page waits for the
+    // checked trace, and only after 5 minutes without one shows the engine's.
+    const take = (d: RoofDesignResponse, tries: number) => {
+      if (!live) return;
+      const tracing = stillTracing(d) && tries < 15;
+      setOpusTracing(tracing);
+      if (!tracing) setServerDesign({ key: pinKey, design: d });
+      if (tracing)
+        timer = window.setTimeout(() => {
+          refreshRoofDesign(pin)
+            .then((n) => take(n, tries + 1))
+            .catch(() => live && (setOpusTracing(false), setServerDesign({ key: pinKey, design: d })));
+        }, 20_000);
+    };
+    roofDesignFor(pin)
+      .then((d) => take(d, 0))
+      .catch(() => live && setServerDesign({ key: pinKey, design: null }))
+      .finally(() => window.clearTimeout(giveUp));
+    return () => {
+      live = false;
+      window.clearTimeout(giveUp);
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [pinKey]);
+  const serverReady = serverDesign?.key === pinKey ? serverDesign : null;
+  useEffect(() => {
+    if (!roofCtx || !serverReady) return;
+    const d = serverReady.design;
+    if (d && d.status === "READY" && d.outline.rings.length > 0) {
+      setBestState({
+        ctx: roofCtx,
+        result: { rings: d.outline.rings, source: d.outline.source as InitialRoofSource, traced: !d.outline.needsVerification },
+      });
+      return;
     }
-    // Nothing better corroborates or contradicts it — still the best guess available.
-    if (footprintOutline) return [footprintOutline];
-    return null;
-  }, [
-    boundingBoxNearPin,
-    footprintDisagreesWithGoogle,
-    footprintOutline,
-    maskIsGood,
-    roofMaskOutlines,
-    snapshotOutlines,
-    trustedFootprintOutline,
-  ]);
+    const id = window.setTimeout(() => setBestState({ ctx: roofCtx, result: bestAvailableRoofs(roofCtx) }), 40);
+    return () => window.clearTimeout(id);
+  }, [roofCtx, serverReady]);
+  const readingRoof = Boolean(roofCtx) && bestState?.ctx !== roofCtx;
+  /** Until the green roof is drawn, the roof view and its buttons are frozen. */
+  const roofAnalysing =
+    Boolean(selectedLocation) &&
+    !hasInitializedRoof &&
+    (loading || layersLoading || roofSnapshot.loading || readingRoof || opusTracing);
+  const bestAvailable = bestState && bestState.ctx === roofCtx ? bestState.result : null;
+  const bestAvailableOutlines = bestAvailable?.rings ?? null;
+  /** True when the starting shape is a real trace of the roof, not a footprint or rectangle guess. */
+  const initialRoofIsTraced = bestAvailable?.traced ?? false;
 
   const initialRoofPolygons = useMemo((): google.maps.LatLngLiteral[][] | null => {
-    if (!selectedLocation) return null;
-    // All three must resolve before trusting anything: `footprintOutline`
-    // (clipped by cadastral/Google bounds) and `footprintDisagreesWithGoogle`
-    // both depend on data that arrives asynchronously after the footprint
-    // match itself — so a footprint that resolves before the cadastral
-    // lookup and Google's own estimate do would otherwise get trusted
-    // unclipped/unchecked by default — and, since this effect only ever
-    // runs once per address, locked in wrong permanently even after the
-    // slower data arrives and would have corrected it.
+    if (!selectedLocation || !roofCtx) return null;
+    // Footprint, lot and Google's estimate must all resolve before trusting
+    // anything: the footprint is clipped by the lot and checked against
+    // Google, and the roof is only initialised once per address.
     if (footprint.loading || cadastralParcel.loading || loading) return null;
-    // Wait for the zoom-in analysis before falling back to a footprint or box.
-    if (roofSnapshot.loading) return null;
+    // Wait for the zoom-in analysis and the Roof Designer's reading before
+    // falling back to a footprint or box.
+    if (roofSnapshot.loading || readingRoof) return null;
     if (bestAvailableOutlines) return bestAvailableOutlines;
-    if (boundingBoxNearPin) return [boundingBoxToPolygon(boundingBoxNearPin)];
+    if (boundingBoxNearPin) return [boxToRing(boundingBoxNearPin)];
     if (layersLoading) return null;
-    return [makeDefaultPolygon(selectedLocation)];
+    return [squareAround(selectedLocation)];
   }, [
     bestAvailableOutlines,
     boundingBoxNearPin,
@@ -927,6 +547,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
     footprint.loading,
     layersLoading,
     loading,
+    readingRoof,
+    roofCtx,
     roofSnapshot.loading,
     selectedLocation,
   ]);
@@ -1171,8 +793,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
     } else {
       const fallback: google.maps.LatLngLiteral[][] = bestAvailableOutlines ?? [
         boundingBoxNearPin
-          ? boundingBoxToPolygon(boundingBoxNearPin)
-          : makeDefaultPolygon(selectedLocation),
+          ? boxToRing(boundingBoxNearPin)
+          : squareAround(selectedLocation),
       ];
       setRoofNeedsVerification(!initialRoofIsTraced);
       setEditingRoofs(
@@ -1209,8 +831,8 @@ export const DesignsSolarPanelStepContent = forwardRef<
         paths:
           bestAvailableOutlines?.[0] ??
           (boundingBoxNearPin
-            ? boundingBoxToPolygon(boundingBoxNearPin)
-            : makeDefaultPolygon(selectedLocation, prev.length * 0.0002)),
+            ? boxToRing(boundingBoxNearPin)
+            : squareAround(selectedLocation, prev.length * 0.0002)),
       },
     ]);
     setSelectedRoofId(newId);
@@ -1226,59 +848,33 @@ export const DesignsSolarPanelStepContent = forwardRef<
   }, [selectedRoofId]);
 
   /**
-   * Roof-line finder: faces come from Google's height model when it covers
-   * the roof (each face with its own pitch and slope direction), straightened
-   * so neighbouring faces share corners. Without usable height data, falls
-   * back to the standard hip split of each outline.
+   * Every face of the roof(s), lines corrected against the image and
+   * obstructions found — the shared engine's `findRoofFaces` (square-walled
+   * reading confirmed by Google and the image, else the height model, else
+   * the hip split). Relook accepts slightly looser readings.
    */
+  // The AI platform's reading of the roof (Opus 5.5), from the Roof Designer's
+  // design for this pin: one more reading the engine scores with the others.
+  const serverAiFaces = serverReady?.design?.status === "READY" ? serverReady.design.faces.ai : undefined;
+  // Owner's rule: Opus traces every roof first — the page uses the same trace as the server.
+  const serverTrace = serverReady?.design?.status === "READY" ? serverReady.design.faces.trace : undefined;
+  const facesCtx = useMemo(
+    (): RoofDesignContext | null =>
+      roofCtx && (serverAiFaces?.length || serverTrace)
+        ? {
+            ...roofCtx,
+            aiFaces: serverAiFaces?.map((f) => ({ ring: f.ring, azimuthDeg: f.azimuthDeg ?? undefined })),
+            aiTrace: serverTrace ?? roofCtx.aiTrace,
+          }
+        : roofCtx,
+    [roofCtx, serverAiFaces, serverTrace],
+  );
   const facesFor = useCallback(
-    (paths: google.maps.LatLngLiteral[][]) => {
-      // Square-walled hip roof confirmed by Google's segments: hips and valleys
-      // computed from the walls, exactly — no correcting needed.
-      // Faces by trigonometry from the walls (hip or gable at each end), kept
-      // only when Google's roof data confirms them; every hip, valley and
-      // ridge is then checked against the lines seen in the image.
-      const reading =
-        paths.length === 1 && !data?.estimated
-          ? rankSquareReadings([paths[0]], data?.roofSegments, roofSnapshot.analysis?.luma ?? null, relook ? { maxShareDiff: 0.15, minSeen: 0.2 } : {})[0]
-          : undefined;
-      if (reading) {
-        const obstructions: RoofObstruction[] = roofSnapshot.analysis
-          ? findRoofObstructions(roofSnapshot.analysis.luma, reading.faces.map((f) => f.ring))
-          : [];
-        return { source: "square-hip" as const, faces: reading.faces, interiorChecks: reading.lines, moved: 0, obstructions, gables: reading.gables.length };
-      }
-      const detected = detectRoofFaces(dsmRaster, paths, maskRaster);
-      const source = detected && detected.length > 0 ? ("height-model" as const) : ("assumed-hip" as const);
-      let faces: { ring: google.maps.LatLngLiteral[]; eaveDeg: number; pitchDeg?: number; azimuthDeg?: number }[];
-      if (detected && detected.length > 0) {
-        const rings = regularizeRoofOutlines(detected.map((f) => f.ring));
-        faces = detected.map((f, i) => ({
-          ring: rings[i],
-          eaveDeg: f.eaveDeg,
-          pitchDeg: f.pitchDeg,
-          azimuthDeg: f.azimuthDeg,
-        }));
-        // The height model is coarse (0.5 m) and leaves gaps: fill the faces
-        // out to the roof outline on the zoomed image's 3 cm grid, each with
-        // rows along its own eave.
-        const snap = roofSnapshot.analysis;
-        if (snap) faces = fillFacesOnRoofs(faces, paths, snap.mask, snap.metresPerPixel);
-      } else {
-        faces = splitRoofsIntoFaces(paths).map((f) => ({ ring: f.ring, eaveDeg: f.eaveDeg }));
-      }
-      // Correct the lines against the zoomed image: faces meet the eaves
-      // exactly, and hips / ridges / valleys move onto the edges seen in it.
-      const corrected = correctInteriorLines(faces, paths, lineLuma);
-      // Obstructions and steps (vents, whirlybirds, antennas, level
-      // differences) found on the zoomed image inside the faces; the packer
-      // keeps 100 mm clear of each and packs around them.
-      const obstructions: RoofObstruction[] = roofSnapshot.analysis
-        ? findRoofObstructions(roofSnapshot.analysis.luma, corrected.faces.map((f) => f.ring))
-        : [];
-      return { source, faces: corrected.faces, interiorChecks: corrected.checks, moved: corrected.moved, obstructions };
-    },
-    [dsmRaster, lineLuma, maskRaster, roofSnapshot.analysis, data?.estimated, data?.roofSegments, relook],
+    (paths: google.maps.LatLngLiteral[][]): RoofFaceSet =>
+      facesCtx
+        ? findRoofFaces(paths, facesCtx, { relook: Boolean(relook) })
+        : { source: "assumed-hip", faces: [], interiorChecks: [], moved: 0, obstructions: [], gables: 0, evidence: [], determined: false },
+    [facesCtx, relook],
   );
 
   const savedFaceSet = useMemo(() => facesFor(savedRoofs), [facesFor, savedRoofs]);
@@ -1308,54 +904,31 @@ export const DesignsSolarPanelStepContent = forwardRef<
    * Every roof line of the saved design, checked against Google's imagery:
    * eaves against the roof mask, hips/valleys/ridges against the image.
    */
-  const lineChecks = useMemo((): LineCheck[] => {
-    if (savedRoofs.length === 0) return [];
-    const eaves = savedRoofs.flatMap((ring) => fitEavesToMask(ring, lineMask).checks);
-    return [...eaves, ...savedFaceSet.interiorChecks];
-  }, [lineMask, savedFaceSet.interiorChecks, savedRoofs]);
-
-  const lineCheckSummary = useMemo(() => {
-    const checked = lineChecks.filter((c) => c.status !== "no-data");
-    const ok = checked.filter((c) => c.status === "confirmed" || c.status === "adjusted");
-    return { total: lineChecks.length, checked: checked.length, ok: ok.length };
-  }, [lineChecks]);
-
-  /** Google's area-weighted roof pitch, or the 22.5° default when there's no real data. */
-  const roofPitchDeg = useMemo(
-    () => roofPitchDegrees(data?.roofSegments, data?.estimated),
-    [data?.estimated, data?.roofSegments],
+  const lineCheckResult = useMemo(
+    () => (roofCtx ? checkRoofLines(savedRoofs, savedFaceSet, roofCtx) : { lines: [] as LineCheck[], total: 0, checked: 0, ok: 0 }),
+    [roofCtx, savedFaceSet, savedRoofs],
+  );
+  const lineChecks = lineCheckResult.lines;
+  const lineCheckSummary = useMemo(
+    () => ({ total: lineCheckResult.total, checked: lineCheckResult.checked, ok: lineCheckResult.ok }),
+    [lineCheckResult],
   );
 
-  /** Packs every roof with the design's single orientation, the 100 mm setback and the roof pitch. */
+  /** Packs every roof with the design's single orientation, the 100 mm setback and the roof pitch (the shared engine's `layoutRoofPanels`). */
   const layoutPanels = useCallback(
     (
       paths: google.maps.LatLngLiteral[][],
       orientation: PanelOrientation,
       beautify = false,
     ): SolarPanel[] | null => {
-      if (!data?.panelDimensions) return null;
-      // Face rule: find each roof's faces (height model, else hip split) and
-      // pack them one at a time, so no panel crosses a hip, valley or ridge.
-      const { faces, obstructions } = facesFor(paths);
-      // Alignment rule: rows parallel to the main walls — the longest edge of
-      // the largest roof outline, not whichever face happens to come first.
-      const largest = paths.reduce<google.maps.LatLngLiteral[] | null>(
-        (best, p) => (p.length >= 3 && (!best || ringAreaM2(p) > ringAreaM2(best)) ? p : best),
-        null,
-      );
-      const axis = largest ? longestEdgeAngleDegrees(largest) : undefined;
-      const layoutOptions = { orientation, pitchDeg: roofPitchDeg, obstructions: obstructions.map((o) => o.ring) };
-      const packed = beautify
-        ? beautifyPanelsForFaces(faces, data.panelDimensions, layoutOptions, axis)
-        : generatePanelsForFaces(faces, data.panelDimensions, layoutOptions, axis);
-      // Basic rule, checked last whatever packed them: every panel inside one
-      // face and the roof outline, 100 mm clear of every roof line.
-      return dedupeSolarPanels(
-        keepPanelsClear(packed, faces.map((f) => f.ring), paths, data.panelDimensions, { clearM: DESIGN_RULES.edgeSetbackM }),
-      );
+      if (!data?.panelDimensions || !roofCtx) return null;
+      return layoutRoofPanels(paths, facesFor(paths), roofCtx, { orientation, beautify, dims: data.panelDimensions });
     },
-    [data?.panelDimensions, facesFor, roofPitchDeg],
+    [data?.panelDimensions, facesFor, roofCtx],
   );
+
+  /** Google's area-weighted roof pitch, or the 22.5° default when there's no real data. */
+  const roofPitchDeg = useMemo(() => (roofCtx ? roofPitchOf(roofCtx) : roofPitchDegrees(undefined, true)), [roofCtx]);
 
   /**
    * Writes the design to Redux, after the map has repainted so the
@@ -1515,8 +1088,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     }
     let state = relook;
     if (!state) {
-      const rings = [...(savedRoofs.length === 1 ? [savedRoofs[0]] : []), ...(analysis.relook?.() ?? [])];
-      const readings = rankSquareReadings(rings, data?.roofSegments, analysis.luma, { maxShareDiff: 0.15, minSeen: 0.2 });
+      const readings = roofCtx ? relookReadings(roofCtx, savedRoofs.length === 1 ? savedRoofs[0] : null) : [];
       if (readings.length === 0) {
         toast.info("No other reading of this roof matches Google's roof data. Use Edit to mark the roof by hand.");
         return;
@@ -1531,7 +1103,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
     setSideWalls(null);
     setWallClicks(null);
     applyRoofs([state.readings[next].ring]);
-  }, [applyRoofs, data?.estimated, data?.roofSegments, relook, roofSnapshot.analysis, savedRoofs]);
+  }, [applyRoofs, data?.estimated, relook, roofCtx, roofSnapshot.analysis, savedRoofs]);
 
   const handleMapClick = useCallback(
     (e: google.maps.MapMouseEvent) => {
@@ -1579,23 +1151,13 @@ export const DesignsSolarPanelStepContent = forwardRef<
     /* Read final paths from imperative polygon refs (user may have dragged vertices),
        then apply the roof-line rule: straight edges at 0/45/90° to the main
        walls, corners at line intersections, shared corners between roofs. */
-    const straightened = regularizeRoofOutlines(
-      getCurrentEditingPaths().filter((p) => p.length >= 3),
-    );
-    // Roof-line check: fit each eave onto Google's roof mask (moved when the
-    // real edge is more than 100 mm away), then straighten again.
-    // A square-walled hip roof confirmed by Google keeps the border drawn
-    // along its walls: fitting it to the rough roof trace pushed the east
-    // eave of 25 Gilbert St out onto the patio.
-    const squareConfirmed =
-      straightened.length === 1 &&
-      !data?.estimated &&
-      rankSquareReadings([straightened[0]], data?.roofSegments, roofSnapshot.analysis?.luma ?? null).length > 0;
-    const validPaths = lineMask && !squareConfirmed
-      ? regularizeRoofOutlines(
-          straightened.map((ring) => fitEavesToMask(ring, lineMask).ring),
-        )
-      : straightened;
+    // Then each eave fitted to the roof edge in the image — unless Google and
+    // the image confirm a square-walled reading, whose border stays along the
+    // walls (fitting it to the rough trace pushed 25 Gilbert St's east eave
+    // onto the patio). The shared engine's `confirmRoofOutlines`.
+    const drawn = getCurrentEditingPaths().filter((p) => p.length >= 3);
+    // The customer's edit wins: their walls and steps are kept (corners squared, eaves fitted).
+    const validPaths = roofCtx ? confirmRoofOutlines(drawn, roofCtx, { userEdit: true }) : straightenOutlines(drawn);
     setSavedRoofs(validPaths);
 
     if (validPaths.length === 0) {
@@ -1652,14 +1214,12 @@ export const DesignsSolarPanelStepContent = forwardRef<
 
     persistSolarDesign(validPaths, panelsToPersist, totalArea, panelOrientation);
   }, [
-    data?.estimated,
-    data?.roofSegments,
     dispatch,
     getCurrentEditingPaths,
     layoutPanels,
-    lineMask,
     panelOrientation,
     persistSolarDesign,
+    roofCtx,
     selectedLocation,
   ]);
 
@@ -1694,6 +1254,25 @@ export const DesignsSolarPanelStepContent = forwardRef<
 
   /* GeoTIFF imagery overlays */
   useImperativeOverlay(mapReady, rgbOverlay, 0.92, showSolarRgb);
+
+  // NSW Spatial Services aerial photos beside Google's (owner, 9 Nov 2026):
+  // flip the map to compare roof lines, or use them when Google's is unclear.
+  const [imagery, setImagery] = useState<"google" | "nsw">("google");
+  const nswInfo = useNswImagery(selectedLocation?.lat ?? null, selectedLocation?.lng ?? null);
+  useEffect(() => {
+    if (!mapReady || imagery !== "nsw" || !nswInfo?.available) return;
+    const layer = new google.maps.ImageMapType({
+      getTileUrl: (c, z) => `/api/imagery/nsw/tile/${z}/${c.x}/${c.y}`,
+      tileSize: new google.maps.Size(256, 256),
+      maxZoom: 23,
+      name: "NSW imagery",
+    });
+    mapReady.overlayMapTypes.insertAt(0, layer);
+    return () => {
+      const i = mapReady.overlayMapTypes.getArray().indexOf(layer);
+      if (i >= 0) mapReady.overlayMapTypes.removeAt(i);
+    };
+  }, [mapReady, imagery, nswInfo?.available]);
   useImperativeOverlay(mapReady, maskOverlay, 0.45, showSolarRgb);
 
   /* Solar panels + roof outline (building footprint, else mask-traced perimeter, else API bounding box) */
@@ -1901,9 +1480,14 @@ export const DesignsSolarPanelStepContent = forwardRef<
                   ? `${savedFaces.length} roof faces drawn from the walls by trigonometry (${
                       "gables" in savedFaceSet && savedFaceSet.gables ? `${savedFaceSet.gables} gable end${savedFaceSet.gables > 1 ? "s" : ""}, rest hipped` : "hip roof"
                     }), confirmed by Google's roof data; ${savedFaceSet.interiorChecks.filter((c) => c.status === "confirmed").length} of ${savedFaceSet.interiorChecks.length} hips, valleys and ridges seen in the image. `
-                  : savedFaceSet.source === "height-model"
+                  : savedFaceSet.source === "ai-image"
+                    ? `${savedFaces.length} roof faces read from the satellite image by EasyLink AI, lines checked against the image. `
+                    : savedFaceSet.source === "height-model"
                     ? `${savedFaces.length} roof faces found from Google's height data. `
                     : "Roof faces assumed (no usable height data) — check on site. "}
+                {savedFaceSet.determined
+                  ? "Roof lines determined: faces match Google's roof data and the lines are seen in the image. "
+                  : "Roof lines not fully determined: use Relook roof or Edit to correct them. "}
                 {savedFaceSet.moved > 0 ? `${savedFaceSet.moved} roof lines moved onto the edges in the image. ` : ""}
                 {sideWalls ? `Attached house: roof limited to its side walls (${sideWalls.widthM.toFixed(1)} m wide). ` : ""}
                 {savedFaceSet.obstructions.length > 0
@@ -1934,7 +1518,7 @@ export const DesignsSolarPanelStepContent = forwardRef<
               </p>
             )}
 
-            {(loading || layersLoading || roofSnapshot.loading || isGeneratingPanels) && (
+            {(loading || layersLoading || roofSnapshot.loading || (readingRoof && !hasInitializedRoof) || isGeneratingPanels) && (
               <p className="animate-pulse font-inter text-[14px] font-medium text-white/80">
                 {isGeneratingPanels
                   ? "Saving roof and generating solar panels..."
@@ -1942,7 +1526,11 @@ export const DesignsSolarPanelStepContent = forwardRef<
                     ? "Loading roof imagery..."
                     : roofSnapshot.loading
                       ? "Zooming in and finding the roof lines..."
-                      : "Analysing solar potential..."}
+                      : readingRoof && !hasInitializedRoof
+                        ? opusTracing
+                          ? "EasyLink AI is reading, analyzing and designing your roof..."
+                          : "Reading the roof faces and checking them against Google and the image..."
+                        : "Analysing solar potential..."}
               </p>
             )}
           </div>
@@ -1952,6 +1540,28 @@ export const DesignsSolarPanelStepContent = forwardRef<
         <div className="w-full min-w-0 overflow-hidden rounded-[28px] border-[3px] border-design-accent-cyan shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] lg:h-full lg:min-h-0">
           {/* Outer wrapper: overlays (RGB/Panels/Save) sit outside capture ref */}
           <div className="relative aspect-[649/525] h-full w-full min-h-[280px] overflow-hidden rounded-[25px] lg:aspect-auto lg:min-h-0">
+            {/* Frozen while the AI reads the roof: no buttons or map until the
+                green roof is drawn (owner, 10 Nov 2026). Outside the capture
+                target, so it never shows in a saved picture. */}
+            {roofAnalysing && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="absolute inset-0 z-[60] flex cursor-wait items-center justify-center bg-[#0B1424]/55 p-4 backdrop-blur-[1.5px]"
+                onPointerDownCapture={(e) => e.stopPropagation()}
+                onWheelCapture={(e) => e.stopPropagation()}
+              >
+                <div className="flex max-w-[460px] flex-col items-center gap-4 rounded-[20px] border border-white/20 bg-[#0F1E36]/90 px-7 py-6 text-center shadow-[0_10px_40px_rgba(0,0,0,0.45)]">
+                  <span className="h-12 w-12 animate-spin rounded-full border-[4px] border-design-accent-cyan/30 border-t-design-accent-cyan" aria-hidden="true" />
+                  <p className="m-0 font-source-sans text-[22px] font-bold leading-tight text-white sm:text-[26px]">
+                    AI is Analyzing Roof, Area, Size and Designing Panels
+                  </p>
+                  <p className="m-0 animate-pulse font-inter text-[13px] font-medium text-white/75">
+                    The roof view unlocks as soon as your roof is drawn.
+                  </p>
+                </div>
+              </div>
+            )}
             {/* Capture target = satellite map + roof/panel overlays only (no UI chrome) */}
             <div
               ref={mapCaptureRef}
@@ -2173,8 +1783,17 @@ export const DesignsSolarPanelStepContent = forwardRef<
               )}
             </div>
 
+            {imagery === "nsw" && nswInfo?.available ? (
+              <div className="pointer-events-none absolute bottom-[6px] left-[10px] z-10 rounded-[4px] bg-black/55 px-2 py-[2px] font-inter text-[10.5px] text-white/90">
+                {nswInfo.attribution}
+                {nswInfo.capturedOn ? ` · flown ${formatFlown(nswInfo.capturedOn)}` : ""}
+                {nswInfo.resolutionCm ? ` · ${nswInfo.resolutionCm} cm` : ""}
+              </div>
+            ) : null}
+
             {/* Top-right controls — excluded from proposal screenshot */}
             <div className="pointer-events-auto absolute left-[14px] right-[14px] top-[14px] z-10 flex flex-wrap items-center justify-end gap-[8px]">
+              {nswInfo?.available ? <ImageryToggle value={imagery} onChange={setImagery} nswDate={nswInfo.capturedOn} /> : null}
               <LayerToggle active={activeLayer} onChange={setActiveLayer} />
               <OrientationToggle
                 value={panelOrientation}
@@ -2371,6 +1990,59 @@ function OrientationToggle({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+type NswImageryInfo = { available: boolean; capturedOn: string | null; resolutionCm: number | null; attribution: string };
+
+/** Whether NSW aerial photos cover the pin, and when they were flown. */
+function useNswImagery(lat: number | null, lng: number | null): NswImageryInfo | null {
+  const key = lat != null && lng != null ? `${lat},${lng}` : null;
+  const [info, setInfo] = useState<{ key: string; data: NswImageryInfo } | null>(null);
+  useEffect(() => {
+    if (key == null) return;
+    let live = true;
+    fetch(`/api/imagery/nsw?lat=${lat}&lng=${lng}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { data?: NswImageryInfo } | null) => {
+        if (live && j?.data) setInfo({ key, data: j.data });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [key, lat, lng]);
+  return info && info.key === key ? info.data : null;
+}
+
+/** "2022-05-01" → "May 2022". */
+function formatFlown(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-AU", { month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+function ImageryToggle({ value, onChange, nswDate }: { value: "google" | "nsw"; onChange: (v: "google" | "nsw") => void; nswDate: string | null }) {
+  const options: { value: "google" | "nsw"; label: string; title: string }[] = [
+    { value: "google", label: "Google", title: "Google satellite imagery" },
+    { value: "nsw", label: nswDate ? `NSW ${nswDate.slice(0, 4)}` : "NSW", title: "NSW Spatial Services aerial photo, to compare roof lines" },
+  ];
+  return (
+    <div className="flex overflow-hidden rounded-[6px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)]" role="group" aria-label="Imagery">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          title={opt.title}
+          aria-pressed={value === opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`h-[33px] px-[11px] font-inter text-[12px] font-semibold tracking-[-0.1px] transition ${
+            value === opt.value ? "bg-white text-[#2094F3]" : "bg-white/60 text-[#333] hover:bg-white/80"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }

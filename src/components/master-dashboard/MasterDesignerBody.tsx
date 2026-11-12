@@ -28,6 +28,31 @@ import {
 } from "@/lib/designer/simulation";
 import { dcAcLimitLabel, dcAcLimitPercent } from "@/lib/designer/designRules";
 import { useProposalPricing } from "@/lib/proposal/useProposalPricing";
+import {
+  batteryBrands,
+  brandSizeOptions,
+  findSize,
+  sizeLayout,
+  useBatteryOptions,
+  type BatteryOptions,
+} from "@/lib/batteries/batteryOptions";
+
+/**
+ * The size of a brand's battery (any brand when none) closest to the kWh
+ * wanted, single phase (the designer quotes single phase), preferring sizes
+ * the price list has as a kit.
+ */
+function nearestBatterySize(options: BatteryOptions, kwh: number, brand?: string) {
+  const all = options.ranges
+    .filter((r) => !brand || r.brand === brand)
+    .flatMap((r) => r.sizes.filter((s) => s.phase === 1).map((s) => ({ r, s })));
+  return all.sort(
+    (a, b) =>
+      Math.abs(a.s.kwh - kwh) - Math.abs(b.s.kwh - kwh) ||
+      (a.s.priced === "exact" ? 0 : 1) - (b.s.priced === "exact" ? 0 : 1),
+  )[0];
+}
+import { panelsPerFace, requestRoofDesign, type RoofDesignResponse } from "@/lib/roof-design/client";
 
 /** Designer panel tiers → proposal tiers in the price book. */
 const DESIGNER_TIER: Record<string, string> = { std: "standard", prem: "premium", black: "allBlack" };
@@ -129,7 +154,50 @@ const TICK = "M20 6 9 17l-5-5";
 
 export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?: Role; start?: number }) {
   const d = useMemo(() => defaultsFor(role), [role]);
-  const p = useMemo(() => profileFor(role), [role]);
+  const sample = useMemo(() => profileFor(role), [role]);
+
+  /**
+   * The property's roof, designed by the Roof Designer (platform rule: every
+   * portal gets its designs from it). Until a roof is found the sample
+   * property is shown and marked as a sample.
+   */
+  const [address, setAddress] = useState(sample.address);
+  const [roof, setRoof] = useState<Extract<RoofDesignResponse, { status: "READY" }> | null>(null);
+  const [roofBusy, setRoofBusy] = useState(false);
+  const [roofError, setRoofError] = useState("");
+  const p = useMemo(() => {
+    if (!roof) return sample;
+    const perFace = panelsPerFace(roof);
+    const panelAreaM2 = roof.panels.dims.heightM * roof.panels.dims.widthM;
+    return {
+      ...sample,
+      address: roof.formattedAddress ?? address,
+      roofMax: roof.panels.count,
+      faces: perFace.map((f) => ({ n: f.name, max: f.panels, cols: Math.min(f.panels, 8) })),
+      usable: Math.round(roof.panels.count * panelAreaM2),
+      total: roof.outline.areaM2,
+    };
+  }, [address, roof, sample]);
+
+  const findRoof = async () => {
+    const a = address.trim();
+    if (a.length < 5 || roofBusy) return;
+    setRoofBusy(true);
+    setRoofError("");
+    try {
+      const r = await requestRoofDesign({ address: a, orientation: "best", includeImage: true });
+      if (r.status !== "READY") {
+        setRoofError(r.message);
+        return;
+      }
+      setRoof(r);
+      setStep(5);
+    } catch (e) {
+      setRoofError(e instanceof Error ? e.message : "Couldn't design this roof.");
+    } finally {
+      setRoofBusy(false);
+    }
+  };
 
   const [step, setStep] = useState(start);
   const [propType, setPropType] = useState("res");
@@ -145,6 +213,14 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const [fit, setFit] = useState(0.05);
   const [battery, setBattery] = useState(d.battery);
   const [batterySel, setBatterySel] = useState(d.batterySel);
+  /**
+   * A battery picked by brand and size (11 Nov 2026): one system from the
+   * makers' datasheets ("size:<range>:<phase>:<stacks>x<modules>"), priced
+   * with that range. Empty: the slider's kWh, any battery that size.
+   */
+  const [batterySize, setBatterySize] = useState("");
+  const { options: batteryOptions } = useBatteryOptions();
+  const pickedSize = findSize(batteryOptions, batterySize);
   const [mode, setMode] = useState<BatteryMode>("self");
   const [age, setAge] = useState(0);
   const [period, setPeriod] = useState<Period>("year");
@@ -192,7 +268,14 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
   const billCost = supplyC + gridC - expC;
 
   // Prices from the pricing engine v2 (backend price book), as on the website.
-  const priced = useProposalPricing(panels, DESIGNER_TIER[tier] ?? "standard", battery, [], DESIGNER_TIER_IDS);
+  const priced = useProposalPricing(
+    panels,
+    DESIGNER_TIER[tier] ?? "standard",
+    battery,
+    [],
+    DESIGNER_TIER_IDS,
+    pickedSize && battery > 0 ? { batteries: [{ id: pickedSize.size.id, qty: 1 }] } : undefined,
+  );
   const quote = priced.data?.selected ?? null;
   const pricing = {
     total: quote ? quote.net : 0,
@@ -366,6 +449,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
       "Battery",
       battery > 0
         ? (quote?.battery?.model ??
+          (pickedSize ? `${pickedSize.range.brand} ${pickedSize.range.range} · ${sizeLayout(pickedSize.size)}` : null) ??
           (BATTERIES[batterySel] && BATTERIES[batterySel].kwh === battery ? BATTERIES[batterySel].name : `${battery} kWh · pick a model`))
         : "None",
       quote?.battery ? `${quote.battery.kwh} kWh usable` : "",
@@ -450,7 +534,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
 
   return (
     <div
-      className="flex min-h-full w-full flex-col gap-[18px] px-7 pb-7 pt-[18px] text-white"
+      className="flex min-h-full w-full flex-col gap-[18px] px-4 pb-7 pt-[18px] text-white sm:px-7"
       style={{
         backgroundColor: NAVY,
         backgroundImage:
@@ -508,6 +592,25 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
       >
         <span className="block h-full" style={{ width: `${Math.round((step / 9) * 100)}%`, background: SUN_GRAD }} />
       </div>
+
+      {!roof && step >= 5 ? (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-[12px] px-3.5 py-2.5 text-[13px]"
+          style={{ background: NAVY_2, border: `1px solid ${SUN}`, color: NAV_TEXT }}
+        >
+          <span className="flex-1">
+            Sample roof. Designs come from the Roof Designer: enter the property address to design its roof.
+          </span>
+          <button
+            type="button"
+            onClick={() => set(() => setStep(4))}
+            className="h-9 cursor-pointer rounded-[10px] border-0 px-3.5 text-[13px] font-bold"
+            style={{ background: SUN_GRAD, color: SUN_INK }}
+          >
+            Design the roof
+          </button>
+        </div>
+      ) : null}
 
       {/* 1 · Welcome */}
       {step === 1 && (
@@ -583,7 +686,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             role="radiogroup"
             aria-label="Property type"
             className="grid w-full max-w-[960px] gap-4"
-            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))" }}
           >
             {PROPERTY_TYPES.map(([k, n, s, path]) => (
               <button
@@ -752,20 +855,30 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             </label>
             <input
               id="addr"
-              defaultValue={p.address}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void findRoof();
+              }}
               autoComplete="street-address"
               className="h-[52px] min-w-0 flex-1 rounded-[14px] px-4 text-[16px] text-[#0F172A]"
               style={{ border: `2px solid ${SUNLIGHT}` }}
             />
             <button
               type="button"
-              onClick={() => set(() => setStep(5))}
-              className="h-[52px] cursor-pointer rounded-[14px] border-0 px-5 text-[15px] font-bold"
+              onClick={() => void findRoof()}
+              disabled={roofBusy}
+              className="h-[52px] cursor-pointer rounded-[14px] border-0 px-5 text-[15px] font-bold disabled:cursor-wait disabled:opacity-70"
               style={{ background: SUN_GRAD, color: SUN_INK }}
             >
-              Find my roof
+              {roofBusy ? "Designing the roof…" : "Find my roof"}
             </button>
           </div>
+          {roofError ? (
+            <p role="alert" className="m-0 text-center text-[13px]" style={{ color: "#FFB4A8" }}>
+              {roofError}
+            </p>
+          ) : null}
           <div
             role="img"
             aria-label="Satellite map centred on the property with a pin"
@@ -813,7 +926,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               Satellite imagery · zoom {zoom}
             </span>
           </div>
-          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))" }}>
             {[
               ["Network", p.network],
               ["Supply", "Single phase · up to 10 kVA inverter"],
@@ -846,11 +959,11 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               How we use AI
             </span>
           </p>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(150px, 100%), calc(100% / 3 - 16px)), 1fr))" }}>
             {[
-              ["Total roof area", `${p.total} m²`, "From the building outline"],
+              ["Total roof area", `${p.total} m²`, roof ? "Measured by the Roof Designer" : "Sample roof"],
               ["Usable roof area", `${p.usable} m²`, "After edges, vents and shade"],
-              ["Panels that can fit", String(p.roofMax), "440 W panels · the most, not the target"],
+              ["Panels that can fit", String(p.roofMax), `${roof?.panels.watts ?? 440} W panels · the most, not the target`],
             ].map(([l, v, s]) => (
               <div
                 key={l}
@@ -899,6 +1012,21 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               Edit roof
             </button>
           </div>
+          {roof?.image ? (
+            // The Roof Designer's drawing: every face's border, obstructions and panels on the satellite image.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`data:${roof.image.contentType};base64,${roof.image.base64}`}
+              alt={`Roof Designer layout: ${roof.panels.count} panels on ${roof.faces.items.length} roof faces`}
+              className="mx-auto block max-h-[520px] w-full rounded-[18px] object-contain"
+              style={{ border: `1px solid ${NAVY_LINE}`, background: NAVY_2 }}
+            />
+          ) : null}
+          {roof?.notes.length ? (
+            <p className="m-0 rounded-[12px] px-3.5 py-2.5 text-[13px]" style={{ background: NAVY_2, color: SUNLIGHT }}>
+              {roof.notes.join(" ")}
+            </p>
+          ) : null}
           <div
             role="img"
             aria-label={`Roof outline with ${view === "panels" ? `${panelsShown} panels placed` : `${p.roofMax} possible panel spots`}`}
@@ -946,7 +1074,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
         <div className="flex flex-wrap items-start gap-4">
           <section
             aria-label="Your usage"
-            className="flex max-w-[400px] flex-[1_1_320px] flex-col gap-2.5 rounded-[18px] p-[18px]"
+            className="flex min-w-0 max-w-[400px] flex-[1_1_300px] flex-col gap-2.5 rounded-[18px] p-[18px]"
             style={{ background: SUN_GRAD_135, color: SUN_INK }}
           >
             <h1 className="m-0 font-source-sans text-[26px] font-bold">Design your path to $0 grid bills</h1>
@@ -1039,6 +1167,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               onChange={(e) => {
                 setBattery(Number(e.target.value));
                 setBatterySel("custom");
+                setBatterySize("");
               }}
               className="accent-[#0B1A2E]"
             />
@@ -1095,7 +1224,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
           <div className="flex min-w-0 flex-[2_1_520px] flex-col gap-3">
             <section aria-label="System performance" className={CARD_W}>
               <h2 className="m-0 text-[15px] font-bold">System performance</h2>
-              <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+              <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(150px, 100%), calc(100% / 3 - 16px)), 1fr))" }}>
                 {statCards.map((s) => (
                   <div key={s.l} className="flex flex-col gap-0.5 rounded-[12px] bg-[#F4F6FA] p-3">
                     <span className="text-[12px] font-semibold" style={{ color: SLATE }}>
@@ -1128,7 +1257,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
                   ))}
                 </div>
               </div>
-              <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+              <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(140px, 100%), calc(100% / 4 - 16px)), 1fr))" }}>
                 {valueCards.map((v) => (
                   <div key={v.l} className="flex flex-col gap-1 rounded-[10px] bg-[#F8FAFC] p-2.5">
                     <span className="text-[11px] font-bold" style={{ color: SLATE }}>
@@ -1157,7 +1286,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               </div>
             </section>
 
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
               <section aria-label="Grid import vs battery size" className={`${CARD_W} gap-2`}>
                 <h2 className="m-0 text-[15px] font-bold">Grid import vs battery size</h2>
                 <div
@@ -1246,7 +1375,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             Every model comes from the EasyLink catalogue, so the same SKUs carry into your proposal, the
             installer&rsquo;s kit and the distributor&rsquo;s order.
           </p>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))" }}>
             {/* Panels */}
             <EquipCard
               kind="Panels"
@@ -1306,33 +1435,77 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               icon={ICON.bat}
               tag="Optional"
               on={battery > 0}
-              sku={battery > 0 ? BATTERIES[batterySel]?.sku ?? "" : `Recommended ${rec} kWh`}
+              sku={
+                battery > 0
+                  ? pickedSize
+                    ? `${pickedSize.range.range} · ${sizeLayout(pickedSize.size)}`
+                    : (BATTERIES[batterySel]?.sku ?? `${battery} kWh`)
+                  : `Recommended ${rec} kWh`
+              }
+              note={
+                battery > 0 && pickedSize
+                  ? `Works with: ${pickedSize.size.inverters.join("; ")}${pickedSize.size.priced === "estimate" ? " · price estimated from the range" : ""}`
+                  : undefined
+              }
               btn={battery > 0 ? "Added · remove" : "+ Add"}
               onToggle={() => {
                 if (battery > 0) {
                   setBattery(0);
                   setBatterySel("none");
+                  setBatterySize("");
+                } else if (batteryOptions?.ranges.length) {
+                  const pick = nearestBatterySize(batteryOptions, rec);
+                  if (pick) {
+                    setBatterySize(pick.s.id);
+                    setBattery(pick.s.kwh);
+                    setBatterySel("custom");
+                  }
                 } else {
                   const k = BATTERIES[batterySel] && batterySel !== "none" ? batterySel : "fx4660";
                   setBatterySel(k);
                   setBattery(BATTERIES[k].kwh);
                 }
               }}
-              brands={["FOX ESS", "Stackable range"]}
-              brandValue={BATTERIES[batterySel]?.brand}
-              onBrand={(v) => {
-                const k = v === "FOX ESS" ? "fx4660" : "b100";
-                setBatterySel(k);
-                setBattery(BATTERIES[k].kwh);
-              }}
-              models={["fx4660", "fx2", "b100", "b200", "b500", "b1000"].map(
-                (k) => [k, BATTERIES[k].short] as [string, string],
-              )}
-              modelValue={batterySel}
-              onModel={(k) => {
-                setBatterySel(k);
-                setBattery(BATTERIES[k].kwh);
-              }}
+              {...(batteryOptions?.ranges.length
+                ? {
+                    brands: batteryBrands(batteryOptions, 1),
+                    brandValue: pickedSize?.range.brand ?? "",
+                    onBrand: (v: string) => {
+                      const pick = nearestBatterySize(batteryOptions, battery > 0 ? battery : rec, v);
+                      if (!pick) return;
+                      setBatterySize(pick.s.id);
+                      setBattery(pick.s.kwh);
+                      setBatterySel("custom");
+                    },
+                    models: pickedSize
+                      ? brandSizeOptions(batteryOptions, pickedSize.range.brand, 1).map((o) => [o.value, o.label] as [string, string])
+                      : [],
+                    modelValue: batterySize,
+                    onModel: (id: string) => {
+                      const hit = findSize(batteryOptions, id);
+                      if (!hit) return;
+                      setBatterySize(id);
+                      setBattery(hit.size.kwh);
+                      setBatterySel("custom");
+                    },
+                  }
+                : {
+                    brands: ["FOX ESS", "Stackable range"],
+                    brandValue: BATTERIES[batterySel]?.brand,
+                    onBrand: (v: string) => {
+                      const k = v === "FOX ESS" ? "fx4660" : "b100";
+                      setBatterySel(k);
+                      setBattery(BATTERIES[k].kwh);
+                    },
+                    models: ["fx4660", "fx2", "b100", "b200", "b500", "b1000"].map(
+                      (k) => [k, BATTERIES[k].short] as [string, string],
+                    ),
+                    modelValue: batterySel,
+                    onModel: (k: string) => {
+                      setBatterySel(k);
+                      setBattery(BATTERIES[k].kwh);
+                    },
+                  })}
             />
             {/* EV charger */}
             <EquipCard
@@ -1365,7 +1538,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             style={{
               background: NAVY_2,
               border: `1px solid ${NAVY_LINE}`,
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
             }}
           >
             {checks.map((c) => (
@@ -1403,7 +1576,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               {blocked ? "Needs a change before approval" : "Passes all design checks"}
             </span>
           </div>
-          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(140px, 100%), calc(100% / 4 - 16px)), 1fr))" }}>
             {[
               ["System size", `${kwdc} kW`, `${inverter.kw} kW inverter · ${ratio}%`],
               ["Panels", String(panels), `${TIERS[tier].n} 440 W`],
@@ -1425,7 +1598,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
             <div className="flex min-w-0 flex-[3_1_520px] flex-col gap-3.5">
               <section aria-label="Panel tier" className={CARD_W}>
                 <h2 className="m-0 text-[15px] font-bold">Panel tier</h2>
-                <div role="radiogroup" aria-label="Panel tier" className="grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+                <div role="radiogroup" aria-label="Panel tier" className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(150px, 100%), calc(100% / 3 - 16px)), 1fr))" }}>
                   {Object.entries(TIERS).map(([k, t]) => {
                     const on = k === tier;
                     const totals = priced.data?.tierTotals ?? {};
@@ -1488,6 +1661,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
                         onClick={() => {
                           setBatterySel(k);
                           setBattery(b.kwh);
+                          setBatterySize("");
                         }}
                         className="flex cursor-pointer flex-col gap-[3px] rounded-[12px] p-3 text-left"
                         style={{ border: `2px solid ${on ? SUN : "#E3E8EF"}`, background: on ? "#FFF7E6" : WHITE }}
@@ -1553,7 +1727,7 @@ export function MasterDesignerBody({ role = "distributor", start = 6 }: { role?:
               <section
                 aria-label="Savings"
                 className="grid gap-2 rounded-[16px] bg-white p-4 text-[#0F172A]"
-                style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+                style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(150px, 100%), calc(100% / 3 - 16px)), 1fr))" }}
               >
                 {[
                   ["Monthly savings", money(yearly / 12), GREEN],
@@ -1828,6 +2002,7 @@ function EquipCard({
   onModel,
   onToggle,
   qty,
+  note,
 }: {
   kind: string;
   icon: string;
@@ -1843,6 +2018,8 @@ function EquipCard({
   onModel?: (v: string) => void;
   onToggle?: () => void;
   qty?: React.ReactNode;
+  /** A line under the code (batteries: the inverters the picked size runs on). */
+  note?: string;
 }) {
   return (
     <section
@@ -1868,6 +2045,11 @@ function EquipCard({
           className="h-[42px] rounded-[10px] bg-white px-2 text-[13px] text-[#0F172A] disabled:cursor-default"
           style={{ border: "1px solid #CBD5E1" }}
         >
+          {brandValue !== undefined && !brands.includes(brandValue) ? (
+            <option value="" disabled>
+              Select…
+            </option>
+          ) : null}
           {brands.map((b) => (
             <option key={b} value={b}>
               {b}
@@ -1884,6 +2066,11 @@ function EquipCard({
           className="h-[42px] rounded-[10px] bg-white px-2 text-[13px] text-[#0F172A] disabled:cursor-default"
           style={{ border: "1px solid #CBD5E1" }}
         >
+          {modelValue !== undefined && !models.some(([k]) => k === modelValue) ? (
+            <option value="" disabled>
+              Select…
+            </option>
+          ) : null}
           {models.map(([k, n]) => (
             <option key={k} value={k}>
               {n}
@@ -1894,6 +2081,11 @@ function EquipCard({
       <code className="text-[11px]" style={{ color: SLATE }}>
         {sku}
       </code>
+      {note ? (
+        <span className="text-[11.5px] leading-snug" style={{ color: SLATE }}>
+          {note}
+        </span>
+      ) : null}
       {qty}
       <button
         type="button"

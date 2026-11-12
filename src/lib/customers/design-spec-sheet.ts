@@ -1,3 +1,4 @@
+import { paybackYears as paybackYearsOf } from "@/lib/proposal/savingsProjection";
 import type { CustomerDesign, CustomerDesignProduct } from "@/lib/customers/designs";
 import type { DesignOptionCard, DesignOptions } from "@/lib/customers/design-options";
 import {
@@ -94,8 +95,7 @@ export function buildDesignSpecSheet(
     priceBasis = "equipment";
   }
 
-  const paybackYears =
-    price && savingsPerYear ? Math.round((price / savingsPerYear) * 10) / 10 : undefined;
+  const paybackYears = paybackYearsOf(price, savingsPerYear) ?? undefined;
 
   return {
     title: design.title?.trim() || option?.title || "Your design",

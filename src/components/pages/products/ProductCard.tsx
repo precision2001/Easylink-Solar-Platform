@@ -16,6 +16,7 @@ import {
 import {
   fetchZipConfig,
   isZipPayable,
+  methodLineTotalMinor,
   type ZipConfig,
 } from "@/lib/public/zipConfig";
 import type {
@@ -93,8 +94,13 @@ export function ProductCard({
   }, []);
 
   const totalMinor = Math.round(product.price * 100) * quantity;
-  const afterpayAvailable = inStock && isAfterpayPayable(afterpay, totalMinor);
-  const zipAvailable = inStock && isZipPayable(zip, totalMinor);
+  const unitMinor = Math.round(product.price * 100);
+  const afterpayTotalMinor = methodLineTotalMinor(unitMinor, quantity, afterpay);
+  const zipTotalMinor = methodLineTotalMinor(unitMinor, quantity, zip);
+  const afterpayAvailable = inStock && isAfterpayPayable(afterpay, afterpayTotalMinor);
+  const zipAvailable = inStock && isZipPayable(zip, zipTotalMinor);
+  const formatAud = (minor: number) =>
+    new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(minor / 100);
 
   // Card purchases go through the cart (several products, one warehouse);
   // "Pay in 4" stays a single-product Afterpay checkout.
@@ -207,6 +213,18 @@ export function ProductCard({
                 <Icon name="Download" className="size-3 shrink-0 text-success" />
               </button>
             ) : null}
+            {product.documents?.map((d) => (
+              <a
+                key={d.url}
+                href={d.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 font-dm-sans text-[10px] font-medium text-warm-gray hover:text-warm-ink"
+              >
+                {d.title}
+                <Icon name="Download" className="size-3 shrink-0 text-success" />
+              </a>
+            ))}
           </div>
         </div>
 
@@ -315,6 +333,12 @@ export function ProductCard({
               </button>
             ) : null}
           </div>
+          {afterpayAvailable && afterpayTotalMinor !== totalMinor ? (
+            <p className="mt-2 text-right font-dm-sans text-[11px] text-warm-gray">Afterpay price {formatAud(afterpayTotalMinor)}</p>
+          ) : null}
+          {zipAvailable && zipTotalMinor !== totalMinor ? (
+            <p className="mt-1 text-right font-dm-sans text-[11px] text-warm-gray">Zip price {formatAud(zipTotalMinor)}</p>
+          ) : null}
         </div>
       </div>
     </article>

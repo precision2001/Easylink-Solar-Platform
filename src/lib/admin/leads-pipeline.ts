@@ -57,6 +57,8 @@ export type NextAction = {
 
 export type Person = { id: string; firstName: string; lastName: string; email?: string };
 
+import type { LeadDesignShare } from "@/lib/designs/send-to-customer";
+
 export type PipelineLead = {
   id: string;
   customerName: string;
@@ -76,6 +78,28 @@ export type PipelineLead = {
   /** Set while nobody has contacted them yet. */
   respondBy: string | null;
   responseOverdue: boolean;
+  roofDesign?: RoofDesignSummary | null;
+  /** Quotes still open on the lead (draft, sent, viewed): one per battery option, and the lowest total. */
+  openQuotes?: { count: number; fromCents: number | null } | null;
+  /** The lead's design and when it last went to the customer. */
+  design?: LeadDesignShare | null;
+};
+
+/** Automatic roof design (platform designer) for the lead's address. */
+export type RoofDesignSummary = {
+  status: "READY" | "NO_ROOF" | "NO_ADDRESS" | "FAILED";
+  address: string;
+  panelCount: number | null;
+  panelWatts: number | null;
+  systemKw: number | null;
+  orientation: "PORTRAIT" | "LANDSCAPE" | null;
+  faceCount: number | null;
+  roofAreaM2: number | null;
+  message: string | null;
+  updatedAt: string;
+  /** The design's pin, when stored; lets Solar Design skip the address lookup. */
+  lat?: number | null;
+  lng?: number | null;
 };
 
 export type PipelineMeta = {

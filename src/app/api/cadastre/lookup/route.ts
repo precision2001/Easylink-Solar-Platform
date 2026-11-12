@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildBackendUrl, extractMessage } from "@/lib/customers/backend";
+import { getCadastre } from "@/lib/server/roofDataCache";
 
 export interface CadastralParcelResult {
   ring: { lat: number; lng: number }[];
@@ -9,7 +9,6 @@ export interface CadastralParcelResult {
   state: "NSW" | "VIC" | "QLD" | "WA" | "TAS";
 }
 
-const LOOKUP_PATH = "/cadastre/lookup";
 
 /**
  * Proxies the free NSW cadastre lookup (see cadastre.service.ts on the
@@ -29,56 +28,13 @@ export async function GET(request: Request) {
     );
   }
 
-  const backendBaseUrl = process.env.BACKEND_API_BASE_URL;
-
-  if (!backendBaseUrl) {
-    return NextResponse.json(
-      { message: "Server configuration is missing BACKEND_API_BASE_URL." },
-      { status: 500 },
-    );
+  const la = Number(lat);
+  const ln = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+    return NextResponse.json({ message: "lat and lng are required." }, { status: 400 });
   }
-
-  let backendResponse: Response;
-
-  try {
-    backendResponse = await fetch(
-      buildBackendUrl(
-        backendBaseUrl,
-        `${LOOKUP_PATH}?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`,
-      ),
-      { method: "GET", headers: { Accept: "application/json" }, cache: "no-store" },
-    );
-  } catch (error) {
-    console.error("cadastre lookup fetch error", error);
-    return NextResponse.json(
-      { message: "Unable to reach the cadastre service." },
-      { status: 502 },
-    );
-  }
-
-  const responseText = await backendResponse.text();
-  let payload: unknown = null;
-
-  if (responseText) {
-    try {
-      payload = JSON.parse(responseText);
-    } catch {
-      payload = null;
-    }
-  }
-
-  if (!backendResponse.ok) {
-    return NextResponse.json(
-      {
-        message: extractMessage(
-          payload,
-          "Cadastre lookup failed. Please try again.",
-        ),
-      },
-      { status: backendResponse.status },
-    );
-  }
-
-  const record = (payload ?? {}) as { data?: CadastralParcelResult | null };
-  return NextResponse.json({ success: true, data: record.data ?? null });
+  // Cached by address (see roofDataCache).
+  const r = await getCadastre<CadastralParcelResult>(la, ln);
+  if (!r.ok) return NextResponse.json({ message: r.message }, { status: r.status });
+  return NextResponse.json({ success: true, data: r.data ?? null });
 }

@@ -638,9 +638,17 @@ export function hipFacesForSquareRoof(
     minAreaRatio = 0.85,
     report,
     luma = null,
+    googleStale = false,
   }: {
     cellM?: number;
     maxShareDiff?: number;
+    /**
+     * Google's data is years older than the image: it can't make a gable
+     * where the image shows the hips (12 Fursorb St, Marayong). The plain hip
+     * reading is kept when the image shows its lines better (by 5 points) and
+     * Google is still roughly with it (share difference up to 0.3).
+     */
+    googleStale?: boolean;
     maxUnmatched?: number;
     minAreaRatio?: number;
     /** Receives how well the faces matched Google (share difference, 0 = exact), which ends are gables, and the image check. */
@@ -804,7 +812,7 @@ export function hipFacesForSquareRoof(
   // What the image shows: each hip, valley and ridge of a reading is
   // checked against the brightness edge or capping line seen along it.
   const look = (fs: { ring: LatLng[] }[]) => {
-    const lines = interiorEdges(fs, [ring]).map(([a, b]) => checkInteriorLine(a, b, luma));
+    const lines = interiorEdges(fs, [ring]).map(([a, b]) => checkLineCached(a, b, luma));
     let total = 0, ok = 0;
     for (const l of lines) {
       const pa = F.toXY(l.a), pb = F.toXY(l.b);
@@ -820,6 +828,7 @@ export function hipFacesForSquareRoof(
   };
   let faces = build(new Set());
   let best = { faces, ...score(faces), gables: [] as number[], ...look(faces) };
+  const allHip = best;
   {
     const convex = (i: number) => {
       const a = xy[(i - 1 + n) % n], b = xy[i], c = xy[(i + 1) % n];
@@ -843,11 +852,13 @@ export function hipFacesForSquareRoof(
       if (better(cand, best)) best = cand;
     }
   }
+  const hipOverStaleGable = googleStale && best.gables.length > 0 && allHip.diff <= 0.3 && allHip.seen >= best.seen + 0.05;
+  if (hipOverStaleGable) best = allHip;
   faces = best.faces;
   if (faces.length < 2) return null;
   (globalThis as { __sqWhy?: (w: unknown) => void }).__sqWhy?.({ diff: +best.diff.toFixed(3), gables: best.gables, unmatched: +(unmatched / gTotal).toFixed(3), gTotal: Math.round(gTotal), fTotal: Math.round(best.fTotal), f: best.f.map((x) => Math.round(x)), g: g.map((x) => Math.round(x)) });
   report?.({ diff: best.diff, gables: best.gables, areaRatio: best.fTotal / gTotal, seen: best.seen, lines: best.lines });
-  if (best.diff > maxShareDiff) return null;
+  if (best.diff > maxShareDiff && !hipOverStaleGable) return null;
   // And about as much roof as Google measured (not a part of it).
   if (best.fTotal < minAreaRatio * gTotal) return null;
 
@@ -868,6 +879,25 @@ export function hipFacesForSquareRoof(
     }
     return { ring: shaped[i], eaveDeg: fc.eaveDeg, azimuthDeg: Math.round(fc.azimuthDeg), pitchDeg: pitch };
   });
+}
+
+/** The same line is checked by many readings (every gable variant, every outline variant): cache per image. */
+const lineCache = new WeakMap<GeoTiffRaster, Map<string, LineCheck>>();
+function checkLineCached(a: LatLng, b: LatLng, luma: GeoTiffRaster | null): LineCheck {
+  if (!luma) return checkInteriorLine(a, b, luma);
+  let m = lineCache.get(luma);
+  if (!m) {
+    m = new Map();
+    lineCache.set(luma, m);
+  }
+  const k = `${a.lat.toFixed(8)},${a.lng.toFixed(8)}|${b.lat.toFixed(8)},${b.lng.toFixed(8)}`;
+  let v = m.get(k);
+  if (!v) {
+    v = checkInteriorLine(a, b, luma);
+    if (m.size > 20000) m.clear();
+    m.set(k, v);
+  }
+  return { ...v, a, b };
 }
 
 /**
@@ -898,16 +928,22 @@ export function rankSquareReadings(
   {
     maxShareDiff = 0.1,
     minSeen = 0.35,
+    cellM,
+    googleStale,
   }: {
     maxShareDiff?: number;
+    /** See hipFacesForSquareRoof. */
+    googleStale?: boolean;
     /** Share of the computed hips, valleys and ridges that must be seen in the image (when there is an image). */
     minSeen?: number;
+    /** Grid size for the faces (default 5 cm; a coarser grid for searching many outlines). */
+    cellM?: number;
   } = {},
 ): SquareReading[] {
   const out: SquareReading[] = [];
   for (const ring of rings) {
     let rep = { diff: Infinity, seen: 0, lines: [] as LineCheck[], gables: [] as number[] };
-    const faces = hipFacesForSquareRoof(ring, segments, { luma, maxShareDiff, report: (r) => (rep = r) });
+    const faces = hipFacesForSquareRoof(ring, segments, { luma, maxShareDiff, cellM, googleStale, report: (r) => (rep = r) });
     if (!faces) continue;
     if (luma && rep.lines.length > 0 && rep.seen < minSeen) continue;
     const lines = rep.lines.map((l) => ({

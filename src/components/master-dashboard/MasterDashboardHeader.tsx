@@ -120,7 +120,7 @@ export function MasterDashboardHeader({
             <Icon name="Search" className="size-[18px]" />
           </button>
           <DashboardNotificationBell
-            mode="preview"
+            mode="admin"
             bellButtonClassName="relative flex size-8 items-center justify-center rounded-full text-gray-1 hover:bg-white/10"
             bellIconClassName="size-[18px] text-gray-1"
           />

@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useSmsStatus } from "@/hooks/useSmsStatus";
+import { SmsStatusNote } from "@/components/sms/SmsStatusNote";
 
 export type InboxRole = "operations" | "installer";
 
@@ -370,6 +372,7 @@ export function MasterInbox({ role = "operations" }: { role?: InboxRole } = {}) 
   const [who, setWho] = useState("All");
   const [selectedId, setSelectedId] = useState(conversations[0]!.id);
   const [reply, setReply] = useState("");
+  const sms = useSmsStatus(ops ? "admin" : "installer");
 
   const kept = useMemo(() => {
     const value = filters.find(([label]) => label === who)?.[1] ?? null;
@@ -598,6 +601,7 @@ export function MasterInbox({ role = "operations" }: { role?: InboxRole } = {}) 
               className="resize-y rounded-[10px] border px-3 py-2.5 text-[13px]"
               style={{ borderColor: BORDER_2 }}
             />
+            {current.channel === "SMS" ? <SmsStatusNote status={sms} /> : null}
             <div className="flex flex-wrap gap-2">
               <button type="button" title="Not built yet" className={`${GHOST_BTN} h-10`}>
                 Template

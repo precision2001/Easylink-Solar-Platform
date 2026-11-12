@@ -1,3 +1,4 @@
+import { paybackYears } from "./savingsProjection";
 import { describe, expect, it } from "vitest";
 
 import { buildProposalDocument, cumulativeGain, designBatteryKwh, greetingName } from "./proposalDocument";
@@ -61,7 +62,7 @@ describe("buildProposalDocument", () => {
     expect(doc.gst).toBeCloseTo(1753.64, 2);
     expect(doc.validUntil).toBe("30 November 2026");
     expect(doc.rebateLines.map((l) => l.value)).toEqual([2700, 5460]);
-    expect(doc.paybackYears).toBe(Math.round((19290 / doc.yearlyGain) * 10) / 10);
+    expect(doc.paybackYears).toBe(paybackYears(19290, doc.yearlyGain));
   });
 
   it("shows bills in the customer's own period", () => {
@@ -87,6 +88,22 @@ describe("buildProposalDocument", () => {
     expect(doc.batteryLine).toBeNull();
     expect(doc.options.map((o) => o.batteryKwh)).toEqual([0, 9.2, 14.6]);
     expect(doc.options[0].isDesign).toBe(true);
+  });
+
+  it("shows exactly the battery options the customer compared, lettered, the shown one marked", () => {
+    const doc = buildProposalDocument({
+      proposal: design({ batteryCapacityId: "20kwh", batteryCapacityKwh: 20, batteryOptionIds: ["40kwh", "none", "20kwh"] }),
+      pricing: { ...pricing, batteryInfo: { "20": { model: "FoxESS CQ7", kwh: 20.9 }, "40": { model: "FoxESS CQ7", kwh: 41.8 } } },
+      links,
+      today,
+    });
+    expect(doc.options.map((o) => [o.label.split(" · ")[0], o.batteryKwh, o.price])).toEqual([
+      ["Option A", 0, 8990],
+      ["Option B", 20.9, 19290],
+      ["Option C", 41.8, 26990],
+    ]);
+    expect(doc.options.filter((o) => o.isDesign).map((o) => o.label.split(" · ")[0])).toEqual(["Option B"]);
+    expect(doc.options.filter((o) => o.label.endsWith("Recommended"))).toHaveLength(1);
   });
 
   it("still builds without the pricing engine, from the stored price", () => {

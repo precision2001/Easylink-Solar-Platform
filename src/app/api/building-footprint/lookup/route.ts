@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildBackendUrl, extractMessage } from "@/lib/customers/backend";
+import { getFootprint } from "@/lib/server/roofDataCache";
 
 export interface BuildingFootprintResult {
   ring: { lat: number; lng: number }[];
@@ -7,7 +7,6 @@ export interface BuildingFootprintResult {
   areaM2: number;
 }
 
-const LOOKUP_PATH = "/building-footprint/lookup";
 
 /**
  * Proxies the free Microsoft building-footprint lookup (see
@@ -28,56 +27,13 @@ export async function GET(request: Request) {
     );
   }
 
-  const backendBaseUrl = process.env.BACKEND_API_BASE_URL;
-
-  if (!backendBaseUrl) {
-    return NextResponse.json(
-      { message: "Server configuration is missing BACKEND_API_BASE_URL." },
-      { status: 500 },
-    );
+  const la = Number(lat);
+  const ln = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+    return NextResponse.json({ message: "lat and lng are required." }, { status: 400 });
   }
-
-  let backendResponse: Response;
-
-  try {
-    backendResponse = await fetch(
-      buildBackendUrl(
-        backendBaseUrl,
-        `${LOOKUP_PATH}?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`,
-      ),
-      { method: "GET", headers: { Accept: "application/json" }, cache: "no-store" },
-    );
-  } catch (error) {
-    console.error("building-footprint lookup fetch error", error);
-    return NextResponse.json(
-      { message: "Unable to reach the building footprint service." },
-      { status: 502 },
-    );
-  }
-
-  const responseText = await backendResponse.text();
-  let payload: unknown = null;
-
-  if (responseText) {
-    try {
-      payload = JSON.parse(responseText);
-    } catch {
-      payload = null;
-    }
-  }
-
-  if (!backendResponse.ok) {
-    return NextResponse.json(
-      {
-        message: extractMessage(
-          payload,
-          "Building footprint lookup failed. Please try again.",
-        ),
-      },
-      { status: backendResponse.status },
-    );
-  }
-
-  const record = (payload ?? {}) as { data?: BuildingFootprintResult | null };
-  return NextResponse.json({ success: true, data: record.data ?? null });
+  // Cached by address (see roofDataCache).
+  const r = await getFootprint<BuildingFootprintResult>(la, ln);
+  if (!r.ok) return NextResponse.json({ message: r.message }, { status: r.status });
+  return NextResponse.json({ success: true, data: r.data ?? null });
 }

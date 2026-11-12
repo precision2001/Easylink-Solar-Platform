@@ -1,6 +1,7 @@
 import { formatOptionPrice, type DesignOptions } from "@/lib/customers/design-options";
 import { selectedDesignOption } from "@/lib/customers/dashboard-summary";
 import type { ProjectJourney } from "@/lib/project-journey";
+import { balanceCents, formatCents, formatQuoteDate, isDepositDue, isOpen, quoteVersionLabel, sortQuotes, type Quote } from "@/lib/quotes";
 
 /**
  * What the customer should do next, and what's worth telling them, worked out
@@ -20,9 +21,14 @@ export type Insight = { icon: "sun" | "dollar" | "battery" | "leaf" | "calendar"
 export function nextBestStep(input: {
   journey: ProjectJourney | null;
   options: DesignOptions | null;
+  /** The customer's quotes, when loaded. A quote waiting on them comes first. */
+  quotes?: Quote[] | null;
+  now?: Date;
 }): NextStep {
   const { journey, options } = input;
   const design = selectedDesignOption(options);
+  const quoteStep = quoteNextStep(input.quotes ?? [], input.now ?? new Date());
+  if (quoteStep) return quoteStep;
 
   if (options && !options.hasCompletedDesignWizard && !design) {
     return {
@@ -83,6 +89,37 @@ export function nextBestStep(input: {
       ...upcoming.map((m, i) => `${i === 0 ? "Then" : "After that"}: ${m.label}.`),
     ],
     primary: { label: "Track my project", href: "/customers/project" },
+    secondary: { label: "Message us", href: "/customers/messages" },
+  };
+}
+
+/** An accepted quote with the deposit unpaid, else a sent quote still open. */
+function quoteNextStep(quotes: Quote[], now: Date): NextStep | null {
+  const sorted = sortQuotes(quotes);
+  const due = sorted.find((q) => isDepositDue(q));
+  if (due) {
+    return {
+      title: "Pay your deposit to lock in your install.",
+      points: [
+        `You accepted ${quoteVersionLabel(due)}: ${due.title}. The deposit is ${formatCents(due.depositCents)}.`,
+        `The balance of ${formatCents(balanceCents(due))} is due when your system is installed.`,
+      ],
+      primary: { label: "Pay my deposit", href: `/customers/design?quote=${encodeURIComponent(due.id)}#quotes` },
+      secondary: { label: "Message us", href: "/customers/messages" },
+    };
+  }
+  const open = sorted.filter((q) => isOpen(q, now));
+  if (!open.length) return null;
+  const latest = open[0];
+  return {
+    title: "Your quote is ready.",
+    points: [
+      `${quoteVersionLabel(latest)}: ${latest.title}, ${formatCents(latest.totalCents)} inc GST. Valid until ${formatQuoteDate(latest.validUntil)}.`,
+      open.length > 1
+        ? `You have ${open.length} quotes to compare side by side before you choose.`
+        : `A ${formatCents(latest.depositCents)} deposit locks in your install once you accept.`,
+    ],
+    primary: { label: open.length > 1 ? "Compare my quotes" : "View my quote", href: "/customers/design#quotes" },
     secondary: { label: "Message us", href: "/customers/messages" },
   };
 }

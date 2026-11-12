@@ -149,7 +149,7 @@ export function InstallerOverviewDashboard() {
         ))}
       </div>
 
-      <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+      <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))" }}>
         <section
           aria-label="AI assistant"
           className="flex flex-col gap-2 rounded-[14px] border border-[#9CCFF3] bg-[#EEF7FE] px-[18px] py-4"
@@ -284,7 +284,7 @@ export function InstallerOverviewDashboard() {
         </div>
       </section>
 
-      <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+      <div className="grid items-start gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))" }}>
         <section
           aria-label="Compliance"
           className="flex flex-col gap-2 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]"

@@ -286,7 +286,7 @@ export function InstallerCustomerWorkspace() {
                   <Empty>No equipment attached to this design yet.</Empty>
                 </div>
               ) : (
-                <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
+                <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))]">
                   {equipment.map(({ kind, item }) => (
                     <div key={kind} className={`${PANEL} flex flex-col gap-2`}>
                       <div className="flex items-center gap-2">
@@ -309,7 +309,7 @@ export function InstallerCustomerWorkspace() {
               )}
             </section>
 
-            <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(380px,1fr))] items-start">
+            <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(380px,100%),1fr))] items-start">
               <section className={`${PANEL} flex flex-col gap-2`}>
                 <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">
                   Appointment schedule

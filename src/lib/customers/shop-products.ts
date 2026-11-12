@@ -69,6 +69,8 @@ export type ShopProduct = {
   /** Inc. GST, in dollars. Undefined when there is no price. */
   price?: number;
   imageUrl?: string;
+  /** Product details, for the datasheet and document links. */
+  specs?: unknown;
   bestSeller: boolean;
   /** Only when the catalogue has real reviews. */
   rating?: { value: number; count: number };
@@ -135,6 +137,7 @@ export function toShopProduct(source: ShopSource): ShopProduct {
     keySpec: keySpecFor(source),
     price,
     imageUrl: productImage(source as SpecProduct)?.thumbUrl,
+    specs: (source as { specs?: unknown }).specs,
     bestSeller: source.bestSeller === true,
     rating,
   };

@@ -168,14 +168,15 @@ export function CartCheckoutPage() {
     ...(zipOption?.available ? [{ id: "zip" as const, title: "Zip", sub: `Interest-free terms · ${money(zipOption.total)} total` }] : []),
   ];
   const activeOption = activeMethod === "afterpay" ? afterpayOption : activeMethod === "zip" ? zipOption : undefined;
-  const paymentFee = activeOption?.fee ?? 0;
-  const payableTotal = activeOption?.total ?? quote?.total ?? 0;
+  const payable = activeOption ?? quote;
+  const payableTotal = payable?.total ?? 0;
   const providerName = activeMethod === "afterpay" ? "Afterpay" : activeMethod === "zip" ? "Zip" : "Stripe";
 
   const selected = warehouses.find((w) => w.id === warehouseId);
   const suggested = fulfilment === "DELIVERY" ? nearestWarehouse(warehouses, state || null) : undefined;
   const unavailable = useMemo(() => new Set(quote?.unavailable ?? []), [quote]);
   const quotedById = useMemo(() => new Map((quote?.lines ?? []).map((l) => [l.productId, l])), [quote]);
+  const saleById = useMemo(() => new Map((activeOption?.lines ?? []).map((l) => [l.productId, l])), [activeOption]);
   const anyEstimate = quote?.lines.some((l) => l.priceEstimate) ?? false;
   const fulfilmentAvailable = selected
     ? fulfilment === "PICKUP"
@@ -292,7 +293,7 @@ export function CartCheckoutPage() {
                         <span className="font-semibold text-danger">No longer available — remove to continue</span>
                       ) : q ? (
                         <>
-                          {money(q.unitPrice)} each
+                          {money(saleById.get(l.productId)?.unitPrice ?? q.unitPrice)} each
                           {q.priceEstimate ? " · indicative price" : ""}
                         </>
                       ) : (
@@ -302,7 +303,7 @@ export function CartCheckoutPage() {
                   </div>
                   <QuantityStepper value={l.quantity} onChange={(n) => cart.setQuantity(l.productId, n)} label={l.name} />
                   <p className="w-24 text-right font-inter text-[15px] font-bold text-warm-ink">
-                    {q ? money(q.lineTotal) : "—"}
+                    {q ? money(saleById.get(l.productId)?.lineTotal ?? q.lineTotal) : "—"}
                   </p>
                   <button
                     type="button"
@@ -492,7 +493,7 @@ export function CartCheckoutPage() {
           ) : null}
           {activeMethod !== "card" ? (
             <p className="mt-2 font-dm-sans text-[12px] leading-[17px] text-warm-gray">
-              {paymentFee > 0 ? `Paying with ${providerName} adds a ${money(paymentFee)} payment fee to this order. ` : ""}
+              {activeOption && quote && activeOption.total !== quote.total ? `These are our ${providerName} prices, which differ from our card prices. ` : ""}
               {providerName} checks your eligibility and sets your repayments. Fees and T&amp;Cs apply. Your order is confirmed once {providerName} approves it.
             </p>
           ) : null}
@@ -505,7 +506,7 @@ export function CartCheckoutPage() {
           <dl className="mt-4 space-y-2 font-dm-sans text-[13px]">
             <div className="flex justify-between">
               <dt className="text-warm-gray">Subtotal</dt>
-              <dd className="font-semibold text-warm-ink">{quote ? money(quote.subtotal) : "—"}</dd>
+              <dd className="font-semibold text-warm-ink">{payable ? money(payable.subtotal) : "—"}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-warm-gray">
@@ -513,15 +514,9 @@ export function CartCheckoutPage() {
                 {selected ? ` · ${selected.city}` : ""}
               </dt>
               <dd className="font-semibold text-warm-ink">
-                {!quote ? "—" : quote.deliveryFee > 0 ? money(quote.deliveryFee) : fulfilment === "PICKUP" ? "Free" : "Included"}
+                {!payable ? "—" : payable.deliveryFee > 0 ? money(payable.deliveryFee) : fulfilment === "PICKUP" ? "Free" : "Included"}
               </dd>
             </div>
-            {paymentFee > 0 ? (
-              <div className="flex justify-between">
-                <dt className="text-warm-gray">{providerName} payment fee</dt>
-                <dd className="font-semibold text-warm-ink">{money(paymentFee)}</dd>
-              </div>
-            ) : null}
             <div className="flex justify-between border-t border-warm-border pt-3">
               <dt className="font-inter text-[15px] font-bold text-warm-ink">Total (incl. GST)</dt>
               <dd className="font-inter text-[20px] font-bold text-warm-ink">{quote ? money(payableTotal) : "—"}</dd>
@@ -557,6 +552,11 @@ export function CartCheckoutPage() {
                 </button>
                 <p className="mt-2 text-center font-dm-sans text-[11px] text-warm-gray">
                   Secure payment by {providerName}. You&apos;ll get an email confirmation.
+                </p>
+                <p className="mt-1 text-center font-dm-sans text-[11px] text-warm-gray">
+                  By paying you agree to our{" "}
+                  <Link href="/terms" target="_blank" className="underline">terms</Link> and{" "}
+                  <Link href="/refunds" target="_blank" className="underline">refunds policy</Link>.
                 </p>
               </>
             ) : (

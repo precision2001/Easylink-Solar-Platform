@@ -58,6 +58,54 @@ export const DESIGN_RULES = {
   roofLineToleranceM: 0.1,
   /** Eaves found further than the tolerance (but within this) are moved onto the roof edge. */
   eaveMaxShiftM: 2.0,
+  /**
+   * PRIORITY RULE — intersection points (owner, 9 Nov 2026, 12 Fursorb St,
+   * Marayong): roof lines meet at points — an apex, where hips meet a ridge,
+   * where a wing's ridge meets a valley, a hip at an eave corner. Each such
+   * point is ONE point shared by every line that meets there, and it is
+   * placed where those lines meet in the image: moved (up to `maxShiftM`)
+   * to where all its lines together best match the edges and capping lines
+   * seen, never line by line. Lines stay straight and connected; faces stay
+   * simple and inside the roof. Applied to every roof design, whatever
+   * produced the faces (Google's segments, the height model, the hip split,
+   * the AI's reading, a relook). Outline corners stay on the border's
+   * corners (`moveCorners`), which the border rules set.
+   */
+  /**
+   * Flat roofs (owner, 9 Nov 2026, 66 Frances St): a roof under this pitch
+   * keeps only the lines the image shows — faces either side of a line that
+   * isn't visible are one face, and a roof with no visible lines is one flat
+   * face. ("If there is no visible roof line connecting two intersection
+   * points, do not consider a split. Roof can be flat too.")
+   */
+  flatRoofMaxPitchDeg: 5,
+  /**
+   * MOST IMPORTANT RULE (owner, 9 Nov 2026): on every roof, identify the
+   * visible lines and the visible intersections first; faces follow them.
+   * - Flat roofs (under flatRoofMaxPitchDeg): only visible lines are roof
+   *   lines — sections are the closed shapes the visible lines make, meeting
+   *   at their intersections (flatSections.ts).
+   * - Pitched roofs (owner's choice "a"): a hip, valley or ridge the roof's
+   *   shape needs stays even where the image shows it only faintly (two
+   *   faces lit alike), marked "check on site" — never dropped, because a
+   *   panel must never sit across one.
+   */
+  visibleLinesFirst: true,
+  /**
+   * Shadows (owner, 9 Nov 2026): a shadow means something higher beside it.
+   * Roof lines take priority — the edge casting a shadow is a roof line when
+   * it meets the border or another roof line at an intersection point (a
+   * step, raised box, parapet); only a shadow whose edge connects to no line
+   * is an obstruction (vent, fan, antenna).
+   */
+  shadowEdgesAreRoofLines: true,
+  roofJunctions: {
+    maxShiftM: 1.0,
+    /** A point moves only when its lines' match improves by this share. */
+    minGain: 0.1,
+    moveCorners: false,
+    cornerMaxShiftM: 0.5,
+  },
 } as const;
 
 /**

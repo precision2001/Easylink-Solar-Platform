@@ -15,6 +15,7 @@ import {
   type PublicProductRow,
 } from "@/lib/public/products";
 import { productImage } from "@/lib/designs/product-specs";
+import { ProductDocumentLinks } from "@/components/products/ProductDocumentLinks";
 
 type Props = {
   categoryId: MasterProductCategoryId;
@@ -193,6 +194,7 @@ export function MasterProductsCatalogPanel({
                     {row.name}
                   </p>
                   <p className="master-pp-product-sub truncate">{subtitle(row)}</p>
+                  <ProductDocumentLinks specs={row.specs} label={row.name} className="master-pp-product-sub mt-0.5" />
                 </div>
                 <span className="master-pp-table-cell-muted truncate">{row.sku ?? "—"}</span>
                 <span className="master-pp-table-cell-muted truncate">{row.brand ?? "—"}</span>

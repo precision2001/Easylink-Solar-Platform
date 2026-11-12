@@ -10,6 +10,7 @@ const PATHS = {
   link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
   chevron: "m6 9 6 6 6-6",
   clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2",
+  x: "M18 6 6 18M6 6l12 12",
 } as const;
 
 export type IconName = keyof typeof PATHS;

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { fetchProposalPricing, type ProposalPricingResponse } from "@/lib/proposal/proposalPricing";
+import { fetchProposalPricing, type ChosenProducts, type ProposalPricingResponse } from "@/lib/proposal/proposalPricing";
 
 /**
  * Customer prices for a design from the backend pricing engine v2
@@ -16,12 +16,15 @@ export function useProposalPricing(
   batteryKwh: number,
   batteryOptionsKwh: number[] = [],
   tiers: string[] = [],
+  products?: ChosenProducts,
+  phase?: 1 | 3,
 ) {
   const [data, setData] = useState<ProposalPricingResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const optionsKey = batteryOptionsKwh.join(",");
   const tiersKey = tiers.join(",");
+  const productsKey = products ? JSON.stringify(products) : "";
   useEffect(() => {
     if (panelCount <= 0) return;
     const ctrl = new AbortController();
@@ -34,6 +37,8 @@ export function useProposalPricing(
           batteryKwh,
           tiers: tiersKey ? tiersKey.split(",") : undefined,
           batteryOptionsKwh: optionsKey ? optionsKey.split(",").map(Number) : [],
+          ...(productsKey ? { products: JSON.parse(productsKey) as ChosenProducts } : {}),
+          ...(phase ? { phase } : {}),
         },
         ctrl.signal,
       )
@@ -53,6 +58,6 @@ export function useProposalPricing(
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [panelCount, panelTierId, batteryKwh, optionsKey, tiersKey]);
+  }, [panelCount, panelTierId, batteryKwh, optionsKey, tiersKey, productsKey, phase]);
   return { data, loading, error };
 }

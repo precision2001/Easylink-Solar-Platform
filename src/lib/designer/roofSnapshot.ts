@@ -98,6 +98,13 @@ export type SnapshotOptions = {
    */
   parcel?: LatLng[] | null;
   /**
+   * Google's height model and roof mask are years older than the photo (the
+   * engine's googleDataStale). Then the photo decides: ground clutter the
+   * old data calls roof is left out (108 Bombay St, Lidcombe: 2018 data had
+   * a roof where there's now a yard of timber between two buildings).
+   */
+  heightsStale?: boolean;
+  /**
    * How far (m) the roof may reach past the lot line. Small: the lot line
    * usually runs down the middle of the side passage, and 0.5 m reached the
    * neighbour's tiles, so the growth bridged the gap again.
@@ -225,6 +232,30 @@ function keepSeeded(bin: Uint8Array, seed: Uint8Array, W: number, H: number): Ui
   return out;
 }
 
+/** Keeps the connected parts of at least `minPx` pixels. */
+function keepLarge(bin: Uint8Array, W: number, H: number, minPx: number): Uint8Array {
+  const out = new Uint8Array(bin.length);
+  const seen = new Uint8Array(bin.length);
+  for (let s0 = 0; s0 < bin.length; s0++) {
+    if (!bin[s0] || seen[s0]) continue;
+    const part: number[] = [s0];
+    seen[s0] = 1;
+    for (let k = 0; k < part.length; k++) {
+      const i = part[k];
+      const r = (i / W) | 0;
+      const c = i - r * W;
+      for (const j of [c > 0 ? i - 1 : -1, c < W - 1 ? i + 1 : -1, r > 0 ? i - W : -1, r < H - 1 ? i + W : -1]) {
+        if (j >= 0 && bin[j] && !seen[j]) {
+          seen[j] = 1;
+          part.push(j);
+        }
+      }
+    }
+    if (part.length >= minPx) for (const i of part) out[i] = 1;
+  }
+  return out;
+}
+
 /** In-place separable box blur of radius k pixels. */
 function boxBlur(ch: Float32Array, W: number, H: number, k: number) {
   const tmp = new Float32Array(Math.max(W, H));
@@ -262,7 +293,7 @@ function median(v: number[]): number {
 export function analyseRoofSnapshot(
   rgba: Uint8ClampedArray | Uint8Array,
   geo: SnapshotGeo,
-  { pin, hint = null, hintMarginM = 1.5, dsm = null, minHeightM = 2.2, parcel = null, parcelMarginM = 0.15 }: SnapshotOptions,
+  { pin, hint = null, hintMarginM = 1.5, dsm = null, minHeightM = 2.2, parcel = null, parcelMarginM = 0.15, heightsStale = false }: SnapshotOptions,
 ): RoofSnapshotAnalysis | null {
   const W = geo.widthPx;
   const H = geo.heightPx;
@@ -414,6 +445,8 @@ export function analyseRoofSnapshot(
   // everything found (all faces, sunny and shaded) and grow again.
   let region: Uint8Array = seed;
   let roof: Uint8Array = new Uint8Array(W * H);
+  let tooBrightAbove = Infinity;
+  let greenerThan = Infinity;
   for (let pass = 0; pass < 2; pass++) {
     const sL: number[] = [], sA: number[] = [], sB: number[] = [];
     const step = pass === 0 ? 1 : 5;
@@ -427,6 +460,8 @@ export function analyseRoofSnapshot(
     const tL = Math.max(0.6, 3.5 * spread(sL, mL));
     const tA = Math.max(0.07, 3.5 * spread(sA, mA));
     const tB = Math.max(0.05, 3.5 * spread(sB, mB));
+    tooBrightAbove = mL + tL;
+    greenerThan = mB + tB;
     // `like`: roof colour. `link`: anything roughly roof-coloured and not
     // dark — ridge and hip capping, shadow lines between faces — which joins
     // faces of one roof; dark gaps, driveways and gutters between houses
@@ -465,6 +500,41 @@ export function analyseRoofSnapshot(
     roof = fillHoles(roof, W, H);
   }
 
+  // Ground clutter when Google's heights are out of date (108 Bombay St,
+  // Nov 2026: 2018 data called the yard between the house and the back
+  // building roof; it's now timber, pallets and a tree). The clutter's dark
+  // gaps match a grey roof, and the closings and hole-filling above join them
+  // into "roof". A roof has few pixels brighter or greener than its own
+  // colour range (a skylight, a vent); clutter and leaves are mostly them.
+  // Drop any patch where, within ~1 m, 30% of the traced pixels are, keep the
+  // parts of 15 m² or more, and don't let the squaring grow back into them.
+  // Only with stale heights: current heights already leave the ground out.
+  let clutter: Uint8Array | null = null;
+  if (heightsStale && Number.isFinite(tooBrightAbove)) {
+    const r = Math.max(2, Math.round(0.5 / mpp));
+    const inRoof = new Float32Array(W * H);
+    const bright = new Float32Array(W * H);
+    for (let i = 0; i < W * H; i++) {
+      if (!roof[i]) continue;
+      inRoof[i] = 1;
+      if (L[i] > tooBrightAbove || B[i] > greenerThan) bright[i] = 1;
+    }
+    boxBlur(inRoof, W, H, r);
+    boxBlur(bright, W, H, r);
+    const found = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) if (roof[i] && inRoof[i] > 0.05 && bright[i] / inRoof[i] >= 0.3) found[i] = 1;
+    // Only patches of 3 m² or more: a bright ridge strip, a vent or a lit
+    // corner is not a yard, and dropping it moved good borders (fr1).
+    clutter = keepLarge(found, W, H, 3 / (mpp * mpp));
+    (globalThis as { __clutterDebug?: (m: Uint8Array, r: Uint8Array, w: number, h: number) => void }).__clutterDebug?.(clutter, roof, W, H);
+    let dropped = 0;
+    for (let i = 0; i < W * H; i++) dropped += clutter[i];
+    if (dropped > 0) {
+      for (let i = 0; i < roof.length; i++) if (clutter[i]) roof[i] = 0;
+      roof = fillHoles(keepLarge(roof, W, H, 15 / (mpp * mpp)), W, H);
+    } else clutter = null;
+  }
+
   // The closings above can reach back across the lot line: trim to the lot.
   if (lot) for (let i = 0; i < roof.length; i++) if (!lot[i]) roof[i] = 0;
 
@@ -490,9 +560,9 @@ export function analyseRoofSnapshot(
       const key = (r: LatLng[]) => r.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join(";");
       const seen = new Set<string>();
       let allow: Uint8Array | null = null;
-      if (high || lot) {
+      if (high || lot || clutter) {
         allow = new Uint8Array(W * H);
-        for (let i = 0; i < allow.length; i++) allow[i] = (!high || high[i]) && (!lot || lot[i]) ? 1 : 0;
+        for (let i = 0; i < allow.length; i++) allow[i] = (!high || high[i]) && (!lot || lot[i]) && !(clutter && clutter[i]) ? 1 : 0;
       }
       const variants = [
         {},
@@ -520,9 +590,9 @@ export function analyseRoofSnapshot(
       try {
         // Growth only where Google's height model says above ground, inside the lot.
         let allow: Uint8Array | null = null;
-        if (high || lot) {
+        if (high || lot || clutter) {
           allow = new Uint8Array(W * H);
-          for (let i = 0; i < allow.length; i++) allow[i] = (!high || high[i]) && (!lot || lot[i]) ? 1 : 0;
+          for (let i = 0; i < allow.length; i++) allow[i] = (!high || high[i]) && (!lot || lot[i]) && !(clutter && clutter[i]) ? 1 : 0;
         }
         const sweep = typeof process !== "undefined" ? process.env?.SQ_SWEEP : undefined;
         if (sweep) (globalThis as { __sqSweep?: unknown }).__sqSweep = (o: Parameters<typeof squareRoofOutline>[5]) => squareRoofOutline(rgba, W, H, bounds, roof, { allow, ...o });

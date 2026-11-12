@@ -24,6 +24,9 @@ import {
 import { fetchCustomerProfile } from "@/lib/customers/profile";
 import { setUser } from "@/lib/store/customerAuthSlice";
 import { captureAttribution } from "@/lib/designs/attribution";
+import { leadPrefillFrom } from "@/lib/designs/leadDesignLink";
+import { roofDesignFor } from "@/lib/roof-design/client";
+import { useGoogleMaps } from "@/components/providers/GoogleMapsProvider";
 import { DesignTopBar } from "../modules/DesignTopBar";
 import {
   DesignsRegisterStepContent,
@@ -82,6 +85,15 @@ export function DesignsHeroSection({
    * on file, so it's skipped and pre-filled from these params instead.
    */
   const installerCustomerId = searchParams.get("customerId");
+  /**
+   * Set when staff press Solar Design on a lead (Operations portal → Quotes &
+   * Leads). The lead's details and address are filled in from the link, so
+   * the intro, property, contact and address screens are skipped and the
+   * flow opens on the roof.
+   */
+  const leadPrefill = useMemo(() => leadPrefillFrom(searchParams), [searchParams]);
+  /** Contact details already on file: the contact step is skipped. */
+  const skipRegister = Boolean(installerCustomerId || leadPrefill);
 
   // A draft snapshot left by the Proposal step right before a signed-out
   // visitor got bounced to sign-in/sign-up — that's this same visitor coming
@@ -89,7 +101,7 @@ export function DesignsHeroSection({
   // this page opens on can account for it below without a flash of the
   // marketing intro before flipping over to the Proposal step.
   const [initialDraft] = useState(() =>
-    !editingDesignId && !installerCustomerId ? loadDesignDraft() : null,
+    !editingDesignId && !installerCustomerId && !leadPrefill ? loadDesignDraft() : null,
   );
 
   // The store is a live singleton for the whole tab, not reset on client-side
@@ -112,14 +124,14 @@ export function DesignsHeroSection({
     if (freshVisitResetRef.current) return;
     freshVisitResetRef.current = true;
     if (!editingDesignId && !installerCustomerId) {
-      if (initialDraft) {
+      if (initialDraft && !leadPrefill) {
         dispatch(mergeProposalData(initialDraft));
         clearDesignDraft();
       } else {
         dispatch(resetProposalData());
       }
     }
-  }, [dispatch, editingDesignId, initialDraft, installerCustomerId]);
+  }, [dispatch, editingDesignId, initialDraft, installerCustomerId, leadPrefill]);
 
   /**
    * Load the design being edited.
@@ -222,6 +234,26 @@ export function DesignsHeroSection({
     );
   }, [dispatch, installerCustomerId, searchParams]);
 
+  // A lead's details, filled in once (after the fresh-visit reset above).
+  const leadPrefillRef = useRef(false);
+  useEffect(() => {
+    if (leadPrefillRef.current || !leadPrefill) return;
+    leadPrefillRef.current = true;
+    dispatch(
+      mergeProposalData({
+        customer: {
+          ...(leadPrefill.name ? { name: leadPrefill.name } : {}),
+          ...(leadPrefill.email ? { email: leadPrefill.email } : {}),
+          ...(leadPrefill.phone ? { phoneNumber: leadPrefill.phone } : {}),
+          ...(leadPrefill.address ? { address: leadPrefill.address } : {}),
+          property: "Residential",
+          ...(leadPrefill.pin ? { mapLat: leadPrefill.pin.lat, mapLng: leadPrefill.pin.lng } : {}),
+        },
+      }),
+    );
+    if (leadPrefill.pin) roofDesignFor(leadPrefill.pin).catch(() => {});
+  }, [dispatch, leadPrefill]);
+
   const pinnedProductIds = useMemo(
     () =>
       Object.values(proposal.equipment.items).flatMap((entries) =>
@@ -249,11 +281,80 @@ export function DesignsHeroSection({
     // Update mode opens on the first data step: the marketing intro has nothing
     // to show someone who is here to change an existing design. A restored
     // draft resumes right where Finish was clicked from.
-    initialDraft ? "proposal" : editingDesignId ? "register" : "start",
+    leadPrefill
+      ? leadPrefill.address
+        ? "solarPanel"
+        : "address"
+      : initialDraft
+        ? "proposal"
+        : editingDesignId
+          ? "register"
+          : "start",
   );
   const [fillPercent, setFillPercent] = useState(
-    initialDraft ? 100 : editingDesignId ? 30 : 10,
+    leadPrefill
+      ? leadPrefill.address
+        ? 50
+        : 40
+      : initialDraft
+        ? 100
+        : editingDesignId
+          ? 30
+          : 10,
   );
+
+  // A lead without a stored pin: find the address on the map (same rooftop
+  // lookup as the address screen) before the roof screen opens.
+  const { isLoaded: mapsLoaded, loadError: mapsError } = useGoogleMaps();
+  const [leadLocating, setLeadLocating] = useState(
+    () => Boolean(leadPrefill?.address && !leadPrefill.pin),
+  );
+  const leadLocateRef = useRef(false);
+  useEffect(() => {
+    if (!leadLocating || leadLocateRef.current || !leadPrefill) return;
+    const giveUp = () => {
+      setLeadLocating(false);
+      setActiveScreen("address");
+      setFillPercent(40);
+      toast.info("Couldn't place this address on the map. Pick it from the suggestions.");
+    };
+    if (mapsError) {
+      leadLocateRef.current = true;
+      giveUp();
+      return;
+    }
+    if (!mapsLoaded) return;
+    leadLocateRef.current = true;
+    new google.maps.Geocoder().geocode(
+      { address: leadPrefill.address, componentRestrictions: { country: "AU" } },
+      (results, status) => {
+        const hit =
+          status === google.maps.GeocoderStatus.OK
+            ? (results?.find((r) => r.geometry?.location_type === "ROOFTOP") ?? results?.[0])
+            : undefined;
+        if (!hit) return giveUp();
+        const pin = { lat: hit.geometry.location.lat(), lng: hit.geometry.location.lng() };
+        const bounds = hit.geometry.location_type === "ROOFTOP" ? hit.geometry.bounds : undefined;
+        dispatch(
+          mergeProposalData({
+            customer: {
+              address: hit.formatted_address || leadPrefill.address,
+              mapLat: pin.lat,
+              mapLng: pin.lng,
+              ...(bounds
+                ? {
+                    mapParcelBoundsSw: { lat: bounds.getSouthWest().lat(), lng: bounds.getSouthWest().lng() },
+                    mapParcelBoundsNe: { lat: bounds.getNorthEast().lat(), lng: bounds.getNorthEast().lng() },
+                  }
+                : {}),
+            },
+          }),
+        );
+        roofDesignFor(pin).catch(() => {});
+        setLeadLocating(false);
+      },
+    );
+  }, [dispatch, leadLocating, leadPrefill, mapsError, mapsLoaded]);
 
   const registerStepRef = useRef<DesignsRegisterStepHandle>(null);
   const propertyStepRef = useRef<DesignsPropertyStepHandle>(null);
@@ -440,7 +541,7 @@ export function DesignsHeroSection({
       if (prev === "start") return "second";
       // An installer already has this customer's contact details on file —
       // skip straight past the step that would just re-collect them.
-      if (prev === "second") return installerCustomerId ? "address" : "register";
+      if (prev === "second") return skipRegister ? "address" : "register";
       if (prev === "register") return "address";
       if (prev === "address") return "solarPanel";
       if (prev === "solarPanel") return "energy";
@@ -450,7 +551,7 @@ export function DesignsHeroSection({
     });
     setFillPercent((prev) => {
       if (prev === 10) return 20;
-      if (prev === 20) return installerCustomerId ? 40 : 30;
+      if (prev === 20) return skipRegister ? 40 : 30;
       if (prev === 30) return 40;
       if (prev === 40) return 50;
       if (prev === 50) return 70;
@@ -472,7 +573,7 @@ export function DesignsHeroSection({
               : prev === "solarPanel"
                 ? "address"
                 : prev === "address"
-                  ? installerCustomerId
+                  ? skipRegister
                     ? "second"
                     : "register"
                   : prev === "register"
@@ -487,8 +588,14 @@ export function DesignsHeroSection({
   };
 
   return (
-    <section className="relative flex h-screen flex-col overflow-hidden">
-      <DesignsHeroBackground />
+    // Phones and tablets: the proposal grows and the page scrolls (12 Nov 2026:
+    // its cards were squeezed into one screen); desktop keeps it on one screen.
+    <section
+      className={`relative flex flex-col overflow-x-hidden ${
+        activeScreen === "proposal" ? "min-h-[100dvh] lg:h-screen lg:overflow-hidden" : "h-screen overflow-hidden"
+      }`}
+    >
+      <DesignsHeroBackground variant={activeScreen === "proposal" ? "slate" : "circuit"} />
       <DesignTopBar
         center={
           activeScreen === "proposal"
@@ -528,12 +635,38 @@ export function DesignsHeroSection({
             </Link>
           </div>
         </div>
+      ) : leadPrefill ? (
+        <div className="relative z-10 mx-auto w-full max-w-[1446px] px-4 pt-3 sm:px-8 lg:px-[81px]">
+          <div
+            className={`flex flex-wrap items-center justify-between gap-2 rounded-[14px] px-4 py-2.5 ${
+              activeScreen === "proposal"
+                ? "bg-[linear-gradient(90deg,#FDE047_0%,#FACC15_60%,#F5B50A_100%)] shadow-[0_4px_20px_rgba(250,204,21,0.25)]"
+                : "border-[1.5px] border-solid border-design-accent-cyan bg-[rgba(255,255,255,0.08)]"
+            }`}
+          >
+            <p className={`font-source-sans text-[14px] leading-[21px] ${activeScreen === "proposal" ? "text-[#1F2937]" : "text-white/80"}`}>
+              Designing for {leadPrefill.name || "this lead"}
+              {leadPrefill.address ? ` · ${leadPrefill.address}` : ""}. Their
+              details are filled in; Back changes the address or property type.
+            </p>
+            <Link
+              href="/master/quotes-leads"
+              className={`font-source-sans text-[13px] font-medium uppercase tracking-[0.5px] underline ${activeScreen === "proposal" ? "text-[#1F2937]" : "text-white"}`}
+            >
+              Back to leads
+            </Link>
+          </div>
+        </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 items-center overflow-y-auto">
-        {hydrating ? (
+      {/*
+        Safe centring: a step centres while it fits; a taller one starts at the
+        top and scrolls, instead of being cut off top and bottom.
+      */}
+      <div className="flex min-h-0 flex-1 items-center-safe overflow-y-auto">
+        {hydrating || leadLocating ? (
           <p className="relative z-10 mx-auto px-4 font-source-sans text-[16px] text-white/80">
-            Loading your design…
+            {leadLocating ? `Finding ${leadPrefill?.address ?? "the address"}…` : "Loading your design…"}
           </p>
         ) : activeScreen === "start" ? (
           <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-col justify-center gap-6 px-4 py-2 sm:px-8 lg:gap-[29px] lg:px-[81px]">
@@ -575,6 +708,13 @@ export function DesignsHeroSection({
         showNext={showNext}
         fillPercent={fillPercent}
         finishing={finishing}
+        finishLabel={leadPrefill ? "Save design" : undefined}
+        slate={activeScreen === "proposal"}
+        centre={
+          activeScreen === "proposal"
+            ? { label: "Download your proposal", onClick: () => proposalStepRef.current?.openDownload() }
+            : null
+        }
       />
     </section>
   );

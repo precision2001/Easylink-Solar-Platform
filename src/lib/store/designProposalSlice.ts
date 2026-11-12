@@ -38,6 +38,11 @@ export type DesignProposalCustomer = {
   marketingConsent?: boolean;
   address: string;
   property: string;
+  /**
+   * The home's power supply as the customer said on the Energy step
+   * (optional). Unset: the pricing engine tries single phase first.
+   */
+  supplyPhase?: 1 | 3;
   /** Pin from the location step map (decimal degrees). Used by the solar-panel step map. */
   mapLat?: number;
   mapLng?: number;
@@ -121,6 +126,12 @@ export type DesignProposalEquipment = {
   /** Proposal-step panel tier / battery capacity picks — see lib/designs/proposalOptions.ts. */
   panelTierId?: string;
   batteryCapacityId?: string;
+  /**
+   * Battery options the customer is comparing (up to three ids from
+   * BATTERY_CAPACITY_OPTIONS, smallest first); `batteryCapacityId` is the
+   * one shown. Each option is quoted on its own.
+   */
+  batteryOptionIds?: string[];
   /**
    * Energy step's continuous battery sizing (kWh) — independent of the
    * proposal step's discrete `batteryCapacityId` catalogue picks, but kept
@@ -261,7 +272,7 @@ export const DESIGN_PROPOSAL_DEFAULTS: DesignProposalState = {
   pricing: {
     totalSystemPrice: "",
     monthlySavings: "",
-    currentBill: "$200",
+    currentBill: "$0",
     newBill: "",
     billPeriod: "quarter",
   },

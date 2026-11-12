@@ -274,7 +274,7 @@ export function InstallerReadySites() {
           )}
         </section>
       ) : (
-        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(400px,1fr))]">
+        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr))]">
           <section aria-label="Available sites" className="flex min-w-0 flex-col gap-2.5">
             {!shown.length ? (
               <p className="m-0 rounded-[14px] border border-dashed border-[#CBD5E1] bg-white p-6 text-[14px] text-[#475569]">

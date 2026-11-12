@@ -1,9 +1,14 @@
 "use client";
+import { netSavings, paybackLabel } from "@/lib/proposal/savingsProjection";
 
+import { describeShare } from "@/lib/designs/send-to-customer";
+import { chosenProductsOf, inverterMatchedToBattery, MATCHED_INVERTER_NOTE } from "@/lib/proposal/proposalDocument";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
+import { selectBuilderCatalogue } from "@/lib/store/builderCatalogueSlice";
+import { productImage } from "@/lib/designs/product-specs";
 import {
   EQUIPMENT_CATEGORY_KEYS,
   selectDesignProposal,
@@ -30,6 +35,7 @@ import {
 } from "@/lib/installers/designs";
 import { clearDesignDraft, saveDesignDraft } from "@/lib/designs/draft-persistence";
 import { probeSignedInCustomer, submitDesignCapture } from "@/lib/designs/capture";
+import { saveLeadDesign } from "@/lib/designs/leadDesignLink";
 import { DesignsProposalDownloadModal } from "./DesignsProposalDownloadModal";
 import {
   DEFAULT_BATTERY_CAPACITY_ID,
@@ -39,13 +45,43 @@ import {
   findBatteryCapacity,
   findPanelTier,
 } from "@/lib/designs/proposalOptions";
-import {
-  DEFAULT_FINANCIAL_PROJECTION_ASSUMPTIONS,
-  buildFinancialProjectionFromProposal,
-} from "@/lib/proposal/financialProjection";
 import { estimateSavings } from "@/lib/proposal/proposalPricing";
+import {
+  batteryOptionRows,
+  batteryTiles,
+  choiceKwh,
+  isPickId,
+  itemKwh,
+  pickId,
+  pickIndex,
+  pickMode,
+  shownBatteryItems,
+  type BatteryTile,
+  MAX_BATTERY_OPTIONS,
+  OPTION_LETTERS,
+  sortOptions,
+  tapBatteryOption,
+  type BatteryOptionRow,
+} from "@/lib/proposal/batteryOptions";
 import { useProposalPricing } from "@/lib/proposal/useProposalPricing";
 
+
+/**
+ * The quoted battery's rated size, as its model name states it (BLUETTI
+ * EP2000 + 6 × B700 … 44.24kWh → 44.24), the size the customer picked on the
+ * Energy step; falls back to the price list's usable kWh.
+ */
+function ratedBatteryKwh(battery: { model: string; kwh: number } | null | undefined): number | undefined {
+  if (!battery) return undefined;
+  const named = [...battery.model.matchAll(/(\d+(?:\.\d+)?)\s*kWh/gi)].map((m) => Number.parseFloat(m[1]));
+  const rated = named.length ? named[named.length - 1] : NaN;
+  return Number.isFinite(rated) && rated > 0 ? rated : battery.kwh > 0 ? battery.kwh : undefined;
+}
+
+/** Battery size as quoted: up to two decimals, no trailing zeros (44.24, 40, 13.5). */
+function formatBatteryKwh(kwh: number): string {
+  return String(Math.round(kwh * 100) / 100);
+}
 
 /** Usable kWh from a battery option label ("14.6kWh" → 14.6; "None" → 0). */
 function batteryKwhOf(id: string): number {
@@ -96,7 +132,13 @@ function parseMoneyToNumber(raw: string): number {
 }
 
 function formatAud(n: number): string {
-  return `$${Math.round(n).toLocaleString("en-AU")}`;
+  const sign = Math.round(n) < 0 ? "−" : "";
+  return `${sign}$${Math.abs(Math.round(n)).toLocaleString("en-AU")}`;
+}
+
+/** A bill: "$145", or "$145 credit" when export credits are more than the bill. */
+function formatBill(n: number): string {
+  return Math.round(n) < 0 ? `${formatAud(-n)} credit` : formatAud(n);
 }
 
 /** Frosted glass card: translucent fill, blur, light edge, soft depth. */
@@ -111,6 +153,15 @@ const TINT = {
   neutral: "border-white/20 bg-white/[0.07]",
   /** EasyLink logo yellow → gold, near-solid so the brand colour reads at full strength. */
   brandGold: "border-[rgba(255,245,170,0.85)] bg-[linear-gradient(133deg,rgba(255,239,98,0.95)_0%,rgba(255,200,40,0.93)_45%,rgba(247,141,0,0.93)_100%)]",
+  /* Slate palette (owner's mock-up, 10 Nov 2026). */
+  /** Steel blue glass (stat cards). */
+  steel: "border-[rgba(147,197,253,0.35)] bg-[linear-gradient(160deg,rgba(70,130,180,0.55)_0%,rgba(30,64,105,0.6)_100%)]",
+  /** Grey slate glass (stat cards, panel tier, battery). */
+  slate: "border-white/20 bg-[linear-gradient(160deg,rgba(120,135,155,0.38)_0%,rgba(55,65,82,0.5)_100%)]",
+  /** Deep navy (total price). */
+  navy: "border-[rgba(96,165,250,0.35)] bg-[linear-gradient(160deg,rgba(18,52,110,0.92)_0%,rgba(10,30,70,0.95)_100%)]",
+  /** Charcoal (25-year savings). */
+  charcoal: "border-white/15 bg-[linear-gradient(160deg,rgba(52,56,64,0.85)_0%,rgba(30,33,39,0.92)_100%)]",
 } as const;
 
 function Sheen() {
@@ -140,7 +191,7 @@ function ProposalStatCard({
 }: {
   label: string;
   value: string;
-  variant: "cyan" | "gold";
+  variant: keyof typeof TINT;
 }) {
   return (
     <div className={`${GLASS} ${TINT[variant]} flex min-w-0 flex-col items-center justify-center px-2 py-[clamp(4px,0.9vh,10px)]`}>
@@ -198,7 +249,7 @@ function ProposalSubMetric({
   valueClassName?: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-center rounded-[10px] border border-white/15 bg-white/10 px-1 py-[clamp(2px,0.6vh,6px)]">
+    <div className="flex min-w-0 flex-1 flex-col items-center rounded-[10px] border border-white/10 bg-[#0B1A3A]/70 px-1 py-[clamp(2px,0.6vh,6px)]">
       <p className="truncate font-inter text-[10.5px] text-white/60">{label}</p>
       <p className="font-source-sans text-[clamp(14px,2.1vh,18px)] font-semibold leading-tight">
         <span className={valueClassName ?? "text-white"}>{value}</span>
@@ -212,8 +263,11 @@ function PanelTierSelector({
   onSelect,
   deltas,
   info,
+  chosen,
 }: {
   selectedId: string;
+  /** The panel picked on the equipment step: shown selected, above the tiers. */
+  chosen?: { label: string; delta: number } | null;
   onSelect: (id: string) => void;
   /** Price difference vs Standard for this design, from the pricing engine. */
   deltas: Record<string, number>;
@@ -221,10 +275,26 @@ function PanelTierSelector({
   info?: Record<string, { model: string; w: number }>;
 }) {
   return (
-    <div className={`${GLASS} ${TINT.design} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
+    <div className={`${GLASS} ${TINT.slate} flex h-full w-full flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
       <Sheen />
       <CardTitle>Panel Tier</CardTitle>
-      <div className="relative mt-2 flex min-h-0 flex-1 flex-col justify-evenly gap-1.5">
+      <div className="relative mt-2 flex flex-1 flex-col gap-1.5 lg:min-h-0">
+        {chosen ? (
+          <div className="flex min-h-[52px] w-full flex-1 items-center justify-between gap-2 rounded-[10px] lg:min-h-0 border border-yellow-lemon/70 bg-[#0B2A4A]/90 px-2.5 py-[clamp(2px,0.6vh,8px)] text-left shadow-md">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="flex size-3.5 shrink-0 items-center justify-center rounded-full border-2 border-yellow-lemon">
+                <span className="size-1.5 rounded-full bg-yellow-lemon" />
+              </span>
+              <span className="min-w-0">
+                <span className="font-source-sans text-[13px] font-semibold text-white">Your pick</span>
+                <span className="block truncate font-inter text-[10.5px] text-white/70">{chosen.label}</span>
+              </span>
+            </span>
+            <span className="shrink-0 font-source-sans text-[12.5px] font-semibold text-yellow-lemon">
+              {Math.round(chosen.delta) === 0 ? "Included" : `${chosen.delta > 0 ? "+" : "−"}${formatAud(Math.abs(chosen.delta))}`}
+            </span>
+          </div>
+        ) : null}
         {PANEL_TIER_OPTIONS.map((tier) => {
           const selected = tier.id === selectedId;
           return (
@@ -232,16 +302,16 @@ function PanelTierSelector({
               key={tier.id}
               type="button"
               onClick={() => onSelect(tier.id)}
-              className={`flex w-full items-center justify-between gap-2 rounded-[10px] border px-2.5 py-[clamp(3px,0.8vh,8px)] text-left transition ${
+              className={`flex min-h-[52px] w-full flex-1 items-center justify-between gap-2 rounded-[10px] lg:min-h-0 border px-2.5 py-[clamp(2px,0.6vh,8px)] text-left transition ${
                 selected
-                  ? "border-yellow-lemon/70 bg-[#0B2A4A]/90 shadow-md"
-                  : "border-white/25 bg-white/15 hover:bg-white/25"
+                  ? "border-[#7DD3FC]/70 bg-[linear-gradient(90deg,#1E9BEF_0%,#0E86E0_60%,#22B5F5_100%)] shadow-[0_4px_18px_rgba(14,134,224,0.45)]"
+                  : "border-white/15 bg-[#1F2937]/45 hover:bg-[#1F2937]/65"
               }`}
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span
                   className={`flex size-3.5 shrink-0 items-center justify-center rounded-full border-2 ${
-                    selected ? "border-yellow-lemon" : "border-white/60"
+                    selected ? "border-white" : "border-white/60"
                   }`}
                 >
                   {selected ? <span className="size-1.5 rounded-full bg-yellow-lemon" /> : null}
@@ -260,7 +330,7 @@ function PanelTierSelector({
                   </span>
                 </span>
               </span>
-              <span className={`shrink-0 font-source-sans text-[12.5px] font-semibold ${selected ? "text-yellow-lemon" : "text-white"}`}>
+              <span className={`shrink-0 font-source-sans text-[12.5px] font-semibold ${selected ? "text-white" : "text-white/90"}`}>
                 {(deltas[tier.id] ?? 0) === 0
                   ? "Included"
                   : `${deltas[tier.id] > 0 ? "+" : "−"}${formatAud(Math.abs(deltas[tier.id]))}`}
@@ -273,68 +343,277 @@ function PanelTierSelector({
   );
 }
 
+
+/** The battery's photo when the product library has one, else a battery mark. */
+function BatteryMark({ photo, dark }: { photo?: string; dark?: boolean }) {
+  return photo ? (
+    // eslint-disable-next-line @next/next/no-img-element -- library thumbnail
+    <img src={photo} alt="" className="size-[14px] shrink-0 rounded-[3px] bg-white object-contain" />
+  ) : (
+    <span className={`flex size-[14px] shrink-0 items-center justify-center rounded-[3px] ${dark ? "bg-[#0B2A4A] text-yellow-lemon" : "bg-yellow-lemon text-[#0B2A4A]"}`}>
+      <svg viewBox="0 0 16 16" className="size-[10px]" aria-hidden="true">
+        <rect x="2" y="4" width="11" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        <rect x="13.2" y="6.5" width="1.6" height="3" rx="0.5" fill="currentColor" />
+        <rect x="4" y="6" width="4" height="4" fill="currentColor" />
+      </svg>
+    </span>
+  );
+}
+
 function BatterySelector({
-  selectedId,
-  onSelect,
+  tiles,
+  optionIds,
+  shownId,
+  onTap,
+  onRemove,
+  onCompare,
   prices,
-  sizeKwh,
   estimated,
+  models = {},
 }: {
-  selectedId: string;
-  onSelect: (id: string) => void;
+  /** The tiles: None, each picked battery on its own, the standard sizes. */
+  tiles: BatteryTile[];
+  /** The battery behind each chosen size: the customer's own pick, else the one the price list quotes. */
+  models?: Record<string, { label: string; photo?: string }[]>;
+  /** The battery options being compared (smallest first). */
+  optionIds: string[];
+  /** The option the screen shows. */
+  shownId: string;
+  onTap: (id: string) => void;
+  onRemove: (id: string) => void;
+  onCompare: () => void;
   /** Added cost of each battery for this design (after battery STCs), from the quote engine. */
   prices: Record<string, number>;
   /** Options priced by estimate (no single product that size in the price list). */
   estimated: Set<string>;
-  /** The design's battery size; shown when it isn't one of the buttons (e.g. 13 kWh from the Energy step). */
-  sizeKwh: number;
 }) {
-  const option = findBatteryCapacity(selectedId);
-  const optionKwh = Number.parseFloat(option.label);
-  const selected =
-    sizeKwh > 0 && !(Number.isFinite(optionKwh) && Math.abs(optionKwh - sizeKwh) < 0.05)
-      ? { ...option, label: `${Math.round(sizeKwh * 10) / 10}kWh` }
-      : option;
+  const letterOf = (id: string) => OPTION_LETTERS[optionIds.indexOf(id)] ?? "";
   return (
-    <div className={`${GLASS} ${TINT.brandGold} flex h-full min-h-0 w-full flex-col p-[clamp(8px,1.4vh,14px)]`}>
+    <div className={`${GLASS} ${TINT.slate} flex h-full w-full flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
       <Sheen />
       <CardTitle
-        dark
         right={
-          <span className="rounded-full bg-black/70 px-2.5 py-[1px] font-source-sans text-[12px] font-semibold text-yellow-lemon">
-            {selected.label}
-          </span>
+          optionIds.length > 1 ? (
+            <button
+              type="button"
+              onClick={onCompare}
+              className="rounded-full bg-[#0B1E3F] px-3 py-[2px] font-source-sans text-[12px] font-bold text-white shadow-md ring-1 ring-[#7DD3FC]/60 transition hover:brightness-125"
+            >
+              Compare {optionIds.length} options →
+            </button>
+          ) : (
+            <span className="rounded-full bg-[#0B1E3F] px-2.5 py-[1px] font-source-sans text-[12px] font-semibold text-[#7DD3FC] ring-1 ring-[#7DD3FC]/40">
+              {tiles.find((t) => t.id === shownId)?.label ?? findBatteryCapacity(shownId).label}
+            </span>
+          )
         }
       >
-        Battery
+        Battery{" "}
+        <span className="font-semibold normal-case tracking-normal text-white/70">
+          · pick up to {MAX_BATTERY_OPTIONS} to compare
+        </span>
       </CardTitle>
-      <div className="relative mt-2 grid min-h-0 flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4">
-        {BATTERY_CAPACITY_OPTIONS.map((battery) => {
-          const isSelected = battery.id === selectedId;
+      <div className="relative mt-2 grid flex-1 auto-rows-[minmax(64px,1fr)] grid-cols-2 gap-1.5 sm:grid-cols-4 lg:min-h-0 lg:auto-rows-fr">
+        {tiles.map((battery) => {
+          const inOptions = optionIds.includes(battery.id);
+          const isShown = battery.id === shownId;
           return (
             <button
               key={battery.id}
               type="button"
-              onClick={() => onSelect(battery.id)}
-              className={`flex flex-col items-center justify-center rounded-[9px] border px-1 py-[clamp(1px,0.5vh,6px)] font-source-sans text-[12.5px] font-semibold leading-tight transition ${
-                isSelected
-                  ? "border-white bg-[#0B2A4A]/90 text-white shadow-md"
-                  : "border-white/70 bg-white/55 text-[#152238] hover:bg-white/75"
+              aria-pressed={inOptions}
+              onClick={() => onTap(battery.id)}
+              className={`relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-[9px] border px-1 py-[clamp(1px,0.5vh,6px)] font-source-sans text-[12.5px] font-semibold leading-tight transition ${
+                inOptions
+                  ? `border-[#7DD3FC]/50 bg-[linear-gradient(160deg,#1E2A78_0%,#0B2350_100%)] text-[#7DD3FC] shadow-md ${isShown && optionIds.length > 1 ? "ring-2 ring-[#38BDF8]" : ""}`
+                  : "border-white/15 bg-[linear-gradient(160deg,rgba(148,163,184,0.42)_0%,rgba(100,116,139,0.38)_100%)] text-white hover:brightness-110"
               }`}
             >
+              {inOptions ? (
+                <span
+                  className={`absolute left-1 top-1 flex h-[16px] min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                    "bg-[#38BDF8] text-[#0B1E3F]"
+                  }`}
+                >
+                  {letterOf(battery.id)}
+                </span>
+              ) : null}
+              {inOptions && optionIds.length > 1 ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Remove ${battery.label} from the options`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(battery.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onRemove(battery.id);
+                    }
+                  }}
+                  className="absolute right-1 top-0.5 text-[13px] leading-none text-white/80 hover:text-white"
+                >
+                  ×
+                </span>
+              ) : null}
+              {(inOptions || battery.pick) && battery.id !== "none" && models[battery.id]?.length ? (
+                // Which batteries this option is: a small label each in the top-right corner (mark and name), even two of the same.
+                <span className={`pointer-events-none absolute top-1 flex max-w-[calc(100%-2.6rem)] flex-col items-end gap-[2px] ${inOptions && optionIds.length > 1 ? "right-4" : "right-1"}`}>
+                  {models[battery.id].slice(0, 2).map((m, i) => (
+                    <span key={i} className={`inline-flex max-w-full items-center gap-1 rounded-full px-1.5 py-[1px] text-[9.5px] font-semibold leading-tight ${inOptions ? "bg-white/10 text-white/90" : "bg-black/20 text-white"}`} title={m.label}>
+                      <BatteryMark photo={m.photo} />
+                      <span className="truncate">{m.label}</span>
+                    </span>
+                  ))}
+                  {models[battery.id].length > 2 ? <span className="text-[9px] text-white/70">+{models[battery.id].length - 2} more</span> : null}
+                </span>
+              ) : null}
               {battery.label}
               {battery.id !== "none" && prices[battery.id] ? (
-                <span className={`text-[10px] font-normal ${isSelected ? "text-yellow-lemon" : "text-[#152238]/70"}`}>
+                <span className={`text-[10px] font-normal ${inOptions ? "text-white/85" : "text-white/80"}`}>
                   +{formatAud(prices[battery.id])}
                   {estimated.has(battery.id) ? " est." : ""}
                 </span>
               ) : null}
+
             </button>
           );
         })}
       </div>
     </div>
   );
+}
+
+/** The battery options side by side: the same rows for each, the quickest payback marked. */
+function BatteryCompare({
+  rows,
+  shownId,
+  onPick,
+  onClose,
+}: {
+  rows: BatteryOptionRow[];
+  shownId: string;
+  onPick: (id: string) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const money = (n: number | null) => (n == null ? "On request" : formatAud(n));
+  const lines: { label: string; value: (r: BatteryOptionRow) => React.ReactNode }[] = [
+    {
+      label: "Battery",
+      value: (r) =>
+        r.kwh > 0 ? (
+          <>
+            {formatBatteryKwh(r.quotedKwh)} kWh
+            {r.quotedKwh !== r.kwh ? <span className="block text-[10px] font-normal text-white/60">closest to {formatBatteryKwh(r.kwh)} kWh</span> : null}
+            {r.model ? <span className="mt-0.5 block text-[14px] font-bold leading-snug text-white">{r.model}</span> : null}
+          </>
+        ) : (
+          "Solar only"
+        ),
+    },
+    {
+      label: "Total price",
+      value: (r) => (
+        <span className="text-[18px] font-bold text-yellow-lemon">
+          {money(r.total)}
+          {r.estimated ? <span className="block text-[10px] font-normal text-white/70">estimate</span> : null}
+        </span>
+      ),
+    },
+    { label: "Monthly savings", value: (r) => formatAud(r.monthlySavings) },
+    { label: "New bill", value: (r) => `${formatBill(r.newBill)}/mth` },
+    { label: "Payback", value: (r) => (r.paybackYears != null ? `${r.paybackYears.toFixed(1)} yrs` : "—") },
+    { label: "25-year net savings", value: (r) => money(r.net25) },
+  ];
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#020817]/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Compare battery options" onClick={onClose}>
+      <div className={`${GLASS} ${TINT.neutral} w-full max-w-[880px] bg-[#0B1A33]/95 p-5`} onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="font-source-sans text-[14px] font-bold uppercase tracking-[1px] text-white">Compare battery options</p>
+          <button type="button" onClick={onClose} className="text-[22px] leading-none text-white/70 hover:text-white" aria-label="Close">
+            ×
+          </button>
+        </div>
+        <p className="mb-3 font-source-sans text-[12px] text-white/70">
+          Same roof and panels for every option. Prices include installation and GST, after STCs and the battery rebate. Each option is quoted on its own; the customer accepts one.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] border-separate border-spacing-x-2 font-source-sans text-[13px] text-white">
+            <thead>
+              <tr>
+                <th className="w-[140px]" />
+                {rows.map((r) => (
+                  <th key={r.id} className={`rounded-t-[12px] px-3 pb-2 pt-3 text-center ${r.id === shownId ? "bg-white/[0.12]" : "bg-white/[0.05]"}`}>
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.8px] text-white/60">Option {r.letter}</span>
+                    {r.recommended ? (
+                      <span className="mt-1 inline-block rounded-full bg-yellow-lemon px-2 py-[1px] text-[10px] font-bold uppercase text-[#0B2A4A]">Recommended</span>
+                    ) : null}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={l.label}>
+                  <td className="py-2 pr-2 text-[12px] font-semibold uppercase tracking-[0.6px] text-white/60">{l.label}</td>
+                  {rows.map((r) => (
+                    <td key={r.id} className={`px-3 py-2 text-center ${r.id === shownId ? "bg-white/[0.12]" : "bg-white/[0.05]"}`}>
+                      {l.value(r)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              <tr>
+                <td />
+                {rows.map((r) => (
+                  <td key={r.id} className={`rounded-b-[12px] px-3 pb-3 pt-2 text-center ${r.id === shownId ? "bg-white/[0.12]" : "bg-white/[0.05]"}`}>
+                    <button
+                      type="button"
+                      onClick={() => onPick(r.id)}
+                      className={`w-full rounded-[8px] py-1.5 text-[13px] font-bold transition ${
+                        r.id === shownId ? "bg-white/20 text-white" : "bg-[linear-gradient(172.76deg,#2094F3_0%,#17CFCF_100%)] text-white hover:brightness-110"
+                      }`}
+                    >
+                      {r.id === shownId ? "Showing" : "Show this option"}
+                    </button>
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One draft quote per battery option for a lead's design; returns the quote references made. */
+async function createOptionQuotes(leadId: string, designId: string, options: { kwh?: number; pick?: string }[]): Promise<string[]> {
+  const made: string[] = [];
+  for (const [i, { kwh: batteryKwh, pick }] of options.entries()) {
+    try {
+      const res = await fetch("/api/admin/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // A picked battery is quoted as that product; a size, as the price list's battery that size.
+        // The first one replaces the lead's open quotes from earlier designs.
+        body: JSON.stringify({ leadId, designId, batteryKwh, ...(pick ? { batteryPick: pick } : {}), ...(i === 0 ? { replaceOpen: true } : {}) }),
+      });
+      const json = (await res.json().catch(() => null)) as { data?: { number?: number; reference?: string } } | null;
+      if (res.ok && json?.data) made.push(json.data.reference ?? (json.data.number ? `Q-${String(json.data.number).padStart(6, "0")}` : "quote"));
+    } catch {
+      // Left out of the count; staff can quote it from the lead.
+    }
+  }
+  return made;
 }
 
 export type DesignsProposalStepContentProps = {
@@ -346,6 +625,8 @@ export type DesignsProposalStepContentProps = {
 export type DesignsProposalStepHandle = {
   /** Invoked by the wizard's Finish button — same persistence the old standalone Save button used. */
   save: () => void;
+  /** Opens the proposal download (the footer's centre button). */
+  openDownload: () => void;
 };
 
 /**
@@ -374,6 +655,8 @@ export const DesignsProposalStepContent = forwardRef<
    */
   const installerCustomerId = searchParams.get("customerId");
   const isInstallerEditing = Boolean(installerCustomerId);
+  /** Staff designing for a lead (Quotes & Leads → Solar Design). */
+  const leadId = searchParams.get("leadId");
 
   /**
    * Persists the builder output so it shows on the customer's design page and
@@ -389,6 +672,61 @@ export const DesignsProposalStepContent = forwardRef<
     onSavingChange?.(true);
     try {
       const input = proposalToDesignInput(proposal);
+
+      // Staff designing for a lead (Quotes & Leads → Solar Design): saved to
+      // the lead's customer account by the backend. Never the public save,
+      // which would create an account and email the customer.
+      if (leadId && !isInstallerEditing) {
+        const r = await saveLeadDesign(leadId, input);
+        // Each battery option the customer compared becomes its own quote
+        // (same design, that battery); accepting one supersedes the others.
+        const picks = proposal.equipment.items.battery ?? [];
+        const kwhOfId = (id: string) => choiceKwh(id, picks);
+        const options = sortOptions(proposal.equipment.batteryOptionIds ?? [], kwhOfId);
+        // Every save quotes the design afresh (one quote per battery option, or
+        // one for the design), replacing the open quotes of earlier designs, so
+        // the lead shows only this design's options (owner, 10 Nov 2026).
+        if (!options.length) options.push(proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID);
+        let quoted: string[] = [];
+        if (options.length >= 1) {
+          // One option: the design exactly as saved (no battery size forced on it).
+          quoted = await createOptionQuotes(leadId, r.designId, options.map((id) => ({ kwh: options.length > 1 ? kwhOfId(id) : undefined, ...(isPickId(id) ? { pick: id } : {}) })));
+        }
+        // The lead's roof picture follows the latest design (it was only made once).
+        // Made from this saved design: its roofs, faces and panels (owner, 10 Nov 2026).
+        const sd = proposal.solarDesign;
+        const saved = sd?.savedRoofs?.length && sd.generatedPanels?.length
+          ? {
+              roofs: sd.savedRoofs,
+              panels: sd.generatedPanels,
+              faces: sd.roofFaces,
+              orientation: sd.panelOrientation,
+              dims: sd.panelDimensions,
+              systemKw: Number.parseFloat(proposal.summary.systemSize) || undefined,
+            }
+          : null;
+        const designBody = JSON.stringify(saved ? { saved } : {});
+        fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/roof-design`, {
+          method: "POST",
+          // keepalive carries it past the page change, but only up to 64 KB.
+          keepalive: designBody.length < 60_000,
+          headers: { "Content-Type": "application/json" },
+          body: designBody,
+        }).catch(() => {});
+        if (options.length > 1 || quoted.length < options.length) {
+          toast[quoted.length === options.length ? "success" : "warning"](
+            quoted.length
+              ? `${quoted.length} of ${options.length} battery options quoted: ${quoted.join(", ")} (drafts on the lead).`
+              : "The battery options couldn't be quoted. Create them from the lead's Quotes.",
+          );
+        }
+        toast.success(r.updated ? "Design updated on the lead." : r.createdAccount ? "Design saved to the lead. A customer account was set up for it." : "Design saved to the lead.");
+        // Sent on to the customer's portal, with a link by email / SMS.
+        const shared = describeShare(r.sent);
+        if (shared) toast[shared.tone === "success" ? "success" : shared.tone === "warning" ? "warning" : "info"](shared.text);
+        router.push("/master/quotes-leads");
+        return;
+      }
 
       // Installer session: no customer cookies to write a profile with, and
       // the customer-scoped save endpoints reject anyone but the design's
@@ -412,6 +750,8 @@ export const DesignsProposalStepContent = forwardRef<
           updated.products,
         );
         toast.success("Design changes saved.");
+        const shared = describeShare(updated.sentToCustomer);
+        if (shared) toast[shared.tone === "success" ? "success" : shared.tone === "warning" ? "warning" : "info"](shared.text);
         router.push("/installers/dashboard/home");
         return;
       }
@@ -482,9 +822,10 @@ export const DesignsProposalStepContent = forwardRef<
     ref,
     () => ({
       save: () => void handleSaveToAccount(),
+      openDownload: () => setDownloadModalOpen(true),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [proposal, isInstallerEditing, editingDesignId, customerUser],
+    [proposal, isInstallerEditing, editingDesignId, customerUser, leadId],
   );
 
   const displayCustomerName = proposal.customer.name || customerName;
@@ -503,25 +844,32 @@ export const DesignsProposalStepContent = forwardRef<
    * battery set on the Energy step was neither priced nor selected here.
    */
   const itemsBatteryKwh = useMemo(() => {
-    const items = proposal.equipment.items.battery ?? [];
-    const total = items.reduce((sum, it) => {
-      const kwh = Number.parseFloat(it.ratingLabel);
-      return Number.isFinite(kwh) && /kwh/i.test(it.ratingLabel) ? sum + kwh * Math.max(1, it.quantity) : sum;
-    }, 0);
+    // The shown picked battery only (each picked battery is its own option).
+    const total = shownBatteryItems(proposal.equipment).reduce((sum, it) => sum + itemKwh(it), 0);
     return total > 0 ? total : undefined;
-  }, [proposal.equipment.items.battery]);
+  }, [proposal.equipment]);
+  // Batteries picked on the equipment step come first, then the Energy
+  // step's size, then this step's pick (same rule as the PDF).
   const designBatteryKwh =
-    proposal.equipment.batteryCapacityKwh ??
     itemsBatteryKwh ??
+    proposal.equipment.batteryCapacityKwh ??
     batteryKwhOf(proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID);
+  /** The customer's own products for the pricing engine (panel, inverter, batteries). */
+  const chosenProducts = useMemo(() => chosenProductsOf(proposal), [proposal]);
+  const chosenPanel = proposal.equipment.items.solarPanel?.[0] ?? null;
   /** The battery button that matches the design's size (the nearest one). */
+  const batteryPicks = useMemo(() => proposal.equipment.items.battery ?? [], [proposal.equipment.items.battery]);
   const batteryCapacityId = useMemo(() => {
+    const id = proposal.equipment.batteryCapacityId;
+    // A picked battery shown: that pick's own tile.
+    if (isPickId(id) && batteryPicks[pickIndex(id)]) return id;
     let best = BATTERY_CAPACITY_OPTIONS[0];
     for (const b of BATTERY_CAPACITY_OPTIONS) {
       if (Math.abs(batteryKwhOf(b.id) - designBatteryKwh) < Math.abs(batteryKwhOf(best.id) - designBatteryKwh)) best = b;
     }
     return best.id;
-  }, [designBatteryKwh]);
+  }, [designBatteryKwh, proposal.equipment.batteryCapacityId, batteryPicks]);
+  const kwhOfChoice = (id: string) => choiceKwh(id, batteryPicks);
 
   /**
    * Pricing engine: the design's panels, tier and battery priced with the
@@ -536,8 +884,8 @@ export const DesignsProposalStepContent = forwardRef<
   // Priced at the design's exact size (the Energy step can set e.g. 13 kWh).
   const batteryKwh = designBatteryKwh;
   const batteryOptionsKwh = useMemo(
-    () => BATTERY_CAPACITY_OPTIONS.map((b) => batteryKwhOf(b.id)),
-    [],
+    () => [...new Set([...BATTERY_CAPACITY_OPTIONS.map((b) => batteryKwhOf(b.id)), ...batteryPicks.map(itemKwh).filter((k) => k > 0)])],
+    [batteryPicks],
   );
   const tierIds = useMemo(() => PANEL_TIER_OPTIONS.map((x) => x.id), []);
   const { data: priced, loading: pricingLoading, error: pricingError } = useProposalPricing(
@@ -546,9 +894,21 @@ export const DesignsProposalStepContent = forwardRef<
     batteryKwh,
     batteryOptionsKwh,
     tierIds,
+    chosenProducts,
+    proposal.customer.supplyPhase,
   );
   const selectedQuote = priced?.selected ?? null;
   const arrayKw = selectedQuote?.arrayKw ?? 0;
+  // The system size follows the panel actually chosen (tier or the customer's
+  // own pick): the roof step sized it with the design's 400 W panel, so 11
+  // panels showed 4.4 kW after a 510 W panel was picked (owner, 10 Nov 2026).
+  // The priced array (panels × the chosen panel's watts) replaces it, so the
+  // card, the Energy step, the PDF and the lead all show the same size.
+  useEffect(() => {
+    if (!(arrayKw > 0)) return;
+    const size = `${Number(arrayKw.toFixed(2))} kW`;
+    if (size !== proposal.summary.systemSize) dispatch(mergeProposalData({ summary: { systemSize: size } }));
+  }, [arrayKw, proposal.summary.systemSize, dispatch]);
   const savings = useMemo(
     () => estimateSavings(monthlyBill, arrayKw, batteryKwh),
     [monthlyBill, arrayKw, batteryKwh],
@@ -561,21 +921,12 @@ export const DesignsProposalStepContent = forwardRef<
     ) as Record<string, number>;
   }, [priced]);
   /** Battery buttons priced by estimate (no single product that size in the price list). */
-  const batteryEstimated = useMemo(() => {
-    const info = priced?.batteryInfo ?? {};
-    return new Set(BATTERY_CAPACITY_OPTIONS.filter((b) => info[String(batteryKwhOf(b.id))]?.estimated).map((b) => b.id));
-  }, [priced]);
-  const batteryPrices = useMemo(() => {
-    const totals = priced?.batteryTotals ?? {};
-    const none = totals["0"] ?? 0;
-    return Object.fromEntries(
-      BATTERY_CAPACITY_OPTIONS.map((b) => {
-        const t = totals[String(batteryKwhOf(b.id))];
-        return [b.id, t != null ? Math.max(0, t - none) : 0];
-      }),
-    ) as Record<string, number>;
-  }, [priced]);
-
+  const batteryCatalogue = useAppSelector(selectBuilderCatalogue).Battery;
+  /** A picked battery's photo from the product library, if it has one. */
+  const pickPhoto = (productId: string) => {
+    const product = (batteryCatalogue ?? []).find((p) => p.id === productId);
+    return product ? productImage(product)?.thumbUrl : undefined;
+  };
   /** null until the backend has priced this design. */
   /** Why the design can't be priced from the price list (e.g. no battery that size), if so. */
   const pricingBlock = selectedQuote?.blocks?.length ? selectedQuote.blocks[0] : null;
@@ -583,7 +934,7 @@ export const DesignsProposalStepContent = forwardRef<
   const yearlySavingsNum = savings.yearlySavings;
   const computedPayback =
     computedTotalPrice != null && yearlySavingsNum > 0
-      ? `${(computedTotalPrice / yearlySavingsNum).toFixed(1)} yrs`
+      ? paybackLabel(computedTotalPrice, yearlySavingsNum)
       : proposal.summary.payback;
 
   /**
@@ -596,28 +947,99 @@ export const DesignsProposalStepContent = forwardRef<
     return pricingLoading ? "Calculating…" : "—";
   };
 
-  const netSavings25yr = useMemo(() => {
-    const { rows } = buildFinancialProjectionFromProposal(
-      {
-        ...proposal,
-        pricing: {
-          ...proposal.pricing,
-          totalSystemPrice: formatAud(computedTotalPrice ?? 0),
-        },
-      },
-      { ...DEFAULT_FINANCIAL_PROJECTION_ASSUMPTIONS, projectionYears: 25 },
-    );
-    return rows.at(-1)?.cumulativeImpacts ?? 0;
-  }, [proposal, computedTotalPrice]);
+  // The same projection as Payback, the PDF and the battery comparison.
+  const netSavings25yr = netSavings(yearlySavingsNum, computedTotalPrice);
 
+  // Picking a tier or a battery size here replaces the panel or batteries
+  // picked on the equipment step (one choice at a time, so the screen, the
+  // price and the PDF always agree).
   function handleSelectPanelTier(id: string) {
-    dispatch(mergeProposalData({ equipment: { panelTierId: id } }));
+    dispatch(
+      mergeProposalData({
+        equipment: { panelTierId: id, ...(chosenPanel ? { items: { ...proposal.equipment.items, solarPanel: [] } } : {}) },
+      }),
+    );
   }
 
-  function handleSelectBattery(id: string) {
-    // Written to the shared size too, so the Energy step shows the same battery.
-    dispatch(mergeProposalData({ equipment: { batteryCapacityId: id, batteryCapacityKwh: batteryKwhOf(id) } }));
+  /** The battery options being compared; the shown battery is always one of them. */
+  const batteryOptionIds = useMemo(() => {
+    const valid = (id: string) => (isPickId(id) ? Boolean(batteryPicks[pickIndex(id)]) : BATTERY_CAPACITY_OPTIONS.some((b) => b.id === id));
+    const saved = (proposal.equipment.batteryOptionIds ?? []).filter(valid);
+    const kwhOf = (id: string) => choiceKwh(id, batteryPicks);
+    return sortOptions(saved.includes(batteryCapacityId) ? saved : [...saved, batteryCapacityId], kwhOf).slice(0, MAX_BATTERY_OPTIONS + 1);
+  }, [proposal.equipment.batteryOptionIds, batteryCapacityId, batteryPicks]);
+  /** The card's tiles: None, every picked battery on its own tile, and the standard sizes (eight in all). */
+  const tiles = useMemo(() => batteryTiles(BATTERY_CAPACITY_OPTIONS, batteryPicks, batteryOptionIds), [batteryPicks, batteryOptionIds]);
+  /** Batteries priced by estimate (no single product that size in the price list). */
+  const batteryEstimated = useMemo(() => {
+    const info = priced?.batteryInfo ?? {};
+    return new Set(tiles.filter((t) => !t.pick && info[String(t.kwh)]?.estimated).map((t) => t.id));
+  }, [priced, tiles]);
+  /** Added cost of each tile over no battery: the shown one as quoted, the others by size. */
+  const batteryPrices = useMemo(() => {
+    const totals = priced?.batteryTotals ?? {};
+    const none = totals["0"] ?? 0;
+    return Object.fromEntries(
+      tiles.map((t) => {
+        const exact = t.id === batteryCapacityId && selectedQuote && !selectedQuote.blocks?.length ? selectedQuote.net : undefined;
+        const total = exact ?? totals[String(t.kwh)];
+        return [t.id, total != null ? Math.max(0, total - none) : 0];
+      }),
+    ) as Record<string, number>;
+  }, [priced, tiles, batteryCapacityId, selectedQuote]);
+  /** The battery behind each tile, named in its corner: the picked one, else the price list's. */
+  const batteryModels = useMemo(() => {
+    const info = priced?.batteryInfo ?? {};
+    const out: Record<string, { label: string; photo?: string }[]> = {};
+    for (const t of tiles) {
+      if (t.pick) out[t.id] = [{ label: `${t.pick.quantity > 1 ? `${t.pick.quantity}× ` : ""}${t.pick.name}`, photo: pickPhoto(t.pick.productId) }];
+      else if (t.kwh > 0 && info[String(t.kwh)]?.model) out[t.id] = [{ label: info[String(t.kwh)].model }];
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pickPhoto reads the catalogue below
+  }, [priced, tiles, batteryCatalogue]);
+  const [comparing, setComparing] = useState(false);
+  const optionRows = useMemo(
+    () => batteryOptionRows(batteryOptionIds, priced ?? null, monthlyBill, arrayKw, batteryPicks),
+    [batteryOptionIds, priced, monthlyBill, arrayKw, batteryPicks],
+  );
+
+  function setBatteryOptions(ids: string[], shown: string) {
+    dispatch(
+      mergeProposalData({
+        equipment: {
+          batteryOptionIds: ids,
+          batteryCapacityId: shown,
+          batteryCapacityKwh: kwhOfChoice(shown),
+        },
+      }),
+    );
   }
+
+  // Batteries picked on the equipment step are options of their own, one tile
+  // each (owner, 10 Nov 2026), not added together into one battery.
+  useEffect(() => {
+    if (!batteryPicks.length || pickMode(proposal.equipment)) return;
+    const ids = batteryPicks.slice(0, MAX_BATTERY_OPTIONS).map((_, i) => pickId(i));
+    setBatteryOptions(ids, ids[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when picks arrive
+  }, [batteryPicks.length]);
+
+  function handleTapBattery(id: string) {
+    const next = tapBatteryOption(batteryOptionIds, batteryCapacityId, id, MAX_BATTERY_OPTIONS, kwhOfChoice);
+    if (next.full) {
+      toast.info(`Up to ${MAX_BATTERY_OPTIONS} battery options. Take one out (×) to add another.`);
+      return;
+    }
+    setBatteryOptions(next.ids, next.shown);
+  }
+
+  function handleRemoveBattery(id: string) {
+    const rest = batteryOptionIds.filter((x) => x !== id);
+    if (!rest.length) return;
+    setBatteryOptions(rest, id === batteryCapacityId ? rest[0] : batteryCapacityId);
+  }
+
 
   /**
    * Keeps the stored price, savings and payback in sync with the engine so
@@ -629,7 +1051,7 @@ export const DesignsProposalStepContent = forwardRef<
     const next = {
       totalSystemPrice: formatAud(computedTotalPrice),
       monthlySavings: formatAud(savings.monthlySavings),
-      newBill: formatAud(savings.newBill),
+      newBill: formatBill(savings.newBill),
       yearlySavings: formatAud(savings.yearlySavings),
       payback: computedPayback,
     };
@@ -659,61 +1081,88 @@ export const DesignsProposalStepContent = forwardRef<
     // One screen, no page scroll on desktop: a stat strip, then four frosted
     // glass columns that share the remaining height (details, panel tier,
     // battery, price). Phones stack and scroll as before.
-    <div className="flex h-full min-h-0 w-full flex-1 self-stretch overflow-y-auto lg:overflow-hidden">
-      <div className="relative z-10 mx-auto flex h-full min-h-0 w-full max-w-[1446px] flex-col gap-[clamp(6px,1.2vh,12px)] px-4 py-[clamp(4px,1vh,10px)] sm:px-8 lg:px-[81px]">
+    <div className="flex w-full flex-1 self-stretch lg:h-full lg:min-h-0 lg:overflow-hidden">
+      <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-col lg:h-full lg:min-h-0 gap-[clamp(6px,1.2vh,12px)] px-4 py-[clamp(4px,1vh,10px)] sm:px-8 lg:px-[81px]">
         <div className="grid shrink-0 grid-cols-2 gap-[clamp(6px,1vw,12px)] lg:grid-cols-4">
-          <ProposalStatCard label="System Size" value={proposal.summary.systemSize} variant="cyan" />
-          <ProposalStatCard label="Total Panels" value={proposal.summary.totalPanels} variant="gold" />
-          <ProposalStatCard label="Yearly Savings" value={pricedFigure(formatAud(savings.yearlySavings))} variant="cyan" />
-          <ProposalStatCard label="Payback" value={pricedFigure(computedPayback)} variant="gold" />
+          <ProposalStatCard label="System Size" value={proposal.summary.systemSize} variant="steel" />
+          <ProposalStatCard label="Total Panels" value={proposal.summary.totalPanels} variant="slate" />
+          <ProposalStatCard label="Yearly Savings" value={pricedFigure(formatAud(savings.yearlySavings))} variant="steel" />
+          <ProposalStatCard label="Payback" value={pricedFigure(computedPayback)} variant="slate" />
         </div>
 
         {/* Row 1: panel tier and battery side by side (the placement the owner chose). */}
-        <div className="grid min-h-0 flex-[1.05] grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:grid-cols-[1fr_1.33fr]">
+        <div className="grid grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:min-h-0 lg:flex-[1.5] lg:grid-cols-[1fr_1.33fr]">
           <PanelTierSelector
-            selectedId={panelTierId}
+            selectedId={chosenPanel ? "" : panelTierId}
+            chosen={
+              chosenPanel
+                ? {
+                    label: `${chosenPanel.brand} ${chosenPanel.name}`.trim(),
+                    delta:
+                      selectedQuote && priced?.tierTotals?.standard != null ? selectedQuote.net - priced.tierTotals.standard : 0,
+                  }
+                : null
+            }
             onSelect={handleSelectPanelTier}
             deltas={tierDeltas}
             info={priced?.tierInfo}
           />
           <BatterySelector
-            selectedId={batteryCapacityId}
-            onSelect={handleSelectBattery}
+            tiles={tiles}
+            optionIds={batteryOptionIds}
+            shownId={batteryCapacityId}
+            onTap={handleTapBattery}
+            onRemove={handleRemoveBattery}
+            onCompare={() => setComparing(true)}
             prices={batteryPrices}
-            sizeKwh={batteryKwh}
             estimated={batteryEstimated}
+            models={batteryModels}
           />
         </div>
 
         {/* Row 2: system details, price, 25-year net savings. */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-[clamp(6px,1vw,12px)] md:grid-cols-3">
-          <div className={`${GLASS} ${TINT.brandGold} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+        <div className="grid grid-cols-1 gap-[clamp(6px,1vw,12px)] lg:min-h-0 lg:flex-1 lg:grid-cols-3">
+          <div className={`${GLASS} ${TINT.brandGold} flex flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
             <Sheen />
             <CardTitle dark>System Details</CardTitle>
-            <div className="relative mt-1.5 flex min-h-0 flex-1 flex-col justify-evenly overflow-hidden">
+            <div className="relative mt-1.5 flex flex-1 flex-col justify-evenly gap-1 lg:min-h-0 lg:gap-0 lg:overflow-hidden">
               <ProposalDetailRow label="Customer" value={displayCustomerName} mask />
               <ProposalDetailRow label="Address" value={proposal.customer.address} mask />
               <ProposalDetailRow label="Property" value={proposal.customer.property} />
+              {proposal.customer.supplyPhase ? (
+                <ProposalDetailRow label="Supply" value={proposal.customer.supplyPhase === 3 ? "Three phase" : "Single phase"} />
+              ) : null}
               {EQUIPMENT_CATEGORY_KEYS.map((key) => {
-                const items = proposal.equipment.items[key];
+                // The battery shown on the card, not every picked one.
+                const items = key === "battery" ? shownBatteryItems(proposal.equipment) : proposal.equipment.items[key];
                 if (!items || items.length === 0) return null;
                 const value = items
                   .map((item) => `${item.name}${item.quantity > 1 ? ` ×${item.quantity}` : ""} ${item.ratingLabel}`.trim())
                   .join(", ");
                 return <ProposalDetailRow key={key} label={CATEGORY_DETAIL_LABEL[key]} value={value} />;
               })}
-              {batteryKwh > 0 && !(proposal.equipment.items.battery?.length) ? (
-                <ProposalDetailRow label="Battery" value={`${Math.round(batteryKwh * 10) / 10} kWh`} />
+              {batteryKwh > 0 && !shownBatteryItems(proposal.equipment).length ? (
+                <ProposalDetailRow
+                  label="Battery"
+                  value={(() => {
+                    const rated = ratedBatteryKwh(selectedQuote?.battery);
+                    const usable = selectedQuote?.battery?.kwh;
+                    if (!rated) return `${formatBatteryKwh(batteryKwh)} kWh`;
+                    return usable && Math.abs(usable - rated) >= 0.01
+                      ? `${formatBatteryKwh(rated)} kWh (${formatBatteryKwh(usable)} kWh usable)`
+                      : `${formatBatteryKwh(rated)} kWh`;
+                  })()}
+                />
               ) : null}
               <ProposalDetailRow label="Number of Panels" value={proposal.summary.totalPanels} />
-              <ProposalDetailRow label="Panel Tier" value={findPanelTier(panelTierId).label} />
+              <ProposalDetailRow label="Panel Tier" value={chosenPanel ? "Your pick" : findPanelTier(panelTierId).label} />
               <ProposalDetailRow label="CO2 Offset" value={proposal.equipment.co2Offset} />
             </div>
           </div>
 
-          <div className={`${GLASS} ${TINT.cyan} flex min-h-0 flex-col p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.navy} flex flex-col p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
             <Sheen />
-            <div className="relative flex min-h-0 flex-1 flex-col justify-evenly gap-1 text-center">
+            <div className="relative flex flex-1 flex-col justify-evenly gap-1 text-center lg:min-h-0">
               <p className="font-source-sans text-[11px] font-semibold uppercase tracking-[0.8px] text-white/85">
                 Total System Price
               </p>
@@ -731,7 +1180,11 @@ export const DesignsProposalStepContent = forwardRef<
                   ? `${pricingBlock} Pick a battery size from the list, or your installer will quote it.`
                   : selectedQuote
                   ? `*${selectedQuote.estimated ? "Estimated battery price (no single battery this size in our price list). " : ""}Includes installation and GST, after ${selectedQuote.stcCount} STCs (${formatAud(selectedQuote.stcValue)}). ${
-                      selectedQuote.battery?.inverterBuiltIn ? `${selectedQuote.battery.model}` : (selectedQuote.inverter?.model ?? "")
+                      selectedQuote.battery?.inverterBuiltIn
+                        ? `${selectedQuote.battery.model}`
+                        : selectedQuote.inverter
+                          ? `${selectedQuote.inverter.model}${inverterMatchedToBattery(proposal, selectedQuote) ? ` (${MATCHED_INVERTER_NOTE})` : ""}`
+                          : ""
                     }${selectedQuote.phase === 3 ? ", three-phase supply" : ""}.${pricingLoading ? " Updating…" : ""}`
                   : pricingError
                     ? "We couldn't price this design just now. Your installer will confirm the price."
@@ -739,9 +1192,9 @@ export const DesignsProposalStepContent = forwardRef<
               </p>
               <div className="flex gap-1.5">
                 <ProposalSubMetric label="Monthly Savings" value={proposal.pricing.monthlySavings} />
-                <ProposalSubMetric label="Current Bill" value={proposal.pricing.currentBill} />
+                <ProposalSubMetric label="Current Bill /mth" value={proposal.pricing.currentBill} />
                 <ProposalSubMetric
-                  label="New Bill"
+                  label="New Bill /mth"
                   value={proposal.pricing.newBill}
                   valueClassName="inline-block bg-[linear-gradient(142.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent"
                 />
@@ -749,27 +1202,32 @@ export const DesignsProposalStepContent = forwardRef<
             </div>
           </div>
 
-          <div className={`${GLASS} ${TINT.neutral} flex min-h-0 flex-col items-center justify-center p-[clamp(8px,1.4vh,14px)]`}>
+          <div className={`${GLASS} ${TINT.charcoal} flex min-h-[120px] flex-col items-center justify-center p-[clamp(8px,1.4vh,14px)] lg:min-h-0`}>
             <Sheen />
             <p className="relative font-source-sans text-[12px] font-semibold uppercase tracking-[0.8px] text-white/80">
               25-Year Net Savings
             </p>
             <p className="relative font-source-sans text-[clamp(26px,5vh,40px)] font-bold leading-[1.1]">
-              <span className="bg-[linear-gradient(154.98deg,#2094F3_0%,#17CFCF_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
-                {formatAud(netSavings25yr)}
+              <span className="bg-[linear-gradient(154.98deg,#34D399_0%,#2DD4BF_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]">
+                {pricedFigure(netSavings25yr != null ? formatAud(netSavings25yr) : "")}
               </span>
             </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          className="mx-auto w-full max-w-[478px] shrink-0 rounded-[12px] bg-[linear-gradient(172.76deg,#2094F3_0%,#17CFCF_100%)] py-[clamp(4px,1vh,10px)] font-source-sans text-[clamp(14px,2.2vh,18px)] font-semibold uppercase tracking-[0.9px] text-white shadow-[0px_0px_30px_0px_rgba(32,148,243,0.45)] ring-1 ring-white/40 transition hover:brightness-110"
-          onClick={() => setDownloadModalOpen(true)}
-        >
-          Download your proposal
-        </button>
       </div>
+
+      {comparing ? (
+        <BatteryCompare
+          rows={optionRows}
+          shownId={batteryCapacityId}
+          onPick={(id) => {
+            setBatteryOptions(batteryOptionIds, id);
+            setComparing(false);
+          }}
+          onClose={() => setComparing(false)}
+        />
+      ) : null}
 
       <DesignsProposalDownloadModal
         open={downloadModalOpen}

@@ -45,7 +45,7 @@ function NotificationRow({
   busy: boolean;
 }) {
   const unread = item.readAt == null;
-  const href = dashboardNotificationHref(portal, item.entityType, item.entityId);
+  const href = dashboardNotificationHref(portal, item.entityType, item.entityId, item.type);
 
   return (
     <li
@@ -125,7 +125,7 @@ export function DashboardNotificationBell({
 
   const live = mode !== "preview";
   const apiMode: DashboardNotificationMode =
-    mode === "customer" ? "customer" : "installer";
+    mode === "customer" ? "customer" : mode === "admin" ? "admin" : "installer";
   const portal: DashboardNotificationMode = apiMode;
 
   const shared = useDashboardNotificationsContextOptional();

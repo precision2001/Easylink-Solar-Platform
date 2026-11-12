@@ -1,9 +1,16 @@
 "use client";
 
+import { QuoteOptionsChip } from "./QuoteOptionsChip";
+import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { leadDesignHref } from "@/lib/designs/leadDesignLink";
+import { SendDesignDialog } from "@/components/designs/SendDesignDialog";
+import { DesignShareBadge } from "@/components/designs/DesignShareBadge";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/master-dashboard/quotes-leads/icons";
+import { RoofDesignCell, RoofDesignViewer, useAutoRoofDesigns } from "@/components/master-dashboard/quotes-leads/RoofDesign";
 import { STAGE_DOT } from "@/components/master-dashboard/quotes-leads/PipelineBoard";
+import { QuotesDrawer } from "@/components/master-dashboard/quotes-leads/QuotesDrawer";
 import {
   TASK_KINDS,
   TONE_CHIP,
@@ -59,7 +66,7 @@ const LABEL = "flex flex-col gap-1 text-[12px] font-semibold text-[#475569]";
 const QUIET_BUTTON =
   "h-9 rounded-[8px] border border-[#CBD5E1] bg-white px-3 text-[13px] font-semibold text-[#334155] hover:border-[#64748B] disabled:opacity-50";
 
-type Panel = { leadId: string; kind: "next" | "lost" } | null;
+type Panel = { leadId: string; kind: "next" | "lost" | "delete" } | null;
 
 /* ---------- small parts ---------- */
 
@@ -135,21 +142,38 @@ function PillSelect({
   );
 }
 
-function SourceChip({ lead }: { lead: PipelineLead }) {
+/**
+ * Starts a manual design for this lead: the Designs flow opens on the roof
+ * with the lead's details and address filled in. Where the lead came from
+ * sits underneath.
+ */
+function SolarDesignButton({ lead, onSend }: { lead: PipelineLead; onSend?: () => void }) {
   const kind = sourceKind(lead.source);
   return (
-    <div className="flex flex-col items-start gap-1">
-      <span
-        title={lead.source ?? undefined}
-        className="inline-flex max-w-full items-center gap-1.5 truncate rounded-[6px] bg-[#F1F5F9] px-1.5 py-[3px] text-[12px] font-semibold text-[#334155]"
+    <div className="inline-flex max-w-full flex-col items-stretch gap-1">
+      <Link
+        href={leadDesignHref(lead)}
+        title={`Design a system for ${lead.customerName}${lead.address ? ` at ${lead.address}` : ""}`}
+        className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-[8px] border border-[#CBD5E1] pl-1 pr-2.5 text-[12.5px] font-bold text-white no-underline shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB]"
+        style={{ backgroundImage: "linear-gradient(110deg, rgb(84, 116, 235) 10%, rgb(255, 60, 60) 100%)" }}
       >
-        <Icon name={kind.icon} size={13} className="shrink-0 text-[#64748B]" />
-        {kind.label}
+        <Image alt="" src="/images/solarDesignLogo.png" width={24} height={24} className="shrink-0" />
+        <span className="whitespace-nowrap">Solar Design</span>
+        <span aria-hidden="true">→</span>
+      </Link>
+      <span className="truncate text-[11.5px] text-[#64748B]" title={lead.source ?? undefined}>
+        {kind.label} · {ago(lead.createdAt)}
       </span>
-      <span className="text-[11.5px] text-[#64748B]">{ago(lead.createdAt)}</span>
+      {lead.design ? (
+        // Takes the Solar Design button's width, never widens it.
+        <span className="block w-0 min-w-full">
+          <DesignShareBadge design={lead.design} onSend={onSend} size="sm" />
+        </span>
+      ) : null}
     </div>
   );
 }
+
 
 function RowMenu({ items }: { items: { label: string; danger?: boolean; onSelect: () => void }[] }) {
   const [open, setOpen] = useState(false);
@@ -289,6 +313,44 @@ function NextActionForm({ lead, meta, onDone, onCancel }: { lead: PipelineLead; 
   );
 }
 
+/** Deleting a lead is for good: it asks once, in the row, before it goes. */
+function DeleteForm({ lead, onDone, onCancel }: { lead: PipelineLead; onDone: () => void; onCancel: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/leads/${encodeURIComponent(lead.id)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.success === false) throw new Error(json?.message ?? "Could not delete the lead.");
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete the lead.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="m-0 text-[13px] font-bold text-[#0F172A]">
+        Delete {lead.customerName}?
+        <span className="ml-2 font-normal text-[#5B6B80]">The lead, its tasks and notes are removed for good. This can&apos;t be undone.</span>
+      </p>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => void remove()} disabled={busy} className="h-9 rounded-[8px] bg-[#B91C1C] px-4 text-[13px] font-bold text-white hover:bg-[#991B1B] disabled:opacity-50">
+          {busy ? "Deleting…" : "Delete lead"}
+        </button>
+        <button type="button" onClick={onCancel} className={QUIET_BUTTON}>
+          Cancel
+        </button>
+      </div>
+      {error ? <p className="m-0 text-[12.5px] font-semibold text-[#991B1B]">{error}</p> : null}
+    </div>
+  );
+}
+
 function LostForm({ lead, meta, onDone, onCancel }: { lead: PipelineLead; meta: PipelineMeta; onDone: () => void; onCancel: () => void }) {
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
@@ -381,6 +443,18 @@ export function LeadsWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
+  // The lead whose quote versions are open in the side drawer.
+  const [quotesFor, setQuotesFor] = useState<{ lead: PipelineLead; startWith: "list" | "create" } | null>(null);
+  const [sendDesignFor, setSendDesignFor] = useState<PipelineLead | null>(null);
+
+  // Every listed lead with an address gets a roof design from the platform
+  // designer, on its own; results drop into the table as they finish.
+  const { working: roofWorking, redesign: redesignRoof } = useAutoRoofDesigns(
+    rows,
+    (leadId, design) => setRows((rs) => rs?.map((r) => (r.id === leadId ? { ...r, roofDesign: design } : r)) ?? rs),
+    view !== "spam",
+  );
 
   useEffect(() => {
     setPage(1);
@@ -445,6 +519,8 @@ export function LeadsWorkspace({
       if (!res.ok || !json?.success) throw new Error(json?.message ?? "Could not update the lead.");
     });
   }
+
+  const closeQuotes = useCallback(() => setQuotesFor(null), []);
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const stageLabel = (s: LeadStage) => meta?.stages.find((x) => x.key === s)?.label ?? s;
@@ -561,18 +637,19 @@ export function LeadsWorkspace({
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1040px] border-collapse text-[13px]">
+          <table className="w-full min-w-[1180px] border-collapse text-[13px]">
             <colgroup>
-              <col className="w-[25%]" />
+              <col className="w-[22%]" />
+              <col className="w-[136px]" />
               <col className="w-[15%]" />
               <col className="w-[15%]" />
-              <col className="w-[29%]" />
-              <col className="w-[12%]" />
+              <col className="w-[27%]" />
+              <col className="w-[148px]" />
               <col className="w-[56px]" />
             </colgroup>
             <thead>
               <tr className="bg-[#F8FAFC] text-left text-[12px] text-[#5B6B80]">
-                {["Customer", "Stage", "Sales owner", "Next action", "Source", ""].map((h, i) => (
+                {["Customer", "Roof design", "Stage", "Sales owner", "Next action", "Source", ""].map((h, i) => (
                   <th key={i} scope="col" className={`border-b border-[#E3E8EF] py-2 font-semibold ${i === 0 ? "pl-5" : "px-2"}`}>
                     {h}
                   </th>
@@ -587,14 +664,19 @@ export function LeadsWorkspace({
                 const due = l.nextAction ? describeDue(l.nextAction.dueAt) : null;
                 const chip = TONE_CHIP[due?.tone ?? "late"];
                 const second = [l.customerPhone, suburbOf(l.address)].filter(Boolean).join(" · ");
+                const del = { label: "Delete lead…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "delete" }) };
                 const menu =
                   view === "lost"
-                    ? [{ label: "Reopen lead", onSelect: () => void act(l, () => updateLeadPipeline(l.id, { reopen: true })) }]
+                    ? [{ label: "Reopen lead", onSelect: () => void act(l, () => updateLeadPipeline(l.id, { reopen: true })) }, del]
                     : view === "spam"
-                      ? [{ label: "Not spam", onSelect: () => void setSpam(l, false) }]
+                      ? [{ label: "Not spam", onSelect: () => void setSpam(l, false) }, del]
                       : [
+                          { label: "New quote", onSelect: () => setQuotesFor({ lead: l, startWith: "create" }) },
+                          { label: "Quotes", onSelect: () => setQuotesFor({ lead: l, startWith: "list" }) },
+                          ...(l.design ? [{ label: "Send design to customer", onSelect: () => setSendDesignFor(l) }] : []),
                           { label: "Mark as lost…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "lost" }) },
                           { label: "Mark as spam", danger: true, onSelect: () => void setSpam(l, true) },
+                          del,
                         ];
                 return [
                   <tr
@@ -619,6 +701,16 @@ export function LeadsWorkspace({
                           </div>
                         </div>
                       </div>
+                    </td>
+
+                    <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
+                      <RoofDesignCell
+                        lead={l}
+                        working={roofWorking.has(l.id)}
+                        onOpen={() => setViewing(l.id)}
+                        onRetry={() => redesignRoof(l.id)}
+                      />
+                      <QuoteOptionsChip leadId={l.id} customerName={l.customerName} open={l.openQuotes} />
                     </td>
 
                     <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
@@ -730,7 +822,7 @@ export function LeadsWorkspace({
                     </td>
 
                     <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
-                      <SourceChip lead={l} />
+                      <SolarDesignButton lead={l} onSend={() => setSendDesignFor(l)} />
                       {view === "spam" && l.spamReason ? (
                         <div className="mt-1 text-[11.5px] text-[#B91C1C]">{l.spamReason}</div>
                       ) : l.spamSuggestion?.length ? (
@@ -751,9 +843,11 @@ export function LeadsWorkspace({
                   </tr>,
                   open && meta ? (
                     <tr key={`${l.id}-panel`}>
-                      <td colSpan={6} className="border-b border-[#E3E8EF] bg-[#F8FAFC] px-5 pb-4 pt-1">
+                      <td colSpan={7} className="border-b border-[#E3E8EF] bg-[#F8FAFC] px-5 pb-4 pt-1">
                         <div className="rounded-[12px] border border-[#E3E8EF] bg-white p-4">
-                          {open === "next" ? (
+                          {open === "delete" ? (
+                            <DeleteForm lead={l} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
+                          ) : open === "next" ? (
                             <NextActionForm lead={l} meta={meta} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
                           ) : (
                             <LostForm lead={l} meta={meta} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
@@ -786,6 +880,44 @@ export function LeadsWorkspace({
             </>
           ) : null}
         </div>
+      ) : null}
+      {viewing && rows?.find((r) => r.id === viewing)?.roofDesign ? (
+        <RoofDesignViewer
+          lead={rows.find((r) => r.id === viewing)!}
+          working={roofWorking.has(viewing)}
+          onClose={() => setViewing(null)}
+          onRedesign={() => redesignRoof(viewing)}
+        />
+      ) : null}
+      {sendDesignFor?.design ? (
+        <SendDesignDialog
+          portal="admin"
+          designId={sendDesignFor.design.id}
+          customerName={sendDesignFor.customerName}
+          phone={sendDesignFor.customerPhone}
+          email={sendDesignFor.customerEmail}
+          onClose={() => setSendDesignFor(null)}
+          onSent={(r) => {
+            if (!r.sharedAt) return;
+            const id = sendDesignFor.id;
+            setRows((rs) =>
+              rs?.map((x) =>
+                x.id === id && x.design
+                  ? { ...x, design: { ...x.design, sharedAt: r.sharedAt, updatedAt: r.sharedAt!, sharedChannels: [r.email === "sent" ? "EMAIL" : null, r.sms === "sent" ? "SMS" : null].filter(Boolean).join(",") } }
+                  : x,
+              ) ?? rs,
+            );
+          }}
+        />
+      ) : null}
+      {quotesFor ? (
+        <QuotesDrawer
+          key={quotesFor.lead.id}
+          lead={quotesFor.lead}
+          startWith={quotesFor.startWith}
+          onClose={closeQuotes}
+          onChanged={onChanged}
+        />
       ) : null}
     </section>
   );

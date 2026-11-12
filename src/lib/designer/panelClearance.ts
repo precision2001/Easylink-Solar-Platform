@@ -6,23 +6,15 @@
  * reached the east eave when faces ran past the saved outline).
  */
 import type { SolarPanel } from "@/types/solar";
+import { panelCorners } from "@/lib/roof-design/geometry";
 
 type LatLng = { lat: number; lng: number };
 type XY = { x: number; y: number };
 const M_PER_LAT = 111320;
 
-/** Panel corners as the map draws them (seen from above: the slope side shortened by cos(pitch)). */
+/** Panel corners as the map draws them (the shared roof-design geometry: long side up the slope in portrait, shortened by cos(pitch)). */
 export function panelCornersLatLng(p: SolarPanel, dims: { heightM: number; widthM: number }): LatLng[] {
-  const land = p.orientation === "LANDSCAPE";
-  const hh = ((land ? dims.widthM : dims.heightM) / 2) * Math.cos(((p.slopeDegrees ?? 0) * Math.PI) / 180);
-  const hw = (land ? dims.heightM : dims.widthM) / 2;
-  const a = ((p.rotationDegrees ?? 0) * Math.PI) / 180;
-  const co = Math.cos(a), si = Math.sin(a);
-  const mL = M_PER_LAT * Math.cos((p.center.lat * Math.PI) / 180);
-  return [[-hw, hh], [hw, hh], [hw, -hh], [-hw, -hh]].map(([x, y]) => ({
-    lat: p.center.lat + (x * si + y * co) / M_PER_LAT,
-    lng: p.center.lng + (x * co - y * si) / mL,
-  }));
+  return panelCorners(p, dims);
 }
 
 function inside(p: XY, r: XY[]): boolean {

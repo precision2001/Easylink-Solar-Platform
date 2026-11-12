@@ -79,6 +79,9 @@ export type AdQuoteTier = {
    * an eligible package can still be declined on the shopper's own credit.
    */
   zipEligible: boolean;
+  /** The package price when paying this way. */
+  afterpayAmount: number;
+  zipAmount: number;
 };
 
 export type AdQuoteTiers = {

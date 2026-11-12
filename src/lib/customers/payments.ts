@@ -11,9 +11,9 @@ export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "CANCELLED" | "REFUN
 /**
  * Mirrors the backend's PaymentKind enum. AD_QUOTE is a fixed-price website
  * package bought from the pricing cards; it lands on a customer's history when
- * they bought it signed in.
+ * they bought it signed in. QUOTE_DEPOSIT is the deposit on an accepted quote.
  */
-export type PaymentKind = "SERVICE" | "PRODUCT_ORDER" | "AD_QUOTE";
+export type PaymentKind = "SERVICE" | "PRODUCT_ORDER" | "AD_QUOTE" | "QUOTE_DEPOSIT";
 
 export type CustomerPayment = {
   id: string;

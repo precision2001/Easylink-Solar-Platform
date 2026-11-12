@@ -1,3 +1,4 @@
+import { cumulativeGain, PANEL_LOSS_A_YEAR, paybackYears, PROJECTION_YEARS } from "./savingsProjection";
 /**
  * Everything the 10-page customer proposal prints, worked out from one design.
  *
@@ -9,6 +10,9 @@
  * customer saw on screen: savings from `estimateSavings` (same tariffs), price
  * from the pricing engine, and the battery size the step reads.
  */
+import { isSizeId } from "@/lib/batteries/sizeId";
+import { batteryOptionRows, itemKwh, shownBatteryItems } from "./batteryOptions";
+import type { ChosenProducts } from "@/lib/proposal/proposalPricing";
 import {
   CONSUMPTION_SEASONALITY,
   GENERATION_SEASONALITY,
@@ -49,9 +53,6 @@ export const COMPANY = {
 /** NSW grid emissions, kg CO2-e per kWh (National Greenhouse Accounts). */
 const NSW_KG_CO2_PER_KWH = 0.64;
 const PRICE_HELD_DAYS = 30;
-const PROJECTION_YEARS = 25;
-const PRICE_RISE_A_YEAR = 0.03;
-const PANEL_LOSS_A_YEAR = 0.004;
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -197,18 +198,34 @@ function capacityKwhOf(id: string): number {
 
 /** The battery size the proposal step prices — same order of precedence. */
 export function designBatteryKwh(proposal: DesignProposalState): number {
+  // Batteries the customer picked come first (7 Nov 2026: the Energy step's
+  // 70 kWh was quoted over three picked 17.7 kWh batteries).
+  // Each picked battery is its own option (10 Nov 2026): the shown one only.
+  const fromItems = shownBatteryItems(proposal.equipment).reduce((sum, it) => sum + itemKwh(it), 0);
+  if (fromItems > 0) return fromItems;
   if (proposal.equipment.batteryCapacityKwh !== undefined) {
     return Math.max(0, proposal.equipment.batteryCapacityKwh);
   }
-  const items = proposal.equipment.items?.battery ?? [];
-  const fromItems = items.reduce((sum, it) => {
-    const kwh = Number.parseFloat(it.ratingLabel);
-    return Number.isFinite(kwh) && /kwh/i.test(it.ratingLabel)
-      ? sum + kwh * Math.max(1, it.quantity)
-      : sum;
-  }, 0);
-  if (fromItems > 0) return fromItems;
   return capacityKwhOf(proposal.equipment.batteryCapacityId ?? DEFAULT_BATTERY_CAPACITY_ID);
+}
+
+/**
+ * The products picked on the equipment step, for the pricing engine: the
+ * panel, the inverter and the batteries (same product added twice counts
+ * twice). Nothing picked in a category leaves it to the engine.
+ */
+export function chosenProductsOf(proposal: DesignProposalState): ChosenProducts | undefined {
+  const items = proposal.equipment.items;
+  if (!items) return undefined;
+  const isId = (id: string | undefined): id is string => Boolean(id && /^[0-9a-f-]{36}$/i.test(id));
+  const panelId = items.solarPanel?.map((i) => i.productId).find(isId);
+  const inverterId = items.inverter?.map((i) => i.productId).find(isId);
+  const qty = new Map<string, number>();
+  // A catalogue battery, or a battery size picked by range and modules ("size:…").
+  for (const b of shownBatteryItems(proposal.equipment)) if (isId(b.productId) || isSizeId(b.productId)) qty.set(b.productId, (qty.get(b.productId) ?? 0) + Math.max(1, b.quantity));
+  const batteries = [...qty].map(([id, q]) => ({ id, qty: q }));
+  if (!panelId && !inverterId && !batteries.length) return undefined;
+  return { ...(panelId ? { panelId } : {}), ...(inverterId ? { inverterId } : {}), ...(batteries.length ? { batteries } : {}) };
 }
 
 function panelCountOf(proposal: DesignProposalState): number {
@@ -260,29 +277,44 @@ function rebateLabel(label: string, count: number): string {
   return label;
 }
 
-function payback(price: number | null, yearly: number): number | null {
-  if (price == null || price <= 0 || yearly <= 0) return null;
-  return Math.round((price / yearly) * 10) / 10;
-}
+const payback = (price: number | null, yearly: number): number | null => paybackYears(price, yearly);
 
-/** Cumulative gain after paying for the system, rising 3% a year, panels losing 0.4%. */
-export function cumulativeGain(yearly: number, price: number | null, years = PROJECTION_YEARS): number[] {
-  const out: number[] = [];
-  let total = -(price ?? 0);
-  for (let i = 0; i < years; i++) {
-    total += yearly * (1 + PRICE_RISE_A_YEAR) ** i * (1 - PANEL_LOSS_A_YEAR) ** i;
-    out.push(total);
-  }
-  return out;
-}
+/** Cumulative gain after paying for the system (the shared projection). */
+export { cumulativeGain };
 
 function buildOptions(
   monthly: number,
   arrayKw: number,
   designKwh: number,
   pricing: ProposalPricingResponse | null,
+  chosenIds: string[] = [],
+  shownId?: string,
+  pickedBatteries: Parameters<typeof batteryOptionRows>[4] = [],
 ): ProposalOption[] {
   const totals = pricing?.batteryTotals ?? {};
+  // The battery options the customer compared (owner, 9 Nov 2026): exactly
+  // those, as options A, B and C, the quickest payback recommended.
+  if (chosenIds.length > 1 && pricing) {
+    const rows = batteryOptionRows(chosenIds, pricing, monthly, arrayKw, pickedBatteries);
+    return rows.map((r) => {
+      const isDesign = r.id === shownId;
+      const s = estimateSavings(monthly, arrayKw, r.kwh);
+      const price = isDesign ? pricing.selected.net : (r.total ?? 0);
+      const quoted = pricing.batteryInfo?.[String(r.kwh)];
+      const kwhLabel = r.id.startsWith("pick:") ? r.kwh : quoted && r.kwh > 0 ? +quoted.kwh.toFixed(1) : r.kwh;
+      return {
+        key: `b${r.id}`,
+        label: `Option ${r.letter}${r.recommended ? " · Recommended" : ""}`,
+        title: r.kwh === 0 ? "Solar only" : r.id.startsWith("pick:") && r.model ? `Solar + ${r.model} (${kwhLabel} kWh)` : `Solar + ${kwhLabel} kWh battery`,
+        batteryKwh: kwhLabel,
+        price,
+        yearlySavings: Math.round(s.yearlySavings),
+        paybackYears: payback(price, s.yearlySavings),
+        selfPoweredPct: selfPowered(s),
+        isDesign,
+      };
+    });
+  }
   const sizes = BATTERY_CAPACITY_OPTIONS.map((b) => capacityKwhOf(b.id))
     .filter((k) => totals[String(k)] != null)
     .sort((a, b) => a - b);
@@ -322,6 +354,17 @@ function buildOptions(
   });
 }
 
+/** Shown after an inverter the customer didn't pick, chosen to run their battery. */
+export const MATCHED_INVERTER_NOTE = "matched to your battery";
+
+/** The quote's inverter wasn't picked by the customer but chosen to run the battery. */
+export function inverterMatchedToBattery(
+  proposal: DesignProposalState,
+  quote: { inverter?: unknown; battery?: { inverterBuiltIn?: boolean } | null } | null | undefined,
+): boolean {
+  return Boolean(quote?.inverter && quote.battery && !quote.battery.inverterBuiltIn && !proposal.equipment.items?.inverter?.length);
+}
+
 export function buildProposalDocument(input: ProposalDocumentInput): ProposalDocument {
   const { proposal, pricing, links } = input;
   const today = input.today ?? new Date();
@@ -352,7 +395,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
 
   const firstPanel = proposal.equipment.items?.solarPanel?.[0];
   const firstInverter = proposal.equipment.items?.inverter?.[0];
-  const firstBattery = proposal.equipment.items?.battery?.[0];
+  const firstBattery = shownBatteryItems(proposal.equipment)[0];
 
   const panelModel =
     quote?.panel?.model ??
@@ -378,7 +421,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
     panelCount,
     panelLine: `${panelCount} × ${panelModel ?? "solar panels"}${panelW && !/\d\s*W\b/i.test(panelModel ?? "") ? ` ${panelW} W` : ""}`,
     inverterLine: quote?.inverter
-      ? `${quote.inverter.model} · ${quote.inverter.kw} kW`
+      ? `${quote.inverter.model} · ${quote.inverter.kw} kW${inverterMatchedToBattery(proposal, quote) ? ` (${MATCHED_INVERTER_NOTE})` : ""}`
       : firstInverter
         ? `${[firstInverter.brand, firstInverter.name].filter(Boolean).join(" ")} · ${firstInverter.ratingLabel}`
         : null,
@@ -434,7 +477,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
     co2TonnesYear: Math.round(co2Year * 10) / 10,
     co2Tonnes25: Math.round(co225),
 
-    options: buildOptions(monthly, systemKw, batteryKwh, pricing),
+    options: buildOptions(monthly, systemKw, batteryKwh, pricing, proposal.equipment.batteryOptionIds ?? [], proposal.equipment.batteryCapacityId, proposal.equipment.items?.battery ?? []),
     roofAreaM2: proposal.solarDesign?.polygonTotalAreaM2
       ? Math.round(proposal.solarDesign.polygonTotalAreaM2)
       : null,
@@ -448,6 +491,11 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
 export function formatAud(n: number): string {
   const sign = n < 0 ? "−" : "";
   return `${sign}$${Math.abs(Math.round(n)).toLocaleString("en-AU")}`;
+}
+
+/** A bill: "$145", or "$145 credit" when export credits are more than the bill. */
+export function formatBill(n: number): string {
+  return Math.round(n) < 0 ? `${formatAud(-n)} credit` : formatAud(n);
 }
 
 export function formatKwh(n: number): string {

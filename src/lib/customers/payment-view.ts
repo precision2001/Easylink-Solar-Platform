@@ -9,6 +9,7 @@ const KIND_LABEL: Record<string, string> = {
   SERVICE: "Installer service",
   PRODUCT_ORDER: "Product order",
   AD_QUOTE: "Website package",
+  QUOTE_DEPOSIT: "Quote deposit",
 };
 
 /** A readable label for every payment kind, including ones added later. */

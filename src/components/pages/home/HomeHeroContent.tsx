@@ -28,7 +28,7 @@ export function HomeHeroContent() {
         <div className="flex items-center gap-2">
           <Link
             href={primaryCta.href}
-            className="home-hero-solar-design-cta inline-flex h-12 min-w-[186.61px] items-center justify-center gap-2 rounded-xl border border-home-hero-cta-primary-border px-2 font-source-sans text-base font-semibold leading-[24.876px] tracking-[-0.16px] text-white"
+            className="home-hero-solar-design-cta inline-flex h-12 min-w-0 flex-1 items-center sm:min-w-[186.61px] sm:flex-none justify-center gap-2 rounded-xl border border-home-hero-cta-primary-border px-2 font-source-sans text-base font-semibold leading-[24.876px] tracking-[-0.16px] text-white"
           >
             <Image
               src="/images/solarDesignLogo.png"
@@ -41,7 +41,7 @@ export function HomeHeroContent() {
           </Link>
           <Link
             href={secondaryCta.href}
-            className="inline-flex h-12 min-w-[188.56px] items-center justify-center rounded-xl border-2 border-home-hero-cta-secondary-border bg-white px-6 font-source-sans text-base font-semibold leading-6 tracking-[-0.16px] text-home-hero-cta-secondary-text backdrop-blur-[2px]"
+            className="inline-flex h-12 min-w-0 flex-1 items-center justify-center rounded-xl border-2 border-home-hero-cta-secondary-border bg-white px-3 sm:min-w-[188.56px] sm:flex-none sm:px-6 font-source-sans text-base font-semibold leading-6 tracking-[-0.16px] text-home-hero-cta-secondary-text backdrop-blur-[2px]"
           >
             {secondaryCta.label}
           </Link>

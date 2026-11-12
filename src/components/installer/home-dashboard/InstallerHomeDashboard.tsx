@@ -33,6 +33,7 @@ import { InstallerHomeCustomerProfileStrip } from "./InstallerHomeCustomerProfil
 import { InstallerHomeEquipmentSection } from "./InstallerHomeEquipmentSection";
 import { InstallerHomePipelineStatus } from "./InstallerHomePipelineStatus";
 import { InstallerHomeSolarDesignCard } from "./InstallerHomeSolarDesignCard";
+import { InstallerHomeQuotesCard } from "./InstallerHomeQuotesCard";
 import type { InstallerHomePanelState } from "@/hooks/useInstallerHomePanel";
 
 function formatCurrency(value?: number | null) {
@@ -254,6 +255,10 @@ function InstallerHomeDetail({
       ) : null}
 
       <InstallerHomeSolarDesignCard design={design} customer={customerForDisplay} />
+
+      {!loading ? (
+        <InstallerHomeQuotesCard leadId={homePanel.lead?.id ?? null} design={design} customer={customerForDisplay} customerId={selectedCustomerId} />
+      ) : null}
 
       <InstallerHomeEquipmentSection
         design={design}

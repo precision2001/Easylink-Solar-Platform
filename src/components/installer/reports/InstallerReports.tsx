@@ -166,7 +166,7 @@ export function InstallerReports() {
         ))}
       </div>
 
-      <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(420px,1fr))]">
+      <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr))]">
         <section aria-label="Customers by stage" className={`${PANEL} flex flex-col gap-2.5`}>
           <h2 className="m-0 text-[16px] font-bold text-[#0F172A]">
             Customers by stage

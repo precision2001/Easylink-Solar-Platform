@@ -1,3 +1,4 @@
+import { productDatasheetUrl, productDocuments } from "@/lib/products/datasheet";
 import type {
   SolarProduct,
   SolarProductCategory,
@@ -214,11 +215,9 @@ function toCatalogProduct(
     name: row.name,
     model: row.sku || (typeof specs.series === "string" ? specs.series : row.name),
     rating: row.rating ?? 0,
-    hasDatasheet: typeof specs.datasheetUrl === "string" && specs.datasheetUrl.startsWith("http"),
-    datasheetUrl:
-      typeof specs.datasheetUrl === "string" && specs.datasheetUrl.startsWith("http")
-        ? specs.datasheetUrl
-        : undefined,
+    hasDatasheet: productDatasheetUrl(specs) !== null,
+    datasheetUrl: productDatasheetUrl(specs) ?? undefined,
+    documents: productDocuments(specs).filter((d) => d.kind === "document"),
     imageUrl: productImage(row)?.url,
     imageThumbUrl: productImage(row)?.thumbUrl,
     inStock: row.active,

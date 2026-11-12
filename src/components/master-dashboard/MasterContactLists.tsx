@@ -722,7 +722,7 @@ export function MasterContactLists({
         </div>
 
         {/* headline counts */}
-        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(140px, 100%), calc(100% / 4 - 16px)), 1fr))" }}>
           {tiles.map(([l, v, s], i) => {
             const hot = i === 1;
             return (
@@ -1097,7 +1097,7 @@ export function MasterContactLists({
                   </div>
                   <div
                     className="grid flex-[2_1_480px] overflow-hidden rounded-[12px]"
-                    style={{ border: `1px solid ${BORDER}`, gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+                    style={{ border: `1px solid ${BORDER}`, gridTemplateColumns: "repeat(auto-fit, minmax(max(min(140px, 100%), calc(100% / 4 - 16px)), 1fr))" }}
                   >
                     {[
                       ["Sales probability", `${STAGE_PROBABILITY}%`],
@@ -1160,7 +1160,7 @@ export function MasterContactLists({
                     <ol
                       aria-label="Steps"
                       className="m-0 grid list-none gap-1.5 p-0"
-                      style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+                      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(max(min(120px, 100%), calc(100% / 5 - 16px)), 1fr))" }}
                     >
                       {AUTO_STEPS.map((t, i) => {
                         const n = i + 1;
@@ -1203,7 +1203,7 @@ export function MasterContactLists({
                         </p>
                         <div
                           className="grid gap-2.5"
-                          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+                          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))" }}
                         >
                           {(
                             [
@@ -1339,7 +1339,7 @@ export function MasterContactLists({
                         </p>
                         <div
                           className="grid gap-2.5"
-                          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
+                          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(200px, 100%), 1fr))" }}
                         >
                           {SPONSORED.map(([k, m, sku, use]) => (
                             <div
@@ -1370,7 +1370,7 @@ export function MasterContactLists({
                       <>
                         <div
                           className="grid gap-2.5"
-                          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}
+                          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(210px, 100%), 1fr))" }}
                         >
                           {options.map((o) => (
                             <div
@@ -1736,7 +1736,7 @@ export function MasterContactLists({
                         <>
                           <div
                             className="grid gap-2.5"
-                            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
+                            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(200px, 100%), 1fr))" }}
                           >
                             {(
                               [
@@ -1783,7 +1783,7 @@ export function MasterContactLists({
                         <>
                           <div
                             className="grid gap-2.5"
-                            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
+                            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(200px, 100%), 1fr))" }}
                           >
                             {DISCOVERY_FIELDS.map(([key, label, placeholder]) => (
                               <label key={key} className={FIELD_LABEL} style={{ color: BODY }}>
@@ -1842,7 +1842,7 @@ export function MasterContactLists({
                         <>
                           <div
                             className="grid gap-2.5"
-                            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
+                            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(200px, 100%), 1fr))" }}
                           >
                             <label className={FIELD_LABEL} style={{ color: BODY }}>
                               Panels (AXITEC 440 W · PNL-AX440)
@@ -2102,7 +2102,7 @@ export function MasterContactLists({
                 </div>
                 <div
                   className="grid gap-2.5"
-                  style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+                  style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))" }}
                 >
                   {(file?.headings ?? []).map((h) => {
                     const field = mapping[h] ?? "ignore";

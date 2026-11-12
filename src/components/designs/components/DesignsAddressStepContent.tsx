@@ -50,9 +50,9 @@ export const DesignsRegisterStepContent = forwardRef<
   }));
 
   return (
-    <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-col justify-center px-4 py-6 sm:px-8 sm:py-8 lg:px-[81px] lg:py-8">
+    <div className="relative z-10 mx-auto flex w-full max-w-[1446px] flex-col justify-center px-4 py-6 sm:px-8 sm:py-8 lg:px-[81px] lg:py-8 [@media(min-width:1024px)_and_(max-height:860px)]:py-3">
       <div className="mx-auto grid w-full max-w-[1278px] grid-cols-1 gap-5 lg:grid-cols-[591fr_649fr] lg:items-stretch lg:gap-[58px]">
-        <div className="flex w-full min-w-0 items-center rounded-[46px] border-[3px] border-design-accent-cyan bg-linear-to-r from-yellow-lemon to-orange-amber px-6 py-8 shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] sm:px-10 sm:py-10 lg:h-full lg:px-[46px] lg:py-[56px]">
+        <div className="flex w-full min-w-0 items-center rounded-[46px] border-[3px] border-design-accent-cyan bg-linear-to-r from-yellow-lemon to-orange-amber px-6 py-8 shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] sm:px-10 sm:py-10 lg:h-full lg:px-[46px] lg:py-[56px] [@media(min-width:1024px)_and_(max-height:860px)]:py-8">
           <div className="mx-auto flex w-full max-w-[498px] flex-col items-center gap-6 text-center sm:gap-[30px]">
             <div className="flex flex-col items-center gap-[23px]">
               <h2
@@ -80,9 +80,9 @@ export const DesignsRegisterStepContent = forwardRef<
         </div>
 
         <div className="designs-border-gradient w-full min-w-0 rounded-[28px] p-[3px] shadow-[0px_0px_40px_0px_rgba(140,140,140,0.3)] lg:h-full">
-          <div className="flex h-full min-h-0 w-full items-center rounded-[25px] bg-[linear-gradient(135deg,rgba(48,54,71,0.98)_0%,rgba(33,36,47,0.98)_100%)] px-5 py-8 backdrop-blur-[17.8px] sm:px-8 sm:py-10 lg:px-[71px]">
+          <div className="flex h-full min-h-0 w-full items-center rounded-[25px] bg-[linear-gradient(135deg,rgba(48,54,71,0.98)_0%,rgba(33,36,47,0.98)_100%)] px-5 py-8 backdrop-blur-[17.8px] sm:px-8 sm:py-10 lg:px-[71px] [@media(min-width:1024px)_and_(max-height:860px)]:py-5">
             <form
-              className="flex w-full flex-col gap-[26px]"
+              className="flex w-full flex-col gap-[26px] [@media(min-width:1024px)_and_(max-height:860px)]:gap-[10px]"
               onSubmit={(e) => e.preventDefault()}
             >
               {DESIGNS_REGISTER_STEP.fields.map((field) => {
@@ -112,7 +112,7 @@ export const DesignsRegisterStepContent = forwardRef<
                           ? setName(event.target.value)
                           : setEmail(event.target.value)
                       }
-                      className={`h-[55.529px] rounded-[11.094px] border border-yellow-lemon bg-transparent px-[17.75px] font-inter text-[17.75px] leading-normal tracking-[-0.3467px] text-white outline-none transition focus:border-yellow-lemon focus:ring-2 focus:ring-yellow-lemon/20 placeholder:text-white/70 ${
+                      className={`h-[55.529px] [@media(min-width:1024px)_and_(max-height:860px)]:h-[46px] rounded-[11.094px] border border-yellow-lemon bg-transparent px-[17.75px] font-inter text-[17.75px] leading-normal tracking-[-0.3467px] text-white outline-none transition focus:border-yellow-lemon focus:ring-2 focus:ring-yellow-lemon/20 placeholder:text-white/70 ${
                         emailLocked ? "cursor-not-allowed opacity-70" : ""
                       }`}
                     />
@@ -147,6 +147,9 @@ export const DesignsRegisterStepContent = forwardRef<
                   inputProps={{ "data-clarity-mask": "true" }}
                 />
               </label>
+              <p className="-mt-1 font-inter text-[12.5px] leading-[18px] text-white/75">
+                We’ll text this number about your quote and installation, such as appointment times and payment links. No marketing. Reply STOP to opt out.
+              </p>
 
               {/* Wording is versioned: change MARKETING_CONSENT_VERSION in
                   lib/designs/capture.ts whenever this text changes. */}
