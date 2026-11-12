@@ -4,8 +4,9 @@ export type DashboardNotificationItem = {
   type: string;
   title: string;
   body: string;
-  entityType: string;
-  entityId: string;
+  /** null for notices about no single record (e.g. equipment validity). */
+  entityType: string | null;
+  entityId: string | null;
   readAt: string | null;
   createdAt: string;
 };

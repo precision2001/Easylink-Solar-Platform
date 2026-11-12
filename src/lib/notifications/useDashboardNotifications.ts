@@ -16,7 +16,12 @@ const FALLBACK_POLL_MS = 60_000;
 /** Refetch when opening the bell if the list is older than this. */
 const STALE_MS = 5 * 60_000;
 
-export type DashboardNotificationMode = "installer" | "customer";
+/** "admin": EasyLink staff in the Master portal (admin session). */
+export type DashboardNotificationMode = "installer" | "customer" | "admin";
+
+/** Master portal requests carry the admin session cookie. */
+const fetchWithAdminSession = (input: RequestInfo | URL, init?: RequestInit) =>
+  fetch(input, { ...init, credentials: init?.credentials ?? "include" });
 
 function countUnread(rows: DashboardNotificationItem[]) {
   return rows.filter((n) => n.readAt == null).length;
@@ -27,6 +32,12 @@ function modeConfig(mode: DashboardNotificationMode) {
     return {
       apiBase: "/api/customers/notifications",
       fetchSession: fetchWithCustomerSession,
+    } as const;
+  }
+  if (mode === "admin") {
+    return {
+      apiBase: "/api/admin/notifications",
+      fetchSession: fetchWithAdminSession,
     } as const;
   }
   return {
@@ -67,9 +78,10 @@ export function useDashboardNotifications(
     setUnreadCount((c) => (item.readAt == null ? c + 1 : c));
   };
 
+  // No socket for the admin session (HTTP polling instead).
   const { wsState } = usePortalNotificationSocket({
-    portal: mode,
-    enabled,
+    portal: mode === "admin" ? "installer" : mode,
+    enabled: enabled && mode !== "admin",
     onNotification: (item) => mergePushRef.current(item),
   });
 

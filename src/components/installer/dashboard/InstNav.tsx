@@ -114,6 +114,7 @@ function buildGroups(elite: boolean): NavGroup[] {
           href: "/installers/dashboard/project-workflow",
         },
         { key: "equipment", label: "Equipment", icon: "panel", href: "/installers/dashboard/equipment" },
+        { key: "validity", label: "Equipment validity", icon: "check", href: "/installers/dashboard/equipment-validity" },
         {
           key: "reports",
           label: "Reports",
