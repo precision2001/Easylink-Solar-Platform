@@ -60,9 +60,9 @@ type Proposal = {
 };
 
 /* The proposal screen's glass and tints (DesignsProposalStepContent). */
-const GLASS =
+export const GLASS =
   "relative overflow-hidden rounded-[16px] border backdrop-blur-xl backdrop-saturate-150 shadow-[0_8px_32px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.18)]";
-const TINT = {
+export const TINT = {
   steel: "border-[rgba(147,197,253,0.35)] bg-[linear-gradient(160deg,rgba(70,130,180,0.55)_0%,rgba(30,64,105,0.6)_100%)]",
   slate: "border-white/20 bg-[linear-gradient(160deg,rgba(120,135,155,0.38)_0%,rgba(55,65,82,0.5)_100%)]",
   navy: "border-[rgba(96,165,250,0.35)] bg-[linear-gradient(160deg,rgba(18,52,110,0.92)_0%,rgba(10,30,70,0.95)_100%)]",
@@ -70,12 +70,12 @@ const TINT = {
   brandGold:
     "border-[rgba(255,245,170,0.85)] bg-[linear-gradient(133deg,rgba(255,239,98,0.95)_0%,rgba(255,200,40,0.93)_45%,rgba(247,141,0,0.93)_100%)]",
 } as const;
-const GOLD_TEXT = "bg-[linear-gradient(154.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]";
-const GREEN_TEXT = "bg-[linear-gradient(154.98deg,#34D399_0%,#2DD4BF_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]";
-const LABEL = "font-source-sans text-[11px] font-semibold uppercase tracking-[0.8px] text-white/85 [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]";
-const TITLE = "font-source-sans text-[12px] font-bold uppercase tracking-[1px] text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]";
+export const GOLD_TEXT = "bg-[linear-gradient(154.91deg,#FFEF62_0%,#F78D00_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]";
+export const GREEN_TEXT = "bg-[linear-gradient(154.98deg,#34D399_0%,#2DD4BF_100%)] bg-clip-text text-transparent [filter:drop-shadow(0_1px_1px_rgba(0,0,0,0.35))]";
+export const LABEL = "font-source-sans text-[11px] font-semibold uppercase tracking-[0.8px] text-white/85 [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]";
+export const TITLE = "font-source-sans text-[12px] font-bold uppercase tracking-[1px] text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]";
 
-function Sheen() {
+export function Sheen() {
   return <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-[linear-gradient(180deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_100%)]" />;
 }
 
