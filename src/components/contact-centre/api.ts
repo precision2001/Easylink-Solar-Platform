@@ -67,7 +67,7 @@ export type TimelineItem = {
   title: string;
   detail: string | null;
   by: string | null;
-  ref?: { callId?: string; hasRecording?: boolean; transcript?: boolean; noteId?: string; pinned?: boolean; taskId?: string; dueAt?: string };
+  ref?: { callId?: string; hasRecording?: boolean; transcript?: boolean; noteId?: string; pinned?: boolean; taskId?: string; dueAt?: string; origin?: boolean; quoteId?: string };
 };
 
 export type CustomerRecord = {
@@ -87,6 +87,8 @@ export type CustomerRecord = {
     installer: { id: string; name: string | null } | null;
     notes: string | null;
     createdAt: string;
+    /** Where and when the customer's story began, and who started it. */
+    origin?: { at: string; channel: "INSTALLER_PORTAL" | "WEBSITE" | "EASYLINK_AI" | "CALL" | "IMPORT" | "STAFF"; label: string; by: string | null };
   };
   pinned: { id: string; body: string; by: string | null; at: string }[];
   openFollowUps: { id: string; kind: FollowUp["kind"]; title: string; dueAt: string; assignee: string | null }[];
@@ -216,3 +218,7 @@ export const phoneFmt = (n: string | null | undefined) => {
   if (local.length !== 10) return n ?? "";
   return local.startsWith("04") ? `${local.slice(0, 4)} ${local.slice(4, 7)} ${local.slice(7)}` : `${local.slice(0, 2)} ${local.slice(2, 6)} ${local.slice(6)}`;
 };
+
+/** Where a portal opens a lead's full Customer record. */
+export const customerRecordHref = (portal: Portal, leadId: string) =>
+  portal === "admin" ? `/master/customers/${leadId}` : `/installers/dashboard/customers/record/${leadId}`;
