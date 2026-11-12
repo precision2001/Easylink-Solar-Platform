@@ -176,6 +176,7 @@ const GROUPS: NavGroup[] = [
     tag: "shared",
     items: [
       { key: "designs", label: "Solar designer · SLD", icon: "layers", href: "/master/solar-designer" },
+      { key: "validity", label: "Equipment validity", icon: "shield", href: "/master/equipment-validity" },
     ],
   },
   {
