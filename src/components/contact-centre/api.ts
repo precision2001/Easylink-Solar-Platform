@@ -67,7 +67,7 @@ export type TimelineItem = {
   title: string;
   detail: string | null;
   by: string | null;
-  ref?: { callId?: string; hasRecording?: boolean; transcript?: boolean; noteId?: string; pinned?: boolean; taskId?: string; dueAt?: string };
+  ref?: { callId?: string; hasRecording?: boolean; transcript?: boolean; noteId?: string; pinned?: boolean; taskId?: string; dueAt?: string; origin?: boolean; quoteId?: string };
 };
 
 export type CustomerRecord = {
@@ -87,6 +87,8 @@ export type CustomerRecord = {
     installer: { id: string; name: string | null } | null;
     notes: string | null;
     createdAt: string;
+    /** Where and when the customer's story began, and who started it. */
+    origin?: { at: string; channel: "INSTALLER_PORTAL" | "WEBSITE" | "EASYLINK_AI" | "CALL" | "IMPORT" | "STAFF"; label: string; by: string | null };
   };
   pinned: { id: string; body: string; by: string | null; at: string }[];
   openFollowUps: { id: string; kind: FollowUp["kind"]; title: string; dueAt: string; assignee: string | null }[];

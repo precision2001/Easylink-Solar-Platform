@@ -32,11 +32,15 @@ const DOT: Record<TimelineItem["kind"], string> = {
 /** The timeline only, newest first, with a filter; calls open their detail. */
 export function Timeline({ items, onOpenCall }: { items: TimelineItem[]; onOpenCall: (id: string) => void }) {
   const [filter, setFilter] = useState("all");
+  const [oldestFirst, setOldestFirst] = useState(false);
   const kinds = FILTERS.find((f) => f.key === filter)!.kinds;
-  const shown = kinds.length ? items.filter((i) => kinds.includes(i.kind)) : items;
+  const filtered = kinds.length ? items.filter((i) => kinds.includes(i.kind)) : items;
+  // Items arrive newest first; "From the start" reads the story in order.
+  const shown = oldestFirst ? [...filtered].reverse() : filtered;
+  const isStart = (t: TimelineItem) => t.ref?.origin || /^(Lead created|Customer registered|Started )/.test(t.title);
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -46,13 +50,28 @@ export function Timeline({ items, onOpenCall }: { items: TimelineItem[]; onOpenC
             {f.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setOldestFirst((v) => !v)}
+          aria-pressed={oldestFirst}
+          className="ml-auto rounded-full border border-[#CBD5E1] px-3 py-1 text-[12.5px] font-semibold text-[#334155] hover:bg-[#F8FAFC]"
+        >
+          {oldestFirst ? "From the start ↓" : "Newest first ↓"}
+        </button>
       </div>
       {shown.length === 0 && <p className="m-0 text-[13px] text-[#64748B]">Nothing here yet.</p>}
       <ol className="m-0 flex list-none flex-col gap-0 p-0">
         {shown.map((t) => (
           <li key={t.id} className="relative flex gap-3 pb-4 pl-1">
-            <span className="mt-1.5 size-2.5 shrink-0 rounded-full" style={{ background: DOT[t.kind] }} aria-hidden="true" />
+            {isStart(t) ? (
+              <span className="mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[#F68A0A] text-[10px] font-bold text-white" aria-hidden="true">
+                ★
+              </span>
+            ) : (
+              <span className="mt-1.5 size-2.5 shrink-0 rounded-full" style={{ background: DOT[t.kind] }} aria-hidden="true" />
+            )}
             <div className="flex min-w-0 flex-col gap-0.5">
+              {isStart(t) && <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#B45309]">Where it started</span>}
               {t.kind === "call" && t.ref?.callId ? (
                 <button type="button" onClick={() => onOpenCall(t.ref!.callId!)} className="text-left text-[14px] font-semibold text-[#0B4A7A] hover:underline">
                   {t.title}
@@ -124,6 +143,12 @@ export function CustomerRecordView({ portal, leadId, compact }: { portal: Portal
               {!l.consent.sms && <Pill tone="warn">No texts</Pill>}
               {!l.consent.email && <Pill tone="warn">No emails</Pill>}
             </span>
+            {l.origin && (
+              <span className="flex flex-wrap items-center gap-1.5 pt-1 text-[13px] text-[#475569]">
+                <span className="rounded-full bg-[#FFF7E6] px-2.5 py-0.5 text-[12px] font-bold text-[#92400E] ring-1 ring-[#F68A0A]/40">★ {l.origin.label}</span>
+                <span>{new Date(l.origin.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Sydney" })}</span>
+              </span>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-3 text-center">
             {(
