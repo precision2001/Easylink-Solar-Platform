@@ -3006,6 +3006,15 @@ export const ABOUT_US_PAGE = {
               {
                 text: "Support from first quote through installation and beyond",
               },
+              {
+                text: "Accept quotes and pay deposits online in your own customer portal",
+              },
+              {
+                text: "Two-way SMS, email and phone updates at every stage of your install",
+              },
+              {
+                text: "Flexible payment options including Zip and Afterpay",
+              },
             ],
           },
         ],
