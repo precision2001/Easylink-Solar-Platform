@@ -239,15 +239,20 @@ export function RoofDesignViewer({
   onClose,
   onRedesign,
   working,
+  initialView = "roof",
 }: {
   lead: PipelineLead;
   onClose: () => void;
   onRedesign: () => void;
   working: boolean;
+  /** "proposal" opens straight on the proposal (the leads row menu). */
+  initialView?: "roof" | "proposal";
 }) {
   const d = lead.roofDesign;
   const closeRef = useRef<HTMLButtonElement>(null);
-  const [view, setView] = useState<"roof" | "proposal">("roof");
+  const [chosenView, setView] = useState<"roof" | "proposal">(initialView);
+  // A lead with no roof design yet can still show its proposal.
+  const view = d ? chosenView : "proposal";
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -261,8 +266,7 @@ export function RoofDesignViewer({
     };
   }, [onClose]);
 
-  if (!d) return null;
-  const facts: [string, string][] = [
+  const facts: [string, string][] = !d ? [] : [
     ["Panels", d.panelCount != null ? `${d.panelCount} × ${d.panelWatts ?? 440} W` : "—"],
     ["System size", d.systemKw != null ? `${d.systemKw.toFixed(2)} kW` : "—"],
     ["Orientation", d.orientation ? (d.orientation === "LANDSCAPE" ? "Landscape" : "Portrait") : "—"],
@@ -283,7 +287,7 @@ export function RoofDesignViewer({
                 lead={{ name: lead.customerName, email: lead.customerEmail, phone: lead.customerPhone, address: lead.address }}
               />
             </div>
-          ) : d.status === "READY" ? (
+          ) : d?.status === "READY" ? (
             // eslint-disable-next-line @next/next/no-img-element -- private, auth-proxied image
             <img
               src={`/api/admin/leads/${encodeURIComponent(lead.id)}/roof-design/large?v=${encodeURIComponent(d.updatedAt)}`}
@@ -291,7 +295,7 @@ export function RoofDesignViewer({
               className="block h-full max-h-full w-full object-contain"
             />
           ) : (
-            <div className="flex h-[300px] items-center justify-center px-6 text-center text-[14px] text-[#C9D6EA]">{d.message ?? "No design yet."}</div>
+            <div className="flex h-[300px] items-center justify-center px-6 text-center text-[14px] text-[#C9D6EA]">{d?.message ?? "No design yet."}</div>
           )}
         </div>
         <aside className="flex max-h-[50%] w-full shrink-0 flex-col gap-4 overflow-y-auto p-5 lg:max-h-none lg:w-[320px]">
@@ -306,7 +310,7 @@ export function RoofDesignViewer({
               ref={closeRef}
               type="button"
               onClick={onClose}
-              aria-label="Close roof design"
+              aria-label="Close"
               className="flex size-9 shrink-0 items-center justify-center rounded-full border border-[#D5DCE5] text-[#334155] hover:border-[#64748B]"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
@@ -315,6 +319,8 @@ export function RoofDesignViewer({
             </button>
           </div>
 
+          {d ? (
+            <>
           <dl className="m-0 grid grid-cols-2 gap-2">
             {facts.map(([k, v]) => (
               <div key={k} className="rounded-[10px] bg-[#F4F6FA] px-3 py-2">
@@ -334,8 +340,15 @@ export function RoofDesignViewer({
             Designed automatically by the platform designer from Google&apos;s satellite image. It shows how much the roof holds; size the system to the customer&apos;s use, and confirm lines and obstructions at the site visit.
           </p>
           {d.message && d.status === "READY" ? <p className="m-0 text-[12.5px] text-[#5B6B80]">{d.message}</p> : null}
+            </>
+          ) : (
+            <p className="m-0 rounded-[10px] bg-[#F4F6FA] px-3 py-2.5 text-[12.5px] leading-[1.5] text-[#334155]">
+              No roof design yet for this lead. Use Redesign to have the platform designer draw one.
+            </p>
+          )}
 
           <div className="mt-auto flex flex-wrap gap-2">
+            {d ? (
             <button
               type="button"
               onClick={() => setView((v) => (v === "proposal" ? "roof" : "proposal"))}
@@ -344,15 +357,16 @@ export function RoofDesignViewer({
             >
               {view === "proposal" ? "Roof design" : "Proposal"}
             </button>
+            ) : null}
             <button
               type="button"
               onClick={onRedesign}
               disabled={working}
               className="h-10 rounded-[10px] border border-[#CBD5E1] bg-white px-4 text-[13px] font-semibold text-[#0F172A] hover:border-[#64748B] disabled:opacity-60"
             >
-              {working ? "Designing…" : "Redesign"}
+              {working ? "Designing…" : d ? "Redesign" : "Design roof"}
             </button>
-            {d.status === "READY" ? (
+            {d?.status === "READY" ? (
               <a
                 href={`/api/admin/leads/${encodeURIComponent(lead.id)}/roof-design/large?v=${encodeURIComponent(d.updatedAt)}`}
                 download={`roof-design-${lead.customerName.replace(/\s+/g, "-").toLowerCase()}.jpg`}

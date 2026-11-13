@@ -443,7 +443,8 @@ export function LeadsWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
+  const [viewing, setViewingState] = useState<{ id: string; view: "roof" | "proposal" } | null>(null);
+  const setViewing = (id: string | null, view: "roof" | "proposal" = "roof") => setViewingState(id ? { id, view } : null);
   // The lead whose quote versions are open in the side drawer.
   const [quotesFor, setQuotesFor] = useState<{ lead: PipelineLead; startWith: "list" | "create" } | null>(null);
   const [sendDesignFor, setSendDesignFor] = useState<PipelineLead | null>(null);
@@ -665,12 +666,14 @@ export function LeadsWorkspace({
                 const chip = TONE_CHIP[due?.tone ?? "late"];
                 const second = [l.customerPhone, suburbOf(l.address)].filter(Boolean).join(" · ");
                 const del = { label: "Delete lead…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "delete" }) };
+                const proposal = { label: "Proposal", onSelect: () => setViewing(l.id, "proposal") };
                 const menu =
                   view === "lost"
-                    ? [{ label: "Reopen lead", onSelect: () => void act(l, () => updateLeadPipeline(l.id, { reopen: true })) }, del]
+                    ? [proposal, { label: "Reopen lead", onSelect: () => void act(l, () => updateLeadPipeline(l.id, { reopen: true })) }, del]
                     : view === "spam"
                       ? [{ label: "Not spam", onSelect: () => void setSpam(l, false) }, del]
                       : [
+                          proposal,
                           { label: "New quote", onSelect: () => setQuotesFor({ lead: l, startWith: "create" }) },
                           { label: "Quotes", onSelect: () => setQuotesFor({ lead: l, startWith: "list" }) },
                           ...(l.design ? [{ label: "Send design to customer", onSelect: () => setSendDesignFor(l) }] : []),
@@ -881,12 +884,14 @@ export function LeadsWorkspace({
           ) : null}
         </div>
       ) : null}
-      {viewing && rows?.find((r) => r.id === viewing)?.roofDesign ? (
+      {viewing && rows?.find((r) => r.id === viewing.id) && (viewing.view === "proposal" || rows.find((r) => r.id === viewing.id)?.roofDesign) ? (
         <RoofDesignViewer
-          lead={rows.find((r) => r.id === viewing)!}
-          working={roofWorking.has(viewing)}
+          key={`${viewing.id}:${viewing.view}`}
+          lead={rows.find((r) => r.id === viewing.id)!}
+          initialView={viewing.view}
+          working={roofWorking.has(viewing.id)}
           onClose={() => setViewing(null)}
-          onRedesign={() => redesignRoof(viewing)}
+          onRedesign={() => redesignRoof(viewing.id)}
         />
       ) : null}
       {sendDesignFor?.design ? (
