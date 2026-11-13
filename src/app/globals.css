@@ -5216,6 +5216,12 @@ html:has(.svc-page) {
   }
 }
 
+/* "Our Values" heading: same gold glitter, larger specks. */
+.av-gt-title {
+  background-size: 22px 22px, 28px 28px, 17px 17px, 240% 100%;
+  padding: 0 0.08em;
+}
+
 /* Brighter, quicker shine when a card is hovered. */
 .av-card:hover .av-gt {
   animation-duration: 2.2s;

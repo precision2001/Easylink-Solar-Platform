@@ -38,7 +38,9 @@ export function AboutUsValuesSection() {
 
       <div className="relative z-1 mx-auto flex w-full max-w-[1259px] flex-col items-center gap-[67px] px-4 sm:px-6 lg:px-0">
         <h2 className="text-center font-source-sans text-[32px] font-medium leading-normal tracking-[-0.4395px] text-about-values-text sm:text-[40px]">
-          {ABOUT_US_PAGE.values.title}
+          <span className="av-gt av-gt-title relative">
+            {ABOUT_US_PAGE.values.title}
+          </span>
         </h2>
 
         <div className="flex w-full flex-col gap-[22px]">

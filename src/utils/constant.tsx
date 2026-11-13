@@ -2882,9 +2882,10 @@ export const ABOUT_US_PAGE = {
     ],
   },
   mission: {
-    vidoSrc: "/videos/aboutMission.mp4",
+    vidoSrc: "/videos/aboutMissionCinema.mp4",
+    posterSrc: "/images/about-us/mission-cinema-poster.webp",
     videoAriaLabel:
-      "Modern Australian home with rooftop solar and an electric vehicle",
+      "Modern solar home powering itself by day and on battery by night, then an electric car charges and drives off into the sunset",
     cards: [
       {
         title: "Our Mission",
