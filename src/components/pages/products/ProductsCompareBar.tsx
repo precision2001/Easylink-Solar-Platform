@@ -31,7 +31,9 @@ export function ProductsCompareBar({
               key={product.id}
               className="flex items-center gap-1.5 rounded-full border border-warm-border bg-cream-50 py-1 pl-3 pr-1.5 font-dm-sans text-[12px] font-medium text-warm-ink"
             >
-              {product.name}
+              {product.title
+                ? [product.title.name, product.title.size].filter(Boolean).join(" · ")
+                : product.name}
               <button
                 type="button"
                 aria-label={`Remove ${product.name} from compare`}

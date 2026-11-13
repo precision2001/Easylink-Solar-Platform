@@ -48,6 +48,8 @@ export type Product = {
   badge?: ProductBadge;
   brand: string;
   name: string;
+  /** Card title: brand + product name, its total size, and a secondary size line. */
+  title?: { name: string; size: string; detail: string };
   model: string;
   rating: number;
   hasDatasheet?: boolean;

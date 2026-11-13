@@ -63,6 +63,11 @@ export function ProductCard({
   const [quantity, setQuantity] = useState(1);
   const [buying, setBuying] = useState(false);
   const inStock = product.inStock ?? true;
+  const title = product.title ?? {
+    name: `${product.brand} ${product.name}`,
+    size: "",
+    detail: "",
+  };
 
   // Afterpay is offered only when this product's total is inside Afterpay's
   // real order-value range. Most panels and batteries sit well above the cap,
@@ -175,24 +180,29 @@ export function ProductCard({
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
-        <p className="font-inter text-[13px] font-bold leading-[16px] text-warm-ink">
-          <span>{product.brand.split(" ")[0]}</span>
-          {product.brand.split(" ").length > 1 ? (
-            <span className="text-brand-blue">
-              {" "}
-              {product.brand.split(" ").slice(1).join(" ")}
-            </span>
-          ) : null}
-        </p>
-
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="font-inter text-[17px] font-bold leading-[22px] text-warm-ink [overflow-wrap:anywhere]">
-              {product.name}
+            <h3
+              className="font-inter text-[17px] font-bold leading-[22px] text-warm-ink [overflow-wrap:anywhere]"
+              title={product.name}
+            >
+              {title.name}
             </h3>
-            <p className="mt-0.5 truncate font-dm-sans text-[11px] text-warm-gray">
-              {product.model}
-            </p>
+            {title.size ? (
+              <p className="mt-0.5 font-inter text-[20px] font-bold leading-[24px] text-brand-blue">
+                {title.size}
+              </p>
+            ) : null}
+            {title.detail ? (
+              <p className="font-dm-sans text-[12px] font-medium text-warm-ink/80">
+                {title.detail}
+              </p>
+            ) : null}
+            {product.model && product.model !== title.name ? (
+              <p className="mt-0.5 truncate font-dm-sans text-[11px] text-warm-gray" title={product.model}>
+                {product.model}
+              </p>
+            ) : null}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             {product.rating > 0 ? (

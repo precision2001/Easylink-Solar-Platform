@@ -4,6 +4,7 @@ import type {
   SolarProductCategory,
 } from "@/components/customer/products/types";
 import { productImage } from "@/lib/designs/product-specs";
+import { productDisplayTitle } from "@/lib/products/displayTitle";
 import type {
   Product as CatalogProduct,
   ProductCategoryKey,
@@ -213,7 +214,9 @@ function toCatalogProduct(
     badge: row.bestSeller ? "Best Seller" : undefined,
     brand: row.brand?.trim() || "Unbranded",
     name: row.name,
-    model: row.sku || (typeof specs.series === "string" ? specs.series : row.name),
+    title: productDisplayTitle(categoryKey, row),
+    // The full catalogue name sits under the short title, so nothing is lost.
+    model: row.name,
     rating: row.rating ?? 0,
     hasDatasheet: productDatasheetUrl(specs) !== null,
     datasheetUrl: productDatasheetUrl(specs) ?? undefined,
