@@ -4935,6 +4935,120 @@ html:has(.svc-page) {
   }
 }
 
+/* About Us "Our Values" cards: gold glitter text over the globe image,
+   matching the admin sidebar's glitter icons/brand text (.el-nav .gi/.gt).
+   Each line is a shining gold gradient with glitter specks drifting through
+   it; four-point sparks twinkle around the label. Cards set --av-delay so
+   the ten cards never shine or twinkle in unison. */
+.av-gt {
+  display: inline-block;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgb(255 255 255 / 0.95) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 70% 60%, rgb(255 250 220 / 0.9) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 45% 80%, rgb(255 255 255 / 0.85) 0 0.8px, transparent 1.4px),
+    linear-gradient(
+      110deg,
+      #f6b20a 0%,
+      #ffe866 18%,
+      #ffffff 26%,
+      #ffd24a 34%,
+      #f68a0a 50%,
+      #ffe866 64%,
+      #fffdf0 70%,
+      #f6b20a 82%,
+      #ffe866 100%
+    );
+  background-size: 15px 15px, 19px 19px, 12px 12px, 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: av-gt-shine 4.5s linear infinite;
+  animation-delay: var(--av-delay, 0s);
+  /* Dark under-shadow keeps the gold legible over the bright cloud areas of the globe. */
+  filter: drop-shadow(0 1px 1.5px rgb(4 10 24 / 0.85)) drop-shadow(0 0 6px rgb(255 214 90 / 0.4));
+}
+
+@keyframes av-gt-shine {
+  from {
+    background-position: 0 0, 0 0, 0 0, 120% 0;
+  }
+  to {
+    background-position: 15px 30px, -19px 38px, 12px -24px, -120% 0;
+  }
+}
+
+.av-sp {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: #fff4c2;
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  filter: drop-shadow(0 0 3px #ffe866);
+  opacity: 0;
+  pointer-events: none;
+  animation: av-sp-twinkle 2.8s ease-in-out infinite;
+  animation-delay: var(--av-delay, 0s);
+}
+
+.av-sp.s1 {
+  top: -10px;
+  right: -12px;
+}
+
+.av-sp.s2 {
+  bottom: -6px;
+  left: -12px;
+  width: 6px;
+  height: 6px;
+  animation-delay: calc(var(--av-delay, 0s) - 1.4s);
+}
+
+.av-sp.s3 {
+  top: 45%;
+  right: -20px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  clip-path: none;
+  animation-delay: calc(var(--av-delay, 0s) - 0.7s);
+}
+
+@keyframes av-sp-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.2) rotate(0deg);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
+  60% {
+    opacity: 0.85;
+    transform: scale(0.8) rotate(60deg);
+  }
+}
+
+/* Brighter, quicker shine when a card is hovered. */
+.av-card:hover .av-gt {
+  animation-duration: 2.2s;
+  filter: drop-shadow(0 1px 1.5px rgb(4 10 24 / 0.85)) drop-shadow(0 0 9px rgb(255 214 90 / 0.65));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .av-gt {
+    animation: none;
+    background-position: 0 0, 0 0, 0 0, 50% 0;
+  }
+
+  .av-sp {
+    animation: none;
+    opacity: 0.9;
+    transform: none;
+  }
+}
+
 /* Beautify button on the Designs map: gold glitter text. */
 .beautify-glitter {
   background-image:
