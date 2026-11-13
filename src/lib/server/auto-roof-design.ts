@@ -77,7 +77,7 @@ export async function runAutoRoofDesign(inputs: RoofDesignInputs): Promise<AutoR
   if (r.status !== "READY") return { status: "NO_ROOF", lat: pin.lat, lng: pin.lng, message: r.message };
   const d = r.design;
   // Opus is still tracing: nothing is kept yet; the caller asks again.
-  if (d.notes.some((n) => n.startsWith("Opus is still"))) return { status: "TRACING", lat: pin.lat, lng: pin.lng, message: "Opus is still tracing this roof." };
+  if (d.notes.some((n) => /^(EasyLink AI|Opus) is still/.test(n))) return { status: "TRACING", lat: pin.lat, lng: pin.lng, message: "EasyLink AI is still tracing this roof." };
   const { thumb, large } = await renderRoofDesign(r.image, d);
   return {
     status: "READY",

@@ -75,8 +75,8 @@ const ALERTS = [
 ];
 
 const MODELS = [
-  { n: "Orchestrator and conversations", u: "Large model tier · Concierge, Sales, Support", v: "Claude Opus" },
-  { n: "Classification and document checks", u: "Small model tier · bills, photos, routing", v: "Claude Haiku" },
+  { n: "Orchestrator and conversations", u: "Large model tier · Concierge, Sales, Support", v: "EasyLink AI (large)" },
+  { n: "Classification and document checks", u: "Small model tier · bills, photos, routing", v: "EasyLink AI (small)" },
   { n: "Fallback provider", u: "Used if the main provider is down", v: "Configured" },
   { n: "Data region", u: "Transcripts, decision records, traces", v: "Sydney" },
 ];

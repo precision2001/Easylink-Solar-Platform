@@ -140,7 +140,7 @@ export function refreshRoofDesign(pin: LatLng): Promise<RoofDesignResponse> {
 /** True when the design says Opus is still tracing and checking the roof. */
 export function stillTracing(d: RoofDesignResponse | null | undefined): boolean {
   const notes = (d as { notes?: string[] } | null | undefined)?.notes ?? [];
-  return notes.some((n) => n.startsWith("Opus is still"));
+  return notes.some((n) => /^(EasyLink AI|Opus) is still/.test(n));
 }
 
 /**

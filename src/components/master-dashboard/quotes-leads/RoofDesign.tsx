@@ -35,12 +35,17 @@ export function roofDesignNeeded(lead: Pick<PipelineLead, "address" | "roofDesig
   return !d || d.address.trim() !== address || new Date(d.updatedAt).getTime() < Math.max(PLATFORM_PIPELINE_FROM.getTime(), OPUS_TRACE_FROM.getTime());
 }
 
-export class StillTracing extends Error {}
+export /** Designs saved before 13 Nov 2026 named the model in their message: shown as EasyLink AI. */
+function aiName(m: string | null | undefined) {
+  return m ? m.replace(/\bOpus\b/g, "EasyLink AI") : m;
+}
+
+class StillTracing extends Error {}
 
 export async function requestRoofDesign(leadId: string): Promise<RoofDesignSummary> {
   const res = await fetch(`/api/admin/leads/${encodeURIComponent(leadId)}/roof-design`, { method: "POST" });
   const json = await res.json().catch(() => null);
-  if (res.status === 202 && json?.retry) throw new StillTracing(json.message ?? "Opus is still tracing this roof.");
+  if (res.status === 202 && json?.retry) throw new StillTracing(json.message ?? "EasyLink AI is still tracing this roof.");
   if (!res.ok || !json?.success) throw new Error(json?.message ?? "Couldn't design this roof.");
   return json.data as RoofDesignSummary;
 }
@@ -224,7 +229,7 @@ export function RoofDesignCell({
 
   return (
     <div className={`${BOX} flex-col items-center justify-center gap-1 border border-[#E3E8EF] bg-[#F8FAFC] px-2 text-center`}>
-      <span className="text-[11px] leading-tight text-[#5B6B80]" title={d?.message ?? undefined}>
+      <span className="text-[11px] leading-tight text-[#5B6B80]" title={aiName(d?.message) ?? undefined}>
         {d?.status === "NO_ADDRESS" ? "Address not found" : d?.status === "NO_ROOF" ? "No roof found" : "Design failed"}
       </span>
       <button type="button" onClick={onRetry} className="text-[11.5px] font-bold text-[#1D4ED8] hover:underline">
@@ -289,7 +294,7 @@ export function RoofDesignViewer({
               className="block h-full max-h-full w-full object-contain"
             />
           ) : (
-            <div className="flex h-[300px] items-center justify-center px-6 text-center text-[14px] text-[#C9D6EA]">{d?.message ?? "No design yet."}</div>
+            <div className="flex h-[300px] items-center justify-center px-6 text-center text-[14px] text-[#C9D6EA]">{aiName(d?.message) ?? "No design yet."}</div>
           )}
         </div>
         <aside className="flex max-h-[50%] w-full shrink-0 flex-col gap-4 overflow-y-auto p-5 lg:max-h-none lg:w-[320px]">
@@ -333,7 +338,7 @@ export function RoofDesignViewer({
           <p className="m-0 rounded-[10px] bg-[#FFF8EC] px-3 py-2.5 text-[12.5px] leading-[1.5] text-[#7A3E00]">
             Designed automatically by the platform designer from Google&apos;s satellite image. It shows how much the roof holds; size the system to the customer&apos;s use, and confirm lines and obstructions at the site visit.
           </p>
-          {d.message && d.status === "READY" ? <p className="m-0 text-[12.5px] text-[#5B6B80]">{d.message}</p> : null}
+          {d.message && d.status === "READY" ? <p className="m-0 text-[12.5px] text-[#5B6B80]">{aiName(d.message)}</p> : null}
             </>
           ) : (
             <p className="m-0 rounded-[10px] bg-[#F4F6FA] px-3 py-2.5 text-[12.5px] leading-[1.5] text-[#334155]">

@@ -53,8 +53,8 @@ describe("Opus traces every roof first", () => {
 describe("Opus still tracing", () => {
   it("is read from the design's notes", async () => {
     const { stillTracing } = await import("./client");
-    expect(stillTracing({ notes: ["Opus is still tracing and checking this roof against the photo: …"] } as never)).toBe(true);
-    expect(stillTracing({ notes: ["Traced by Opus: 12 roof lines"] } as never)).toBe(false);
+    expect(stillTracing({ notes: ["EasyLink AI is still tracing and checking this roof against the photo: …"] } as never)).toBe(true);
+    expect(stillTracing({ notes: ["Traced by EasyLink AI: 12 roof lines"] } as never)).toBe(false);
     expect(stillTracing(null)).toBe(false);
   });
 });
