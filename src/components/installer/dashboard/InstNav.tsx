@@ -528,6 +528,15 @@ export function InstNav({
         <span className="text-[14px] font-semibold text-white">Message EasyLink support</span>
       </Link>
 
+      <div className="flex flex-wrap gap-x-3 gap-y-1 px-2.5 text-[12.5px]" style={{ color: "#9FB0C8" }}>
+        <Link href="/privacy-policy" target="_blank" className="underline-offset-2 hover:underline" style={{ color: "#9FB0C8" }}>
+          Privacy policy
+        </Link>
+        <Link href="/terms" target="_blank" className="underline-offset-2 hover:underline" style={{ color: "#9FB0C8" }}>
+          Terms
+        </Link>
+      </div>
+
       <button
         type="button"
         onClick={() => void logout()}

@@ -363,6 +363,12 @@ function SignUpForm({ onSwitchMode }: { onSwitchMode: () => void }) {
             {...register("address")}
           />
 
+          <p className="m-0 text-center text-[13px] leading-[1.5] text-slate-600">
+            By signing up you agree to our{" "}
+            <Link href="/terms" target="_blank" className="font-semibold underline">terms</Link> and{" "}
+            <Link href="/privacy-policy" target="_blank" className="font-semibold underline">privacy policy</Link>, including how EasyLink uses AI.
+          </p>
+
           <AuthPrimaryButton
             icon={<Icon name="UserPlus" />}
             label={isSubmitting ? "Signing up..." : "Sign Up"}
