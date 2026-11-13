@@ -65,6 +65,15 @@ function rowsFrom(quote: Quote): Row[] {
   ];
 }
 
+const isPanelRow = (r: Row) => r.kind === "equipment" && /panel/i.test(r.category);
+const isBatteryRow = (r: Row) => r.kind === "equipment" && /batter/i.test(r.category);
+
+/** Battery STCs inside the quote's rebates when it was priced (the engine puts them there). */
+function pricedBatteryStcCents(quote: Quote): number {
+  const lines = (quote.snapshot as { stcLines?: { kind?: string; valueCents?: number }[] } | null)?.stcLines;
+  return Array.isArray(lines) ? lines.filter((l) => l.kind === "BATTERY").reduce((t, l) => t + (Number(l.valueCents) || 0), 0) : 0;
+}
+
 const qtyOf = (r: Row) => {
   const n = Number(r.qty);
   return r.qty.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : null;
@@ -91,16 +100,46 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
   const chosen = rows.filter((r) => r.include);
   const leftOut = rows.length - chosen.length;
   const leftOutEquipment = rows.filter((r) => r.kind === "equipment" && !r.include).length;
+  const hasPanels = chosen.some(isPanelRow);
+  const hasBattery = chosen.some(isBatteryRow);
   const priced = chosen.map((r) => ({ quantity: qtyOf(r) ?? 0, unitPriceCents: signedDollarsToCents(r.price) ?? 0 }));
   const { subtotalCents, totalCents } = editedTotals(priced, Math.max(0, stcCents ?? 0), Math.max(0, rebateCents ?? 0));
   const fixedDeposit = quote.depositMode === "FIXED" ? quote.depositCents : null;
   const depositCents = previewDepositCents(Math.max(0, totalCents), quote.depositMode, quote.depositPercent, fixedDeposit);
 
-  const update = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const remove = (key: string) => setRows((rs) => rs.filter((r) => r.key !== key));
+  /**
+   * STCs follow the ticked items (owner rule): no solar STCs without solar
+   * panels, no battery STCs without a battery. Ticking them back restores the
+   * priced amounts. The backend checks again when the quote is saved.
+   */
+  const batteryStcCents = pricedBatteryStcCents(quote);
+  const applyStcRules = (prev: Row[], next: Row[]) => {
+    const had = { panels: prev.some((r) => r.include && isPanelRow(r)), battery: prev.some((r) => r.include && isBatteryRow(r)) };
+    const has = { panels: next.some((r) => r.include && isPanelRow(r)), battery: next.some((r) => r.include && isBatteryRow(r)) };
+    if (had.panels && !has.panels) setStc("0");
+    if (!had.panels && has.panels && (signedDollarsToCents(stc) ?? 0) === 0) setStc(centsToDollarsInput(quote.stcDiscountCents));
+    if (batteryStcCents > 0 && had.battery !== has.battery) {
+      const now = signedDollarsToCents(rebate) ?? 0;
+      setRebate(centsToDollarsInput(Math.max(0, has.battery ? now + batteryStcCents : now - batteryStcCents)));
+    }
+  };
+  const update = (key: string, patch: Partial<Row>) => {
+    const next = rows.map((r) => (r.key === key ? { ...r, ...patch } : r));
+    if ("include" in patch || "category" in patch) applyStcRules(rows, next);
+    setRows(next);
+  };
+  const remove = (key: string) => {
+    const next = rows.filter((r) => r.key !== key);
+    applyStcRules(rows, next);
+    setRows(next);
+  };
   const add = (kind: Row["kind"]) =>
     setRows((rs) => [...rs, { key: nextKey(), kind, category: kind === "equipment" ? "other" : "", name: "", qty: "1", price: "", include: true }]);
-  const tickAll = (kind: Row["kind"], include: boolean) => setRows((rs) => rs.map((r) => (r.kind === kind ? { ...r, include } : r)));
+  const tickAll = (kind: Row["kind"], include: boolean) => {
+    const next = rows.map((r) => (r.kind === kind ? { ...r, include } : r));
+    applyStcRules(rows, next);
+    setRows(next);
+  };
 
   function problem(): string | null {
     if (chosen.length === 0) return "Tick at least one item for the edited quote.";
@@ -289,12 +328,21 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
           <span className="font-bold tabular-nums text-[#0F172A]">{formatCents(subtotalCents)}</span>
         </div>
         {money(`${uid}-stc`, "STC discount", "Small-scale technology certificates", stc, setStc)}
-        {leftOutEquipment > 0 && (stcCents ?? 0) > 0 ? (
+        {!hasPanels ? (
           <p className="m-0 bg-[#FFF8EB] px-3.5 py-2 text-[12.5px] leading-snug text-[#7A4A00]">
-            {leftOutEquipment} equipment item{leftOutEquipment === 1 ? " is" : "s are"} left out. The STC discount above is for the full system: lower it to match the items you kept (for example, no battery STCs without the battery).
+            No solar panels in this quote, so no solar STCs.{(stcCents ?? 0) > 0 ? " They come off when you save." : ""}
+          </p>
+        ) : leftOutEquipment > 0 ? (
+          <p className="m-0 bg-[#FFF8EB] px-3.5 py-2 text-[12.5px] leading-snug text-[#7A4A00]">
+            Some equipment is left out. Solar STCs are checked against the panels in the quote when you save.
           </p>
         ) : null}
         {money(`${uid}-rebate`, "Rebates", "e.g. Cheaper Home Batteries", rebate, setRebate)}
+        {!hasBattery && batteryStcCents > 0 ? (
+          <p className="m-0 bg-[#FFF8EB] px-3.5 py-2 text-[12.5px] leading-snug text-[#7A4A00]">
+            No battery in this quote, so its battery STCs ({formatCents(batteryStcCents)}) are taken out of the rebates.
+          </p>
+        ) : null}
         <div className="flex items-center justify-between bg-[#F8FAFC] px-3.5 py-3">
           <span className="text-[14px] font-bold text-[#0F172A]">Total inc GST</span>
           <span className={`font-source-sans text-[22px] font-bold tabular-nums ${totalCents < 0 ? "text-[#B91C1C]" : "text-[#0F172A]"}`} aria-live="polite">
