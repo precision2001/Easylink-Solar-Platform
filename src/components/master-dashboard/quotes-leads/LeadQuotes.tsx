@@ -206,12 +206,30 @@ function QuoteSlide({ quote, index, count, onOpen }: { quote: Quote; index: numb
   );
 }
 
-export function LeadQuotesCarousel({ lead, onClose, onOpenQuote }: { lead: PipelineLead; onClose: () => void; onOpenQuote: (quoteId: string | null) => void }) {
+/**
+ * The quote cards with arrows and dots. Used inside the carousel window and in
+ * the roof design window's big pane. `onPosition` reports "2 of 3".
+ */
+export function LeadQuotesTrack({
+  lead,
+  onOpenQuote,
+  onPosition,
+  tone = "light",
+}: {
+  lead: PipelineLead;
+  onOpenQuote: (quoteId: string | null) => void;
+  onPosition?: (index: number, count: number) => void;
+  tone?: "light" | "dark";
+}) {
   const { quotes, error } = useLeadQuotes(lead.id, true);
   const [index, setIndex] = useState(0);
   const track = useRef<HTMLDivElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
   const count = quotes?.length ?? 0;
+  const dark = tone === "dark";
+
+  useEffect(() => {
+    onPosition?.(index, count);
+  }, [index, count, onPosition]);
 
   const go = useCallback(
     (i: number) => {
@@ -223,6 +241,96 @@ export function LeadQuotesCarousel({ lead, onClose, onOpenQuote }: { lead: Pipel
     },
     [count],
   );
+
+  const onArrows = (e: ReactKeyboardEvent) => {
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      go(index + 1);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      go(index - 1);
+    }
+  };
+
+  // Keeps the dots right when the cards are swiped or scrolled by hand.
+  const onScroll = () => {
+    const el = track.current;
+    if (!el || !el.clientWidth) return;
+    const i = Math.round(el.scrollLeft / el.clientWidth);
+    if (i !== index) setIndex(i);
+  };
+
+  const note = dark ? "text-[#C9D6EA]" : "text-[#64748B]";
+  const arrow = dark
+    ? "border-[#3A4D68] bg-[#13263F] text-white hover:border-[#64748B]"
+    : "border-[#D5DCE5] bg-white text-[#334155] hover:border-[#64748B]";
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" onKeyDown={onArrows}>
+      <div className="relative min-h-0 flex-1">
+        {error ? <p className="m-0 rounded-lg border border-[#F3B8B4] bg-[#FDE8E7] px-3 py-2 text-[14px] text-[#B3261E]">{error}</p> : null}
+        {!quotes && !error ? <p className={`m-0 text-[14px] ${note}`}>Loading quotes…</p> : null}
+        {quotes && !quotes.length ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+            <p className={`m-0 text-[15px] ${dark ? "text-white" : "text-[#334155]"}`}>No quotes for {lead.customerName} yet.</p>
+            <button type="button" onClick={() => onOpenQuote(null)} className={`text-[14px] font-semibold underline ${dark ? "text-[#9CC3FF]" : "text-[#1560B8]"}`}>
+              Make a quote
+            </button>
+          </div>
+        ) : null}
+        {count ? (
+          <div
+            ref={track}
+            onScroll={onScroll}
+            tabIndex={0}
+            aria-roledescription="carousel"
+            aria-label="Quotes, use the arrow keys to move between them"
+            className="flex h-full snap-x snap-mandatory overflow-x-auto scroll-smooth [scrollbar-width:none] focus-visible:outline-none [&::-webkit-scrollbar]:hidden"
+          >
+            {quotes!.map((q, i) => (
+              <div key={q.id} className="flex h-full w-full shrink-0 snap-center justify-center px-1">
+                <div className="h-full w-full max-w-[620px]">
+                  <QuoteSlide quote={q} index={i} count={count} onOpen={() => onOpenQuote(q.id)} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {count > 1 ? (
+        <div className="mt-3 flex shrink-0 items-center justify-between gap-3">
+          <button type="button" onClick={() => go(index - 1)} disabled={index === 0} aria-label="Previous quote" className={`inline-flex size-10 items-center justify-center rounded-[10px] border disabled:opacity-40 ${arrow}`}>
+            <span aria-hidden="true">←</span>
+          </button>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {quotes!.map((q, i) => (
+              <button
+                key={q.id}
+                type="button"
+                onClick={() => go(i)}
+                aria-label={`Show ${quoteVersionLabel(q)}`}
+                aria-current={i === index}
+                className={`h-2.5 rounded-full transition-all ${
+                  i === index ? (dark ? "w-6 bg-white" : "w-6 bg-[#0B1A2E]") : dark ? "w-2.5 bg-[#3A4D68] hover:bg-[#64748B]" : "w-2.5 bg-[#CBD5E1] hover:bg-[#94A3B8]"
+                }`}
+              />
+            ))}
+          </div>
+          <button type="button" onClick={() => go(index + 1)} disabled={index === count - 1} aria-label="Next quote" className={`inline-flex size-10 items-center justify-center rounded-[10px] border disabled:opacity-40 ${arrow}`}>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** The carousel in its own window (from the Quotes button on a lead row). */
+export function LeadQuotesCarousel({ lead, onClose, onOpenQuote }: { lead: PipelineLead; onClose: () => void; onOpenQuote: (quoteId: string | null) => void }) {
+  const [pos, setPos] = useState<{ index: number; count: number }>({ index: 0, count: 0 });
+  const onPosition = useCallback((index: number, count: number) => setPos({ index, count }), []);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const returnTo = document.activeElement;
@@ -243,36 +351,15 @@ export function LeadQuotesCarousel({ lead, onClose, onOpenQuote }: { lead: Pipel
     };
   }, [onClose]);
 
-  const onArrows = (e: ReactKeyboardEvent) => {
-    if (e.key === "ArrowRight") {
-      e.preventDefault();
-      go(index + 1);
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      go(index - 1);
-    }
-  };
-
-  // Keeps the dots right when the cards are swiped or scrolled by hand.
-  const onScroll = () => {
-    const el = track.current;
-    if (!el || !el.clientWidth) return;
-    const i = Math.round(el.scrollLeft / el.clientWidth);
-    if (i !== index) setIndex(i);
-  };
-
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-0 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="lead-quotes-title" onKeyDown={onArrows}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-0 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="lead-quotes-title">
       <button type="button" aria-label="Close quotes" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-[#0B1A2E]/60 backdrop-blur-[1px]" />
-      <section
-        aria-roledescription="carousel"
-        className="relative flex h-full w-full flex-col bg-[#F8FAFC] shadow-[0_24px_64px_rgba(11,26,46,0.35)] sm:h-[min(720px,calc(100vh-48px))] sm:w-[min(640px,calc(100vw-48px))] sm:rounded-[16px]"
-      >
+      <section className="relative flex h-full w-full flex-col bg-[#F8FAFC] shadow-[0_24px_64px_rgba(11,26,46,0.35)] sm:h-[min(720px,calc(100vh-48px))] sm:w-[min(640px,calc(100vw-48px))] sm:rounded-[16px]">
         <header className="flex items-start gap-3 border-b border-[#E3E8EF] bg-white px-5 py-4 sm:rounded-t-[16px]">
           <div className="min-w-0 flex-1">
             <p className="m-0 text-[12px] font-bold uppercase tracking-[0.06em] text-[#F68A0A]">
-              Quotes{count ? ` · ${index + 1} of ${count}` : ""}
+              Quotes{pos.count ? ` · ${pos.index + 1} of ${pos.count}` : ""}
             </p>
             <h2 id="lead-quotes-title" className="m-0 truncate font-source-sans text-[20px] font-bold text-[#0F172A]">
               {lead.customerName}
@@ -289,69 +376,9 @@ export function LeadQuotesCarousel({ lead, onClose, onOpenQuote }: { lead: Pipel
             <Icon name="x" size={18} />
           </button>
         </header>
-
-        <div className="relative min-h-0 flex-1 px-4 py-4 sm:px-5">
-          {error ? <p className="m-0 rounded-lg border border-[#F3B8B4] bg-[#FDE8E7] px-3 py-2 text-[14px] text-[#B3261E]">{error}</p> : null}
-          {!quotes && !error ? <p className="m-0 text-[14px] text-[#64748B]">Loading quotes…</p> : null}
-          {quotes && !quotes.length ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <p className="m-0 text-[15px] text-[#334155]">No quotes for {lead.customerName} yet.</p>
-              <button type="button" onClick={() => onOpenQuote(null)} className="text-[14px] font-semibold text-[#1560B8] underline">
-                Make a quote
-              </button>
-            </div>
-          ) : null}
-          {count ? (
-            <div
-              ref={track}
-              onScroll={onScroll}
-              tabIndex={0}
-              aria-label="Quotes, use the arrow keys to move between them"
-              className="flex h-full snap-x snap-mandatory gap-0 overflow-x-auto scroll-smooth [scrollbar-width:none] focus-visible:outline-none [&::-webkit-scrollbar]:hidden"
-            >
-              {quotes!.map((q, i) => (
-                <div key={q.id} className="h-full w-full shrink-0 snap-center px-1">
-                  <QuoteSlide quote={q} index={i} count={count} onOpen={() => onOpenQuote(q.id)} />
-                </div>
-              ))}
-            </div>
-          ) : null}
+        <div className="min-h-0 flex-1 px-4 py-4 sm:px-5">
+          <LeadQuotesTrack lead={lead} onOpenQuote={onOpenQuote} onPosition={onPosition} />
         </div>
-
-        {count > 1 ? (
-          <footer className="flex items-center justify-between gap-3 border-t border-[#E3E8EF] bg-white px-5 py-3 sm:rounded-b-[16px]">
-            <button
-              type="button"
-              onClick={() => go(index - 1)}
-              disabled={index === 0}
-              aria-label="Previous quote"
-              className="inline-flex size-10 items-center justify-center rounded-[10px] border border-[#D5DCE5] bg-white text-[#334155] disabled:opacity-40"
-            >
-              <span aria-hidden="true">←</span>
-            </button>
-            <div className="flex flex-wrap justify-center gap-1.5">
-              {quotes!.map((q, i) => (
-                <button
-                  key={q.id}
-                  type="button"
-                  onClick={() => go(i)}
-                  aria-label={`Show ${quoteVersionLabel(q)}`}
-                  aria-current={i === index}
-                  className={`h-2.5 rounded-full transition-all ${i === index ? "w-6 bg-[#0B1A2E]" : "w-2.5 bg-[#CBD5E1] hover:bg-[#94A3B8]"}`}
-                />
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => go(index + 1)}
-              disabled={index === count - 1}
-              aria-label="Next quote"
-              className="inline-flex size-10 items-center justify-center rounded-[10px] border border-[#D5DCE5] bg-white text-[#334155] disabled:opacity-40"
-            >
-              <span aria-hidden="true">→</span>
-            </button>
-          </footer>
-        ) : null}
       </section>
     </div>,
     document.body,

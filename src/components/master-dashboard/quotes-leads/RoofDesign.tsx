@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PipelineLead, RoofDesignSummary } from "@/lib/admin/leads-pipeline";
 import { LeadProposalPdf } from "@/components/master-dashboard/quotes-leads/LeadProposalPdf";
+import { LeadQuotesTrack } from "@/components/master-dashboard/quotes-leads/LeadQuotes";
 
 /**
  * Automatic roof design in Quotes & Leads: a thumbnail per lead (the
@@ -245,19 +246,24 @@ export function RoofDesignViewer({
   onRedesign,
   working,
   initialView = "roof",
+  onOpenQuote,
 }: {
   lead: PipelineLead;
   onClose: () => void;
   onRedesign: () => void;
   working: boolean;
   /** "proposal" opens straight on the proposal (the leads row menu). */
-  initialView?: "roof" | "proposal";
+  initialView?: "roof" | "proposal" | "quotes";
+  /** Opens a quote (or a new one, with null) in the quotes drawer. */
+  onOpenQuote?: (quoteId: string | null) => void;
 }) {
   const d = lead.roofDesign;
   const closeRef = useRef<HTMLButtonElement>(null);
-  const [chosenView, setView] = useState<"roof" | "proposal">(initialView);
-  // A lead with no roof design yet can still show its proposal.
-  const view = d ? chosenView : "proposal";
+  const [chosenView, setView] = useState<"roof" | "proposal" | "quotes">(initialView);
+  // A lead with no roof design yet can still show its proposal and quotes.
+  const view = d || chosenView === "quotes" ? chosenView : "proposal";
+  const [pos, setPos] = useState({ index: 0, count: 0 });
+  const onPosition = useCallback((index: number, count: number) => setPos({ index, count }), []);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -283,8 +289,17 @@ export function RoofDesignViewer({
     <div className="fixed inset-0 z-[60] flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="roof-viewer-title">
       <button type="button" aria-label="Close" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-[#0B1A2E]/70 backdrop-blur-[2px]" />
       <div className="relative flex h-[90vh] w-[90vw] flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_24px_64px_rgba(0,0,0,0.35)] lg:flex-row">
-        <div className={`relative min-h-0 flex-1 bg-[#0B1A2E] ${view === "proposal" ? "" : "flex items-center justify-center"}`}>
-          {view === "proposal" ? (
+        <div className={`relative min-h-0 flex-1 bg-[#0B1A2E] ${view === "roof" ? "flex items-center justify-center" : ""}`}>
+          {view === "quotes" ? (
+            <div className="flex h-full flex-col p-4 sm:p-6">
+              <p className="m-0 mb-3 text-[12px] font-bold uppercase tracking-[0.06em] text-[#F6B04A]">
+                Quotes{pos.count ? ` · ${pos.index + 1} of ${pos.count}` : ""}
+              </p>
+              <div className="min-h-0 flex-1">
+                <LeadQuotesTrack lead={lead} tone="dark" onPosition={onPosition} onOpenQuote={(id) => onOpenQuote?.(id)} />
+              </div>
+            </div>
+          ) : view === "proposal" ? (
             <LeadProposalPdf designId={lead.design?.id ?? null} customerName={lead.customerName} />
           ) : d?.status === "READY" ? (
             // eslint-disable-next-line @next/next/no-img-element -- private, auth-proxied image
@@ -347,15 +362,35 @@ export function RoofDesignViewer({
           )}
 
           <div className="mt-auto flex flex-wrap gap-2">
-            {d ? (
-            <button
-              type="button"
-              onClick={() => setView((v) => (v === "proposal" ? "roof" : "proposal"))}
-              aria-pressed={view === "proposal"}
-              className="h-10 rounded-[10px] border border-[#F68A0A] bg-[#FFF8EC] px-4 text-[13px] font-semibold text-[#7A3E00] hover:bg-[#FFEFD6]"
-            >
-              {view === "proposal" ? "Roof design" : "Proposal"}
-            </button>
+            {d && view !== "roof" ? (
+              <button
+                type="button"
+                onClick={() => setView("roof")}
+                className="h-10 rounded-[10px] border border-[#CBD5E1] bg-white px-4 text-[13px] font-semibold text-[#0F172A] hover:border-[#64748B]"
+              >
+                Roof design
+              </button>
+            ) : null}
+            {view !== "proposal" ? (
+              <button
+                type="button"
+                onClick={() => setView("proposal")}
+                className="h-10 rounded-[10px] border border-[#F68A0A] bg-[#FFF8EC] px-4 text-[13px] font-semibold text-[#7A3E00] hover:bg-[#FFEFD6]"
+              >
+                Proposal
+              </button>
+            ) : null}
+            {view !== "quotes" ? (
+              <button
+                type="button"
+                onClick={() => setView("quotes")}
+                className="inline-flex h-10 items-center gap-1.5 rounded-[10px] border border-[#1560B8] bg-[#EEF5FF] px-4 text-[13px] font-semibold text-[#0B3B7A] hover:bg-[#E0ECFF]"
+              >
+                Quotes
+                {lead.openQuotes?.count ? (
+                  <span className="rounded-full bg-[#0B3B7A] px-1.5 text-[11px] leading-[17px] text-white tabular-nums">{lead.openQuotes.count}</span>
+                ) : null}
+              </button>
             ) : null}
             <button
               type="button"

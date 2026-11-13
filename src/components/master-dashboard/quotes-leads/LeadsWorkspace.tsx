@@ -946,6 +946,11 @@ export function LeadsWorkspace({
           working={roofWorking.has(viewing.id)}
           onClose={() => setViewing(null)}
           onRedesign={() => redesignRoof(viewing.id)}
+          onOpenQuote={(id) => {
+            const lead = rows.find((r) => r.id === viewing.id)!;
+            setViewing(null);
+            setQuotesFor(id ? { lead, startWith: "list", openId: id } : { lead, startWith: "create" });
+          }}
         />
       ) : null}
       {sendDesignFor?.design ? (
