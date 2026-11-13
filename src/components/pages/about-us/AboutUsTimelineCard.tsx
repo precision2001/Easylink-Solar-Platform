@@ -10,7 +10,7 @@ type Props = {
 
 export function AboutUsTimelineCard({ event }: Props) {
   return (
-    <article className="about-us-timeline-card w-full max-w-[572px] overflow-hidden rounded-[40px] px-10 py-7 sm:px-10">
+    <article className="about-us-timeline-card flex h-full w-full max-w-[572px] flex-col overflow-hidden rounded-[40px] px-10 py-7 sm:px-10">
       {"title" in event && event.title ? (
         <h3 className="mb-5 font-source-sans text-[26px] font-bold leading-normal tracking-[-0.1504px] text-about-timeline-text">
           {event.title}
@@ -33,7 +33,7 @@ export function AboutUsTimelineCard({ event }: Props) {
         ) : null}
 
       {"badges" in event && event.badges ? (
-        <div className="mt-8">
+        <div className="mt-auto pt-8">
           <AboutUsTimelineBadges badges={event.badges} />
         </div>
       ) : null}
