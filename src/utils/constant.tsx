@@ -2926,14 +2926,29 @@ export const ABOUT_US_PAGE = {
             text: "Consistent Excellent Installation and Customer Service Reviews.",
           },
         ],
+        badges: [
+          { label: "2016", suffix: "Founded", emphasis: true },
+          { label: "Sydney", suffix: "Based", emphasis: true },
+        ],
       },
       {
         id: "platform",
         side: "right" as const,
+        title: "Platform Launch & AI Integration",
         bullets: [
-          { text: "Platform Launch & AI Integration" },
-          { text: "AI-driven quoting system using satellite imagery" },
-          { text: "95% accurate roof analysis with machine learning" },
+          {
+            text: "AI-driven quoting system using satellite and street-level imagery",
+          },
+          {
+            text: "95% accurate roof analysis: EasyLink AI traces every roof face, ridge and valley before placing panels",
+          },
+          {
+            text: "Instant solar, battery and EV charger designs priced from live wholesale stock",
+          },
+          {
+            text: "Automatic compatibility checks across panels, inverters and batteries against the CEC approved list",
+          },
+          { text: "STCs and rebates calculated automatically in every quote" },
         ],
         badges: [
           { label: "95% accuracy", emphasis: false },
@@ -2950,6 +2965,18 @@ export const ABOUT_US_PAGE = {
           },
           {
             text: "High-Return On Investment options for every customer segment.",
+          },
+          {
+            text: "Three tailored system options for every home, plus an upgrade path for more",
+          },
+          {
+            text: "Upload a power bill to see savings, payback and export income in minutes",
+          },
+          {
+            text: "Customer, installer and operations portals working as one platform",
+          },
+          {
+            text: "Ready Sites and Ready Deals connecting customers directly with certified installers",
           },
         ],
         badges: [
@@ -2975,6 +3002,10 @@ export const ABOUT_US_PAGE = {
                 text: "Consistent 5-star customer reviews and satisfaction",
               },
               { text: "Transparent, no-pressure service approach" },
+              { text: "Clear, itemised quotes with no hidden costs" },
+              {
+                text: "Support from first quote through installation and beyond",
+              },
             ],
           },
         ],
@@ -2985,6 +3016,40 @@ export const ABOUT_US_PAGE = {
             suffix: "Equipment",
             emphasis: true,
           },
+        ],
+      },
+      {
+        id: "research-ai",
+        side: "left" as const,
+        title: "Pioneer in Research-Driven AI Architecture",
+        sections: [
+          {
+            subtitle: "The EasyLink AI Platform",
+            bullets: [
+              {
+                text: "Event-driven AI architecture on AWS that designs, prices and follows up every job",
+              },
+              {
+                text: "Research-led roof intelligence: every design checked against satellite, street and government imagery",
+              },
+              {
+                text: "3D roof and shade digital twin for accurate yield on every face",
+              },
+              {
+                text: "EasyLink Voice AI concierge answering customers and installers around the clock",
+              },
+              {
+                text: "AI energy coaching and drone-clean maintenance plans keeping systems at peak output",
+              },
+              {
+                text: "Privacy-first: customers decide which installers see their data",
+              },
+            ],
+          },
+        ],
+        badges: [
+          { label: "EasyLink AI", suffix: "Powered", emphasis: true },
+          { label: "Research", suffix: "Driven", emphasis: true },
         ],
       },
     ],
