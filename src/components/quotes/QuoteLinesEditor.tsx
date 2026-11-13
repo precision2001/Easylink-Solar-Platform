@@ -2,6 +2,8 @@
 
 import { useId, useState, type FormEvent } from "react";
 import { QUOTE_BUTTON, QUOTE_FIELD, QUOTE_FOCUS, QuoteNotice } from "@/components/quotes/QuoteParts";
+import { QuoteExtrasPicker } from "@/components/quotes/QuoteExtrasPicker";
+import { extraQty, useQuoteExtras, type ExtraOption } from "@/lib/quote-extras";
 import {
   centsToDollarsInput,
   depositLabel,
@@ -135,6 +137,23 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
   };
   const add = (kind: Row["kind"]) =>
     setRows((rs) => [...rs, { key: nextKey(), kind, category: kind === "equipment" ? "other" : "", name: "", qty: "1", price: "", include: true }]);
+  /* Price-book extras: ticking one adds it as an installation/extras line
+     (per-panel extras × the ticked panels); unticking takes that line out. */
+  const extrasBook = useQuoteExtras();
+  const panelCount = rows.filter((r) => r.include && isPanelRow(r)).reduce((t, r) => t + (qtyOf(r) ?? 0), 0);
+  const extraRow = (x: ExtraOption) => rows.find((r) => r.kind === "works" && r.name.trim().toLowerCase() === x.label.toLowerCase());
+  const toggleExtra = (x: ExtraOption, on: boolean) => {
+    const existing = extraRow(x);
+    if (on) {
+      if (existing) return update(existing.key, { include: true });
+      setRows((rs) => [
+        ...rs,
+        { key: nextKey(), kind: "works", category: "", name: x.label, qty: String(extraQty(x, panelCount)), price: centsToDollarsInput(x.unitPriceCents), include: true },
+      ]);
+    } else if (existing) {
+      remove(existing.key);
+    }
+  };
   const tickAll = (kind: Row["kind"], include: boolean) => {
     const next = rows.map((r) => (r.kind === kind ? { ...r, include } : r));
     applyStcRules(rows, next);
@@ -320,6 +339,15 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
       </div>
 
       {section("equipment", "Equipment", "Add equipment line")}
+      <QuoteExtrasPicker
+        extras={extrasBook.extras}
+        loading={extrasBook.loading}
+        error={extrasBook.error}
+        isChecked={(x) => Boolean(extraRow(x)?.include)}
+        onToggle={toggleExtra}
+        panels={panelCount}
+        hint="Ticking an extra adds it to Installation and extras at the price-book price. Per-panel extras use the panels in this quote."
+      />
       {section("works", "Installation and extras", "Add extra")}
 
       <div className="flex flex-col divide-y divide-[#EEF2F6] rounded-[12px] border border-[#E3E8EF]">

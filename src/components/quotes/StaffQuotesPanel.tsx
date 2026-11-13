@@ -11,6 +11,7 @@ import { QUOTE_BUTTON, QUOTE_FOCUS, QuoteNotice } from "@/components/quotes/Quot
 import { QuoteSummaryCard } from "@/components/quotes/QuoteSummaryCard";
 import {
   quoteAddress,
+  quoteLines,
   createStaffQuote,
   isHandEdited,
   listStaffQuotes,
@@ -22,8 +23,38 @@ import {
   type PaymentLinkChannel,
   type Quote,
   type StaffPortal,
+  type UpdateQuoteInput,
 } from "@/lib/quotes";
 import { useSmsStatus } from "@/hooks/useSmsStatus";
+import { extraQty, type ExtraOption } from "@/lib/quote-extras";
+
+/** The draft's own lines plus the ticked extras (per-panel ones × its panels). */
+function withExtras(q: Quote, extras: ExtraOption[]): UpdateQuoteInput {
+  const { equipment, extras: works } = quoteLines(q);
+  const panels = equipment.filter((l) => /panel/i.test(l.category)).reduce((t, l) => t + l.quantity, 0);
+  const have = new Set(works.map((w) => w.name.trim().toLowerCase()));
+  return {
+    lines: {
+      equipment: equipment.map((l) => ({
+        category: l.category || "other",
+        name: l.name,
+        quantity: l.quantity,
+        unitPriceCents: l.unitPriceCents,
+        ...(l.productId ? { productId: l.productId } : {}),
+        ...(l.brand ? { brand: l.brand } : {}),
+        ...(l.model ? { model: l.model } : {}),
+      })),
+      works: [
+        ...works.map((l) => ({ name: l.name, quantity: l.quantity, unitPriceCents: l.unitPriceCents })),
+        ...extras
+          .filter((x) => !have.has(x.label.toLowerCase()))
+          .map((x) => ({ name: x.label, quantity: extraQty(x, panels), unitPriceCents: x.unitPriceCents })),
+      ].filter((l) => l.quantity > 0),
+    },
+    stcDiscountCents: q.stcDiscountCents,
+    rebateCents: q.rebateCents,
+  };
+}
 
 type View = { kind: "list" } | { kind: "create" } | { kind: "edit"; id: string } | { kind: "lines"; id: string } | { kind: "compare" };
 type Notice = { tone: "error" | "success" | "info"; text: string } | null;
@@ -163,8 +194,12 @@ export function StaffQuotesPanel({
         <QuoteForm
           mode="create"
           onCancel={() => setView({ kind: "list" })}
-          onSubmit={async (input) => {
-            const created = await createStaffQuote(portal, { ...filter, ...input } as Parameters<typeof createStaffQuote>[1]);
+          onSubmit={async (input, extras) => {
+            let created = await createStaffQuote(portal, { ...filter, ...input } as Parameters<typeof createStaffQuote>[1]);
+            if (created && extras.length) {
+              // Extras ticked on the form go onto the new draft as lines.
+              created = (await updateStaffQuote(portal, created.id, withExtras(created, extras))) ?? created;
+            }
             setView({ kind: "list" });
             setOpenId(created?.id ?? null);
             await reload();

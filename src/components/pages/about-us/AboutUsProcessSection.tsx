@@ -19,7 +19,16 @@ export function AboutUsProcessSection() {
           <h2 aria-label={ABOUT_US_PAGE.process.title} className="text-center font-source-sans text-[32px] font-medium leading-normal tracking-[-0.92px] text-about-process-text [text-shadow:0_2px_12px_rgba(0,0,0,0.5)] sm:text-[46px]">
             {ABOUT_US_PAGE.process.titleLines.map((line) => (
               <span key={line} className="block whitespace-nowrap">
-                {line}
+                {line === "Customer First" ? (
+                  // Same animated gold glitter as the Our Values cards.
+                  <span className="av-gt av-gt-title relative">
+                    {line}
+                    <span aria-hidden className="av-sp s1" />
+                    <span aria-hidden className="av-sp s2" />
+                  </span>
+                ) : (
+                  line
+                )}
               </span>
             ))}
           </h2>
