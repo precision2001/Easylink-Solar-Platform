@@ -31,6 +31,8 @@ type Row = {
   note?: string;
   qty: string;
   price: string;
+  /** Ticked: goes into the edited quote. Unticked lines stay on screen (greyed) so they can be ticked again. */
+  include: boolean;
 };
 
 let seq = 0;
@@ -49,8 +51,17 @@ function rowsFrom(quote: Quote): Row[] {
       model: l.model ?? undefined,
       qty: String(l.quantity),
       price: centsToDollarsInput(l.unitPriceCents),
+      include: true,
     })),
-    ...extras.map((l) => ({ key: nextKey(), kind: "works" as const, category: "", name: l.name, qty: String(l.quantity), price: centsToDollarsInput(l.unitPriceCents) })),
+    ...extras.map((l) => ({
+      key: nextKey(),
+      kind: "works" as const,
+      category: "",
+      name: l.name,
+      qty: String(l.quantity),
+      price: centsToDollarsInput(l.unitPriceCents),
+      include: true,
+    })),
   ];
 }
 
@@ -60,10 +71,11 @@ const qtyOf = (r: Row) => {
 };
 
 /**
- * Staff change a draft's line items and amounts by hand: add, remove or
- * change equipment and extras (quantity × unit price, GST inclusive), the
- * STC discount and other rebates. Totals and the deposit update as you type,
- * using the same rounding as the backend.
+ * Staff edit a quote's items (the Edit button): tick the items that go into
+ * the edited quote, change names, quantities and prices (GST inclusive), add
+ * lines, and set the STC discount and other rebates. Unticked items are left
+ * out but stay on screen to tick again. Totals and the deposit update as you
+ * type, using the same rounding as the backend.
  */
 export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; onSubmit: (patch: UpdateQuoteInput) => Promise<void>; onCancel: () => void }) {
   const uid = useId();
@@ -76,7 +88,10 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
 
   const stcCents = signedDollarsToCents(stc);
   const rebateCents = signedDollarsToCents(rebate);
-  const priced = rows.map((r) => ({ quantity: qtyOf(r) ?? 0, unitPriceCents: signedDollarsToCents(r.price) ?? 0 }));
+  const chosen = rows.filter((r) => r.include);
+  const leftOut = rows.length - chosen.length;
+  const leftOutEquipment = rows.filter((r) => r.kind === "equipment" && !r.include).length;
+  const priced = chosen.map((r) => ({ quantity: qtyOf(r) ?? 0, unitPriceCents: signedDollarsToCents(r.price) ?? 0 }));
   const { subtotalCents, totalCents } = editedTotals(priced, Math.max(0, stcCents ?? 0), Math.max(0, rebateCents ?? 0));
   const fixedDeposit = quote.depositMode === "FIXED" ? quote.depositCents : null;
   const depositCents = previewDepositCents(Math.max(0, totalCents), quote.depositMode, quote.depositPercent, fixedDeposit);
@@ -84,11 +99,12 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
   const update = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const remove = (key: string) => setRows((rs) => rs.filter((r) => r.key !== key));
   const add = (kind: Row["kind"]) =>
-    setRows((rs) => [...rs, { key: nextKey(), kind, category: kind === "equipment" ? "other" : "", name: "", qty: "1", price: "" }]);
+    setRows((rs) => [...rs, { key: nextKey(), kind, category: kind === "equipment" ? "other" : "", name: "", qty: "1", price: "", include: true }]);
+  const tickAll = (kind: Row["kind"], include: boolean) => setRows((rs) => rs.map((r) => (r.kind === kind ? { ...r, include } : r)));
 
   function problem(): string | null {
-    if (rows.length === 0) return "Add at least one line.";
-    for (const r of rows) {
+    if (chosen.length === 0) return "Tick at least one item for the edited quote.";
+    for (const r of chosen) {
       if (!r.name.trim()) return "Every line needs a name.";
       if (qtyOf(r) === null) return `Check the quantity for “${r.name.trim()}”.`;
       if (signedDollarsToCents(r.price) === null) return `Check the unit price for “${r.name.trim()}”. Use dollars, for example 1250 or -500 for a discount.`;
@@ -111,7 +127,7 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
     try {
       await onSubmit({
         lines: {
-          equipment: rows
+          equipment: chosen
             .filter((r) => r.kind === "equipment")
             .map((r) => ({
               ...line(r),
@@ -120,7 +136,7 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
               ...(r.brand ? { brand: r.brand } : {}),
               ...(r.model ? { model: r.model } : {}),
             })),
-          works: rows.filter((r) => r.kind === "works").map((r) => ({ ...line(r), ...(r.note ? { note: r.note } : {}) })),
+          works: chosen.filter((r) => r.kind === "works").map((r) => ({ ...line(r), ...(r.note ? { note: r.note } : {}) })),
         },
         stcDiscountCents: stcCents ?? 0,
         rebateCents: rebateCents ?? 0,
@@ -133,10 +149,28 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
 
   const section = (kind: Row["kind"], heading: string, addLabel: string) => {
     const list = rows.filter((r) => r.kind === kind);
+    const ticked = list.filter((r) => r.include).length;
     return (
       <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
-        <legend className="mb-1 p-0 text-[14px] font-bold text-[#0F172A]">{heading}</legend>
-        <div aria-hidden="true" className="hidden grid-cols-[minmax(0,1fr)_60px_108px_88px_44px] gap-2 px-1 text-[12px] font-semibold text-[#5B6B80] @[500px]:grid">
+        <legend className="mb-1 flex w-full items-center justify-between gap-3 p-0">
+          <span className="text-[14px] font-bold text-[#0F172A]">{heading}</span>
+          {list.length ? (
+            <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-[13px] font-semibold text-[#334155]">
+              <input
+                type="checkbox"
+                checked={ticked === list.length}
+                ref={(el) => {
+                  if (el) el.indeterminate = ticked > 0 && ticked < list.length;
+                }}
+                onChange={(e) => tickAll(kind, e.target.checked)}
+                className="size-[18px] accent-[#1560B8]"
+              />
+              {ticked === list.length ? "All in" : `${ticked} of ${list.length} in`}
+            </label>
+          ) : null}
+        </legend>
+        <div aria-hidden="true" className="hidden grid-cols-[32px_minmax(0,1fr)_60px_108px_88px_44px] gap-2 px-1 text-[12px] font-semibold text-[#5B6B80] @[500px]:grid">
+          <span />
           <span>Item</span>
           <span>Qty</span>
           <span>Unit price</span>
@@ -147,15 +181,24 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
         {list.map((r) => {
           const q = qtyOf(r);
           const unit = signedDollarsToCents(r.price);
-          const bad = touched && (!r.name.trim() || q === null || unit === null);
+          const bad = touched && r.include && (!r.name.trim() || q === null || unit === null);
           const label = r.name.trim() || (kind === "equipment" ? "equipment line" : "extra");
           return (
             <div
               key={r.key}
-              className={`grid grid-cols-[1fr_1fr_44px] gap-2 rounded-[12px] border p-2.5 @[500px]:grid-cols-[minmax(0,1fr)_60px_108px_88px_44px] @[500px]:items-start @[500px]:rounded-none @[500px]:border-0 @[500px]:border-b @[500px]:border-[#EEF2F6] @[500px]:px-1 @[500px]:py-2 ${
+              className={`grid grid-cols-[32px_1fr_1fr_44px] gap-2 rounded-[12px] border p-2.5 @[500px]:grid-cols-[32px_minmax(0,1fr)_60px_108px_88px_44px] @[500px]:items-start @[500px]:rounded-none @[500px]:border-0 @[500px]:border-b @[500px]:border-[#EEF2F6] @[500px]:px-1 @[500px]:py-2 ${
                 bad ? "border-[#FCA5A5] @[500px]:bg-[#FEF2F2]" : "border-[#E3E8EF]"
-              }`}
+              } ${r.include ? "" : "opacity-55"}`}
             >
+              <label className="row-span-2 flex size-11 cursor-pointer items-center justify-center self-start @[500px]:row-span-1 @[500px]:size-auto @[500px]:min-h-[44px] @[500px]:w-8">
+                <input
+                  type="checkbox"
+                  checked={r.include}
+                  onChange={(e) => update(r.key, { include: e.target.checked })}
+                  aria-label={`Include ${label} in the edited quote`}
+                  className="size-[18px] accent-[#1560B8]"
+                />
+              </label>
               <div className="col-span-3 flex min-w-0 flex-col gap-1.5 @[500px]:col-span-1">
                 <input
                   value={r.name}
@@ -179,7 +222,7 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
                   </select>
                 ) : null}
               </div>
-              <label className="flex flex-col gap-1 text-[12px] font-semibold text-[#5B6B80] @[500px]:block">
+              <label className="col-start-2 flex flex-col gap-1 text-[12px] font-semibold text-[#5B6B80] @[500px]:col-start-auto @[500px]:block">
                 <span className="@[500px]:sr-only">Qty</span>
                 <input inputMode="decimal" value={r.qty} onChange={(e) => update(r.key, { qty: e.target.value })} aria-label={`Quantity of ${label}`} className={`${QUOTE_FIELD} px-2.5`} />
               </label>
@@ -195,13 +238,15 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
                 onClick={() => remove(r.key)}
                 aria-label={`Remove ${label}`}
                 title="Remove line"
-                className={`row-start-2 col-start-3 flex size-11 items-center justify-center self-end rounded-[10px] text-[20px] leading-none text-[#64748B] hover:bg-[#FEF2F2] hover:text-[#B91C1C] @[500px]:col-start-5 @[500px]:row-start-1 @[500px]:self-start ${QUOTE_FOCUS}`}
+                className={`row-start-2 col-start-4 flex size-11 items-center justify-center self-end rounded-[10px] text-[20px] leading-none text-[#64748B] hover:bg-[#FEF2F2] hover:text-[#B91C1C] @[500px]:col-start-6 @[500px]:row-start-1 @[500px]:self-start ${QUOTE_FOCUS}`}
               >
                 ×
               </button>
-              <p className="col-span-3 m-0 flex items-center justify-between text-[13.5px] @[500px]:col-span-1 @[500px]:col-start-4 @[500px]:row-start-1 @[500px]:min-h-[44px] @[500px]:justify-end">
+              <p className="col-span-3 col-start-2 m-0 flex items-center justify-between text-[13.5px] @[500px]:col-span-1 @[500px]:col-start-5 @[500px]:row-start-1 @[500px]:min-h-[44px] @[500px]:justify-end">
                 <span className="text-[#5B6B80] @[500px]:sr-only">Line total</span>
-                <span className="font-bold tabular-nums text-[#0F172A]">{q !== null && unit !== null ? formatCents(lineTotal(q, unit)) : "—"}</span>
+                <span className={`font-bold tabular-nums ${r.include ? "text-[#0F172A]" : "text-[#94A3B8] line-through"}`}>
+                  {q !== null && unit !== null ? formatCents(lineTotal(q, unit)) : "—"}
+                </span>
               </p>
             </div>
           );
@@ -229,9 +274,9 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
   return (
     <form onSubmit={submit} className="@container flex flex-col gap-5" noValidate>
       <div className="flex flex-col gap-1">
-        <h3 className="m-0 font-source-sans text-[18px] font-bold text-[#0F172A]">Lines and prices · {quoteVersionLabel(quote)}</h3>
+        <h3 className="m-0 font-source-sans text-[18px] font-bold text-[#0F172A]">Edit quote · {quoteVersionLabel(quote)}</h3>
         <p className="m-0 text-[13.5px] leading-[1.5] text-[#5B6B80]">
-          Prices include GST. Use a negative unit price for a discount line. Reprice puts the pricing engine&rsquo;s prices back.
+          Tick the items that go into the edited quote, and change names, quantities and prices as needed. Prices include GST. Use a negative unit price for a discount line. Reprice puts the pricing engine&rsquo;s prices back.
         </p>
       </div>
 
@@ -244,6 +289,11 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
           <span className="font-bold tabular-nums text-[#0F172A]">{formatCents(subtotalCents)}</span>
         </div>
         {money(`${uid}-stc`, "STC discount", "Small-scale technology certificates", stc, setStc)}
+        {leftOutEquipment > 0 && (stcCents ?? 0) > 0 ? (
+          <p className="m-0 bg-[#FFF8EB] px-3.5 py-2 text-[12.5px] leading-snug text-[#7A4A00]">
+            {leftOutEquipment} equipment item{leftOutEquipment === 1 ? " is" : "s are"} left out. The STC discount above is for the full system: lower it to match the items you kept (for example, no battery STCs without the battery).
+          </p>
+        ) : null}
         {money(`${uid}-rebate`, "Rebates", "e.g. Cheaper Home Batteries", rebate, setRebate)}
         <div className="flex items-center justify-between bg-[#F8FAFC] px-3.5 py-3">
           <span className="text-[14px] font-bold text-[#0F172A]">Total inc GST</span>
@@ -263,7 +313,7 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
 
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={busy} className={QUOTE_BUTTON.primary}>
-          {busy ? "Saving…" : "Save lines and prices"}
+          {busy ? "Saving…" : leftOut ? `Save edited quote (${chosen.length} of ${rows.length} items)` : "Save edited quote"}
         </button>
         <button type="button" onClick={onCancel} disabled={busy} className={QUOTE_BUTTON.quiet}>
           Cancel
