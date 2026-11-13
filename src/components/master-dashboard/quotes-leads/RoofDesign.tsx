@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PipelineLead, RoofDesignSummary } from "@/lib/admin/leads-pipeline";
-import { CustomerProposal } from "@/components/contact-centre/CustomerProposal";
+import { LeadProposalPdf } from "@/components/master-dashboard/quotes-leads/LeadProposalPdf";
 
 /**
  * Automatic roof design in Quotes & Leads: a thumbnail per lead (the
@@ -278,15 +278,9 @@ export function RoofDesignViewer({
     <div className="fixed inset-0 z-[60] flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="roof-viewer-title">
       <button type="button" aria-label="Close" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-[#0B1A2E]/70 backdrop-blur-[2px]" />
       <div className="relative flex h-[90vh] w-[90vw] flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_24px_64px_rgba(0,0,0,0.35)] lg:flex-row">
-        <div className={`relative min-h-0 flex-1 bg-[#0B1A2E] ${view === "proposal" ? "overflow-y-auto" : "flex items-center justify-center"}`}>
+        <div className={`relative min-h-0 flex-1 bg-[#0B1A2E] ${view === "proposal" ? "" : "flex items-center justify-center"}`}>
           {view === "proposal" ? (
-            <div className="p-3 sm:p-4">
-              <CustomerProposal
-                portal="admin"
-                leadId={lead.id}
-                lead={{ name: lead.customerName, email: lead.customerEmail, phone: lead.customerPhone, address: lead.address }}
-              />
-            </div>
+            <LeadProposalPdf designId={lead.design?.id ?? null} customerName={lead.customerName} />
           ) : d?.status === "READY" ? (
             // eslint-disable-next-line @next/next/no-img-element -- private, auth-proxied image
             <img
