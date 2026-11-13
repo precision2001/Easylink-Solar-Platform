@@ -21,6 +21,8 @@ type Props = {
   battery?: boolean;
   /** Draw an electric car charging in the driveway. */
   ev?: boolean;
+  /** Space (px) kept clear at each edge for labels laid over the picture, so the whole roof always shows. */
+  inset?: { top?: number; bottom?: number; left?: number; right?: number };
 };
 
 /**
@@ -76,14 +78,16 @@ function Bolt({ x, y, r }: { x: number; y: number; r: number }) {
   );
 }
 
-export function RoofIllustration({ roof: drawing, width, height, battery = false, ev = false }: Props) {
+export function RoofIllustration({ roof: drawing, width, height, battery = false, ev = false, inset = {} }: Props) {
   const pad = Math.max(24, Math.min(width, height) * 0.07);
   // The car and battery only show where the driveway was found.
   const shown: RoofDrawing = { ...drawing, ev: ev ? drawing.ev : undefined, battery: battery && drawing.ev ? drawing.battery : undefined };
   // House, driveway and battery turned together to fill the frame (landscape
   // in a wide frame); the north arrow turns with them.
-  const roof = orientForBox(shown, width - 2 * pad, height - 2 * pad);
-  const { toPx, scale } = fitToBox(roof, width, height, pad);
+  const boxW = width - (inset.left ?? 0) - (inset.right ?? 0);
+  const boxH = height - (inset.top ?? 0) - (inset.bottom ?? 0);
+  const roof = orientForBox(shown, boxW - 2 * pad, boxH - 2 * pad);
+  const { toPx, scale } = fitToBox(roof, width, height, pad, inset);
   const path = (ring: { x: number; y: number }[]) =>
     ring.map((p, i) => {
       const q = toPx(p);

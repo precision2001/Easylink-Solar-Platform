@@ -249,17 +249,31 @@ function rotate(p: XY, rad: number): XY {
  */
 export function orientForBox(d: RoofDrawing, width: number, height: number): RoofDrawing & { rotationDeg: number } {
   const rings = d.faces.map((f) => f.ring);
-  const candidates = new Set<number>([0]);
-  for (const r of rings) {
+  // Square the house to the frame: find its main wall direction (the edge
+  // angle, mod 90°, carrying the most wall length; the outer walls, else the
+  // faces), and only try that and that plus 90°. A diagonal fit could be a
+  // little bigger for an L-shaped house, but reads as tilted, not landscape.
+  const walls = d.outlines.length ? d.outlines : rings;
+  const weight = new Map<number, number>();
+  for (const r of walls) {
     for (let i = 0; i < r.length; i++) {
       const a = r[i];
       const b = r[(i + 1) % r.length];
-      if (Math.hypot(b.x - a.x, b.y - a.y) < 0.5) continue;
-      const deg = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-      candidates.add(Math.round(((-deg % 90) + 90) % 90 * 10) / 10);
-      candidates.add(Math.round((((-deg % 90) + 90) % 90 + 90) * 10) / 10);
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 0.5) continue;
+      const deg = Math.round(((((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI) % 90) + 90) % 90);
+      // Spread each edge over ±2° so nearly parallel walls add up.
+      for (let k = -2; k <= 2; k++) {
+        const key = (((deg + k) % 90) + 90) % 90;
+        weight.set(key, (weight.get(key) ?? 0) + len * (1 - Math.abs(k) * 0.2));
+      }
     }
   }
+  let axis = 0;
+  let bestW = -1;
+  for (const [k, w] of weight) if (w > bestW) { bestW = w; axis = k; }
+  const base = (((-axis % 90) + 90) % 90);
+  const candidates = new Set<number>([base, base + 90]);
   const pts = [...rings.flat(), ...d.panels.flat(), ...extraCorners(d)];
   let best = { deg: 0, scale: -1 };
   for (const deg of candidates) {
@@ -297,12 +311,19 @@ export function orientForBox(d: RoofDrawing, width: number, height: number): Roo
 }
 
 /** Fits the drawing into a box (px), keeping its shape; returns a metres→px mapper. */
-export function fitToBox(d: RoofDrawing, width: number, height: number, padding: number) {
+export function fitToBox(
+  d: RoofDrawing,
+  width: number,
+  height: number,
+  padding: number,
+  inset: { top?: number; bottom?: number; left?: number; right?: number } = {},
+) {
   const w = Math.max(1, d.maxX - d.minX);
   const h = Math.max(1, d.maxY - d.minY);
-  const scale = Math.min((width - 2 * padding) / w, (height - 2 * padding) / h);
-  const ox = (width - w * scale) / 2;
-  const oy = (height - h * scale) / 2;
+  const t = inset.top ?? 0, bo = inset.bottom ?? 0, l = inset.left ?? 0, r = inset.right ?? 0;
+  const scale = Math.min((width - l - r - 2 * padding) / w, (height - t - bo - 2 * padding) / h);
+  const ox = l + (width - l - r - w * scale) / 2;
+  const oy = t + (height - t - bo - h * scale) / 2;
   return {
     scale,
     toPx: (p: XY) => ({ x: ox + (p.x - d.minX) * scale, y: oy + (d.maxY - p.y) * scale }),
