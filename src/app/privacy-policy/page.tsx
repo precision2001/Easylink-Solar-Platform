@@ -51,7 +51,7 @@ export default function PrivacyPolicyPage() {
                 ]}
               />
               <P>
-                Our website and portals also record how they are used: page views, clicks on buttons and links, form submissions (field names only) and errors, linked to a visitor cookie and, once you sign in or save a design, to your record. This is not recorded if your browser sends a Do Not Track or Global Privacy Control signal. Microsoft Clarity separately records how pages are used; see our{" "}
+                Our website and portals also record how they are used: page views, clicks on buttons and links, form submissions (field names only) and errors, linked to a visitor cookie and, once you sign in or save a design, to your record. This is not recorded if your browser sends a Do Not Track or Global Privacy Control signal. A website analytics service separately records how pages are used; see our{" "}
                 <Link href="/cookies" className="font-semibold text-sky-700 underline">
                   cookie policy
                 </Link>
@@ -88,9 +88,9 @@ export default function PrivacyPolicyPage() {
               <H3>Where we use AI</H3>
               <List
                 items={[
-                  <><b>Roof and system design.</b> When you enter an address, our Roof Designer reads satellite and street imagery of the roof, with an AI model and mapping data, to find the roof faces and lay out panels. It uses your address and the imagery of your property.</>,
+                  <><b>Roof and system design.</b> When you enter an address, our design tool reads satellite and street imagery of the roof, with an AI model and mapping data, to find the roof faces and lay out panels. It uses your address and the imagery of your property.</>,
                   <><b>Bills and savings.</b> If you upload a power bill, a program reads your retailer, plan, usage and tariffs to size a system and estimate savings.</>,
-                  <><b>Prices, quotes and rebates.</b> Our pricing engine works out indicative prices, the system options you are shown, and the rebates and certificates (such as STCs and battery rebates) that appear to apply. It uses your address, design, chosen products and payment method.</>,
+                  <><b>Prices, quotes and rebates.</b> Our pricing system works out indicative prices, the system options you are shown, and the rebates and certificates (such as STCs and battery rebates) that appear to apply. It uses your address, design, chosen products and payment method.</>,
                   <><b>EasyLink AI on the phone, in chat and in your portal.</b> EasyLink AI may answer calls and messages, answer questions, take your enquiry, give indicative price ranges, book or move a site visit, arrange a call back and log a service issue. It uses what you tell it and your record with us (contact details, enquiry, job stage and bookings). It tells you it is an AI and that calls are recorded.</>,
                   <><b>Call recording and analysis.</b> Calls are recorded and transcribed. Programs summarise each call, sort it by topic (for example new enquiry, battery interest, price question, complaint or safety issue), assess sentiment and suggest the next step for our team. Card, bank and identity numbers are redacted from transcripts.</>,
                   <><b>Records, photos and documents.</b> AI summarises your project record, labels photos and documents, and may ask for anything missing.</>,
@@ -110,14 +110,14 @@ export default function PrivacyPolicyPage() {
               <H3>Decisions a program helps a person make</H3>
               <List
                 items={[
-                  "Your final quote: the pricing engine prepares it, and our staff or your installer can review and change it.",
+                  "Your final quote: our pricing system prepares it, and our staff or your installer can review and change it.",
                   "Which rebates and certificates are claimed for your system.",
                   "How and when our team follows up your enquiry, using call summaries, topics and suggested next steps.",
                   "Which installer is offered your job. EasyLink decides, and may use a program to suggest a match based on your location, the system and installer availability.",
                 ]}
               />
               <P>
-                The personal information these programs use is: your contact details; your address, roof imagery and design; your bill and energy use; your quotes, orders, payments and job records; your calls, messages and their transcripts; your activity on our website and portals; and your contact and marketing choices. We do not use AI to decide whether to give you credit; if you pay with Afterpay or Zip, they make their own assessment.
+                The personal information these programs use is: your contact details; your address, roof imagery and design; your bill and energy use; your quotes, orders, payments and job records; your calls, messages and their transcripts; your activity on our website and portals; and your contact and marketing choices. We do not use AI to decide whether to give you credit; if you choose a buy now, pay later provider, it makes its own assessment.
               </P>
               <P>
                 We keep a record of what our AI decided and why, so a person can check it. We keep sales call recordings for 12 months, and recordings connected to a contract for 7 years.
@@ -136,7 +136,7 @@ export default function PrivacyPolicyPage() {
                   "the installer and licensed electricians assigned to your job, to quote, install and service your system;",
                   "your electricity network, for connection and export approval;",
                   "rebate agents and government bodies, to claim rebates and certificates you are eligible for;",
-                  "payment providers such as Stripe, Afterpay and Zip, to process payments;",
+                  "payment and buy now, pay later providers, to process payments;",
                   "service providers who host and run our systems, send messages and calls, provide maps and imagery, provide AI services and measure how our website is used;",
                   "anyone you ask us to share it with, or where the law requires.",
                 ]}
@@ -151,17 +151,17 @@ export default function PrivacyPolicyPage() {
           body: (
             <>
               <P>
-                Our website, portals, database, call recordings and phone system are hosted in Australia (Amazon Web Services, Sydney). The AI models that read roofs and bills, summarise records and run EasyLink AI on our phone line run on Amazon Web Services in Australia.
+                Our website, portals, database, call recordings and phone system are hosted in Australia with a cloud hosting provider. The AI models that read roofs and bills, summarise records and run EasyLink AI on our phone line also run in Australia.
               </P>
               <P>Some service providers may store or process information outside Australia, mainly in the United States:</P>
               <List
                 items={[
-                  "xAI, which powers the question-and-answer chat on our website (the questions you type);",
-                  "Deepgram and LiveKit, for calls and call transcription made through our dialler;",
-                  "Google, for maps, address lookup, roof imagery and Google sign-in (your address and location on the map);",
-                  "Microsoft Clarity, for website analytics;",
-                  "Resend, for sending email;",
-                  "Stripe, Afterpay and Zip, for payments.",
+                  "the AI service behind the question-and-answer chat on our website (the questions you type);",
+                  "calling and transcription services, for calls made by our team;",
+                  "mapping and imagery services, for maps, address lookup and roof imagery (your address and location on the map), and a sign-in service if you choose to sign in with it;",
+                  "a website analytics service;",
+                  "an email delivery service;",
+                  "payment and buy now, pay later providers.",
                 ]}
               />
               <P>We choose providers with appropriate security and privacy commitments, and they may only use your information to provide their services to us.</P>
