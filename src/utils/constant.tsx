@@ -2925,6 +2925,12 @@ export const ABOUT_US_PAGE = {
           {
             text: "Consistent Excellent Installation and Customer Service Reviews.",
           },
+          {
+            text: "Partnering with accredited installers to deliver quality installs across Australia",
+          },
+          {
+            text: "One installer portal for leads, quotes, jobs and customers",
+          },
         ],
         badges: [
           { label: "2016", suffix: "Founded", emphasis: true },
@@ -2949,6 +2955,15 @@ export const ABOUT_US_PAGE = {
             text: "Automatic compatibility checks across panels, inverters and batteries against the CEC approved list",
           },
           { text: "STCs and rebates calculated automatically in every quote" },
+          {
+            text: "Installers get an automatic AI roof design for every new lead",
+          },
+          {
+            text: "Installers can fine-tune quote line items and pricing before sending",
+          },
+          {
+            text: "Job kits ordered from the cheapest wholesaler with stock on hand",
+          },
         ],
         badges: [
           { label: "95% accuracy", emphasis: false },
@@ -2977,6 +2992,12 @@ export const ABOUT_US_PAGE = {
           },
           {
             text: "Ready Sites and Ready Deals connecting customers directly with certified installers",
+          },
+          {
+            text: "Installers buy confirmed, ready-to-install jobs through Ready Sites",
+          },
+          {
+            text: "Installer memberships with sales dashboards and a built-in contact centre",
           },
         ],
         badges: [

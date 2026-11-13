@@ -5,7 +5,8 @@ cinemascope story, graded frame by frame.
   1. Day      - house in full sun, panels generating, car on the charger
   2. Night    - same scene at night: windows lit, charger glowing, stars
                 ("the battery keeps the lights on")
-  3. Sunset   - car charges, then drives off into a golden sunset
+  3. Day      - car unplugs and drives off in daylight...
+  4. Sunset   - ...as the light turns gradually to a natural golden hour
 
 Usage (from repo root):
   python3 scripts/video/about-mission-cinema.py SRC.mp4 OUT.mp4 FONT_REG.ttf FONT_SEMI.ttf
@@ -70,27 +71,32 @@ STARS = np.zeros((CH, W), np.float32)
 for _ in range(260):
     sx, sy = rng.integers(0, W), rng.integers(0, int(CH * 0.42))
     STARS[sy, sx] = rng.uniform(0.4, 1.0)
-STARS = cv2.GaussianBlur(STARS, (0, 0), 0.8) * 3
+STARS = cv2.GaussianBlur(STARS, (0, 0), 0.7) * 1.6
 STAR_PHASE = rng.uniform(0, 2 * np.pi, (CH, W)).astype(np.float32)
 
 
 def sky_mask(a):
-    """Bright, bluish, low-saturation-ish pixels in the upper frame = sky."""
-    r, g, b = a[..., 0], a[..., 1], a[..., 2]
-    m = ((b > r + 0.04) & (b > 0.55) & (yy < CH * 0.62)).astype(np.float32)
+    """Sky = bright bluish pixels in the upper frame that connect to the top
+    edge (so car roofs, windows and fields that happen to be blue are left
+    alone)."""
+    r, g, b = a[..., 0].astype(np.int16), a[..., 1].astype(np.int16), a[..., 2].astype(np.int16)
+    m = ((b > r + 10) & (b > 140) & (yy < CH * 0.6)).astype(np.uint8)
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
-    return cv2.GaussianBlur(m, (0, 0), 6)[..., None]
+    n, lab = cv2.connectedComponents(m)
+    top = np.unique(lab[0:3, :])
+    keep = np.isin(lab, top[top != 0]).astype(np.float32)
+    return cv2.GaussianBlur(keep, (0, 0), 5)[..., None]
 
 
 def day(a, t):
     a = f32(a)
     # sun glow top-left, gently breathing
     sun = np.exp(-(((xx - W * 0.1) / 260) ** 2 + ((yy + 40) / 220) ** 2))[..., None]
-    a = a + sun * np.array([1.0, 0.92, 0.7]) * (0.35 + 0.08 * np.sin(t * 2))
+    a = a + sun * np.array([1.0, 0.92, 0.7]) * (0.12 + 0.03 * np.sin(t * 2))
     # panels shimmer: a soft light sweep across the roof
     sweep = np.exp(-((xx - (W * (-0.2 + 1.4 * ((t * 0.35) % 1))) + (yy * 0.8)) / 60) ** 2)[..., None]
     roof = ((yy < CH * 0.45) & (xx > W * 0.3) & (xx < W * 0.85)).astype(np.float32)[..., None]
-    a = a + sweep * roof * 0.18
+    a = a + sweep * roof * 0.06
     return u8(a * (0.85 + 0.15 * VIGNETTE))
 
 
@@ -115,52 +121,60 @@ def night(a, t):
     sm = sky_mask(a)
     tw = 0.6 + 0.4 * np.sin(STAR_PHASE + t * 3)
     out = out + (STARS * tw)[..., None] * sm * np.array([0.9, 0.95, 1.0])
-    moon = np.exp(-(((xx - W * 0.86) / 26) ** 2 + ((yy - CH * 0.12) / 26) ** 2))
+    moon = np.exp(-(((xx - W * 0.86) / 16) ** 2 + ((yy - CH * 0.12) / 16) ** 2))
     halo = np.exp(-(((xx - W * 0.86) / 120) ** 2 + ((yy - CH * 0.12) / 120) ** 2))
-    out = out + (moon[..., None] * 0.9 + halo[..., None] * 0.18) * np.array([0.95, 0.97, 1.0]) * sm
+    out = out + (moon[..., None] * 0.75 + halo[..., None] * 0.08) * np.array([0.95, 0.97, 1.0]) * sm
     return u8(out * VIGNETTE)
 
 
-SUN_X, SUN_Y = W * 0.78, CH * 0.36
+def smooth(x, a, b):
+    t = np.clip((x - a) / (b - a), 0, 1)
+    return t * t * (3 - 2 * t)
 
 
 def sunset(a, t, k):
-    """k: 0..1 progress through the sunset act (sun sinks, light warms)."""
+    """Natural golden-hour grade. k: 0 = midday look, 1 = full sunset.
+
+    No added sun disc or bloom: exposure comes down, highlights warm,
+    shadows cool slightly (like real low sun), greens lose a little
+    saturation and the sky shifts to a soft dusk gradient that keeps the
+    original cloud texture.
+    """
     a0 = f32(a)
-    graded = np.stack(
-        [
-            np.clip(a0[..., 0] * 1.18 + 0.06, 0, 1),
-            np.clip(a0[..., 1] * 0.88 + 0.02, 0, 1),
-            np.clip(a0[..., 2] * 0.62, 0, 1),
-        ],
-        -1,
-    )
-    graded = graded * (0.82 - 0.22 * k)
-    # sunset sky gradient replaces the blue sky
+    if k <= 0:
+        return u8(a0 * (0.92 + 0.08 * VIGNETTE))
+    r, g, b = a0[..., 0], a0[..., 1], a0[..., 2]
+    lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    hi = smooth(lum, 0.25, 0.85)[..., None]
+    # split tone: warm highlights, slightly cool shadows
+    warm = a0 * np.array([1.22, 0.98, 0.70])
+    cool = a0 * np.array([1.00, 0.92, 0.90])
+    graded = cool * (1 - hi) + warm * hi
+    # gentle desaturation (low sun is less saturated on foliage)
+    gl = (0.2126 * graded[..., 0] + 0.7152 * graded[..., 1] + 0.0722 * graded[..., 2])[..., None]
+    graded = gl + (graded - gl) * 0.84
+    # exposure down as the sun sets, soft filmic shoulder
+    graded = graded * 0.70
+    graded = graded / (1 + graded * 0.25) * 1.18
+    # dusk sky that keeps cloud texture
     v = np.clip(yy / (CH * 0.6), 0, 1)[..., None]
-    top = np.array([0.35, 0.12, 0.38])
-    mid = np.array([0.98, 0.42, 0.22])
-    hor = np.array([1.0, 0.78, 0.4])
-    sky = np.where(v < 0.55, top + (mid - top) * (v / 0.55), mid + (hor - mid) * ((v - 0.55) / 0.45))
-    sky = sky * (1 - 0.2 * k)
+    top = np.array([0.38, 0.40, 0.58])
+    mid = np.array([0.92, 0.58, 0.42])
+    hor = np.array([1.00, 0.72, 0.40])
+    sky = np.where(v < 0.6, top + (mid - top) * (v / 0.6), mid + (hor - mid) * ((v - 0.6) / 0.4))
     sm = sky_mask(a)
-    # keep cloud/tree texture inside the sky
-    tex = (0.3 * a0[..., 0] + 0.59 * a0[..., 1] + 0.11 * a0[..., 2])[..., None]
-    sky = sky * (0.75 + 0.35 * tex)
-    out = graded * (1 - sm) + sky * sm
-    # low sun with bloom
-    sy = SUN_Y + k * CH * 0.08
-    d2 = ((xx - SUN_X) / 1) ** 2 + ((yy - sy) / 1) ** 2
-    disc = np.clip(1 - np.sqrt(d2) / 34, 0, 1) ** 0.5
-    glow = np.exp(-d2 / (2 * 140**2))
-    wide = np.exp(-d2 / (2 * 420**2))
-    out = out + disc[..., None] * np.array([1.0, 0.95, 0.75]) * 0.9
-    out = out + glow[..., None] * np.array([1.0, 0.6, 0.25]) * 0.32
-    out = out + wide[..., None] * np.array([1.0, 0.5, 0.2]) * 0.07
-    # warm rim light from the sun side
-    rim = np.clip((xx - W * 0.35) / (W * 0.65), 0, 1)[..., None] * 0.04
-    out = out + rim * np.array([1.0, 0.55, 0.2])
-    return u8(bloom(out, 14, 0.1) * VIGNETTE)
+    # keep the sky's own detail (clouds, distant ridges): scale the dusk
+    # colours by each pixel's brightness relative to the sky's average
+    skyl = float((lum[..., None] * sm).sum() / max(1.0, float(sm.sum())))
+    tex = (lum / max(1e-3, skyl))[..., None]
+    sky = sky * np.clip(tex, 0.55, 1.2)
+    sm = sm * 0.92
+    graded = graded * (1 - sm) + sky * sm
+    # faint warm atmospheric haze on the horizon, from the sun side (right)
+    haze = np.exp(-(((yy - CH * 0.45) / (CH * 0.16)) ** 2)) * smooth(xx, W * 0.3, W * 1.1)
+    graded = graded + haze[..., None] * np.array([0.20, 0.11, 0.03])
+    out = a0 * (1 - k) + graded * k
+    return u8(out * (0.92 + 0.08 * VIGNETTE))
 
 
 # ---------------------------------------------------------------- captions
@@ -196,7 +210,7 @@ def env(i, n, fade=14):
 SLOW = 2  # charge scene at half speed
 day_idx = [i // SLOW for i in range(CHARGE_END * SLOW)]
 night_idx = list(reversed(day_idx))
-sun_idx = list(range(CHARGE_END - 12, N))
+drive_idx = list(range(CHARGE_END - 30, N))
 
 XF = int(1.5 * FPS)  # crossfade length
 acts = []
@@ -213,11 +227,13 @@ for j, i in enumerate(night_idx):
     t = j / FPS
     z = 1.06 + 0.06 * j / len(night_idx)
     B.append(night(crop(src[i], 96, z), t))
-# Act 3: sunset - charge then drive off (camera already tracks)
+# Act 3+4: day again as the car unplugs and drives off, the light slowly
+# turning to sunset (a continuous grade, no cut).
 C = []
-for j, i in enumerate(sun_idx):
+nd = len(drive_idx)
+for j, i in enumerate(drive_idx):
     t = j / FPS
-    k = j / max(1, len(sun_idx) - 1)
+    k = smooth(j / max(1, nd - 1), 0.30, 0.80)
     C.append(sunset(crop(src[i], 110, 1.04), t, k))
 
 frames = []
@@ -242,17 +258,18 @@ for seq in (A, B, C):
     starts.append(max(0, len(frames) - (XF if frames else 0)))
     append_xfade(seq)
 
-CAPS = [
-    ("By day, the sun powers your home", "Rooftop solar generating clean energy"),
-    ("By night, your battery takes over", "Stored sunshine keeps the lights on"),
-    ("Charge up, then drive into the sunset", "Your EV runs on your own solar"),
-]
 total = len(frames)
-ends = starts[1:] + [total]
-for (title, sub), s, e in zip(CAPS, starts, ends):
-    s2, e2 = s + int(0.8 * FPS), e - int(0.6 * FPS)
+c3 = starts[2]
+CAPS = [
+    (starts[0], starts[1], "By day, the sun powers your home", "Rooftop solar generating clean energy"),
+    (starts[1], starts[2], "By night, your battery takes over", "Stored sunshine keeps the lights on"),
+    (c3, c3 + int(nd * 0.42), "Charged by the sun", "Your EV fills up on your own solar"),
+    (c3 + int(nd * 0.42), total, "Then drive into the sunset", "Clean energy, day and night"),
+]
+for s0, e0, title, sub in CAPS:
+    s2, e2 = s0 + int(0.6 * FPS), e0 - int(0.4 * FPS)
     for i in range(s2, e2):
-        frames[i] = caption(frames[i], title, sub, env(i - s2, e2 - s2, 12))
+        frames[i] = caption(frames[i], title, sub, env(i - s2, e2 - s2, 10))
 
 # fade in/out to black for a clean loop
 FADE = int(0.8 * FPS)
