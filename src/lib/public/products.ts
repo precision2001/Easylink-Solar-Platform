@@ -216,7 +216,8 @@ function toCatalogProduct(
     name: row.name,
     title: productDisplayTitle(categoryKey, row),
     // The full catalogue name sits under the short title, so nothing is lost.
-    model: row.name,
+    // "(inverter built in)" is already on the title's size line.
+    model: row.name.replace(/\s*\(inverter built in\)/i, "").trim(),
     rating: row.rating ?? 0,
     hasDatasheet: productDatasheetUrl(specs) !== null,
     datasheetUrl: productDatasheetUrl(specs) ?? undefined,
