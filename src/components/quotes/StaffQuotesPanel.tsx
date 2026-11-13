@@ -44,6 +44,7 @@ export function StaffQuotesPanel({
   customerPhone,
   startWith = "list",
   layout = "stack",
+  initialOpenId = null,
   onChanged,
 }: {
   portal: StaffPortal;
@@ -55,13 +56,15 @@ export function StaffQuotesPanel({
   startWith?: "list" | "create";
   /** "split" puts the list beside the open quote on wide screens. */
   layout?: "stack" | "split";
+  /** Opens this quote in the list straight away (picked from the ⋯ menu or the quotes carousel). */
+  initialOpenId?: string | null;
   onChanged?: () => void;
 }) {
   const uid = useId();
   const [quotes, setQuotes] = useState<Quote[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>({ kind: startWith });
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialOpenId);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -123,6 +126,14 @@ export function StaffQuotesPanel({
   }
 
   const open = quotes?.find((q) => q.id === openId) ?? null;
+  const arrivedOn = useRef(initialOpenId);
+  useEffect(() => {
+    // Brings the quote picked from the menu or carousel into view once the list is in.
+    if (!quotes || !arrivedOn.current) return;
+    const id = arrivedOn.current;
+    arrivedOn.current = null;
+    requestAnimationFrame(() => document.querySelector(`[data-quote-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }, [quotes]);
   const editing = view.kind === "edit" || view.kind === "lines" ? quotes?.find((q) => q.id === view.id) ?? null : null;
 
   /** Edit (items): a draft is edited in place; anything else is copied into a new draft first. */
@@ -417,7 +428,7 @@ export function StaffQuotesPanel({
             {quotes.map((q) => {
               const ticked = compareIds.includes(q.id);
               return (
-                <li key={q.id}>
+                <li key={q.id} data-quote-id={q.id}>
                   <QuoteSummaryCard
                     quote={q}
                     selected={q.id === openId && view.kind === "list"}
