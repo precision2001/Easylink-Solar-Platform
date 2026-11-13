@@ -123,7 +123,7 @@ export function StaffQuotesPanel({
   const open = quotes?.find((q) => q.id === openId) ?? null;
   const editing = view.kind === "edit" || view.kind === "lines" ? quotes?.find((q) => q.id === view.id) ?? null : null;
 
-  /** Lines and prices: a draft is edited in place; anything else is copied into a new draft first. */
+  /** Edit (items): a draft is edited in place; anything else is copied into a new draft first. */
   function editLines(q: Quote) {
     if (q.status === "DRAFT") {
       setNotice(null);
@@ -134,7 +134,7 @@ export function StaffQuotesPanel({
       const draft = await staffQuoteAction(portal, q.id, "revise");
       setOpenId(draft.id);
       setView({ kind: "lines", id: draft.id });
-      return `${quoteVersionLabel(q)} copied into draft ${quoteVersionLabel(draft)}. Change its lines and prices, then send it. ${customerName} keeps seeing ${quoteVersionLabel(q)} until then.`;
+      return `${quoteVersionLabel(q)} copied into draft ${quoteVersionLabel(draft)}. Tick the items to keep and change them, then send it. ${customerName} keeps seeing ${quoteVersionLabel(q)} until then.`;
     });
   }
   const comparing = (quotes ?? []).filter((q) => compareIds.includes(q.id));
@@ -174,7 +174,7 @@ export function StaffQuotesPanel({
             setOpenId(editing.id);
             await reload();
             onChanged?.();
-            setNotice({ tone: "success", text: `${quoteVersionLabel(editing)} lines and prices saved.` });
+            setNotice({ tone: "success", text: `Edited quote ${quoteVersionLabel(editing)} saved. Check it over, then send it to ${customerName}.` });
           }}
         />
       </Card>
@@ -245,20 +245,24 @@ export function StaffQuotesPanel({
                   Send payment link
                 </button>
               ) : null}
-              {can.edit ? (
-                <button type="button" onClick={() => setView({ kind: "edit", id: open.id })} className={QUOTE_BUTTON.quiet}>
-                  Edit details
-                </button>
-              ) : null}
               <button
                 type="button"
                 disabled={busy !== null}
                 onClick={() => editLines(open)}
-                title={open.status === "DRAFT" ? "Add, remove or change lines, quantities and prices" : "Copies this version into a new draft to change"}
+                title={
+                  open.status === "DRAFT"
+                    ? "Tick the items to keep, change quantities and prices, add lines"
+                    : "Copies this version into a new draft: tick the items to keep and change them there"
+                }
                 className={QUOTE_BUTTON.quiet}
               >
-                {busy === "revise" ? "Copying…" : "Lines and prices"}
+                {busy === "revise" ? "Copying…" : "Edit"}
               </button>
+              {can.edit ? (
+                <button type="button" onClick={() => setView({ kind: "edit", id: open.id })} className={QUOTE_BUTTON.quiet}>
+                  Details and deposit
+                </button>
+              ) : null}
               {can.reprice ? (
                 <button
                   type="button"
