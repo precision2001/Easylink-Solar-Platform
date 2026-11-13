@@ -172,7 +172,8 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
   ].join("|");
   const kept = await cacheRead(designKey);
   if (kept) {
-    const res = new NextResponse(kept.toString("utf8"), { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "hit" } });
+    const res = // Designs kept before 13 Nov 2026 named the model in their notes: shown as EasyLink AI.
+    new NextResponse(kept.toString("utf8").replace(/Traced by Opus:/g, "Traced by EasyLink AI:"), { status: 200, headers: { "Content-Type": "application/json", "X-Roof-Design-Cache": "hit" } });
     return res;
   }
   // Asking again for a design that's still being made (after a 202) joins it
@@ -200,7 +201,7 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
     const keep = job.then(async (r) => {
       if (r.status !== "READY") return r;
       const notes = (r.body as { notes?: string[] }).notes ?? [];
-      if (!notes.some((n) => n.startsWith("Opus couldn't trace") || n.startsWith("Opus is still"))) await cacheWrite(designKey, JSON.stringify(r.body));
+      if (!notes.some((n) => /^(EasyLink AI|Opus) (couldn't trace|is still)/.test(n))) await cacheWrite(designKey, JSON.stringify(r.body));
       return r;
     });
     keep.catch(() => {});

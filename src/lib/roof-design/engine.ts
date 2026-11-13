@@ -1228,12 +1228,12 @@ export function designRoof(ctx: RoofDesignContext, opts: DesignRoofOptions = {})
   const t = faceSet.trace;
   const notes = [
     ctx.aiTrace === null && !opts.outline && ctx.aiTracePending
-      ? "Opus is still tracing and checking this roof against the photo: the design refreshes when it's done. Lines below are the engine's own reading for now."
+      ? "EasyLink AI is still tracing and checking this roof against the photo: the design refreshes when it's done. Lines below are the engine's own reading for now."
       : ctx.aiTrace === null && !opts.outline
-      ? "Opus couldn't trace this roof in time: it needs a hand trace (Edit the roof) before quoting. Lines below are the engine's own reading."
+      ? "EasyLink AI couldn't trace this roof in time: it needs a hand trace (Edit the roof) before quoting. Lines below are the engine's own reading."
       : null,
     t && (t.faint > 0 || t.unconfirmed > 0)
-      ? `Traced by Opus: ${t.lines} roof lines; ${t.faint} seen only faintly and ${t.unconfirmed} not confirmed in the image: check on site.`
+      ? `Traced by EasyLink AI: ${t.lines} roof lines; ${t.faint} seen only faintly and ${t.unconfirmed} not confirmed in the image: check on site.`
       : null,
     needsVerification ? "Roof outline from Google's data or a building footprint, not traced from the image: check the roof shape." : null,
     panels.length === 0 ? "Roof found, but no face is big enough for a panel." : null,
