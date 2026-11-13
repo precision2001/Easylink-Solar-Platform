@@ -5,10 +5,12 @@ import { ChannelChoice, channelUsable } from "@/components/quotes/ChannelChoice"
 import { QuoteCompare } from "@/components/quotes/QuoteCompare";
 import { QuoteDetail } from "@/components/quotes/QuoteDetail";
 import { QuoteForm } from "@/components/quotes/QuoteForm";
+import { QuoteFullScreen } from "@/components/quotes/QuoteFullScreen";
 import { QuoteLinesEditor } from "@/components/quotes/QuoteLinesEditor";
 import { QUOTE_BUTTON, QUOTE_FOCUS, QuoteNotice } from "@/components/quotes/QuoteParts";
 import { QuoteSummaryCard } from "@/components/quotes/QuoteSummaryCard";
 import {
+  quoteAddress,
   createStaffQuote,
   isHandEdited,
   listStaffQuotes,
@@ -162,8 +164,13 @@ export function StaffQuotesPanel({
       </Card>
     );
   } else if (view.kind === "lines" && editing) {
+    // Edit mode uses the whole screen, whatever opened the panel.
     main = (
-      <Card>
+      <QuoteFullScreen
+        title={`${customerName} · ${quoteVersionLabel(editing)}`}
+        subtitle={quoteAddress(editing) ?? undefined}
+        onClose={() => setView({ kind: "list" })}
+      >
         <QuoteLinesEditor
           key={editing.id}
           quote={editing}
@@ -177,7 +184,7 @@ export function StaffQuotesPanel({
             setNotice({ tone: "success", text: `Edited quote ${quoteVersionLabel(editing)} saved. Check it over, then send it to ${customerName}.` });
           }}
         />
-      </Card>
+      </QuoteFullScreen>
     );
   } else if (view.kind === "edit" && editing) {
     main = (
