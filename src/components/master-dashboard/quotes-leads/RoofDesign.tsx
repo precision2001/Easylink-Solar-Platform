@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PipelineLead, RoofDesignSummary } from "@/lib/admin/leads-pipeline";
+import { CustomerProposal } from "@/components/contact-centre/CustomerProposal";
 
 /**
  * Automatic roof design in Quotes & Leads: a thumbnail per lead (the
@@ -246,6 +247,7 @@ export function RoofDesignViewer({
 }) {
   const d = lead.roofDesign;
   const closeRef = useRef<HTMLButtonElement>(null);
+  const [view, setView] = useState<"roof" | "proposal">("roof");
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -269,22 +271,30 @@ export function RoofDesignViewer({
   ];
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="roof-viewer-title">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="roof-viewer-title">
       <button type="button" aria-label="Close" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-[#0B1A2E]/70 backdrop-blur-[2px]" />
-      <div className="relative flex max-h-full w-full max-w-[1180px] flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_24px_64px_rgba(0,0,0,0.35)] lg:flex-row">
-        <div className="relative min-h-0 flex-1 bg-[#0B1A2E]">
-          {d.status === "READY" ? (
+      <div className="relative flex h-[90vh] w-[90vw] flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_24px_64px_rgba(0,0,0,0.35)] lg:flex-row">
+        <div className={`relative min-h-0 flex-1 bg-[#0B1A2E] ${view === "proposal" ? "overflow-y-auto" : "flex items-center justify-center"}`}>
+          {view === "proposal" ? (
+            <div className="p-3 sm:p-4">
+              <CustomerProposal
+                portal="admin"
+                leadId={lead.id}
+                lead={{ name: lead.customerName, email: lead.customerEmail, phone: lead.customerPhone, address: lead.address }}
+              />
+            </div>
+          ) : d.status === "READY" ? (
             // eslint-disable-next-line @next/next/no-img-element -- private, auth-proxied image
             <img
               src={`/api/admin/leads/${encodeURIComponent(lead.id)}/roof-design/large?v=${encodeURIComponent(d.updatedAt)}`}
               alt={`Automatic roof design for ${lead.address ?? lead.customerName}: ${d.panelCount ?? 0} panels on ${d.faceCount ?? 0} roof faces`}
-              className="block max-h-[62vh] w-full object-contain lg:max-h-[86vh]"
+              className="block h-full max-h-full w-full object-contain"
             />
           ) : (
             <div className="flex h-[300px] items-center justify-center px-6 text-center text-[14px] text-[#C9D6EA]">{d.message ?? "No design yet."}</div>
           )}
         </div>
-        <aside className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto p-5 lg:w-[320px]">
+        <aside className="flex max-h-[50%] w-full shrink-0 flex-col gap-4 overflow-y-auto p-5 lg:max-h-none lg:w-[320px]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 id="roof-viewer-title" className="m-0 font-source-sans text-[20px] font-bold text-[#0F172A]">
@@ -326,6 +336,14 @@ export function RoofDesignViewer({
           {d.message && d.status === "READY" ? <p className="m-0 text-[12.5px] text-[#5B6B80]">{d.message}</p> : null}
 
           <div className="mt-auto flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setView((v) => (v === "proposal" ? "roof" : "proposal"))}
+              aria-pressed={view === "proposal"}
+              className="h-10 rounded-[10px] border border-[#F68A0A] bg-[#FFF8EC] px-4 text-[13px] font-semibold text-[#7A3E00] hover:bg-[#FFEFD6]"
+            >
+              {view === "proposal" ? "Roof design" : "Proposal"}
+            </button>
             <button
               type="button"
               onClick={onRedesign}
