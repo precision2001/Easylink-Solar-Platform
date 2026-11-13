@@ -16,8 +16,12 @@ export function AboutUsProcessSection() {
 
       <div className="relative z-1 mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-4 sm:px-6 lg:flex-row lg:gap-9 lg:px-[90px]">
         <div className="flex w-full max-w-[395px] shrink-0 items-center justify-center rounded-[23.641px] border-[3.546px] border-about-process-title-card-border bg-about-process-title-card-bg px-6 py-10 shadow-[0_30px_60px_-14px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.18)] backdrop-blur-xl backdrop-saturate-150 lg:min-h-[163px] lg:self-center">
-          <h2 className="text-center font-source-sans text-[32px] font-medium leading-normal tracking-[-0.92px] text-about-process-text [text-shadow:0_2px_12px_rgba(0,0,0,0.5)] sm:text-[46px]">
-            {ABOUT_US_PAGE.process.title}
+          <h2 aria-label={ABOUT_US_PAGE.process.title} className="text-center font-source-sans text-[32px] font-medium leading-normal tracking-[-0.92px] text-about-process-text [text-shadow:0_2px_12px_rgba(0,0,0,0.5)] sm:text-[46px]">
+            {ABOUT_US_PAGE.process.titleLines.map((line) => (
+              <span key={line} className="block whitespace-nowrap">
+                {line}
+              </span>
+            ))}
           </h2>
         </div>
 

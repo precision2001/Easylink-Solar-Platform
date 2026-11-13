@@ -3087,7 +3087,8 @@ export const ABOUT_US_PAGE = {
   process: {
     backgroundImageSrc: "/images/about-us/mission-bg.png",
     backgroundImageAlt: "Solar network visualization background",
-    title: "Our Customer First Solar Process",
+    title: "Our Customer First Design Process",
+    titleLines: ["Our", "Customer First", "Design Process"],
     steps: [
       {
         title: "We Start by Truly Listening",
