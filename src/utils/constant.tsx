@@ -3137,7 +3137,7 @@ export const ABOUT_US_PAGE = {
     subtitle:
       "Real EasyLink systems across Sydney, with the projected savings from each customer's proposal.",
     footnote:
-      "Savings are projections from each customer's proposal (bill savings plus export credits over the system's life), not metered results. Aerial photos show each roof as last photographed, which can be before installation; Blakehurst shows the Platform Designer layout. Aerial imagery © NSW Spatial Services, Department of Customer Service (CC BY 4.0).",
+      "Savings are projections from each customer's proposal (bill savings plus export credits over the system's life), not metered results. Panel layouts are drawn from each system's OpenSolar design (Blakehurst from the EasyLink Platform Designer) on the latest aerial photo. Aerial imagery © NSW Spatial Services, Department of Customer Service (CC BY 4.0).",
     items: [
       { id: "sans-souci", status: "Installed", client: "George", suburb: "Sans Souci", imageSrc: "/images/about-us/portfolio/sans-souci.webp", systemKw: 17.22, panels: "28 × Canadian Solar 615 W", batteryKwh: 40.3, batteryBrand: "SigEnergy", annualKwh: 25818, annualSavings: 3896, payback: "4 years", lifetimeSavings: 89268 },
       { id: "kyle-bay", status: "Installed", client: "Shariff", suburb: "Kyle Bay", imageSrc: "/images/about-us/portfolio/kyle-bay.webp", systemKw: 21.06, panels: "36 × Trina 585 W", batteryKwh: 24.2, annualKwh: 29726, annualSavings: 2531, payback: "4 years 9 months", lifetimeSavings: 58200 },
