@@ -27,7 +27,7 @@ const STATUS_STYLE: Record<AboutUsPortfolioItem["status"], string> = {
 
 export function SitePortfolioCard({ item }: { item: AboutUsPortfolioItem }) {
   const name = item.client ? `${item.client}, ${item.suburb}` : `${item.suburb} home`;
-  const battery = `${kwh(item.batteryKwh)}${item.batteryBrand ? ` ${item.batteryBrand}` : ""} battery`;
+  const battery = item.batteryKwh > 0 ? `a ${kwh(item.batteryKwh)}${item.batteryBrand ? ` ${item.batteryBrand}` : ""} battery` : null;
 
   return (
     <article className="mx-auto h-full w-full max-w-[407px] p-[7px]">
@@ -60,7 +60,7 @@ export function SitePortfolioCard({ item }: { item: AboutUsPortfolioItem }) {
                 {name}
               </h3>
               <p className="mt-1.5 font-source-sans text-[15px] leading-snug text-[#4b5563]">
-                {kw(item.systemKw)} solar ({item.panels}) with a {battery}, producing about{" "}
+                {kw(item.systemKw)} solar ({item.panels}){battery ? ` with ${battery}` : ""}, producing about{" "}
                 {Math.round(item.annualKwh / 100) * 100 >= 1000
                   ? (Math.round(item.annualKwh / 100) * 100).toLocaleString("en-AU")
                   : item.annualKwh}{" "}

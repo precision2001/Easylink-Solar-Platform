@@ -3144,10 +3144,10 @@ export const ABOUT_US_PAGE = {
       { id: "blakehurst", status: "Installed", client: "Bassam", suburb: "Blakehurst", imageSrc: "/images/about-us/portfolio/blakehurst.webp", systemKw: 10.62, panels: "18 × Risen 590 W", batteryKwh: 32.6, annualKwh: 13348, annualSavings: 1486, payback: "2 years 10 months", lifetimeSavings: 35791 },
       { id: "blacktown", status: "Installed", client: "Hemant", suburb: "Blacktown", imageSrc: "/images/about-us/portfolio/blacktown.webp", systemKw: 21.06, panels: "36 × 585 W", batteryKwh: 40, annualKwh: 23334, annualSavings: 4832, payback: null, lifetimeSavings: 124694 },
       { id: "north-rocks", status: "Installed", client: "Evan", suburb: "North Rocks", imageSrc: "/images/about-us/portfolio/north-rocks.webp", systemKw: 13.23, panels: "21 × JA Solar 630 W", batteryKwh: 25.6, annualKwh: 18796, annualSavings: 2518, payback: "6 years 3 months", lifetimeSavings: 61516 },
-      { id: "macquarie-fields", status: "Installed", client: "Lorenza", suburb: "Macquarie Fields", imageSrc: "/images/about-us/portfolio/macquarie-fields.webp", systemKw: 10.62, panels: "18 × Jinko 590 W", batteryKwh: 50, annualKwh: 14554, annualSavings: 693, payback: "5 years 10 months", lifetimeSavings: 18640 },
-      { id: "castle-hill", status: "Installing", client: "Arash", suburb: "Castle Hill", imageSrc: "/images/about-us/portfolio/castle-hill.webp", systemKw: 15.4, panels: "35 × Trina 440 W", batteryKwh: 30, batteryBrand: "FoxESS", annualKwh: 24238, annualSavings: 2243, payback: "4 years 4 months", lifetimeSavings: 55846 },
-      { id: "beaumont-hills", status: "Designed", client: "Payam", suburb: "Beaumont Hills", imageSrc: "/images/about-us/portfolio/beaumont-hills.webp", systemKw: 19.0, panels: "40 × Risen 475 W", batteryKwh: 81.1, batteryBrand: "BLUETTI", annualKwh: 25881, annualSavings: 4327, payback: "5 years 9 months", lifetimeSavings: 112540 },
-      { id: "bangor", status: "Designed", client: null, suburb: "Bangor", imageSrc: "/images/about-us/portfolio/bangor.webp", systemKw: 20.24, panels: "46 panels", batteryKwh: 41.4, annualKwh: 23018, annualSavings: 4435, payback: "1 year 6 months", lifetimeSavings: 116025 },
+      { id: "newington", status: "Installed", client: "Shantilal", suburb: "Newington", imageSrc: "/images/about-us/portfolio/newington.webp", systemKw: 18.0, panels: "40 × Risen 450 W", batteryKwh: 0, annualKwh: 27715, annualSavings: 2881, payback: "3 years 6 months", lifetimeSavings: 57457 },
+      { id: "castle-hill", status: "Installed", client: "Arash", suburb: "Castle Hill", imageSrc: "/images/about-us/portfolio/castle-hill.webp", systemKw: 15.4, panels: "35 × Trina 440 W", batteryKwh: 30, batteryBrand: "FoxESS", annualKwh: 24238, annualSavings: 2243, payback: "4 years 4 months", lifetimeSavings: 55846 },
+      { id: "beaumont-hills", status: "Installed", client: "Payam", suburb: "Beaumont Hills", imageSrc: "/images/about-us/portfolio/beaumont-hills.webp", systemKw: 19.0, panels: "40 × Risen 475 W", batteryKwh: 81.1, batteryBrand: "BLUETTI", annualKwh: 25881, annualSavings: 4327, payback: "5 years 9 months", lifetimeSavings: 112540 },
+      { id: "bangor", status: "Installed", client: "Andrew", suburb: "Bangor", imageSrc: "/images/about-us/portfolio/bangor.webp", systemKw: 20.24, panels: "46 panels", batteryKwh: 41.4, annualKwh: 23018, annualSavings: 4435, payback: "1 year 6 months", lifetimeSavings: 116025 },
     ] as AboutUsPortfolioItem[],
   },
 } as const;
@@ -3155,6 +3155,7 @@ export const ABOUT_US_PAGE = {
 export type AboutUsPortfolioItem = {
   id: string;
   status: "Installed" | "Installing" | "Designed";
+  /** 0 = solar only (no battery). */
   /** First name only (public page); null when OpenSolar has no contact. */
   client: string | null;
   suburb: string;
