@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { PROVIDER_DOT, PROVIDER_LABEL, call, emailBase, emailPage, shortTime, type Account, type EmailPortal, type EmailStatus, type Provider } from "./api";
+import { PROVIDER_DOT, PROVIDER_LABEL, call, emailBase, emailPage, shortTime, signInHref, type Account, type EmailPortal, type EmailStatus, type Provider } from "./api";
 
 /**
  * Email › Accounts: connect Outlook or Gmail with Microsoft or Google sign-in
@@ -49,9 +49,11 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
+  const [signedOut, setSignedOut] = useState(false);
 
   const load = useCallback(async () => {
     const [s, a] = await Promise.all([call<EmailStatus>(`${base}/status`), call<Account[]>(`${base}/accounts`)]);
+    setSignedOut(s.status === 401);
     setStatus(s.data ?? null);
     setAccounts(a.data ?? []);
   }, [base]);
@@ -86,7 +88,8 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
       return;
     }
     setBusy(null);
-    setBanner({ ok: false, text: r.message ?? "Couldn't start sign-in." });
+    if (r.status === 401) setSignedOut(true);
+    else setBanner({ ok: false, text: r.message ?? "Couldn't start sign-in." });
   };
 
   const patch = async (a: Account, data: Partial<Account>) => {
@@ -132,6 +135,15 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
           </p>
         </div>
 
+        {signedOut ? (
+          <p role="alert" className="flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 text-[14px] font-semibold" style={{ background: "#FFF7ED", color: "#7C2D12" }}>
+            <span className="flex-1">Your sign-in has expired, so mailboxes can&apos;t be connected or shown right now.</span>
+            <a href={signInHref(portal)} className="rounded-lg px-3 py-2 text-white" style={{ background: "#C2410C" }}>
+              Sign in again
+            </a>
+          </p>
+        ) : null}
+
         {banner ? (
           <p
             role="status"
@@ -145,6 +157,7 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
         <section aria-label="Choose a provider" className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
           {PROVIDERS.map((p) => {
             const ready = status ? (p.key === "MICROSOFT" ? status.microsoft : status.google) : false;
+            const known = status !== null;
             return (
               <div key={p.key} className="flex flex-col gap-4 rounded-[20px] bg-white p-6" style={{ border: `1px solid ${BORDER}` }}>
                 <div className="flex items-center gap-3.5">
@@ -175,7 +188,7 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
                   className="h-12 cursor-pointer rounded-xl text-[15px] font-semibold disabled:cursor-not-allowed"
                   style={ready ? { background: BLUE, color: "#FFFFFF" } : { background: "#E2E8F0", color: "#475569" }}
                 >
-                  {ready ? (busy === p.slug ? "Opening sign-in…" : p.signIn) : `${PROVIDER_LABEL[p.key]} sign-in not set up yet`}
+                  {ready ? (busy === p.slug ? "Opening sign-in…" : p.signIn) : known ? `${PROVIDER_LABEL[p.key]} sign-in not set up yet` : signedOut ? "Sign in again first" : "Loading…"}
                 </button>
                 {!ready && status && staff ? (
                   <p className="text-[12px]" style={{ color: MUTED }}>
