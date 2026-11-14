@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import Image from "next/image";
 
 import { ABOUT_US_PAGE } from "@/utils/constant";
@@ -37,7 +38,9 @@ export function AboutUsValuesSection() {
 
       <div className="relative z-1 mx-auto flex w-full max-w-[1259px] flex-col items-center gap-[67px] px-4 sm:px-6 lg:px-0">
         <h2 className="text-center font-source-sans text-[32px] font-medium leading-normal tracking-[-0.4395px] text-about-values-text sm:text-[40px]">
-          {ABOUT_US_PAGE.values.title}
+          <span className="av-gt av-gt-title relative">
+            {ABOUT_US_PAGE.values.title}
+          </span>
         </h2>
 
         <div className="flex w-full flex-col gap-[22px]">
@@ -46,8 +49,12 @@ export function AboutUsValuesSection() {
               key={rowIndex}
               className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 lg:gap-[24px]"
             >
-              {row.map((item) => (
-                <AboutUsValueCard key={String(item.label)} item={item} />
+              {row.map((item, i) => (
+                <AboutUsValueCard
+                  key={String(item.label)}
+                  item={item}
+                  index={rowIndex * 5 + i}
+                />
               ))}
             </div>
           ))}
@@ -59,8 +66,10 @@ export function AboutUsValuesSection() {
 
 function AboutUsValueCard({
   item,
+  index,
 }: {
   item: (typeof ABOUT_US_PAGE.values.items)[number];
+  index: number;
 }) {
   const labelLines: string[] = Array.isArray(item.label)
     ? [...item.label]
@@ -68,7 +77,12 @@ function AboutUsValueCard({
   const isVariantB = item.variant === "b";
 
   return (
-    <div className="relative overflow-hidden rounded-[20px] shadow-sm">
+    <div
+      className="av-card relative overflow-hidden rounded-[20px] shadow-sm"
+      // Gold glitter text (.av-gt / .av-sp in globals.css): offset each
+      // card's shine and twinkle so the grid never pulses in unison.
+      style={{ "--av-delay": `${-((index * 1.3) % 4.5)}s` } as CSSProperties}
+    >
       <span
         aria-hidden
         className="pointer-events-none absolute inset-0 motion-reduce:animate-none [animation:value-card-ring-spin_5s_linear_infinite]"
@@ -89,12 +103,15 @@ function AboutUsValueCard({
             : "bg-about-values-card-bg-a"
         }`}
       >
-        <p className="text-center font-source-sans text-lg font-medium leading-normal tracking-[-0.4395px] text-about-values-text sm:text-xl">
+        <p className="relative text-center font-source-sans text-lg font-semibold leading-normal tracking-[-0.4395px] text-about-values-text sm:text-xl">
           {labelLines.map((line) => (
             <span key={line} className="block">
-              {line}
+              <span className="av-gt">{line}</span>
             </span>
           ))}
+          <span aria-hidden className="av-sp s1" />
+          <span aria-hidden className="av-sp s2" />
+          <span aria-hidden className="av-sp s3" />
         </p>
       </article>
     </div>

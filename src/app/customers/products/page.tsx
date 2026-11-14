@@ -7,7 +7,8 @@ import { usePayLaterOptions, waysToPayLabel } from "@/components/customer/paymen
 import { CategoryFilterChips, type FilterValue } from "@/components/customer/products/CategoryFilterChips";
 import { ForYourSystemSection } from "@/components/customer/products/ForYourSystemSection";
 import { ShopProductCard } from "@/components/customer/products/ShopProductCard";
-import { CustomerPortalShell, PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { CustomerTopNav } from "@/components/customer/portal/CustomerTopNav";
 import { EmptyNote, Skeleton } from "@/components/customer/portal/PortalParts";
 import { pickPrimaryDesign } from "@/lib/customers/customer-design-view";
 import { fetchCustomerDesigns, type CustomerDesign } from "@/lib/customers/designs";
@@ -85,7 +86,9 @@ export default function SolarProductsPage() {
   }
 
   return (
-    <CustomerPortalShell active="products">
+    <div className="flex min-h-screen flex-col bg-[#F4F6FA] text-[#0F172A]">
+  <CustomerTopNav active="products" />
+  <main className="mx-auto flex w-full max-w-[1240px] flex-col gap-[18px] px-6 pt-6 pb-14">
       <PortalPageHeader
         eyebrow="Buy and pay"
         title="Products"
@@ -181,6 +184,7 @@ export default function SolarProductsPage() {
       </section>
 
       <CustomerOrdersPanel limit={2} title="Your recent orders" />
-    </CustomerPortalShell>
+      </main>
+    </div>
   );
 }

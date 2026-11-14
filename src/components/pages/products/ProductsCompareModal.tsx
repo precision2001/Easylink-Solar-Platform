@@ -113,12 +113,19 @@ export function ProductsCompareModal({ products, onClose, onRemove }: Props) {
 
                   <div className="flex flex-1 flex-col gap-3 p-4">
                     <div>
-                      <p className="font-dm-sans text-[11px] font-semibold uppercase tracking-[0.05em] text-warm-gray">
-                        {product.brand}
-                      </p>
                       <h3 className="font-inter text-[15px] font-bold leading-[19px] text-warm-ink">
-                        {product.name}
+                        {product.title?.name ?? `${product.brand} ${product.name}`}
                       </h3>
+                      {product.title?.size ? (
+                        <p className="font-inter text-[15px] font-bold leading-[19px] text-brand-blue">
+                          {product.title.size}
+                          {product.title.detail ? (
+                            <span className="ml-1 font-dm-sans text-[11px] font-medium text-warm-ink/80">
+                              {product.title.detail}
+                            </span>
+                          ) : null}
+                        </p>
+                      ) : null}
                       <p className="mt-0.5 truncate font-dm-sans text-[10px] text-warm-gray">
                         {product.model}
                       </p>

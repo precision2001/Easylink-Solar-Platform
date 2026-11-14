@@ -44,6 +44,7 @@ const ICONS = {
   upload: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8L12 3L7 8M12 3L12 15",
   headset: "M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Zm0 0a9 9 0 1 1 18 0m0 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3ZM21 16v2a4 4 0 0 1-4 4h-5",
   chat: "M7.9 20A9 9 0 1 0 4 16.1L2 22Z",
+  mail: "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2zM22 7l-10 6L2 7",
   link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
   palette:
     "M13 6.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M17 10.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M8 7.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M6 12.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z",
@@ -188,6 +189,7 @@ const GROUPS: NavGroup[] = [
       { key: "campaigns", label: "Campaigns", icon: "send", href: "/master/campaigns" },
       { key: "lists", label: "Contact lists", icon: "upload", href: "/master/contact-lists" },
       { key: "inbox", label: "Inbox", icon: "chat", href: "/master/inbox" },
+      { key: "email", label: "Email", icon: "mail", href: "/master/email" },
     ],
   },
   {
@@ -489,6 +491,15 @@ function SidebarNav({
         >
           Pause all agents
         </span>
+      </div>
+
+      <div className="flex flex-wrap gap-x-3 gap-y-1 px-2.5 text-[12.5px]" style={{ color: "#9FB0C8" }}>
+        <Link href="/privacy-policy" target="_blank" className="underline-offset-2 hover:underline" style={{ color: "#9FB0C8" }}>
+          Privacy policy
+        </Link>
+        <Link href="/terms" target="_blank" className="underline-offset-2 hover:underline" style={{ color: "#9FB0C8" }}>
+          Terms
+        </Link>
       </div>
 
       <button

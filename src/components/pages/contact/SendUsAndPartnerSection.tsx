@@ -200,6 +200,10 @@ export function SendUsAndPartnerSection() {
                   >
                     {submitting ? "SENDING..." : "SUBMIT REQUEST"}
                   </button>
+                  <p className="m-0 mt-3 text-[13px] leading-[1.5] opacity-80">
+                    We use your details to reply to you. EasyLink AI may help answer. See our{" "}
+                    <Link href="/privacy-policy" className="font-semibold underline">privacy policy</Link>.
+                  </p>
                 </div>
               </form>
             </div>

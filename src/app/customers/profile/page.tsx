@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "react-toastify";
 import { askEasylinkAi } from "@/components/ai-chat/EasylinkAiChatbot";
-import { CustomerPortalShell, PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { CustomerTopNav } from "@/components/customer/portal/CustomerTopNav";
+import {
+  ProfileAccountCard,
+  ProfilePreferences,
+  ProfileReferrals,
+} from "@/components/customer/profile/ProfileMockSections";
+import { fetchReferralOverview, type ReferralOverview } from "@/lib/customers/referrals";
 import { PortalIcon } from "@/components/customer/portal/PortalIcon";
 import { ButtonLink, EmptyNote, Panel, Skeleton } from "@/components/customer/portal/PortalParts";
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
@@ -108,6 +114,10 @@ export default function CustomerProfilePage() {
   const user = useAppSelector((s) => s.customerAuth.user);
   const ids = useId();
 
+  // The referral overview is real: code, reward and the three counts the
+  // design shows all come from the referrals API.
+  const [referrals, setReferrals] = useState<ReferralOverview | null>(null);
+  const [referralsLoading, setReferralsLoading] = useState(true);
   const [documents, setDocuments] = useState<CustomerDocument[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
@@ -142,6 +152,17 @@ export default function CustomerProfilePage() {
 
   // The sign-in payload leaves out `createdAt`; one lookup fills it in.
   const needsCreatedAt = Boolean(user && !user.createdAt);
+  useEffect(() => {
+    let cancelled = false;
+    fetchReferralOverview()
+      .then((r) => !cancelled && setReferrals(r))
+      .catch(() => undefined)
+      .finally(() => !cancelled && setReferralsLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     if (!needsCreatedAt) return;
     let cancelled = false;
@@ -215,15 +236,22 @@ export default function CustomerProfilePage() {
   const summaryProps = { user, fullName, accountCreated };
 
   return (
-    <CustomerPortalShell active="profile">
-      <PortalPageHeader
-        eyebrow="My account"
-        title={fullName ? `${fullName}'s account` : "Your account"}
-        intro="Keep your contact details and address up to date so your installer can reach you and arrives at the right place."
-      />
+    <div className="flex min-h-screen flex-col bg-[#F4F6FA] text-[#0F172A]">
+      <CustomerTopNav active="profile" />
+      <main className="mx-auto flex w-full max-w-[1240px] flex-col gap-[18px] px-6 pt-6 pb-14">
+        <h1 className="m-0 font-source-sans text-[28px] font-bold">Profile</h1>
 
       {/* On phones the summary leads; on desktop it heads the side column. */}
       <AccountSummary className="flex lg:hidden" {...summaryProps} />
+
+      {/* The design's Account and Preferences cards. */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <ProfileAccountCard
+          created={accountCreated}
+          installerName={null}
+        />
+        <ProfilePreferences documentCount={documents.length} />
+      </div>
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-5">
@@ -425,6 +453,13 @@ export default function CustomerProfilePage() {
           </Panel>
         </div>
       </div>
-    </CustomerPortalShell>
+
+      <ProfileReferrals
+        overview={referrals}
+        loading={referralsLoading}
+        shareUrl={null}
+      />
+      </main>
+    </div>
   );
 }

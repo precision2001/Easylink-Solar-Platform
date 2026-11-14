@@ -289,7 +289,8 @@ function Cover({ doc, images }: PageProps) {
       <div style={{ margin: "30px 56px 0 56px", position: "relative" }}>
         {doc.roof && doc.roof.panels.length > 0 ? (
           <div style={{ borderRadius: 22, overflow: "hidden", height: 400 }}>
-            <RoofIllustration roof={doc.roof} width={682} height={400} battery={doc.batteryKwh > 0} ev />
+            {/* Top and bottom strips kept clear for the label and the panel / kW boxes. */}
+            <RoofIllustration roof={doc.roof} width={682} height={400} battery={doc.batteryKwh > 0} ev inset={{ top: 46, bottom: 70 }} />
           </div>
         ) : (
           <RoofImage src={images.roof} height={400} label="Your roof with the panels placed" />
@@ -307,6 +308,11 @@ function Cover({ doc, images }: PageProps) {
             <b style={{ fontSize: 16, color: C.sun }}>{doc.systemKw} kW</b>
             <br />
             of solar
+          </div>
+          <div style={{ background: "rgba(11,20,38,0.86)", borderRadius: 12, padding: "10px 14px", fontSize: 13, lineHeight: 1.35 }}>
+            <b style={{ fontSize: 16, color: C.sun }}>{doc.batteryKwh > 0 ? `${+doc.batteryKwh.toFixed(1)} kWh` : "No battery"}</b>
+            <br />
+            {doc.batteryKwh > 0 ? "battery size" : "add one any time"}
           </div>
         </div>
       </div>

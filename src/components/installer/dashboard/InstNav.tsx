@@ -19,6 +19,7 @@ import { PREVIEW_SCREENS } from "@/components/installer/dashboard/previewScreens
  */
 const ICONS = {
   home: "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+  mail: "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2zM22 7l-10 6L2 7",
   inbox: "M22 12L16 12L14 15L10 15L8 12L2 12M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z",
   box: "M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73zM12 22V12M3.3 7l7.703 4.734a2 2 0 0 0 1.994 0L20.7 7M7.5 4.27l9 5.15",
   check: "M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-6a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1zM16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 14l2 2 4-4",
@@ -233,6 +234,7 @@ function buildGroups(elite: boolean): NavGroup[] {
         { key: "cc", label: "Contact Centre", icon: "headset", href: "/installers/dashboard/contact-centre" },
         { key: "lists", label: "Contact lists", icon: "upload", href: "/installers/dashboard/contact-lists" },
         { key: "cinbox", label: "Inbox · all channels", icon: "chat", href: "/installers/dashboard/inbox" },
+        { key: "email", label: "Email", icon: "mail", href: "/installers/dashboard/email" },
         { key: "campaigns", label: "Campaigns & lists", icon: "mega", href: "/installers/dashboard/campaigns" },
         { key: "ai", label: "AI agents & numbers", icon: "spark", href: "/installers/dashboard/ai-agents" },
       ],
@@ -315,6 +317,7 @@ const ROUTE_KEYS: [string, string][] = [
   ["/installers/dashboard/reports", "reports"],
   ["/installers/dashboard/equipment", "equipment"],
   ["/installers/dashboard/inbox", "cinbox"],
+  ["/installers/dashboard/email", "email"],
   ["/installers/dashboard/campaigns", "campaigns"],
   ["/installers/dashboard/ai-agents", "ai"],
   ["/installers/dashboard/plan", "plan"],
@@ -527,6 +530,15 @@ export function InstNav({
         </span>
         <span className="text-[14px] font-semibold text-white">Message EasyLink support</span>
       </Link>
+
+      <div className="flex flex-wrap gap-x-3 gap-y-1 px-2.5 text-[12.5px]" style={{ color: "#9FB0C8" }}>
+        <Link href="/privacy-policy" target="_blank" className="underline-offset-2 hover:underline" style={{ color: "#9FB0C8" }}>
+          Privacy policy
+        </Link>
+        <Link href="/terms" target="_blank" className="underline-offset-2 hover:underline" style={{ color: "#9FB0C8" }}>
+          Terms
+        </Link>
+      </div>
 
       <button
         type="button"

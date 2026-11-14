@@ -63,6 +63,11 @@ export function ProductCard({
   const [quantity, setQuantity] = useState(1);
   const [buying, setBuying] = useState(false);
   const inStock = product.inStock ?? true;
+  const title = product.title ?? {
+    name: `${product.brand} ${product.name}`,
+    size: "",
+    detail: "",
+  };
 
   // Afterpay is offered only when this product's total is inside Afterpay's
   // real order-value range. Most panels and batteries sit well above the cap,
@@ -175,57 +180,38 @@ export function ProductCard({
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
-        <p className="font-inter text-[13px] font-bold leading-[16px] text-warm-ink">
-          <span>{product.brand.split(" ")[0]}</span>
-          {product.brand.split(" ").length > 1 ? (
-            <span className="text-brand-blue">
-              {" "}
-              {product.brand.split(" ").slice(1).join(" ")}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h3
+              className="font-inter text-[20px] font-bold leading-[26px] text-warm-ink [overflow-wrap:break-word]"
+              title={product.name}
+            >
+              {title.name}
+            </h3>
+            {title.size ? (
+              <p className="mt-0.5 font-inter text-[26px] font-bold leading-[32px] text-brand-blue">
+                {title.size}
+              </p>
+            ) : null}
+            {title.detail ? (
+              <p className="mt-0.5 font-dm-sans text-[13px] font-medium text-warm-ink/80">
+                {title.detail}
+              </p>
+            ) : null}
+            {product.model && product.model !== title.name ? (
+              <p className="mt-1 font-dm-sans text-[13px] leading-[18px] text-warm-gray [overflow-wrap:break-word]">
+                {product.model}
+              </p>
+            ) : null}
+          </div>
+          {product.rating > 0 ? (
+            <span className="flex shrink-0 items-center gap-1">
+              <Icon name="AboutUsStar" className="size-3.5 shrink-0 text-orange-amber" />
+              <span className="font-dm-sans text-[12px] font-bold text-warm-ink">
+                {product.rating.toFixed(1)}
+              </span>
             </span>
           ) : null}
-        </p>
-
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="font-inter text-[17px] font-bold leading-[22px] text-warm-ink [overflow-wrap:anywhere]">
-              {product.name}
-            </h3>
-            <p className="mt-0.5 truncate font-dm-sans text-[11px] text-warm-gray">
-              {product.model}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            {product.rating > 0 ? (
-              <span className="flex items-center gap-1">
-                <Icon name="AboutUsStar" className="size-3.5 shrink-0 text-orange-amber" />
-                <span className="font-dm-sans text-[12px] font-bold text-warm-ink">
-                  {product.rating.toFixed(1)}
-                </span>
-              </span>
-            ) : null}
-            {product.hasDatasheet ? (
-              <button
-                type="button"
-                onClick={() => downloadDatasheet(product)}
-                className="flex items-center gap-1 font-dm-sans text-[10px] font-medium text-warm-gray hover:text-warm-ink"
-              >
-                Datasheet
-                <Icon name="Download" className="size-3 shrink-0 text-success" />
-              </button>
-            ) : null}
-            {product.documents?.map((d) => (
-              <a
-                key={d.url}
-                href={d.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 font-dm-sans text-[10px] font-medium text-warm-gray hover:text-warm-ink"
-              >
-                {d.title}
-                <Icon name="Download" className="size-3 shrink-0 text-success" />
-              </a>
-            ))}
-          </div>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -240,18 +226,46 @@ export function ProductCard({
           ))}
         </div>
 
-        <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-          <p className="font-inter text-[20px] font-bold leading-[24px] text-warm-ink">
-            {currencyFormatter.format(product.price)}
-          </p>
-          <span
-            className={classNames(
-              "rounded-full px-2.5 py-1 font-dm-sans text-[10px] font-bold",
-              inStock ? "bg-mint-soft text-success" : "bg-cream-150 text-warm-gray",
-            )}
-          >
-            {inStock ? "In Stock" : "Out of Stock"}
-          </span>
+        <div className="mt-auto flex flex-col gap-2 pt-1">
+          {product.hasDatasheet || product.documents?.length ? (
+            <div className="flex flex-col items-end gap-1">
+              {product.hasDatasheet ? (
+                <button
+                  type="button"
+                  onClick={() => downloadDatasheet(product)}
+                  className="flex items-center gap-1 text-right font-dm-sans text-[11px] font-medium text-warm-gray hover:text-warm-ink"
+                >
+                  Datasheet
+                  <Icon name="Download" className="size-3 shrink-0 text-success" />
+                </button>
+              ) : null}
+              {product.documents?.map((d) => (
+                <a
+                  key={d.url}
+                  href={d.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-right font-dm-sans text-[11px] font-medium text-warm-gray hover:text-warm-ink"
+                >
+                  {d.title}
+                  <Icon name="Download" className="size-3 shrink-0 text-success" />
+                </a>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-inter text-[20px] font-bold leading-[24px] text-warm-ink">
+              {currencyFormatter.format(product.price)}
+            </p>
+            <span
+              className={classNames(
+                "rounded-full px-2.5 py-1 font-dm-sans text-[10px] font-bold",
+                inStock ? "bg-mint-soft text-success" : "bg-cream-150 text-warm-gray",
+              )}
+            >
+              {inStock ? "In Stock" : "Out of Stock"}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-2">

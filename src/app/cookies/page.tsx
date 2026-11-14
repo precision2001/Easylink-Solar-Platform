@@ -11,7 +11,7 @@ export default function CookiesPage() {
   return (
     <LegalDocument
       title="Cookie policy"
-      updated="9 November 2026"
+      updated="13 November 2026"
       intro={<P>Cookies are small files a website saves in your browser. We also use similar browser storage. This page explains what we use and why.</P>}
       sections={[
         {
@@ -28,9 +28,15 @@ export default function CookiesPage() {
           id: "analytics",
           title: "Analytics",
           body: (
+            <>
+            <P>
+              Our own website and portals record page views, clicks on buttons and links, form submissions (field names only, never what you type) and errors, linked to a visitor cookie. Our team and EasyLink AI use this to follow up enquiries and fix problems. It is switched off if your browser sends a Do Not Track or Global Privacy Control signal. Our{" "}
+              <Link href="/privacy-policy#ai" className="font-semibold text-sky-700 underline">privacy policy</Link> explains how AI uses it.
+            </P>
             <P>
               We use Microsoft Clarity to understand how people use our website, such as which pages are visited, where people click and where they get stuck, so we can improve it. We set Clarity to hide sensitive fields, and card details are entered on our payment providers&apos; secure forms, which Clarity can&apos;t see. Microsoft may process this information outside Australia.
             </P>
+            </>
           ),
         },
         {

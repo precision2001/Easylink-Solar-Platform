@@ -2,6 +2,8 @@
 
 import { useId, useState, type FormEvent } from "react";
 import { QUOTE_BUTTON, QUOTE_FIELD, QUOTE_FOCUS, QUOTE_LABEL, QuoteNotice } from "@/components/quotes/QuoteParts";
+import { QuoteExtrasPicker } from "@/components/quotes/QuoteExtrasPicker";
+import { useQuoteExtras, type ExtraOption } from "@/lib/quote-extras";
 import {
   DEFAULT_DEPOSIT_PERCENT,
   DEFAULT_VALID_DAYS,
@@ -19,7 +21,13 @@ import {
 } from "@/lib/quotes";
 
 type Props =
-  | { mode: "create"; quote?: undefined; onSubmit: (input: Omit<CreateQuoteInput, "leadId" | "customerId" | "designId">) => Promise<void>; onCancel: () => void }
+  | {
+      mode: "create";
+      quote?: undefined;
+      /** `extras`: price-book extras ticked on the form, added to the new draft once it's priced. */
+      onSubmit: (input: Omit<CreateQuoteInput, "leadId" | "customerId" | "designId">, extras: ExtraOption[]) => Promise<void>;
+      onCancel: () => void;
+    }
   | { mode: "edit"; quote: Quote; onSubmit: (patch: UpdateQuoteInput) => Promise<void>; onCancel: () => void };
 
 /**
@@ -38,6 +46,8 @@ export function QuoteForm(props: Props) {
   const [title, setTitle] = useState(quote?.title ?? "");
   const [notes, setNotes] = useState(quote?.notes ?? "");
   const [internalNotes, setInternalNotes] = useState(quote?.internalNotes ?? "");
+  const [picked, setPicked] = useState<ExtraOption[]>([]);
+  const extrasBook = useQuoteExtras();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,7 +83,7 @@ export function QuoteForm(props: Props) {
           validDays: days,
           ...(notes.trim() ? { notes: notes.trim() } : {}),
           ...(internalNotes.trim() ? { internalNotes: internalNotes.trim() } : {}),
-        });
+        }, picked);
       } else {
         const until = endOfSydneyDayIso(validUntil);
         if (!until || !isFuture(until)) {
@@ -114,7 +124,7 @@ export function QuoteForm(props: Props) {
             ? "Copies the latest design for this customer and prices it with the EasyLink pricing engine. Earlier versions and the design stay as they are."
             : quote.status === "SENT"
               ? "This quote has been sent. The customer sees your changes the next time they open it."
-              : "Changes the deposit, dates and notes. To pick up new prices, use Reprice."}
+              : "Changes the deposit, dates and notes. To add or remove extras or change items, use Edit items. To pick up new prices, use Reprice."}
         </p>
       </div>
 
@@ -167,6 +177,18 @@ export function QuoteForm(props: Props) {
             : "Default is 25% of the quote total. The amount shows once the quote is priced."}
         </p>
       </fieldset>
+
+      {mode === "create" ? (
+        <QuoteExtrasPicker
+          extras={extrasBook.extras}
+          loading={extrasBook.loading}
+          error={extrasBook.error}
+          isChecked={(x) => picked.some((p) => p.id === x.id)}
+          onToggle={(x, on) => setPicked((ps) => (on ? [...ps.filter((p) => p.id !== x.id), x] : ps.filter((p) => p.id !== x.id)))}
+          panels={null}
+          hint="Ticked extras are added to the new draft at price-book prices. Per-panel extras use the panel count on the design."
+        />
+      ) : null}
 
       {mode === "create" ? (
         <label className={QUOTE_LABEL}>

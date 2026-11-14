@@ -23,6 +23,10 @@ export function P({ children }: { children: ReactNode }) {
   return <p className="m-0 text-[16px] leading-[1.7] text-slate-700">{children}</p>;
 }
 
+export function H3({ children }: { children: ReactNode }) {
+  return <h3 className="m-0 mt-2 font-source-sans text-[19px] font-bold text-slate-950">{children}</h3>;
+}
+
 export function List({ items }: { items: ReactNode[] }) {
   return (
     <ul className="m-0 flex list-disc flex-col gap-2 pl-5 text-[16px] leading-[1.65] text-slate-700">

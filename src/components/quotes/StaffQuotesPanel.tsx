@@ -5,10 +5,13 @@ import { ChannelChoice, channelUsable } from "@/components/quotes/ChannelChoice"
 import { QuoteCompare } from "@/components/quotes/QuoteCompare";
 import { QuoteDetail } from "@/components/quotes/QuoteDetail";
 import { QuoteForm } from "@/components/quotes/QuoteForm";
+import { QuoteFullScreen } from "@/components/quotes/QuoteFullScreen";
 import { QuoteLinesEditor } from "@/components/quotes/QuoteLinesEditor";
 import { QUOTE_BUTTON, QUOTE_FOCUS, QuoteNotice } from "@/components/quotes/QuoteParts";
 import { QuoteSummaryCard } from "@/components/quotes/QuoteSummaryCard";
 import {
+  quoteAddress,
+  quoteLines,
   createStaffQuote,
   isHandEdited,
   listStaffQuotes,
@@ -20,8 +23,38 @@ import {
   type PaymentLinkChannel,
   type Quote,
   type StaffPortal,
+  type UpdateQuoteInput,
 } from "@/lib/quotes";
 import { useSmsStatus } from "@/hooks/useSmsStatus";
+import { extraQty, type ExtraOption } from "@/lib/quote-extras";
+
+/** The draft's own lines plus the ticked extras (per-panel ones × its panels). */
+function withExtras(q: Quote, extras: ExtraOption[]): UpdateQuoteInput {
+  const { equipment, extras: works } = quoteLines(q);
+  const panels = equipment.filter((l) => /panel/i.test(l.category)).reduce((t, l) => t + l.quantity, 0);
+  const have = new Set(works.map((w) => w.name.trim().toLowerCase()));
+  return {
+    lines: {
+      equipment: equipment.map((l) => ({
+        category: l.category || "other",
+        name: l.name,
+        quantity: l.quantity,
+        unitPriceCents: l.unitPriceCents,
+        ...(l.productId ? { productId: l.productId } : {}),
+        ...(l.brand ? { brand: l.brand } : {}),
+        ...(l.model ? { model: l.model } : {}),
+      })),
+      works: [
+        ...works.map((l) => ({ name: l.name, quantity: l.quantity, unitPriceCents: l.unitPriceCents })),
+        ...extras
+          .filter((x) => !have.has(x.label.toLowerCase()))
+          .map((x) => ({ name: x.label, quantity: extraQty(x, panels), unitPriceCents: x.unitPriceCents })),
+      ].filter((l) => l.quantity > 0),
+    },
+    stcDiscountCents: q.stcDiscountCents,
+    rebateCents: q.rebateCents,
+  };
+}
 
 type View = { kind: "list" } | { kind: "create" } | { kind: "edit"; id: string } | { kind: "lines"; id: string } | { kind: "compare" };
 type Notice = { tone: "error" | "success" | "info"; text: string } | null;
@@ -42,6 +75,7 @@ export function StaffQuotesPanel({
   customerPhone,
   startWith = "list",
   layout = "stack",
+  initialOpenId = null,
   onChanged,
 }: {
   portal: StaffPortal;
@@ -53,13 +87,15 @@ export function StaffQuotesPanel({
   startWith?: "list" | "create";
   /** "split" puts the list beside the open quote on wide screens. */
   layout?: "stack" | "split";
+  /** Opens this quote in the list straight away (picked from the ⋯ menu or the quotes carousel). */
+  initialOpenId?: string | null;
   onChanged?: () => void;
 }) {
   const uid = useId();
   const [quotes, setQuotes] = useState<Quote[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>({ kind: startWith });
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialOpenId);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -121,9 +157,17 @@ export function StaffQuotesPanel({
   }
 
   const open = quotes?.find((q) => q.id === openId) ?? null;
+  const arrivedOn = useRef(initialOpenId);
+  useEffect(() => {
+    // Brings the quote picked from the menu or carousel into view once the list is in.
+    if (!quotes || !arrivedOn.current) return;
+    const id = arrivedOn.current;
+    arrivedOn.current = null;
+    requestAnimationFrame(() => document.querySelector(`[data-quote-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }, [quotes]);
   const editing = view.kind === "edit" || view.kind === "lines" ? quotes?.find((q) => q.id === view.id) ?? null : null;
 
-  /** Lines and prices: a draft is edited in place; anything else is copied into a new draft first. */
+  /** Edit (items): a draft is edited in place; anything else is copied into a new draft first. */
   function editLines(q: Quote) {
     if (q.status === "DRAFT") {
       setNotice(null);
@@ -134,7 +178,7 @@ export function StaffQuotesPanel({
       const draft = await staffQuoteAction(portal, q.id, "revise");
       setOpenId(draft.id);
       setView({ kind: "lines", id: draft.id });
-      return `${quoteVersionLabel(q)} copied into draft ${quoteVersionLabel(draft)}. Change its lines and prices, then send it. ${customerName} keeps seeing ${quoteVersionLabel(q)} until then.`;
+      return `${quoteVersionLabel(q)} copied into draft ${quoteVersionLabel(draft)}. Tick the items to keep and change them, then send it. ${customerName} keeps seeing ${quoteVersionLabel(q)} until then.`;
     });
   }
   const comparing = (quotes ?? []).filter((q) => compareIds.includes(q.id));
@@ -150,8 +194,12 @@ export function StaffQuotesPanel({
         <QuoteForm
           mode="create"
           onCancel={() => setView({ kind: "list" })}
-          onSubmit={async (input) => {
-            const created = await createStaffQuote(portal, { ...filter, ...input } as Parameters<typeof createStaffQuote>[1]);
+          onSubmit={async (input, extras) => {
+            let created = await createStaffQuote(portal, { ...filter, ...input } as Parameters<typeof createStaffQuote>[1]);
+            if (created && extras.length) {
+              // Extras ticked on the form go onto the new draft as lines.
+              created = (await updateStaffQuote(portal, created.id, withExtras(created, extras))) ?? created;
+            }
             setView({ kind: "list" });
             setOpenId(created?.id ?? null);
             await reload();
@@ -162,8 +210,13 @@ export function StaffQuotesPanel({
       </Card>
     );
   } else if (view.kind === "lines" && editing) {
+    // Edit mode uses the whole screen, whatever opened the panel.
     main = (
-      <Card>
+      <QuoteFullScreen
+        title={`${customerName} · ${quoteVersionLabel(editing)}`}
+        subtitle={quoteAddress(editing) ?? undefined}
+        onClose={() => setView({ kind: "list" })}
+      >
         <QuoteLinesEditor
           key={editing.id}
           quote={editing}
@@ -174,10 +227,10 @@ export function StaffQuotesPanel({
             setOpenId(editing.id);
             await reload();
             onChanged?.();
-            setNotice({ tone: "success", text: `${quoteVersionLabel(editing)} lines and prices saved.` });
+            setNotice({ tone: "success", text: `Edited quote ${quoteVersionLabel(editing)} saved. Check it over, then send it to ${customerName}.` });
           }}
         />
-      </Card>
+      </QuoteFullScreen>
     );
   } else if (view.kind === "edit" && editing) {
     main = (
@@ -245,20 +298,24 @@ export function StaffQuotesPanel({
                   Send payment link
                 </button>
               ) : null}
-              {can.edit ? (
-                <button type="button" onClick={() => setView({ kind: "edit", id: open.id })} className={QUOTE_BUTTON.quiet}>
-                  Edit details
-                </button>
-              ) : null}
               <button
                 type="button"
                 disabled={busy !== null}
                 onClick={() => editLines(open)}
-                title={open.status === "DRAFT" ? "Add, remove or change lines, quantities and prices" : "Copies this version into a new draft to change"}
+                title={
+                  open.status === "DRAFT"
+                    ? "Tick the items to keep, change quantities and prices, add lines"
+                    : "Copies this version into a new draft: tick the items to keep and change them there"
+                }
                 className={QUOTE_BUTTON.quiet}
               >
-                {busy === "revise" ? "Copying…" : "Lines and prices"}
+                {busy === "revise" ? "Copying…" : "Edit"}
               </button>
+              {can.edit ? (
+                <button type="button" onClick={() => setView({ kind: "edit", id: open.id })} className={QUOTE_BUTTON.quiet}>
+                  Details and deposit
+                </button>
+              ) : null}
               {can.reprice ? (
                 <button
                   type="button"
@@ -406,7 +463,7 @@ export function StaffQuotesPanel({
             {quotes.map((q) => {
               const ticked = compareIds.includes(q.id);
               return (
-                <li key={q.id}>
+                <li key={q.id} data-quote-id={q.id}>
                   <QuoteSummaryCard
                     quote={q}
                     selected={q.id === openId && view.kind === "list"}

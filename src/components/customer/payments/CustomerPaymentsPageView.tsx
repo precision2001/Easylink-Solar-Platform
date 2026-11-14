@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { askEasylinkAi } from "@/components/ai-chat/EasylinkAiChatbot";
 import { CustomerOrdersPanel } from "@/components/customer/payments/CustomerOrdersPanel";
 import { PaymentsList } from "@/components/customer/payments/PaymentsList";
+import { PaymentSchedulePanel } from "@/components/customer/payments/PaymentSchedulePanel";
 import { usePayLaterOptions, waysToPayLabel } from "@/components/customer/payments/usePayLaterOptions";
-import { CustomerPortalShell, PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { CustomerTopNav } from "@/components/customer/portal/CustomerTopNav";
 import { PortalIcon } from "@/components/customer/portal/PortalIcon";
 import { ButtonLink, EmptyNote, Panel, Skeleton } from "@/components/customer/portal/PortalParts";
 import {
@@ -49,12 +51,16 @@ export function CustomerPaymentsPageView() {
   const summary = useMemo(() => summarisePayments(payments), [payments]);
 
   return (
-    <CustomerPortalShell active="payments">
+    <div className="flex min-h-screen flex-col bg-[#F4F6FA] text-[#0F172A]">
+  <CustomerTopNav active="payments" />
+  <main className="mx-auto flex w-full max-w-[1240px] flex-col gap-[18px] px-6 pt-6 pb-14">
       <PortalPageHeader
         eyebrow="Buy and pay"
         title="Payments"
         intro="Everything you've paid EasyLink or your installer, with receipts. Ask EasyLink AI about any line."
       />
+
+      <PaymentSchedulePanel />
 
       <SummaryCard summary={summary} loading={loading} hasPayments={payments.length > 0} />
 
@@ -89,7 +95,8 @@ export function CustomerPaymentsPageView() {
       </Panel>
 
       <CustomerOrdersPanel />
-    </CustomerPortalShell>
+      </main>
+    </div>
   );
 }
 

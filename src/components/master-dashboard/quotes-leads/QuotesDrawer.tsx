@@ -13,11 +13,14 @@ import type { PipelineLead } from "@/lib/admin/leads-pipeline";
 export function QuotesDrawer({
   lead,
   startWith,
+  openId,
   onClose,
   onChanged,
 }: {
   lead: PipelineLead;
   startWith: "list" | "create";
+  /** A quote to open on arrival. */
+  openId?: string | null;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -61,7 +64,7 @@ export function QuotesDrawer({
           </button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-          <StaffQuotesPanel portal="admin" leadId={lead.id} customerName={lead.customerName} customerPhone={lead.customerPhone} startWith={startWith} onChanged={onChanged} />
+          <StaffQuotesPanel portal="admin" leadId={lead.id} customerName={lead.customerName} customerPhone={lead.customerPhone} startWith={startWith} initialOpenId={openId} onChanged={onChanged} />
         </div>
       </aside>
     </div>

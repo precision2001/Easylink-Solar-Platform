@@ -2882,9 +2882,10 @@ export const ABOUT_US_PAGE = {
     ],
   },
   mission: {
-    vidoSrc: "/videos/aboutMission.mp4",
+    vidoSrc: "/videos/aboutMissionCinema.mp4",
+    posterSrc: "/images/about-us/mission-cinema-poster.webp",
     videoAriaLabel:
-      "Modern Australian home with rooftop solar and an electric vehicle",
+      "Modern solar home powering itself by day and on battery by night, then an electric car charges and drives off into the sunset",
     cards: [
       {
         title: "Our Mission",
@@ -2910,9 +2911,9 @@ export const ABOUT_US_PAGE = {
         id: "founding",
         side: "left" as const,
         bullets: [
-          { highlight: true, text: "Founding 2016" },
+          { highlight: true, text: "Founded in 2016" },
           {
-            text: "Founded in Sydney, Australia as a solar solutions provider",
+            text: "Started in Sydney, Australia as a solar solutions provider",
           },
           {
             text: "Vision to make solar accessible for every Australian household",
@@ -2924,15 +2925,45 @@ export const ABOUT_US_PAGE = {
           {
             text: "Consistent Excellent Installation and Customer Service Reviews.",
           },
+          {
+            text: "Partnering with accredited installers to deliver quality installs across Australia",
+          },
+          {
+            text: "One installer portal for leads, quotes, jobs and customers",
+          },
+        ],
+        badges: [
+          { label: "2016", suffix: "Founded", emphasis: true },
+          { label: "Sydney", suffix: "Based", emphasis: true },
         ],
       },
       {
         id: "platform",
         side: "right" as const,
+        title: "Platform Launch & AI Integration",
         bullets: [
-          { text: "Platform Launch & AI Integration" },
-          { text: "AI-driven quoting system using satellite imagery" },
-          { text: "95% accurate roof analysis with machine learning" },
+          {
+            text: "AI-driven quoting system using satellite and street-level imagery",
+          },
+          {
+            text: "95% accurate roof analysis: EasyLink AI traces every roof face, ridge and valley before placing panels",
+          },
+          {
+            text: "Instant solar, battery and EV charger designs priced from live wholesale stock",
+          },
+          {
+            text: "Automatic compatibility checks across panels, inverters and batteries against the CEC approved list",
+          },
+          { text: "STCs and rebates calculated automatically in every quote" },
+          {
+            text: "Installers get an automatic AI roof design for every new lead",
+          },
+          {
+            text: "Installers can fine-tune quote line items and pricing before sending",
+          },
+          {
+            text: "Job kits ordered from the cheapest wholesaler with stock on hand",
+          },
         ],
         badges: [
           { label: "95% accuracy", emphasis: false },
@@ -2949,6 +2980,24 @@ export const ABOUT_US_PAGE = {
           },
           {
             text: "High-Return On Investment options for every customer segment.",
+          },
+          {
+            text: "Three tailored system options for every home, plus an upgrade path for more",
+          },
+          {
+            text: "Upload a power bill to see savings, payback and export income in minutes",
+          },
+          {
+            text: "Customer, installer and operations portals working as one platform",
+          },
+          {
+            text: "Ready Sites and Ready Deals connecting customers directly with certified installers",
+          },
+          {
+            text: "Installers buy confirmed, ready-to-install jobs through Ready Sites",
+          },
+          {
+            text: "Installer memberships with sales dashboards and a built-in contact centre",
           },
         ],
         badges: [
@@ -2974,6 +3023,19 @@ export const ABOUT_US_PAGE = {
                 text: "Consistent 5-star customer reviews and satisfaction",
               },
               { text: "Transparent, no-pressure service approach" },
+              { text: "Clear, itemised quotes with no hidden costs" },
+              {
+                text: "Support from first quote through installation and beyond",
+              },
+              {
+                text: "Accept quotes and pay deposits online in your own customer portal",
+              },
+              {
+                text: "Two-way SMS, email and phone updates at every stage of your install",
+              },
+              {
+                text: "Flexible payment options including Zip and Afterpay",
+              },
             ],
           },
         ],
@@ -2986,12 +3048,47 @@ export const ABOUT_US_PAGE = {
           },
         ],
       },
+      {
+        id: "research-ai",
+        side: "left" as const,
+        title: "Pioneer in Research-Driven AI Architecture",
+        sections: [
+          {
+            subtitle: "The EasyLink AI Platform",
+            bullets: [
+              {
+                text: "Event-driven AI architecture on AWS that designs, prices and follows up every job",
+              },
+              {
+                text: "Research-led roof intelligence: every design checked against satellite, street and government imagery",
+              },
+              {
+                text: "3D roof and shade digital twin for accurate yield on every face",
+              },
+              {
+                text: "EasyLink Voice AI concierge answering customers and installers around the clock",
+              },
+              {
+                text: "AI energy coaching and drone-clean maintenance plans keeping systems at peak output",
+              },
+              {
+                text: "Privacy-first: customers decide which installers see their data",
+              },
+            ],
+          },
+        ],
+        badges: [
+          { label: "EasyLink AI", suffix: "Powered", emphasis: true },
+          { label: "Research", suffix: "Driven", emphasis: true },
+        ],
+      },
     ],
   },
   process: {
     backgroundImageSrc: "/images/about-us/mission-bg.png",
     backgroundImageAlt: "Solar network visualization background",
-    title: "Our Customer First Solar Process",
+    title: "Our Customer First Design Process",
+    titleLines: ["Our", "Customer First", "Design Process"],
     steps: [
       {
         title: "We Start by Truly Listening",
@@ -3401,7 +3498,13 @@ export type CustomerPortalNavKey =
   | "privacy"
   | "voice"
   | "coach"
-  | "ar";
+  | "ar"
+  /**
+   * In the top bar from the CustNav design, but with no page or data behind
+   * them yet — see CustomerTopNav, which renders these as inert.
+   */
+  | "energy"
+  | "vpp";
 
 export const CUSTOMER_PORTAL = {
   title: "My Solar Portal",

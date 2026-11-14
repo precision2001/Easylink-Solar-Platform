@@ -358,10 +358,10 @@
   --color-about-timeline-card-to: #f78d00;
   --color-about-timeline-text: #000000;
   --color-about-timeline-badge-border: #f4f4f4;
-  --color-about-process-overlay: rgb(0 0 0 / 0.2);
-  --color-about-process-title-card-bg: rgb(255 255 255 / 0.1);
+  --color-about-process-overlay: rgb(6 6 26 / 0.62);
+  --color-about-process-title-card-bg: rgb(14 14 38 / 0.5);
   --color-about-process-title-card-border: rgb(255 255 255 / 0.2);
-  --color-about-process-panel-bg: rgb(255 255 255 / 0.1);
+  --color-about-process-panel-bg: rgb(14 14 38 / 0.55);
   --color-about-process-step-border: rgb(207 207 207 / 0.65);
   --color-about-process-text: #ffffff;
   --color-about-values-card-bg-a: rgb(96 135 222 / 0.1);
@@ -1450,6 +1450,192 @@ button {
     var(--color-about-timeline-card-to)
   );
   border: 3px solid var(--color-about-timeline-card-border);
+}
+
+/* About Us timeline: animated energy spine, nodes and card reveal
+   (AboutUsTimelineSection.tsx). */
+.tl-track,
+.tl-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+}
+
+.tl-track {
+  opacity: 0.22;
+}
+
+.tl-fill {
+  overflow: hidden;
+  box-shadow: 0 0 18px rgb(0 176 240 / 0.55);
+  transition: clip-path 0.12s linear;
+}
+
+/* A bright pulse running down the lit part of the spine. */
+.tl-fill::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 160px;
+  top: -160px;
+  background: linear-gradient(to bottom, transparent, rgb(255 255 255 / 0.95), transparent);
+  animation: tl-pulse 2.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+@keyframes tl-pulse {
+  to {
+    top: 100%;
+  }
+}
+
+/* Comet head at the fill edge. */
+.tl-head {
+  position: absolute;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, #ffffff 0 28%, #ffe866 45%, rgb(0 176 240 / 0) 72%);
+  box-shadow: 0 0 22px 8px rgb(255 232 102 / 0.75), 0 0 46px 14px rgb(0 176 240 / 0.45);
+  transition: top 0.12s linear;
+  animation: tl-head-flicker 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes tl-head-flicker {
+  from {
+    transform: translate(-50%, -50%) scale(0.85);
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+
+/* Nodes: dim squares that turn into glowing diamonds with sonar rings. */
+.tl-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  background: var(--color-design-accent-cyan, #00b0f0);
+  opacity: 0.45;
+  transform: scale(0.65);
+  transition:
+    transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.4s ease,
+    box-shadow 0.6s ease;
+}
+
+.tl-node.is-on {
+  opacity: 1;
+  transform: rotate(45deg) scale(1);
+  box-shadow:
+    0 0 0 4px #ffffff,
+    0 0 26px 8px rgb(0 176 240 / 0.75);
+}
+
+.tl-node::before,
+.tl-node::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  border: 2px solid #00b0f0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tl-node.is-on::before,
+.tl-node.is-on::after {
+  animation: tl-sonar 2.4s ease-out infinite;
+}
+
+.tl-node.is-on::after {
+  animation-delay: 1.2s;
+}
+
+@keyframes tl-sonar {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+.tl-node-core {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: #ffffff;
+  opacity: 0;
+  transform: scale(0);
+  transition: transform 0.5s 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s 0.25s;
+}
+
+.tl-node.is-on .tl-node-core {
+  opacity: 1;
+  transform: scale(1);
+  animation: tl-core-spin 3.2s linear infinite;
+}
+
+@keyframes tl-core-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Cards slide in from their side when their node lights. */
+.tl-card-wrap {
+  opacity: 0;
+  transition:
+    opacity 0.7s ease,
+    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tl-from-left {
+  transform: translateX(-70px);
+}
+
+.tl-from-right {
+  transform: translateX(70px);
+}
+
+.tl-card-wrap.is-on {
+  opacity: 1;
+  transform: none;
+}
+
+.tl-card-wrap .about-us-timeline-card {
+  transition:
+    transform 0.35s ease,
+    box-shadow 0.35s ease;
+}
+
+.tl-card-wrap .about-us-timeline-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.3), 0 0 0 3px rgb(0 176 240 / 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-fill::after,
+  .tl-head,
+  .tl-node.is-on::before,
+  .tl-node.is-on::after,
+  .tl-node.is-on .tl-node-core {
+    animation: none;
+  }
+
+  .tl-card-wrap {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* About Us — portfolio band (Figma 1:5291) */
@@ -4929,6 +5115,126 @@ html:has(.svc-page) {
 
   .el-nav .gt::before,
   .el-nav .gt::after {
+    animation: none;
+    opacity: 0.9;
+    transform: none;
+  }
+}
+
+/* About Us "Our Values" cards: gold glitter text over the globe image,
+   matching the admin sidebar's glitter icons/brand text (.el-nav .gi/.gt).
+   Each line is a shining gold gradient with glitter specks drifting through
+   it; four-point sparks twinkle around the label. Cards set --av-delay so
+   the ten cards never shine or twinkle in unison. */
+.av-gt {
+  display: inline-block;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgb(255 255 255 / 0.95) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 70% 60%, rgb(255 250 220 / 0.9) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 45% 80%, rgb(255 255 255 / 0.85) 0 0.8px, transparent 1.4px),
+    linear-gradient(
+      110deg,
+      #f6b20a 0%,
+      #ffe866 18%,
+      #ffffff 26%,
+      #ffd24a 34%,
+      #f68a0a 50%,
+      #ffe866 64%,
+      #fffdf0 70%,
+      #f6b20a 82%,
+      #ffe866 100%
+    );
+  background-size: 15px 15px, 19px 19px, 12px 12px, 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: av-gt-shine 4.5s linear infinite;
+  animation-delay: var(--av-delay, 0s);
+  /* Dark under-shadow keeps the gold legible over the bright cloud areas of the globe. */
+  filter: drop-shadow(0 1px 1.5px rgb(4 10 24 / 0.85)) drop-shadow(0 0 6px rgb(255 214 90 / 0.4));
+}
+
+@keyframes av-gt-shine {
+  from {
+    background-position: 0 0, 0 0, 0 0, 120% 0;
+  }
+  to {
+    background-position: 15px 30px, -19px 38px, 12px -24px, -120% 0;
+  }
+}
+
+.av-sp {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: #fff4c2;
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  filter: drop-shadow(0 0 3px #ffe866);
+  opacity: 0;
+  pointer-events: none;
+  animation: av-sp-twinkle 2.8s ease-in-out infinite;
+  animation-delay: var(--av-delay, 0s);
+}
+
+.av-sp.s1 {
+  top: -10px;
+  right: -12px;
+}
+
+.av-sp.s2 {
+  bottom: -6px;
+  left: -12px;
+  width: 6px;
+  height: 6px;
+  animation-delay: calc(var(--av-delay, 0s) - 1.4s);
+}
+
+.av-sp.s3 {
+  top: 45%;
+  right: -20px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  clip-path: none;
+  animation-delay: calc(var(--av-delay, 0s) - 0.7s);
+}
+
+@keyframes av-sp-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.2) rotate(0deg);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
+  60% {
+    opacity: 0.85;
+    transform: scale(0.8) rotate(60deg);
+  }
+}
+
+/* "Our Values" heading: same gold glitter, larger specks. */
+.av-gt-title {
+  background-size: 22px 22px, 28px 28px, 17px 17px, 240% 100%;
+  padding: 0 0.08em;
+}
+
+/* Brighter, quicker shine when a card is hovered. */
+.av-card:hover .av-gt {
+  animation-duration: 2.2s;
+  filter: drop-shadow(0 1px 1.5px rgb(4 10 24 / 0.85)) drop-shadow(0 0 9px rgb(255 214 90 / 0.65));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .av-gt {
+    animation: none;
+    background-position: 0 0, 0 0, 0 0, 50% 0;
+  }
+
+  .av-sp {
     animation: none;
     opacity: 0.9;
     transform: none;

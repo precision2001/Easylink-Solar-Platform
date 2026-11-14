@@ -6,11 +6,12 @@ import Link from "next/link";
 import { leadDesignHref } from "@/lib/designs/leadDesignLink";
 import { SendDesignDialog } from "@/components/designs/SendDesignDialog";
 import { DesignShareBadge } from "@/components/designs/DesignShareBadge";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/master-dashboard/quotes-leads/icons";
 import { RoofDesignCell, RoofDesignViewer, useAutoRoofDesigns } from "@/components/master-dashboard/quotes-leads/RoofDesign";
 import { STAGE_DOT } from "@/components/master-dashboard/quotes-leads/PipelineBoard";
 import { QuotesDrawer } from "@/components/master-dashboard/quotes-leads/QuotesDrawer";
+import { LeadQuotesButton, LeadQuotesMenuList } from "@/components/master-dashboard/quotes-leads/LeadQuotes";
 import {
   TASK_KINDS,
   TONE_CHIP,
@@ -147,7 +148,7 @@ function PillSelect({
  * with the lead's details and address filled in. Where the lead came from
  * sits underneath.
  */
-function SolarDesignButton({ lead, onSend }: { lead: PipelineLead; onSend?: () => void }) {
+function SolarDesignButton({ lead, onSend, onOpenQuote }: { lead: PipelineLead; onSend?: () => void; onOpenQuote?: (quoteId: string | null) => void }) {
   const kind = sourceKind(lead.source);
   return (
     <div className="inline-flex max-w-full flex-col items-stretch gap-1">
@@ -164,10 +165,15 @@ function SolarDesignButton({ lead, onSend }: { lead: PipelineLead; onSend?: () =
       <span className="truncate text-[11.5px] text-[#64748B]" title={lead.source ?? undefined}>
         {kind.label} · {ago(lead.createdAt)}
       </span>
-      {lead.design ? (
-        // Takes the Solar Design button's width, never widens it.
-        <span className="block w-0 min-w-full">
-          <DesignShareBadge design={lead.design} onSend={onSend} size="sm" />
+      {lead.design || onOpenQuote ? (
+        // Proposal badge and Quotes button take the Solar Design button's width, never widen it.
+        <span className="flex w-0 min-w-full flex-wrap items-center gap-1">
+          {lead.design ? (
+            <span className="min-w-0 max-w-full">
+              <DesignShareBadge design={lead.design} onSend={onSend} size="sm" />
+            </span>
+          ) : null}
+          {onOpenQuote ? <LeadQuotesButton lead={lead} onOpenQuote={onOpenQuote} /> : null}
         </span>
       ) : null}
     </div>
@@ -175,8 +181,17 @@ function SolarDesignButton({ lead, onSend }: { lead: PipelineLead; onSend?: () =
 }
 
 
-function RowMenu({ items }: { items: { label: string; danger?: boolean; onSelect: () => void }[] }) {
+type RowMenuItem = {
+  label: string;
+  danger?: boolean;
+  onSelect?: () => void;
+  /** Opens a list under the item instead of acting; `close` shuts the menu. */
+  expand?: (close: () => void) => ReactNode;
+};
+
+function RowMenu({ items }: { items: RowMenuItem[] }) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -194,27 +209,47 @@ function RowMenu({ items }: { items: { label: string; danger?: boolean; onSelect
 
   return (
     <div ref={ref} className="relative">
-      <IconButton icon="more" label="More actions" expanded={open} onClick={() => setOpen((o) => !o)} />
+      <IconButton
+        icon="more"
+        label="More actions"
+        expanded={open}
+        onClick={() => {
+          setOpen((o) => !o);
+          setExpanded(null);
+        }}
+      />
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-[38px] z-20 min-w-[170px] overflow-hidden rounded-[10px] border border-[#E3E8EF] bg-white py-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+          className="absolute right-0 top-[38px] z-20 min-w-[170px] max-h-[70vh] w-max max-w-[320px] overflow-y-auto rounded-[10px] border border-[#E3E8EF] bg-white py-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
         >
           {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                item.onSelect();
-              }}
-              className={`block w-full px-3 py-2 text-left text-[13px] font-semibold hover:bg-[#F1F5F9] ${
-                item.danger ? "text-[#B91C1C]" : "text-[#0F172A]"
-              }`}
-            >
-              {item.label}
-            </button>
+            <Fragment key={item.label}>
+              <button
+                type="button"
+                role="menuitem"
+                aria-expanded={item.expand ? expanded === item.label : undefined}
+                onClick={() => {
+                  if (item.expand) {
+                    setExpanded((x) => (x === item.label ? null : item.label));
+                    return;
+                  }
+                  setOpen(false);
+                  item.onSelect?.();
+                }}
+                className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[13px] font-semibold hover:bg-[#F1F5F9] ${
+                  item.danger ? "text-[#B91C1C]" : "text-[#0F172A]"
+                }`}
+              >
+                {item.label}
+                {item.expand ? (
+                  <span aria-hidden="true" className={`text-[#64748B] transition-transform ${expanded === item.label ? "rotate-90" : ""}`}>
+                    ›
+                  </span>
+                ) : null}
+              </button>
+              {item.expand && expanded === item.label ? item.expand(() => setOpen(false)) : null}
+            </Fragment>
           ))}
         </div>
       ) : null}
@@ -443,9 +478,10 @@ export function LeadsWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
+  const [viewing, setViewingState] = useState<{ id: string; view: "roof" | "proposal" } | null>(null);
+  const setViewing = (id: string | null, view: "roof" | "proposal" = "roof") => setViewingState(id ? { id, view } : null);
   // The lead whose quote versions are open in the side drawer.
-  const [quotesFor, setQuotesFor] = useState<{ lead: PipelineLead; startWith: "list" | "create" } | null>(null);
+  const [quotesFor, setQuotesFor] = useState<{ lead: PipelineLead; startWith: "list" | "create"; openId?: string | null } | null>(null);
   const [sendDesignFor, setSendDesignFor] = useState<PipelineLead | null>(null);
 
   // Every listed lead with an address gets a roof design from the platform
@@ -665,14 +701,31 @@ export function LeadsWorkspace({
                 const chip = TONE_CHIP[due?.tone ?? "late"];
                 const second = [l.customerPhone, suburbOf(l.address)].filter(Boolean).join(" · ");
                 const del = { label: "Delete lead…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "delete" }) };
+                const proposal = { label: "Proposal", onSelect: () => setViewing(l.id, "proposal") };
                 const menu =
                   view === "lost"
-                    ? [{ label: "Reopen lead", onSelect: () => void act(l, () => updateLeadPipeline(l.id, { reopen: true })) }, del]
+                    ? [proposal, { label: "Reopen lead", onSelect: () => void act(l, () => updateLeadPipeline(l.id, { reopen: true })) }, del]
                     : view === "spam"
                       ? [{ label: "Not spam", onSelect: () => void setSpam(l, false) }, del]
                       : [
+                          proposal,
                           { label: "New quote", onSelect: () => setQuotesFor({ lead: l, startWith: "create" }) },
-                          { label: "Quotes", onSelect: () => setQuotesFor({ lead: l, startWith: "list" }) },
+                          {
+                            label: "Quotes",
+                            expand: (close: () => void) => (
+                              <LeadQuotesMenuList
+                                leadId={l.id}
+                                onPick={(id) => {
+                                  close();
+                                  setQuotesFor({ lead: l, startWith: "list", openId: id });
+                                }}
+                                onNew={() => {
+                                  close();
+                                  setQuotesFor({ lead: l, startWith: "create" });
+                                }}
+                              />
+                            ),
+                          },
                           ...(l.design ? [{ label: "Send design to customer", onSelect: () => setSendDesignFor(l) }] : []),
                           { label: "Mark as lost…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "lost" }) },
                           { label: "Mark as spam", danger: true, onSelect: () => void setSpam(l, true) },
@@ -822,7 +875,11 @@ export function LeadsWorkspace({
                     </td>
 
                     <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
-                      <SolarDesignButton lead={l} onSend={() => setSendDesignFor(l)} />
+                      <SolarDesignButton
+                        lead={l}
+                        onSend={() => setSendDesignFor(l)}
+                        onOpenQuote={view === "spam" ? undefined : (id) => setQuotesFor(id ? { lead: l, startWith: "list", openId: id } : { lead: l, startWith: "create" })}
+                      />
                       {view === "spam" && l.spamReason ? (
                         <div className="mt-1 text-[11.5px] text-[#B91C1C]">{l.spamReason}</div>
                       ) : l.spamSuggestion?.length ? (
@@ -881,12 +938,19 @@ export function LeadsWorkspace({
           ) : null}
         </div>
       ) : null}
-      {viewing && rows?.find((r) => r.id === viewing)?.roofDesign ? (
+      {viewing && rows?.find((r) => r.id === viewing.id) && (viewing.view === "proposal" || rows.find((r) => r.id === viewing.id)?.roofDesign) ? (
         <RoofDesignViewer
-          lead={rows.find((r) => r.id === viewing)!}
-          working={roofWorking.has(viewing)}
+          key={`${viewing.id}:${viewing.view}`}
+          lead={rows.find((r) => r.id === viewing.id)!}
+          initialView={viewing.view}
+          working={roofWorking.has(viewing.id)}
           onClose={() => setViewing(null)}
-          onRedesign={() => redesignRoof(viewing)}
+          onRedesign={() => redesignRoof(viewing.id)}
+          onOpenQuote={(id) => {
+            const lead = rows.find((r) => r.id === viewing.id)!;
+            setViewing(null);
+            setQuotesFor(id ? { lead, startWith: "list", openId: id } : { lead, startWith: "create" });
+          }}
         />
       ) : null}
       {sendDesignFor?.design ? (
@@ -912,9 +976,10 @@ export function LeadsWorkspace({
       ) : null}
       {quotesFor ? (
         <QuotesDrawer
-          key={quotesFor.lead.id}
+          key={`${quotesFor.lead.id}:${quotesFor.openId ?? quotesFor.startWith}`}
           lead={quotesFor.lead}
           startWith={quotesFor.startWith}
+          openId={quotesFor.openId}
           onClose={closeQuotes}
           onChanged={onChanged}
         />

@@ -2,13 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { CustomerPortalShell, PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
+import { PortalPageHeader } from "@/components/customer/portal/CustomerPortalShell";
 import { PortalIcon } from "@/components/customer/portal/PortalIcon";
 import { ButtonLink, EmptyNote, Panel, Skeleton } from "@/components/customer/portal/PortalParts";
 import { DesignComparisonTable } from "@/components/customer/design/DesignComparisonTable";
-import { DesignEquipmentList } from "@/components/customer/design/DesignEquipmentList";
+import { CustomerTopNav } from "@/components/customer/portal/CustomerTopNav";
+import {
+  DesignEquipmentCards,
+  DesignSpecColumns,
+  StcRatioWarning,
+  STC_RATIO_LIMIT,
+} from "@/components/customer/design/DesignMockLayout";
 import { DesignMapPreviewImage } from "@/components/customer/design/DesignMapPreviewImage";
-import { DesignSpecSheet } from "@/components/customer/design/DesignSpecSheet";
 import { ShareAndEarnPanel } from "@/components/customer/design/ShareAndEarnPanel";
 import { CustomerQuotesSection } from "@/components/customer/design/CustomerQuotesSection";
 import {
@@ -19,7 +24,7 @@ import {
   pickPrimaryDesign,
 } from "@/lib/customers/customer-design-view";
 import { fetchDesignOptions, type DesignOptions } from "@/lib/customers/design-options";
-import { buildDesignSpecSheet, optionForDesign } from "@/lib/customers/design-spec-sheet";
+import { buildDesignSpecSheet, kwLabel, optionForDesign } from "@/lib/customers/design-spec-sheet";
 import { fetchCustomerDesigns, isCustomerEditableDesign, type CustomerDesign } from "@/lib/customers/designs";
 import { buildShareUrl, createShareLink, fetchReferralOverview, type ReferralOverview } from "@/lib/customers/referrals";
 
@@ -174,11 +179,23 @@ export function CustomerDesignPageClient({ initialDesigns, initialReferrals }: P
     };
   }, [primaryDesignId]);
 
+  /**
+   * Panel DC against inverter AC, as a percentage — the one piece of real
+   * logic in the mock's banner. Only computable when both are known, and
+   * only shown when it actually exceeds what the STC rules allow.
+   */
+  const stcRatio =
+    sheet?.kw && sheet.inverterKw
+      ? (sheet.kw / sheet.inverterKw) * 100
+      : undefined;
+
   const locked = primaryDesign ? !canEdit : false;
   const editHref = primaryDesign ? `/designs?designId=${encodeURIComponent(primaryDesign.id)}` : "/designs";
 
   return (
-    <CustomerPortalShell active="designs">
+    <div className="flex min-h-screen flex-col bg-[#F4F6FA] text-[#0F172A]">
+      <CustomerTopNav active="designs" />
+      <main className="mx-auto flex w-full max-w-[1240px] flex-col gap-[18px] px-6 pt-6 pb-14">
       {loading ? (
         <>
           <Skeleton className="h-[76px] max-w-[520px]" />
@@ -232,8 +249,38 @@ export function CustomerDesignPageClient({ initialDesigns, initialReferrals }: P
             }
           />
 
-          <div className="grid items-start gap-5 lg:grid-cols-[1.2fr_1fr]">
-            <div className="flex min-w-0 flex-col gap-5">
+          {/* The mock's single design card: title row, the STC warning when it
+              applies, then the roof image beside two specification columns. */}
+          <section
+            aria-label="Selected design"
+            className="flex flex-col gap-3.5 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="m-0 grow text-[18px] font-bold">
+                {sheet.title}
+                {sheet.kw ? ` · ${kwLabel(sheet.kw)}` : ""}
+              </h2>
+              {stcRatio !== undefined && stcRatio > STC_RATIO_LIMIT ? (
+                <span className="rounded-full bg-[#FEF3C7] px-2.5 py-0.75 text-[12px] font-bold text-[#92400E]">
+                  Needs a change
+                </span>
+              ) : null}
+              <span className="rounded-full bg-[#E2E8F0] px-2.5 py-0.75 text-[12px] font-bold text-[#334155]">
+                {designStatusLabel(primaryDesign)} · updated{" "}
+                {formatDesignUpdatedAt(primaryDesign.updatedAt)}
+              </span>
+            </div>
+
+            {stcRatio !== undefined && stcRatio > STC_RATIO_LIMIT ? (
+              <StcRatioWarning
+                ratio={stcRatio}
+                panelCount={sheet.panelCount}
+                inverterKw={sheet.inverterKw}
+              />
+            ) : null}
+
+            <div className="flex flex-wrap items-start gap-4.5">
+            <div className="flex min-w-0 flex-[1_1_280px] flex-col gap-2">
             <section aria-label="Your roof layout and proposal" className="flex flex-col overflow-hidden rounded-[22px] border border-[#E2E8F0] bg-white">
               <div className="relative aspect-[4/3] w-full bg-[#E8EDF3]">
                 <DesignMapPreviewImage
@@ -288,12 +335,13 @@ export function CustomerDesignPageClient({ initialDesigns, initialReferrals }: P
               ) : null}
             </div>
 
-            <DesignSpecSheet sheet={sheet} locked={locked} />
-          </div>
+            <DesignSpecColumns sheet={sheet} />
+            </div>
+          </section>
 
           <CustomerQuotesSection hasDesign />
 
-          <DesignEquipmentList design={primaryDesign} />
+          <DesignEquipmentCards design={primaryDesign} />
         </>
       )}
 
@@ -313,6 +361,7 @@ export function CustomerDesignPageClient({ initialDesigns, initialReferrals }: P
           // The comparison sums each design's equipment; say so, so it isn't read as the after-STC price above.
           rows={comparison.rows.map((r) => (r.feature === "Price" ? { ...r, feature: "Equipment total" } : r))}
         /> : null}
-    </CustomerPortalShell>
+      </main>
+    </div>
   );
 }
