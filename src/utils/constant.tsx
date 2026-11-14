@@ -2911,7 +2911,7 @@ export const ABOUT_US_PAGE = {
         id: "founding",
         side: "left" as const,
         bullets: [
-          { highlight: true, text: "Founding 2016" },
+          { highlight: true, text: "Founded in 2016" },
           {
             text: "Founded in Sydney, Australia as a solar solutions provider",
           },
