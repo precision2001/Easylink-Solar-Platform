@@ -39,7 +39,7 @@ export function SitePortfolioCard({ item }: { item: AboutUsPortfolioItem }) {
           <div className="relative aspect-square w-full bg-[#0b2a5b]">
             <Image
               src={item.imageSrc}
-              alt={`Aerial view of the ${kw(item.systemKw)} EasyLink solar layout on a home in ${item.suburb}`}
+              alt={`Aerial view of a home in ${item.suburb} with a ${kw(item.systemKw)} EasyLink solar system`}
               fill
               sizes="(min-width: 1280px) 393px, (min-width: 768px) 45vw, 92vw"
               className="object-cover"
