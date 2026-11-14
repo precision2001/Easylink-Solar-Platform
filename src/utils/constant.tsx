@@ -3134,167 +3134,42 @@ export const ABOUT_US_PAGE = {
   },
   portfolio: {
     title: "Site Portfolio",
-    subtitle: "More news from the renewable energy sector",
+    subtitle:
+      "Real EasyLink systems across Sydney, with the projected savings from each customer's proposal.",
+    footnote:
+      "Savings are projections from each customer's proposal (bill savings plus export credits over the system's life), not metered results. Panel layouts are the designed layouts. Aerial imagery © NSW Spatial Services, Department of Customer Service (CC BY 4.0).",
     items: [
-      {
-        id: "innovative-solar",
-        slug: "innovative-solar-technology",
-        title: "Innovative Solar Technology",
-        excerpt:
-          "Exploring the latest advancements in solar panel technology that enhance efficiency and reduce costs for consumers.",
-        category: "Installation",
-        dateLabel: "16 Sep",
-        authorName: "Emily Johnson",
-        authorAvatarSrc: "/images/logo.webp",
-        authorAvatarAlt: "Emily Johnson",
-        heroImageSrc: "/images/about-us/portfolio-thumb.png",
-        heroImageAlt: "Rooftop solar installation on a residential property",
-        thumbnailImageSrc: "/images/home/solar-panel-design.png",
-        thumbnailImageAlt: "Rooftop solar installation on a residential property",
-        href: "/blog/innovative-solar-technology",
-      },
-      {
-        id: "sustainable-energy",
-        slug: "sustainable-energy-solutions",
-        title: "Sustainable Energy Solutions",
-        excerpt:
-          "Exploring the latest advancements in solar panel technology that enhance efficiency and reduce costs for consumers.",
-        category: "Installation",
-        dateLabel: "16 Sep",
-        authorName: "Michael Smith",
-        authorAvatarSrc: "/images/logo.webp",
-        authorAvatarAlt: "Michael Smith",
-        heroImageSrc: "/images/about-us/portfolio-thumb.png",
-        heroImageAlt: "Sustainable energy system on a suburban home",
-        thumbnailImageSrc: "/images/home/solar-panel-design.png",
-        thumbnailImageAlt: "Sustainable energy system on a suburban home",
-        href: "/blog/sustainable-energy-solutions",
-      },
-      {
-        id: "solar-trends",
-        slug: "solar-energy-trends",
-        title: "Solar Energy Trends",
-        excerpt:
-          "Exploring the latest advancements in solar panel technology that enhance efficiency and reduce costs for consumers.",
-        category: "Installation",
-        dateLabel: "16 Sep",
-        authorName: "Sarah Lee",
-        authorAvatarSrc: "/images/about-us/avatar.jpg",
-        authorAvatarAlt: "Sarah Lee",
-        heroImageSrc: "/images/about-us/portfolio-thumb.png",
-        heroImageAlt: "Solar array installation in progress",
-        thumbnailImageSrc: "/images/home/solar-panel-design.png",
-        thumbnailImageAlt: "Solar array installation in progress",
-        href: "/blog/solar-energy-trends",
-      },
-      {
-        id: "urban-solar",
-        slug: "solar-innovations-for-urban-spaces",
-        title: "Solar Innovations for Urban Spaces",
-        excerpt:
-          "Exploring the latest advancements in solar panel technology that enhance efficiency and reduce costs for consumers.",
-        category: "Installation",
-        dateLabel: "16 Sep",
-        authorName: "Jessica Martinez",
-        authorAvatarSrc: "/images/about-us/avatar.jpg",
-        authorAvatarAlt: "Jessica Martinez",
-        heroImageSrc: "/images/about-us/portfolio-thumb.png",
-        heroImageAlt: "Urban rooftop solar project",
-        thumbnailImageSrc: "/images/home/solar-panel-design.png",
-        thumbnailImageAlt: "Urban rooftop solar project",
-        href: "/blog/solar-innovations-for-urban-spaces",
-      },
-      {
-        id: "economic-growth",
-        slug: "solar-energy-and-economic-growth",
-        title: "Solar Energy and Economic Growth",
-        excerpt:
-          "Exploring the latest advancements in solar panel technology that enhance efficiency and reduce costs for consumers.",
-        category: "Installation",
-        dateLabel: "16 Sep",
-        authorName: "David Thompson",
-        authorAvatarSrc: "/images/about-us/avatar.jpg",
-        authorAvatarAlt: "David Thompson",
-        heroImageSrc: "/images/about-us/portfolio-thumb.png",
-        heroImageAlt: "Commercial solar deployment",
-        thumbnailImageSrc: "/images/home/solar-panel-design.png",
-        thumbnailImageAlt: "Commercial solar deployment",
-        href: "/blog/solar-energy-and-economic-growth",
-      },
-      {
-        id: "efficient-future",
-        slug: "building-an-efficient-solar-future",
-        title: "Building an Efficient Solar Future",
-        excerpt:
-          "Exploring the latest advancements in solar panel technology that enhance efficiency and reduce costs for consumers.",
-        category: "Installation",
-        dateLabel: "16 Sep",
-        authorName: "Linda Chen",
-        authorAvatarSrc: "/images/about-us/avatar.jpg",
-        authorAvatarAlt: "Linda Chen",
-        heroImageSrc: "/images/about-us/portfolio-thumb.png",
-        heroImageAlt: "Efficient solar system on a new build home",
-        thumbnailImageSrc: "/images/home/solar-panel-design.png",
-        thumbnailImageAlt: "Efficient solar system on a new build home",
-        href: "/blog/building-an-efficient-solar-future",
-      },
-      {
-        id: "solar-storage",
-        slug: "the-future-of-solar-storage",
-        title: "The Future of Solar Storage",
-        excerpt:
-          "Exploring the latest advancements in solar panel technology that enhance efficiency and reduce costs for consumers.",
-        category: "Installation",
-        dateLabel: "16 Sep",
-        authorName: "Brian Adams",
-        authorAvatarSrc: "/images/about-us/avatar.jpg",
-        authorAvatarAlt: "Brian Adams",
-        heroImageSrc: "/images/about-us/portfolio-thumb.png",
-        heroImageAlt: "Home battery and solar combination",
-        thumbnailImageSrc: "/images/home/solar-panel-design.png",
-        thumbnailImageAlt: "Home battery and solar combination",
-        href: "/blog/the-future-of-solar-storage",
-      },
-      {
-        id: "smart-homes",
-        slug: "integrating-solar-into-smart-homes",
-        title: "Integrating Solar into Smart Homes",
-        excerpt:
-          "Exploring the latest advancements in solar panel technology that enhance efficiency and reduce costs for consumers.",
-        category: "Installation",
-        dateLabel: "16 Sep",
-        authorName: "Karen White",
-        authorAvatarSrc: "/images/about-us/avatar.jpg",
-        authorAvatarAlt: "Karen White",
-        heroImageSrc: "/images/about-us/portfolio-thumb.png",
-        heroImageAlt: "Smart home with integrated solar controls",
-        thumbnailImageSrc: "/images/home/solar-panel-design.png",
-        thumbnailImageAlt: "Smart home with integrated solar controls",
-        href: "/blog/integrating-solar-into-smart-homes",
-        },
-        {
-        id: "policy-adoption",
-        slug: "the-role-of-policy-in-solar-adoption",
-        title: "The Role of Policy in Solar Adoption",
-        excerpt:
-          "Exploring the latest advancements in solar panel technology that enhance efficiency and reduce costs for consumers.",
-        category: "Installation",
-        dateLabel: "16 Sep",
-        authorName: "James Wilson",
-        authorAvatarSrc: "/images/about-us/avatar.jpg",
-        authorAvatarAlt: "James Wilson",
-        heroImageSrc: "/images/about-us/portfolio-thumb.png",
-        heroImageAlt: "Policy-driven residential solar rollout",
-        thumbnailImageSrc: "/images/home/solar-panel-design.png",
-        thumbnailImageAlt: "Policy-driven residential solar rollout",
-        href: "/blog/the-role-of-policy-in-solar-adoption",
-      },
-    ],
+      { id: "sans-souci", status: "Installed", client: "George", suburb: "Sans Souci", imageSrc: "/images/about-us/portfolio/sans-souci.webp", systemKw: 17.22, panels: "28 × Canadian Solar 615 W", batteryKwh: 40.3, batteryBrand: "SigEnergy", annualKwh: 25818, annualSavings: 3896, payback: "4 years", lifetimeSavings: 89268 },
+      { id: "kyle-bay", status: "Installed", client: "Shariff", suburb: "Kyle Bay", imageSrc: "/images/about-us/portfolio/kyle-bay.webp", systemKw: 21.06, panels: "36 × Trina 585 W", batteryKwh: 24.2, annualKwh: 29726, annualSavings: 2531, payback: "4 years 9 months", lifetimeSavings: 58200 },
+      { id: "blakehurst", status: "Installed", client: "Bassam", suburb: "Blakehurst", imageSrc: "/images/about-us/portfolio/blakehurst.webp", systemKw: 10.62, panels: "18 × Risen 590 W", batteryKwh: 32.6, annualKwh: 13348, annualSavings: 1486, payback: "2 years 10 months", lifetimeSavings: 35791 },
+      { id: "blacktown", status: "Installed", client: "Hemant", suburb: "Blacktown", imageSrc: "/images/about-us/portfolio/blacktown.webp", systemKw: 21.06, panels: "36 × 585 W", batteryKwh: 40, annualKwh: 23334, annualSavings: 4832, payback: null, lifetimeSavings: 124694 },
+      { id: "north-rocks", status: "Installed", client: "Evan", suburb: "North Rocks", imageSrc: "/images/about-us/portfolio/north-rocks.webp", systemKw: 13.23, panels: "21 × JA Solar 630 W", batteryKwh: 25.6, annualKwh: 18796, annualSavings: 2518, payback: "6 years 3 months", lifetimeSavings: 61516 },
+      { id: "macquarie-fields", status: "Installed", client: "Lorenza", suburb: "Macquarie Fields", imageSrc: "/images/about-us/portfolio/macquarie-fields.webp", systemKw: 10.62, panels: "18 × Jinko 590 W", batteryKwh: 50, annualKwh: 14554, annualSavings: 693, payback: "5 years 10 months", lifetimeSavings: 18640 },
+      { id: "castle-hill", status: "Installing", client: "Arash", suburb: "Castle Hill", imageSrc: "/images/about-us/portfolio/castle-hill.webp", systemKw: 15.4, panels: "35 × Trina 440 W", batteryKwh: 30, batteryBrand: "FoxESS", annualKwh: 24238, annualSavings: 2243, payback: "4 years 4 months", lifetimeSavings: 55846 },
+      { id: "beaumont-hills", status: "Designed", client: "Payam", suburb: "Beaumont Hills", imageSrc: "/images/about-us/portfolio/beaumont-hills.webp", systemKw: 19.0, panels: "40 × Risen 475 W", batteryKwh: 81.1, batteryBrand: "BLUETTI", annualKwh: 25881, annualSavings: 4327, payback: "5 years 9 months", lifetimeSavings: 112540 },
+      { id: "bangor", status: "Designed", client: null, suburb: "Bangor", imageSrc: "/images/about-us/portfolio/bangor.webp", systemKw: 20.24, panels: "46 panels", batteryKwh: 41.4, annualKwh: 23018, annualSavings: 4435, payback: "1 year 6 months", lifetimeSavings: 116025 },
+    ] as AboutUsPortfolioItem[],
   },
 } as const;
 
-export type AboutUsPortfolioItem =
-  (typeof ABOUT_US_PAGE.portfolio.items)[number];
+export type AboutUsPortfolioItem = {
+  id: string;
+  status: "Installed" | "Installing" | "Designed";
+  /** First name only (public page); null when OpenSolar has no contact. */
+  client: string | null;
+  suburb: string;
+  imageSrc: string;
+  systemKw: number;
+  panels: string;
+  batteryKwh: number;
+  batteryBrand?: string;
+  annualKwh: number;
+  /** Year-one bill savings, $ (proposal estimate). */
+  annualSavings: number;
+  payback: string | null;
+  /** Lifetime bill savings incl. export credits, $ (proposal estimate). */
+  lifetimeSavings: number;
+};
 
 /** Public FAQs page (`/faqs`, Figma Final Designs 1:5645) */
 export type FaqCategoryId =
