@@ -15,17 +15,14 @@ import { LeadQuotesButton, LeadQuotesMenuList } from "@/components/master-dashbo
 import {
   TASK_KINDS,
   TONE_CHIP,
-  TONE_RAIL,
   addNextAction,
   ago,
   completeAction,
   defaultDueLocal,
   describeDue,
   initials,
-  leadUrgency,
   personName,
   sourceKind,
-  suburbOf,
   updateLeadPipeline,
   type LeadStage,
   type PipelineLead,
@@ -35,9 +32,10 @@ import {
 } from "@/lib/admin/leads-pipeline";
 
 /**
- * The working list of leads. Every row answers the same four questions in
- * the same place: what stage, who owns it, what happens next and how urgent
- * it is. Changes save as they're made.
+ * The working list of leads, one card per lead (owner's design, 15 Nov 2026).
+ * Every card answers the same four questions in the same place: what stage,
+ * who owns it, what happens next and how urgent it is. Changes save as
+ * they're made. An overdue next action glows red until it is done.
  */
 
 type View = "working" | "overdue" | "today" | "uncontacted" | "mine" | "unassigned" | "lost" | "spam";
@@ -78,6 +76,7 @@ function IconButton({
   disabled,
   strong,
   expanded,
+  bold,
 }: {
   icon: IconName;
   label: string;
@@ -86,6 +85,8 @@ function IconButton({
   /** The one obvious thing to do on this row. */
   strong?: boolean;
   expanded?: boolean;
+  /** A heavier border, so the button shows on the card. */
+  bold?: boolean;
 }) {
   return (
     <button
@@ -95,10 +96,12 @@ function IconButton({
       aria-expanded={expanded}
       disabled={disabled}
       onClick={onClick}
-      className={`flex size-8 shrink-0 items-center justify-center rounded-[8px] border transition-colors disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB] ${
+      className={`flex ${bold ? "size-10 rounded-[12px]" : "size-8 rounded-[8px]"} shrink-0 items-center justify-center border transition-colors disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB] ${
         strong
           ? "border-[#0B1A2E] bg-[#0B1A2E] text-white hover:bg-[#1E2E45]"
-          : "border-[#D5DCE5] bg-white text-[#334155] hover:border-[#64748B] hover:text-[#0F172A]"
+          : bold
+            ? "border-2 border-[#64748B] bg-white text-[#334155] hover:border-[#0F172A] hover:text-[#0F172A]"
+            : "border-[#D5DCE5] bg-white text-[#334155] hover:border-[#64748B] hover:text-[#0F172A]"
       }`}
     >
       <Icon name={icon} size={15} />
@@ -106,8 +109,12 @@ function IconButton({
   );
 }
 
-/** A native select dressed as a pill, with something (a dot, initials) at its start. */
-function PillSelect({
+const CARD_BUTTON =
+  "flex h-10 items-center justify-center gap-1.5 rounded-[12px] border border-[#CBD5E1] bg-[#F8FAFC] text-[14.5px] font-semibold text-[#0F172A] transition-colors hover:border-[#64748B] disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB]";
+
+/** A full-width dropdown row on the lead card: what it is in small type, its value under it. */
+function RowSelect({
+  caption,
   label,
   value,
   onChange,
@@ -116,6 +123,7 @@ function PillSelect({
   dashed,
   children,
 }: {
+  caption: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -125,20 +133,34 @@ function PillSelect({
   children: ReactNode;
 }) {
   return (
-    <div className="relative w-full max-w-[176px]">
-      <span className="pointer-events-none absolute left-2 top-1/2 flex -translate-y-1/2 items-center">{lead}</span>
+    <div className="relative h-[50px] w-full">
+      <span className="pointer-events-none absolute left-3.5 top-1/2 z-[1] flex w-[22px] -translate-y-1/2 items-center justify-center">{lead}</span>
+      <span className="pointer-events-none absolute left-[46px] top-[7px] z-[1] text-[11.5px] font-semibold leading-none text-[#334155]">{caption}</span>
       <select
         aria-label={label}
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className={`h-8 w-full cursor-pointer appearance-none truncate rounded-full bg-white pl-[30px] pr-7 text-[12.5px] font-semibold text-[#0F172A] transition-colors hover:border-[#64748B] focus-visible:outline-2 focus-visible:outline-[#2563EB] disabled:cursor-default ${
-          dashed ? "border border-dashed border-[#D97706] text-[#92400E]" : "border border-[#D5DCE5]"
+        className={`absolute inset-0 size-full cursor-pointer appearance-none truncate rounded-[14px] bg-white pb-0 pl-[46px] pr-9 pt-[17px] text-[14.5px] font-bold transition-colors hover:border-[#64748B] focus-visible:outline-2 focus-visible:outline-[#2563EB] disabled:cursor-default ${
+          dashed ? "border border-dashed border-[#D97706] text-[#92400E]" : "border border-[#CBD5E1] text-[#0F172A]"
         }`}
       >
         {children}
       </select>
-      <Icon name="chevron" size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#64748B]" />
+      <Icon name="chevron" size={15} className="pointer-events-none absolute right-3 top-1/2 z-[1] -translate-y-1/2 text-[#64748B]" />
+    </div>
+  );
+}
+
+/** The same row where the value can't be changed (lost and spam lists). */
+function RowValue({ caption, lead, children }: { caption: string; lead?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex min-h-[50px] w-full items-center gap-2.5 rounded-[14px] border border-[#E2E8F0] bg-white px-3.5 py-1.5">
+      {lead ? <span className="flex w-[22px] shrink-0 items-center justify-center">{lead}</span> : null}
+      <span className="flex min-w-0 flex-col leading-tight">
+        <span className="text-[11.5px] font-semibold text-[#334155]">{caption}</span>
+        <span className="text-[14.5px] font-bold text-[#0F172A]">{children}</span>
+      </span>
     </div>
   );
 }
@@ -151,26 +173,28 @@ function PillSelect({
 function SolarDesignButton({ lead, onSend, onOpenQuote }: { lead: PipelineLead; onSend?: () => void; onOpenQuote?: (quoteId: string | null) => void }) {
   const kind = sourceKind(lead.source);
   return (
-    <div className="inline-flex max-w-full flex-col items-stretch gap-1">
+    <div className="flex h-full w-full flex-col items-stretch justify-between gap-2">
+      <div className="flex flex-col gap-1">
       <Link
         href={leadDesignHref(lead)}
         title={`Design a system for ${lead.customerName}${lead.address ? ` at ${lead.address}` : ""}`}
-        className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-[8px] border border-[#CBD5E1] pl-1 pr-2.5 text-[12.5px] font-bold text-white no-underline shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB]"
+        className="inline-flex h-10 max-w-full items-center justify-center gap-1.5 rounded-[10px] border border-[#CBD5E1] pl-1 pr-2.5 font-source-sans text-[16px] font-bold text-white no-underline shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#2563EB]"
         style={{ backgroundImage: "linear-gradient(110deg, rgb(84, 116, 235) 10%, rgb(255, 60, 60) 100%)" }}
       >
         <Image alt="" src="/images/solarDesignLogo.png" width={24} height={24} className="shrink-0" />
         <span className="whitespace-nowrap">Solar Design</span>
         <span aria-hidden="true">→</span>
       </Link>
-      <span className="truncate text-[11.5px] text-[#64748B]" title={lead.source ?? undefined}>
+      <span className="truncate text-[13.5px] font-medium text-[#334155]" title={lead.source ?? undefined}>
         {kind.label} · {ago(lead.createdAt)}
       </span>
+      </div>
       {lead.design || onOpenQuote ? (
         // Proposal badge and Quotes button take the Solar Design button's width, never widen it.
         <span className="flex w-0 min-w-full flex-wrap items-center gap-1">
           {lead.design ? (
-            <span className="min-w-0 max-w-full">
-              <DesignShareBadge design={lead.design} onSend={onSend} size="sm" />
+            <span className="w-full min-w-0">
+              <DesignShareBadge design={lead.design} onSend={onSend} />
             </span>
           ) : null}
           {onOpenQuote ? <LeadQuotesButton lead={lead} onOpenQuote={onOpenQuote} /> : null}
@@ -212,6 +236,7 @@ function RowMenu({ items }: { items: RowMenuItem[] }) {
       <IconButton
         icon="more"
         label="More actions"
+        bold
         expanded={open}
         onClick={() => {
           setOpen((o) => !o);
@@ -221,7 +246,7 @@ function RowMenu({ items }: { items: RowMenuItem[] }) {
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-[38px] z-20 min-w-[170px] max-h-[70vh] w-max max-w-[320px] overflow-y-auto rounded-[10px] border border-[#E3E8EF] bg-white py-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+          className="absolute right-0 top-[46px] z-20 min-w-[170px] max-h-[70vh] w-max max-w-[320px] overflow-y-auto rounded-[10px] border border-[#E3E8EF] bg-white py-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
         >
           {items.map((item) => (
             <Fragment key={item.label}>
@@ -563,7 +588,7 @@ export function LeadsWorkspace({
   const editable = view !== "spam" && view !== "lost";
 
   return (
-    <section aria-labelledby="leads-title" className="flex flex-col overflow-hidden rounded-[14px] border border-[#E3E8EF] bg-white">
+    <section aria-labelledby="leads-title" className="flex flex-col rounded-[14px] border border-[#E3E8EF] bg-white">
       <div className="flex flex-col gap-3 border-b border-[#EEF2F6] px-5 pb-3 pt-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 id="leads-title" className="m-0 flex-grow font-source-sans text-[19px] font-bold text-[#0F172A]">
@@ -672,34 +697,12 @@ export function LeadsWorkspace({
                         : "No open leads."}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-collapse text-[13px]">
-            <colgroup>
-              <col className="w-[22%]" />
-              <col className="w-[136px]" />
-              <col className="w-[15%]" />
-              <col className="w-[15%]" />
-              <col className="w-[27%]" />
-              <col className="w-[148px]" />
-              <col className="w-[56px]" />
-            </colgroup>
-            <thead>
-              <tr className="bg-[#F8FAFC] text-left text-[12px] text-[#5B6B80]">
-                {["Customer", "Roof design", "Stage", "Sales owner", "Next action", "Source", ""].map((h, i) => (
-                  <th key={i} scope="col" className={`border-b border-[#E3E8EF] py-2 font-semibold ${i === 0 ? "pl-5" : "px-2"}`}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((l) => {
+        <div className="flex flex-col gap-3.5 bg-[#EFEDE8] p-4">
+          {rows.map((l) => {
                 const busy = busyId === l.id;
                 const open = panel?.leadId === l.id ? panel.kind : null;
-                const tone = leadUrgency(l);
                 const due = l.nextAction ? describeDue(l.nextAction.dueAt) : null;
                 const chip = TONE_CHIP[due?.tone ?? "late"];
-                const second = [l.customerPhone, suburbOf(l.address)].filter(Boolean).join(" · ");
                 const del = { label: "Delete lead…", danger: true, onSelect: () => setPanel({ leadId: l.id, kind: "delete" }) };
                 const proposal = { label: "Proposal", onSelect: () => setViewing(l.id, "proposal") };
                 const menu =
@@ -731,192 +734,198 @@ export function LeadsWorkspace({
                           { label: "Mark as spam", danger: true, onSelect: () => void setSpam(l, true) },
                           del,
                         ];
-                return [
-                  <tr
+                const late = due?.tone === "late";
+                const rd = l.roofDesign;
+                const roofLabel = rd?.status === "READY" ? `${rd.panelCount ?? 0} panels${rd.systemKw ? ` · ${rd.systemKw.toFixed(1)} kW` : ""}` : null;
+                return (
+                  <article
                     key={l.id}
-                    className={`group transition-colors hover:bg-[#F8FAFC] ${busy ? "opacity-50" : ""} ${open ? "bg-[#F8FAFC]" : ""}`}
+                    aria-label={`Lead: ${l.customerName}`}
+                    className={`@container flex flex-col gap-4 rounded-[24px] bg-[#FBFAF8] px-5 py-4 shadow-[0_10px_26px_rgba(60,45,20,0.12),inset_0_1px_0_#fff] ${busy ? "opacity-50" : ""}`}
                   >
-                    <td className="relative border-b border-[#EEF2F6] py-3 pl-5 pr-2 align-middle">
-                      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-[3px]" style={{ background: TONE_RAIL[tone] }} />
-                      <div className="flex items-center gap-3">
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#EEF2F6] text-[12px] font-bold text-[#334155]">
-                          {initials({ id: "", firstName: l.customerName.split(" ")[0] ?? "", lastName: l.customerName.split(" ").slice(-1)[0] ?? "" })}
-                        </span>
-                        <div className="min-w-0">
-                          <Link
-                            href={`/master/customers/${l.id}`}
-                            className="block truncate text-[14px] font-bold text-[#0F172A] no-underline hover:underline"
-                          >
-                            {l.customerName}
-                          </Link>
-                          <div className="truncate text-[12.5px] text-[#5B6B80]" title={l.customerEmail ?? undefined}>
-                            {second || l.customerEmail || "No contact details"}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
-                      <RoofDesignCell
-                        lead={l}
-                        working={roofWorking.has(l.id)}
-                        onOpen={() => setViewing(l.id)}
-                        onRetry={() => redesignRoof(l.id)}
-                      />
-                      <QuoteOptionsChip leadId={l.id} customerName={l.customerName} open={l.openQuotes} />
-                    </td>
-
-                    <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
-                      {editable ? (
-                        <PillSelect
-                          label={`Stage for ${l.customerName}`}
-                          value={l.stage}
-                          disabled={busy}
-                          onChange={(v) => void act(l, () => updateLeadPipeline(l.id, { stage: v as LeadStage }))}
-                          lead={<span className="ml-1 size-2 rounded-full" style={{ background: STAGE_DOT[l.stage] }} />}
+                    <div className="flex flex-wrap items-stretch gap-3.5">
+                      <div className="flex min-w-[200px] flex-[1_1_200px] flex-col gap-1 @max-[1160px]:flex-[1_1_100%] @max-[1160px]:flex-row @max-[1160px]:flex-wrap @max-[1160px]:items-baseline @max-[1160px]:gap-x-5">
+                        <Link
+                          href={`/master/customers/${l.id}`}
+                          className="font-source-sans text-[21px] font-bold leading-tight text-[#0F172A] no-underline [overflow-wrap:anywhere] hover:underline"
                         >
-                          {meta.stages.map((s) => (
-                            <option key={s.key} value={s.key}>
-                              {s.label}
-                            </option>
-                          ))}
-                        </PillSelect>
-                      ) : (
-                        <div className="flex flex-col gap-1">
-                          <span className="flex items-center gap-1.5 font-semibold text-[#334155]">
-                            <span className="size-2 rounded-full" style={{ background: STAGE_DOT[l.stage] }} />
+                          {l.customerName}
+                        </Link>
+                        {l.customerPhone ? <span className="text-[15px] font-medium text-[#1E293B]">{l.customerPhone}</span> : null}
+                        {l.address ? <span className="text-[15px] font-medium text-[#1E293B]">{l.address}</span> : null}
+                        {l.customerPhone || l.address ? null : (
+                          <span className="text-[15px] font-medium text-[#1E293B] [overflow-wrap:anywhere]">{l.customerEmail || "No contact details"}</span>
+                        )}
+                      </div>
+
+                      <div className="flex shrink-0 flex-col items-center justify-between gap-1.5 rounded-[20px] border-2 border-[#D9BE85] bg-linear-to-b from-[#F7F6F3] to-[#E7E4DE] px-3 py-2.5 shadow-[0_10px_22px_rgba(60,45,20,0.18),inset_0_1px_0_#fff]">
+                        <RoofDesignCell tile lead={l} working={roofWorking.has(l.id)} onOpen={() => setViewing(l.id)} onRetry={() => redesignRoof(l.id)} />
+                        {roofLabel ? <span className="text-[16px] font-bold text-[#0F172A]">{roofLabel}</span> : null}
+                      </div>
+
+                      <div className="flex w-[244px] shrink-0 flex-col gap-2">
+                        {editable ? (
+                          <RowSelect
+                            caption="Stage"
+                            label={`Stage for ${l.customerName}`}
+                            value={l.stage}
+                            disabled={busy}
+                            onChange={(v) => void act(l, () => updateLeadPipeline(l.id, { stage: v as LeadStage }))}
+                            lead={<span className="size-2.5 rounded-full" style={{ background: STAGE_DOT[l.stage] }} />}
+                          >
+                            {meta.stages.map((s) => (
+                              <option key={s.key} value={s.key}>
+                                {s.label}
+                              </option>
+                            ))}
+                          </RowSelect>
+                        ) : (
+                          <RowValue caption="Stage" lead={<span className="size-2.5 rounded-full" style={{ background: STAGE_DOT[l.stage] }} />}>
                             {stageLabel(l.stage)}
-                          </span>
-                          {view === "lost" && l.lostReason ? (
-                            <span className="text-[12px] font-semibold text-[#B91C1C]">{l.lostReason}</span>
+                            {view === "lost" && l.lostReason ? <span className="font-semibold text-[#B91C1C]"> · {l.lostReason}</span> : null}
+                          </RowValue>
+                        )}
+                        {editable ? (
+                          <RowSelect
+                            caption="Sales owner"
+                            label={`Sales owner for ${l.customerName}`}
+                            value={l.owner?.id ?? ""}
+                            disabled={busy}
+                            dashed={!l.owner}
+                            onChange={(v) => void act(l, () => updateLeadPipeline(l.id, { ownerId: v || null }))}
+                            lead={
+                              l.owner ? (
+                                <span className="flex size-[22px] items-center justify-center rounded-full bg-[#0B1A2E] text-[9.5px] font-bold text-white">
+                                  {initials(l.owner)}
+                                </span>
+                              ) : (
+                                <Icon name="users" size={16} className="text-[#D97706]" />
+                              )
+                            }
+                          >
+                            <option value="">Assign sales owner</option>
+                            {meta.owners.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {personName(o)}
+                              </option>
+                            ))}
+                          </RowSelect>
+                        ) : (
+                          <RowValue caption="Sales owner">{personName(l.owner) || "—"}</RowValue>
+                        )}
+                        {l.openQuotes && l.openQuotes.count > 0 ? (
+                          <QuoteOptionsChip asRow leadId={l.id} customerName={l.customerName} open={l.openQuotes} />
+                        ) : view === "spam" ? null : (
+                          <button
+                            type="button"
+                            onClick={() => setQuotesFor({ lead: l, startWith: "create" })}
+                            className="flex h-[50px] w-full items-center gap-2.5 rounded-[14px] border border-[#CBD5E1] bg-white pl-3.5 pr-3 text-left transition-colors hover:border-[#64748B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+                          >
+                            <span aria-hidden="true" className="flex w-[22px] shrink-0 justify-center">
+                              <span className="size-2.5 rounded-[3px] bg-[#94A3B8]" />
+                            </span>
+                            <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                              <span className="text-[11.5px] font-semibold text-[#334155]">Quotes</span>
+                              <span className="truncate text-[14.5px] font-bold text-[#0F172A]">New quote</span>
+                            </span>
+                            <Icon name="plus" size={15} className="shrink-0 text-[#64748B]" />
+                          </button>
+                        )}
+                      </div>
+
+                      <section
+                        aria-label={`Next action for ${l.customerName}`}
+                        className={`flex w-[250px] shrink-0 flex-col justify-between gap-2 rounded-[16px] border bg-white px-3.5 py-3 @max-[1160px]:min-w-[230px] @max-[1160px]:flex-1 shadow-[0_6px_14px_rgba(60,45,20,0.10)] ${late ? "border-[#FCA5A5]" : "border-[#E2E8F0]"}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[12.5px] font-semibold text-[#334155]">Next action</span>
+                          {l.nextAction ? (
+                            <span
+                              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-[8px] px-2 py-[3px] text-[13px] font-bold ${late ? "lead-overdue-glow" : ""}`}
+                              style={{ background: chip.bg, color: chip.fg }}
+                            >
+                              <Icon name="clock" size={13} />
+                              {due!.text}
+                            </span>
                           ) : null}
                         </div>
-                      )}
-                    </td>
-
-                    <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
-                      {editable ? (
-                        <PillSelect
-                          label={`Sales owner for ${l.customerName}`}
-                          value={l.owner?.id ?? ""}
-                          disabled={busy}
-                          dashed={!l.owner}
-                          onChange={(v) => void act(l, () => updateLeadPipeline(l.id, { ownerId: v || null }))}
-                          lead={
-                            l.owner ? (
-                              <span className="flex size-[18px] items-center justify-center rounded-full bg-[#0B1A2E] text-[9px] font-bold text-white">
-                                {initials(l.owner)}
-                              </span>
-                            ) : (
-                              <Icon name="users" size={14} className="ml-0.5 text-[#D97706]" />
-                            )
-                          }
-                        >
-                          <option value="">Assign sales owner</option>
-                          {meta.owners.map((o) => (
-                            <option key={o.id} value={o.id}>
-                              {personName(o)}
-                            </option>
-                          ))}
-                        </PillSelect>
-                      ) : (
-                        <span className="text-[#334155]">{personName(l.owner) || "—"}</span>
-                      )}
-                    </td>
-
-                    <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
-                      <div className="flex items-center gap-3">
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0">
                           {l.nextAction ? (
-                            <>
-                              <div className="truncate text-[13px] font-semibold text-[#0F172A]" title={l.nextAction.title}>
-                                {l.nextAction.title}
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <span className="inline-flex items-center gap-1 rounded-[6px] px-1.5 py-[2px] text-[11.5px] font-semibold" style={{ background: chip.bg, color: chip.fg }}>
-                                  <Icon name="clock" size={12} />
-                                  {due!.text}
-                                </span>
-                                {l.respondBy ? <span className="text-[11.5px] font-semibold text-[#B91C1C]">Not contacted yet</span> : null}
-                              </div>
-                            </>
+                            <div className="font-source-sans text-[17.5px] font-bold leading-snug text-[#0F172A] [overflow-wrap:anywhere]">{l.nextAction.title}</div>
                           ) : l.status === "LOST" ? (
-                            <span className="text-[12.5px] text-[#94A3B8]">—</span>
+                            <span className="text-[14px] text-[#64748B]">—</span>
                           ) : (
                             <>
-                              <div className="text-[13px] font-semibold text-[#B91C1C]">No next action</div>
-                              <div className="mt-0.5 text-[11.5px] text-[#64748B]">
-                                {l.respondBy ? "Not contacted yet" : "Set one so this lead doesn't stall"}
-                              </div>
+                              <div className="font-source-sans text-[17.5px] font-bold text-[#B91C1C]">No next action</div>
+                              <div className="mt-0.5 text-[13px] text-[#475569]">Set one so this lead doesn&apos;t stall</div>
                             </>
                           )}
+                          {l.respondBy ? <div className="mt-0.5 text-[13px] font-semibold text-[#B91C1C]">Not contacted yet</div> : null}
                         </div>
                         {editable ? (
-                          <div className="flex shrink-0 gap-1.5">
-                            {l.nextAction ? (
-                              <IconButton
-                                icon="check"
-                                label={`Mark “${l.nextAction.title}” done`}
-                                disabled={busy}
-                                onClick={() => void act(l, () => completeAction(l.nextAction!.id))}
-                              />
-                            ) : null}
-                            <IconButton
-                              icon="plus"
-                              label="Set the next action"
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              disabled={busy || !l.nextAction}
+                              aria-label={l.nextAction ? `Mark “${l.nextAction.title}” done` : "No next action to mark done"}
+                              onClick={() => l.nextAction && void act(l, () => completeAction(l.nextAction!.id))}
+                              className={CARD_BUTTON}
+                            >
+                              <Icon name="check" size={15} />
+                              Done
+                            </button>
+                            <button
+                              type="button"
                               disabled={busy}
-                              strong={!l.nextAction}
-                              expanded={open === "next"}
+                              aria-label="Set the next action"
+                              aria-expanded={open === "next"}
                               onClick={() => setPanel(open === "next" ? null : { leadId: l.id, kind: "next" })}
-                            />
+                              className={l.nextAction ? CARD_BUTTON : `${CARD_BUTTON} !border-[#0B1A2E] !bg-[#0B1A2E] !text-white hover:!bg-[#1E2E45]`}
+                            >
+                              <Icon name="plus" size={15} />
+                              Add
+                            </button>
+                          </div>
+                        ) : null}
+                      </section>
+
+                      <div className="flex w-[176px] shrink-0 flex-col">
+                        <SolarDesignButton
+                          lead={l}
+                          onSend={() => setSendDesignFor(l)}
+                          onOpenQuote={view === "spam" ? undefined : (id) => setQuotesFor(id ? { lead: l, startWith: "list", openId: id } : { lead: l, startWith: "create" })}
+                        />
+                        {view === "spam" && l.spamReason ? (
+                          <div className="mt-1 text-[12.5px] text-[#B91C1C]">{l.spamReason}</div>
+                        ) : l.spamSuggestion?.length ? (
+                          <div
+                            className="mt-1 w-fit rounded-[6px] bg-[#FEF3C7] px-1.5 py-[2px] text-[12.5px] font-semibold text-[#92400E]"
+                            title={`Spam check: ${l.spamSuggestion.join(", ")}`}
+                          >
+                            Looks like spam
                           </div>
                         ) : null}
                       </div>
-                    </td>
 
-                    <td className="border-b border-[#EEF2F6] px-2 py-3 align-middle">
-                      <SolarDesignButton
-                        lead={l}
-                        onSend={() => setSendDesignFor(l)}
-                        onOpenQuote={view === "spam" ? undefined : (id) => setQuotesFor(id ? { lead: l, startWith: "list", openId: id } : { lead: l, startWith: "create" })}
-                      />
-                      {view === "spam" && l.spamReason ? (
-                        <div className="mt-1 text-[11.5px] text-[#B91C1C]">{l.spamReason}</div>
-                      ) : l.spamSuggestion?.length ? (
-                        <div
-                          className="mt-1 w-fit rounded-[6px] bg-[#FEF3C7] px-1.5 py-[2px] text-[11.5px] font-semibold text-[#92400E]"
-                          title={`Spam check: ${l.spamSuggestion.join(", ")}`}
-                        >
-                          Looks like spam
-                        </div>
-                      ) : null}
-                    </td>
-
-                    <td className="border-b border-[#EEF2F6] py-3 pl-1 pr-4 align-middle">
-                      <div className="flex justify-end">
+                      <div className="shrink-0 self-start">
                         <RowMenu items={menu} />
                       </div>
-                    </td>
-                  </tr>,
-                  open && meta ? (
-                    <tr key={`${l.id}-panel`}>
-                      <td colSpan={7} className="border-b border-[#E3E8EF] bg-[#F8FAFC] px-5 pb-4 pt-1">
-                        <div className="rounded-[12px] border border-[#E3E8EF] bg-white p-4">
-                          {open === "delete" ? (
-                            <DeleteForm lead={l} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
-                          ) : open === "next" ? (
-                            <NextActionForm lead={l} meta={meta} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
-                          ) : (
-                            <LostForm lead={l} meta={meta} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null,
-                ];
+                    </div>
+
+                    {open && meta ? (
+                      <div className="rounded-[12px] border border-[#E3E8EF] bg-white p-4">
+                        {open === "delete" ? (
+                          <DeleteForm lead={l} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
+                        ) : open === "next" ? (
+                          <NextActionForm lead={l} meta={meta} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
+                        ) : (
+                          <LostForm lead={l} meta={meta} onDone={() => { setPanel(null); onChanged(); }} onCancel={() => setPanel(null)} />
+                        )}
+                      </div>
+                    ) : null}
+                  </article>
+                );
               })}
-            </tbody>
-          </table>
         </div>
       )}
 

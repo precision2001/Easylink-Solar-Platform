@@ -141,7 +141,8 @@ export function useAutoRoofDesigns(
   return { working, redesign };
 }
 
-const BOX = "relative flex h-[76px] w-[112px] shrink-0 overflow-hidden rounded-[12px]";
+const BOX_ROW = "relative flex h-[76px] w-[112px] shrink-0 overflow-hidden rounded-[12px]";
+const BOX_TILE = "relative flex h-[100px] w-[150px] shrink-0 overflow-hidden rounded-[12px]";
 
 function SunSpinner() {
   return (
@@ -160,12 +161,16 @@ export function RoofDesignCell({
   working,
   onOpen,
   onRetry,
+  tile,
 }: {
   lead: PipelineLead;
   working: boolean;
   onOpen: () => void;
   onRetry: () => void;
+  /** Larger picture with no caption on it: the lead card frames it and writes the size underneath. */
+  tile?: boolean;
 }) {
+  const BOX = tile ? BOX_TILE : BOX_ROW;
   const d = lead.roofDesign;
   const hasAddress = Boolean(lead.address?.trim());
 
@@ -221,9 +226,11 @@ export function RoofDesignCell({
           loading="lazy"
           className="size-full object-cover transition-transform duration-300 group-hover/roof:scale-[1.04] motion-reduce:transition-none"
         />
-        <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1 pt-3 text-left text-[10.5px] font-bold leading-tight text-white">
-          {label}
-        </span>
+        {tile ? null : (
+          <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1 pt-3 text-left text-[10.5px] font-bold leading-tight text-white">
+            {label}
+          </span>
+        )}
       </button>
     );
   }
