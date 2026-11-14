@@ -2913,7 +2913,7 @@ export const ABOUT_US_PAGE = {
         bullets: [
           { highlight: true, text: "Founded in 2016" },
           {
-            text: "Founded in Sydney, Australia as a solar solutions provider",
+            text: "Started in Sydney, Australia as a solar solutions provider",
           },
           {
             text: "Vision to make solar accessible for every Australian household",
