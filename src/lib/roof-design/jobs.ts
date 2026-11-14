@@ -17,6 +17,8 @@ export type ApiDesignJob = {
   orientation?: PanelOrientation | "best";
   beautify?: boolean;
   panelWatts?: number;
+  /** Datasheet size of the panel (long side heightM, short side widthM); default: Google's panel. */
+  panelDims?: { heightM: number; widthM: number };
   outline?: LatLngRing[];
   includeImage?: boolean;
 };
@@ -33,6 +35,7 @@ export async function runApiDesign(job: ApiDesignJob): Promise<ApiDesignResult> 
     orientation: job.orientation,
     beautify: job.beautify === true,
     panelWatts: job.panelWatts,
+    dims: job.panelDims,
     outline: job.outline?.length ? job.outline : undefined,
   });
   if (r.status !== "READY") return { status: "NO_ROOF", body: { status: "NO_ROOF", pin, formattedAddress, message: r.message } };

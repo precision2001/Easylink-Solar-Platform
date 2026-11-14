@@ -23,7 +23,8 @@ import { cachedJson, cacheRead, cacheWrite, placeKey } from "@/lib/server/roofDa
  *   POST /api/roof-design
  *   { "address": "11 Melton St S, Auburn NSW 2144" }      or { "lat": -33.85, "lng": 151.03 }
  *   optional: "orientation": "PORTRAIT" | "LANDSCAPE" | "best", "beautify": true,
- *             "panelWatts": 440, "outline": [[{lat,lng},...]], "includeImage": true
+ *             "panelWatts": 440, "panelDims": { "heightM": 1.762, "widthM": 1.134 },
+ *             "outline": [[{lat,lng},...]], "includeImage": true
  */
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -156,6 +157,14 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
       ? (body.outline as unknown[]).filter((r): r is LatLngRing => Array.isArray(r) && r.length >= 3 && r.length <= 400 && r.every(isPoint))
       : undefined;
   const panelWatts = isNum(body.panelWatts) && body.panelWatts >= 100 && body.panelWatts <= 1000 ? body.panelWatts : undefined;
+  // The real panel's size from its datasheet (long side heightM, short side
+  // widthM), so a design packs the panels actually being installed rather
+  // than Google's default panel. Passed straight to the engine's dims option.
+  const pd = body.panelDims as { heightM?: unknown; widthM?: unknown } | undefined;
+  const panelDims =
+    pd && isNum(pd.heightM) && isNum(pd.widthM) && pd.heightM >= 1.2 && pd.heightM <= 2.8 && pd.widthM >= 0.8 && pd.widthM <= 1.5 && pd.heightM >= pd.widthM
+      ? { heightM: Math.round(pd.heightM * 1000) / 1000, widthM: Math.round(pd.widthM * 1000) / 1000 }
+      : undefined;
 
   // Finished designs are kept by address, options and engine version; an
   // edited outline is its own entry, so a user's edit is never answered with
@@ -167,6 +176,7 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
     orientation ?? "-",
     body.beautify === true ? "b" : "-",
     panelWatts ?? "-",
+    panelDims ? `${panelDims.heightM}x${panelDims.widthM}` : "-",
     outline?.length ? createHash("sha1").update(JSON.stringify(outline)).digest("hex") : "auto",
     body.includeImage === true ? "img" : "-",
   ].join("|");
@@ -192,6 +202,7 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
         orientation,
         beautify: body.beautify === true,
         panelWatts,
+        panelDims,
         outline: outline?.length ? outline : undefined,
         includeImage: body.includeImage === true,
       },
