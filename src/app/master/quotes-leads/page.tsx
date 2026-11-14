@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { MasterDistSidebar } from "@/components/master-dashboard/MasterDistSidebar";
 import { MasterQuotesLeads } from "@/components/master-dashboard/MasterQuotesLeads";
 
@@ -10,7 +11,9 @@ export default function MasterQuotesLeadsPage() {
         <MasterDistSidebar active="quotes" />
       </div>
       <main className="min-w-0 flex-[999_1_560px]">
-        <MasterQuotesLeads />
+        <Suspense>
+          <MasterQuotesLeads />
+        </Suspense>
       </main>
     </div>
   );
