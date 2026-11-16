@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
-import { useConnectDialler } from "@/hooks/useConnectDialler";
+import { useConnectPhone } from "@/hooks/useConnectPhone";
 
 /**
  * Which carrier the Agent Dialer uses. Amazon Connect by default (recorded,
@@ -318,7 +318,7 @@ export function MasterAgentDialer() {
    * a stray link cannot place a call on its own.
    */
   const livekitDialler = useAdminDialler();
-  const connectDialler = useConnectDialler(CALL_PROVIDER === "connect");
+  const connectDialler = useConnectPhone(CALL_PROVIDER === "connect");
   const dialler = CALL_PROVIDER === "connect" ? connectDialler : livekitDialler;
   const searchParams = useSearchParams();
   const handedNumber = searchParams.get("number");
