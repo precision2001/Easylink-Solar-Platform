@@ -296,7 +296,12 @@ function ConnectPhonePanel({
       </div>
       {phone === "signed-out" && (
         <p className="m-0 text-[12.5px] text-[#475569]">
-          Sign in once on this computer with the Connect sales login (username <b>sales</b>). After that the phone stays ready whenever you open the Agent Dialer.
+          Sign in once on this computer with your Connect phone login (or the shared <b>sales</b> login). After that the phone stays ready whenever you open
+          the Agent Dialer. No phone login yet?{" "}
+          <a href="/master/admin/staff#phone-logins" className="font-semibold text-[#0B5CAD] underline">
+            Add one in Staff &amp; roles
+          </a>
+          .
         </p>
       )}
       {incoming && <p className="m-0 text-[12.5px] font-semibold text-[#B45309]">A caller from EasyLink AI is ringing. Accept it in the phone below.</p>}
