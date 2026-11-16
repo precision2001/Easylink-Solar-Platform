@@ -1,6 +1,7 @@
 "use client";
 
 import { QuoteOptionsChip } from "./QuoteOptionsChip";
+import { SignalsChip, SignalsPanel } from "./LeadSignals";
 import Image from "next/image";
 import Link from "next/link";
 import { leadDesignHref } from "@/lib/designs/leadDesignLink";
@@ -503,6 +504,9 @@ export function LeadsWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
+  /** The lead whose signals are open, and the leads whose signals this person has opened since the list loaded. */
+  const [signalsFor, setSignalsFor] = useState<string | null>(null);
+  const [signalsSeen, setSignalsSeen] = useState<Set<string>>(new Set());
   const [viewing, setViewingState] = useState<{ id: string; view: "roof" | "proposal" } | null>(null);
   const setViewing = (id: string | null, view: "roof" | "proposal" = "roof") => setViewingState(id ? { id, view } : null);
   // The lead whose quote versions are open in the side drawer.
@@ -756,6 +760,16 @@ export function LeadsWorkspace({
                         {l.customerPhone || l.address ? null : (
                           <span className="text-[15px] font-medium text-[#1E293B] [overflow-wrap:anywhere]">{l.customerEmail || "No contact details"}</span>
                         )}
+                        {l.signals ? (
+                          <div className="mt-auto w-full pt-1.5 @max-[1160px]:mt-0 @max-[1160px]:w-auto @max-[1160px]:pt-0">
+                            <SignalsChip
+                              customerName={l.customerName}
+                              signals={signalsSeen.has(l.id) ? { ...l.signals, newCount: 0 } : l.signals}
+                              open={signalsFor === l.id}
+                              onToggle={() => setSignalsFor(signalsFor === l.id ? null : l.id)}
+                            />
+                          </div>
+                        ) : null}
                       </div>
 
                       <div className="flex shrink-0 flex-col items-center justify-between gap-1.5 rounded-[20px] border-2 border-[#D9BE85] bg-linear-to-b from-[#F7F6F3] to-[#E7E4DE] px-3 py-2.5 shadow-[0_10px_22px_rgba(60,45,20,0.18),inset_0_1px_0_#fff]">
@@ -911,6 +925,10 @@ export function LeadsWorkspace({
                         <RowMenu items={menu} />
                       </div>
                     </div>
+
+                    {signalsFor === l.id ? (
+                      <SignalsPanel leadId={l.id} onSeen={() => setSignalsSeen((seen) => new Set(seen).add(l.id))} />
+                    ) : null}
 
                     {open && meta ? (
                       <div className="rounded-[12px] border border-[#E3E8EF] bg-white p-4">
