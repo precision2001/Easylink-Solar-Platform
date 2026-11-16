@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use } from "react";
 import { MasterDistSidebar } from "@/components/master-dashboard/MasterDistSidebar";
 import { CustomerRecordView } from "@/components/contact-centre/CustomerRecord";
+import { SignalsPanel } from "@/components/master-dashboard/quotes-leads/LeadSignals";
 
 export default function MasterCustomerRecordPage({ params }: { params: Promise<{ leadId: string }> }) {
   const { leadId } = use(params);
@@ -22,6 +23,10 @@ export default function MasterCustomerRecordPage({ params }: { params: Promise<{
           </nav>
         </header>
         <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 px-8 py-6 pb-14">
+          <section aria-label="Signals" className="@container flex flex-col gap-1 rounded-[14px] border border-[#E3E8EF] bg-white px-5 pb-5 pt-4">
+            <h2 className="m-0 font-source-sans text-[19px] font-bold text-[#0F172A]">Signals</h2>
+            <SignalsPanel leadId={leadId} onSeen={() => {}} />
+          </section>
           <CustomerRecordView portal="admin" leadId={leadId} />
         </div>
       </main>

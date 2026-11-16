@@ -84,6 +84,7 @@ const GROUPS: NavGroup[] = [
       { key: "sales", label: "Sales dashboard", icon: "grid", href: "/master/sales" },
       { key: "quotes", label: "Quotes & Leads", icon: "file", href: "/master/quotes-leads" },
       { key: "pipeline", label: "Pipeline", icon: "layers", href: "/master/pipeline" },
+      { key: "signals", label: "Signals", icon: "spark", href: "/master/signals" },
       { key: "insights", label: "Insights · Clarity", icon: "eye" },
     ],
   },

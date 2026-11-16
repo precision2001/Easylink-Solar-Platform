@@ -146,6 +146,23 @@ export default function PrivacyPolicyPage() {
           ),
         },
         {
+          id: "referrals",
+          title: "Referrals and sharing",
+          body: (
+            <>
+              <P>
+                If you invite someone by entering their name and email, we use those details to send them your invitation and to record the referral. Please only invite people who would expect to hear from you. If someone uses your referral link or code, we record that they came from you.
+              </P>
+              <P>
+                Your portal shows the name and email of the people you referred and whether each referral has gone ahead, so that a reward can be paid. If you were referred, the person who referred you can see that. We collect everything else about a referred person from them directly, when they use our website.
+              </P>
+              <P>
+                When we send your design to you by email or SMS at your request, the message includes your address and system details, so take care who you forward it to.
+              </P>
+            </>
+          ),
+        },
+        {
           id: "overseas",
           title: "Where your information is stored",
           body: (
