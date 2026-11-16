@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
+import { type RecordingState } from "@/hooks/useAdminDialler";
+import { useDialler } from "@/hooks/useDialler";
+import { ConnectIncomingCall, ConnectPhoneStatus } from "@/components/master-dashboard/ConnectSoftphone";
 import { useRecordingPlayback } from "@/hooks/useRecordingPlayback";
 import { useSmsStatus } from "@/hooks/useSmsStatus";
 import { SmsStatusNote } from "@/components/sms/SmsStatusNote";
@@ -277,7 +279,8 @@ export function MasterAgentDialer() {
     toggleMute,
     sendDigit,
     callActive,
-  } = useAdminDialler();
+    softphone,
+  } = useDialler();
 
   const [queue, setQueue] = useState<QueueEntry[] | null>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
@@ -293,8 +296,12 @@ export function MasterAgentDialer() {
     if (state === "ended") setListRefresh((n) => n + 1);
   }
   // A call EasyLink AI handed over: who, and what the AI already found out.
-  const [handover, setHandover] = useState<AcceptedTransfer | null>(null);
-  const live = useLiveTranscript(room, state === "connected");
+  const [livekitHandover, setHandover] = useState<AcceptedTransfer | null>(null);
+  // On Connect the hand-over rings in the softphone and carries the AI's summary.
+  const connectHandover = softphone?.handover ?? null;
+  const handover: Pick<AcceptedTransfer, "callerName" | "leadId" | "summary"> | null =
+    livekitHandover ?? (connectHandover ? { callerName: null, leadId: null, summary: connectHandover.summary ?? "" } : null);
+  const live = useLiveTranscript(room, state === "connected" && room !== null);
   const takeCall = (t: AcceptedTransfer) => {
     setHandover(t);
     void join(t);
@@ -741,7 +748,7 @@ export function MasterAgentDialer() {
           Communication <span aria-hidden="true">/</span>{" "}
           <span className="font-semibold text-[#0F172A]">Agent Dialer</span>
         </nav>
-        <PresenceToggle onCall={callActive} />
+        {softphone ? <ConnectPhoneStatus softphone={softphone} onCall={callActive} /> : <PresenceToggle onCall={callActive} />}
       </header>
 
       <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 items-start gap-4 px-8 py-6 pb-14 lg:grid-cols-[260px_1fr_320px]">
@@ -841,7 +848,11 @@ export function MasterAgentDialer() {
               {campaignNote && <span className="text-[12.5px] text-[#78350F]">{campaignNote}</span>}
             </section>
           )}
-          <IncomingTransfers enabled={!callActive && countdown === null} onAccepted={takeCall} />
+          {softphone ? (
+            <ConnectIncomingCall softphone={softphone} />
+          ) : (
+            <IncomingTransfers enabled={!callActive && countdown === null} onAccepted={takeCall} />
+          )}
           {callActive ? (
             // In-call: real number, real timer, real mute/hang-up. No "Recording ·
             // consent announced" line like the mock's — we don't record calls or

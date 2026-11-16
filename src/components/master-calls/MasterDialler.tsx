@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Icon from "@/components/ui/Icons";
 import { MasterSectionCard } from "@/components/master-dashboard/MasterSectionCard";
-import { useAdminDialler } from "@/hooks/useAdminDialler";
+import { useDialler } from "@/hooks/useDialler";
 
 const KEYPAD = [
   ["1", "2", "3"],
@@ -43,7 +43,7 @@ export function MasterDialler() {
     toggleMute,
     sendDigit,
     callActive,
-  } = useAdminDialler();
+  } = useDialler();
 
   const press = (key: string) => {
     if (callActive) {

@@ -24,6 +24,7 @@
     "@react-google-maps/api": "^2.20.8",
     "@reduxjs/toolkit": "^2.11.2",
     "@splidejs/react-splide": "^0.7.12",
+    "amazon-connect-streams": "2.30.2",
     "classnames": "^2.5.1",
     "date-fns": "^4.1.0",
     "geotiff": "^3.0.5",
