@@ -3,7 +3,7 @@ import { INSTALLER_ACCESS_COOKIE } from "@/lib/auth/installer-cookies";
 import { backendAuthedFetch, forwardBackendJson, type BackendPortal } from "@/lib/server/backend-authed-fetch";
 
 /** Only the email API's own paths are forwarded to the backend. */
-const ALLOWED = new Set(["status", "oauth", "imap", "accounts", "messages", "send"]);
+const ALLOWED = new Set(["status", "oauth", "imap", "accounts", "messages", "drafts", "send"]);
 
 /**
  * The Operations Portal's pages are gated by the portal sign-in, but its data
@@ -37,6 +37,14 @@ export async function proxyEmail(portal: BackendPortal, request: Request, path: 
   if (res.status === 401 && portal === "admin" && roleOf((await cookies()).get(INSTALLER_ACCESS_COOKIE)?.value) === "ADMIN") {
     const retry = await backendAuthedFetch("installer", target, init);
     if (retry.status !== 401) res = retry;
+  }
+  // Attachment downloads come back as files, not JSON: pass the bytes straight through.
+  const type = res.headers.get("content-type") ?? "";
+  if (res.ok && !type.includes("application/json")) {
+    const headers = new Headers({ "Content-Type": type || "application/octet-stream", "Cache-Control": "private, no-store" });
+    const disposition = res.headers.get("content-disposition");
+    if (disposition) headers.set("Content-Disposition", disposition);
+    return new Response(res.body, { status: res.status, headers });
   }
   return forwardBackendJson(res);
 }
