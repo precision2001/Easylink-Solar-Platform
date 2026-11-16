@@ -41,6 +41,7 @@ Content-Type: application/json
 | `orientation` | optional | `PORTRAIT`, `LANDSCAPE` or `best` (default: the design rules' default) |
 | `beautify` | optional | `true` for aligned blocks instead of the most that fit |
 | `panelWatts` | optional | panel power for kW and inverter sizing (default Google's panel) |
+| `panelDims` | optional | the panel's datasheet size, `{ "heightM": 2.382, "widthM": 1.134 }` (long side, short side), so the layout packs the real panel (default Google's panel) |
 | `outline` | optional | roof outline(s) drawn elsewhere, `[[{lat,lng},…]]` — skips finding the roof |
 | `includeImage` | optional | `true` adds the drawing on the satellite image (JPEG, base64) |
 

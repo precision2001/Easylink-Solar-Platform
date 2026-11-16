@@ -169,6 +169,20 @@ export async function updateLeadPipeline(id: string, patch: PipelinePatch) {
   );
 }
 
+export type AiPlacement = { leadId: string; from: LeadStage; to: LeadStage; moved: boolean; reason: string };
+
+/** The AI reads the lead's whole record and moves it to the stage it supports (noting why on the record). */
+export async function aiPlaceLead(id: string, apply = true): Promise<AiPlacement> {
+  return json<AiPlacement>(
+    await fetch(`/api/admin/leads/${encodeURIComponent(id)}/pipeline/ai`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apply }),
+    }),
+    "The AI couldn't place this lead.",
+  );
+}
+
 export async function addNextAction(input: {
   leadId: string;
   kind: TaskKind;

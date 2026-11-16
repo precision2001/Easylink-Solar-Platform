@@ -32,7 +32,18 @@ export function quoteChipLabel(q: OpenQuotes): string {
  * battery option the customer compared). Opens a short list of them, smallest
  * battery first, each with its total, status and a Send button for drafts.
  */
-export function QuoteOptionsChip({ leadId, customerName, open: openQuotes }: { leadId: string; customerName: string; open: OpenQuotes | null | undefined }) {
+export function QuoteOptionsChip({
+  leadId,
+  customerName,
+  open: openQuotes,
+  asRow,
+}: {
+  leadId: string;
+  customerName: string;
+  open: OpenQuotes | null | undefined;
+  /** A full-width row button (lead card) instead of the small chip. */
+  asRow?: boolean;
+}) {
   const [shown, setShown] = useState(false);
   const [items, setItems] = useState<QuoteItem[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -84,7 +95,7 @@ export function QuoteOptionsChip({ leadId, customerName, open: openQuotes }: { l
 
   if (!openQuotes || openQuotes.count < 1) return null;
   return (
-    <div ref={box} className="relative mt-1.5">
+    <div ref={box} className={asRow ? "relative w-full" : "relative mt-1.5"}>
       <button
         type="button"
         aria-expanded={shown}
@@ -93,9 +104,28 @@ export function QuoteOptionsChip({ leadId, customerName, open: openQuotes }: { l
           setShown(next);
           if (next) void load();
         }}
-        className="inline-flex max-w-[180px] items-center gap-1 truncate rounded-full border border-[#C7D2FE] bg-[#EEF2FF] px-2.5 py-[3px] text-[11.5px] font-bold text-[#3730A3] hover:bg-[#E0E7FF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+        className={
+          asRow
+            ? "flex h-[50px] w-full items-center gap-2.5 rounded-[14px] border border-[#CBD5E1] bg-white pl-3.5 pr-3 text-left transition-colors hover:border-[#64748B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+            : "inline-flex max-w-[180px] items-center gap-1 truncate rounded-full border border-[#C7D2FE] bg-[#EEF2FF] px-2.5 py-[3px] text-[11.5px] font-bold text-[#3730A3] hover:bg-[#E0E7FF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+        }
       >
-        {quoteChipLabel(openQuotes)}
+        {asRow ? (
+          <>
+            <span aria-hidden="true" className="flex w-[22px] shrink-0 justify-center">
+              <span className="size-2.5 rounded-[3px] bg-[#4338CA]" />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col leading-tight">
+              <span className="text-[11.5px] font-semibold text-[#334155]">Quotes</span>
+              <span className="truncate text-[13.5px] font-bold text-[#3730A3]">{quoteChipLabel(openQuotes)}</span>
+            </span>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" className="shrink-0 text-[#64748B]">
+              <path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </>
+        ) : (
+          quoteChipLabel(openQuotes)
+        )}
       </button>
       {shown ? (
         <div className="absolute left-0 top-full z-30 mt-1.5 w-[300px] rounded-[12px] border border-[#E2E8F0] bg-white p-2 shadow-xl" role="dialog" aria-label={`Quotes for ${customerName}`}>

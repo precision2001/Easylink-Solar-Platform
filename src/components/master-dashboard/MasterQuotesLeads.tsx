@@ -2,23 +2,22 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { LeadsWorkspace } from "@/components/master-dashboard/quotes-leads/LeadsWorkspace";
 import { NewLeadDialog } from "@/components/master-dashboard/quotes-leads/NewLeadDialog";
-import { PipelineBoard } from "@/components/master-dashboard/quotes-leads/PipelineBoard";
 import {
   fetchBoard,
   fetchPipelineMeta,
-  type BoardColumn,
+  isLeadStage,
   type LeadStage,
   type PipelineMeta,
   type PipelineSummary,
 } from "@/lib/admin/leads-pipeline";
 
 /**
- * Quotes & Leads: the live pipeline. The board shows open leads by stage,
- * most urgent first; the table is where each lead gets its stage, owner and
- * next action. Both read the same leads, so a change in one shows in the
- * other.
+ * Quotes & Leads: the leads table, where each lead gets its stage, owner and
+ * next action. The stage board is its own page (Pipeline, /master/pipeline);
+ * a stage picked there opens here filtered to it (?stage=…).
  */
 
 const RULES = [
@@ -35,10 +34,14 @@ const RULES = [
 export function MasterQuotesLeads() {
   const [territory, setTerritory] = useState("NSW & ACT");
   const [meta, setMeta] = useState<PipelineMeta | null>(null);
-  const [board, setBoard] = useState<BoardColumn[] | null>(null);
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [boardError, setBoardError] = useState<string | null>(null);
-  const [stage, setStage] = useState<LeadStage | null>(null);
+  // Pipeline page → a stage opens here filtered to it (?stage=PROPOSAL_SENT).
+  const params = useSearchParams();
+  const [stage, setStage] = useState<LeadStage | null>(() => {
+    const s = params.get("stage");
+    return isLeadStage(s) ? s : null;
+  });
   const [reloadKey, setReloadKey] = useState(0);
   const [newLeadOpen, setNewLeadOpen] = useState(false);
 
@@ -51,10 +54,9 @@ export function MasterQuotesLeads() {
   useEffect(() => {
     let live = true;
     fetchBoard()
-      .then(({ columns, summary }) => {
+      .then(({ summary }) => {
         if (!live) return;
         setBoardError(null);
-        setBoard(columns);
         setSummary(summary ?? null);
       })
       .catch((err: unknown) => {
@@ -111,7 +113,11 @@ export function MasterQuotesLeads() {
           </button>
         </div>
 
-        <PipelineBoard columns={board} error={boardError} selected={stage} onSelect={setStage} />
+        {boardError ? (
+          <p role="alert" className="m-0 rounded-[10px] border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2 text-[13px] text-[#991B1B]">
+            {boardError}
+          </p>
+        ) : null}
 
         <LeadsWorkspace
           meta={meta}

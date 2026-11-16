@@ -14,6 +14,7 @@ import {
   leadsBase,
   longTime,
   shortTime,
+  signInHref,
   type Account,
   type EmailPortal,
   type FullMessage,
@@ -240,10 +241,12 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  const [signedOut, setSignedOut] = useState(false);
 
   const loadAccounts = useCallback(async () => {
     const r = await call<Account[]>(`${base}/accounts`);
-    setAccounts(r.data ?? []);
+    setSignedOut(r.status === 401);
+    setAccounts(r.status === 401 ? null : r.data ?? []);
   }, [base]);
 
   const loadList = useCallback(async () => {
@@ -407,6 +410,15 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
           Compose
         </button>
       </header>
+
+      {signedOut ? (
+        <div role="alert" className="flex flex-wrap items-center gap-3 px-7 py-3 text-[14px] font-semibold" style={{ background: "#FFF7ED", color: "#7C2D12", borderBottom: "1px solid #FDBA74" }}>
+          <span className="flex-1">Your sign-in has expired. Sign in again to see your email.</span>
+          <a href={signInHref(portal)} className="rounded-lg px-3 py-2 text-white" style={{ background: "#C2410C" }}>
+            Sign in again
+          </a>
+        </div>
+      ) : null}
 
       {reauth.length ? (
         <div role="status" className="flex flex-wrap items-center gap-3 px-7 py-3 text-[14px]" style={{ background: "#FFF7ED", color: "#7C2D12", borderBottom: "1px solid #FDBA74" }}>

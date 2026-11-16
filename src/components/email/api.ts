@@ -65,7 +65,7 @@ export type FullMessage = ListItem & {
   thread: { id: string; direction: string; fromAddress: string; fromName: string | null; sentAt: string; snippet: string }[];
 };
 
-export async function call<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; data?: T; message?: string }> {
+export async function call<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; status?: number; data?: T; message?: string }> {
   try {
     const res = await fetch(url, {
       cache: "no-store",
@@ -73,11 +73,17 @@ export async function call<T>(url: string, init?: RequestInit): Promise<{ ok: bo
       headers: init?.body ? { "Content-Type": "application/json", ...(init.headers ?? {}) } : init?.headers,
     });
     const json = (await res.json().catch(() => ({}))) as { data?: T; message?: string };
-    return { ok: res.ok, data: json.data, message: json.message };
+    return { ok: res.ok, status: res.status, data: json.data, message: res.status === 401 ? SIGNED_OUT : json.message };
   } catch {
     return { ok: false, message: "Couldn't reach EasyLink. Try again." };
   }
 }
+
+/** Shown whenever the portal session has run out. */
+export const SIGNED_OUT = "Your sign-in has expired. Sign in again to use Email.";
+
+export const signInHref = (portal: EmailPortal) =>
+  `/installers/auth?from=${encodeURIComponent(portal === "admin" ? "/master/email/accounts" : "/installers/dashboard/email/accounts")}`;
 
 export const PROVIDER_LABEL: Record<Provider, string> = { MICROSOFT: "Outlook", GOOGLE: "Gmail" };
 /** Blue for Outlook, orange for Gmail: they differ in lightness, not hue alone. */
