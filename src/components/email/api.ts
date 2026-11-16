@@ -8,9 +8,9 @@ export const emailBase = (portal: EmailPortal) => (portal === "admin" ? "/api/ad
 export const leadsBase = (portal: EmailPortal) => (portal === "admin" ? "/api/admin/leads" : "/api/installers/leads");
 export const emailPage = (portal: EmailPortal) => (portal === "admin" ? "/master/email" : "/installers/dashboard/email");
 
-export type Provider = "MICROSOFT" | "GOOGLE";
+export type Provider = "MICROSOFT" | "GOOGLE" | "IMAP";
 
-export type EmailStatus = { microsoft: boolean; google: boolean; ai: boolean; redirectUris: { microsoft: string; google: string } };
+export type EmailStatus = { microsoft: boolean; google: boolean; imap?: boolean; ai: boolean; redirectUris: { microsoft: string; google: string } };
 
 export type Account = {
   id: string;
@@ -27,6 +27,7 @@ export type Account = {
   aiEnabled: boolean;
   lastSyncAt: string | null;
   lastError: string | null;
+  server: { imapHost: string | null; imapPort: number | null; smtpHost: string | null; smtpPort: number | null; loginUser: string | null } | null;
   owner: string | null;
   mine: boolean;
   unread: number;
@@ -85,9 +86,9 @@ export const SIGNED_OUT = "Your sign-in has expired. Sign in again to use Email.
 export const signInHref = (portal: EmailPortal) =>
   `/installers/auth?from=${encodeURIComponent(portal === "admin" ? "/master/email/accounts" : "/installers/dashboard/email/accounts")}`;
 
-export const PROVIDER_LABEL: Record<Provider, string> = { MICROSOFT: "Outlook", GOOGLE: "Gmail" };
+export const PROVIDER_LABEL: Record<Provider, string> = { MICROSOFT: "Outlook", GOOGLE: "Gmail", IMAP: "IMAP" };
 /** Blue for Outlook, orange for Gmail: they differ in lightness, not hue alone. */
-export const PROVIDER_DOT: Record<Provider, string> = { MICROSOFT: "#1976D2", GOOGLE: "#C2410C" };
+export const PROVIDER_DOT: Record<Provider, string> = { MICROSOFT: "#1976D2", GOOGLE: "#C2410C", IMAP: "#0F766E" };
 
 const TZ = "Australia/Sydney";
 export function shortTime(iso: string) {
