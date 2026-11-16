@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { MasterDistSidebar } from "@/components/master-dashboard/MasterDistSidebar";
 import { MasterAdminBody } from "@/components/master-dashboard/MasterAdminBody";
+import { PhoneLogins } from "@/components/master-dashboard/PhoneLogins";
 
 export default function MasterAdminStaffPage() {
   return (
@@ -23,6 +24,9 @@ export default function MasterAdminStaffPage() {
             EasyLink Operations · Admin
           </span>
         </header>
+        <div className="px-8 pt-6">
+          <PhoneLogins />
+        </div>
         <MasterAdminBody screen="staff" />
       </main>
     </div>
