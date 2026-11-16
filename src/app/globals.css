@@ -409,6 +409,15 @@
   --color-blog-card-avatar-fallback: #364153;
   --color-blog-card-thumbnail-placeholder: #d9d9d9;
 
+  /* Blog journal redesign (Nov 2026): golden page gradient, deep yellow at the top */
+  --color-blog-sun-top: #e9ae12;
+  --color-blog-sun-2: #f0c22e;
+  --color-blog-sun-3: #f4d158;
+  --color-blog-sun-bottom: #f7de84;
+  --color-blog-ink-blue: #0a4f82;
+  --color-blog-amber-ink: #8a3b00;
+  --color-blog-loss: #a4361a;
+
   /* Blog inner / detail page (Figma Final Designs 1:4551) */
   --color-blog-detail-page-bg: #0f1729;
   --color-blog-detail-hero-bg: #101729;
@@ -5334,4 +5343,47 @@ html:has(.svc-page) {
 @media (prefers-reduced-motion: reduce) {
   .lead-signal-glow { animation: none; box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.5); }
   .lead-signal-glow-warm { animation: none; box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.5); }
+}
+
+/* Blog journal redesign (Nov 2026) */
+.blog-journal-surface {
+  background: linear-gradient(
+    180deg,
+    var(--color-blog-sun-top) 0%,
+    var(--color-blog-sun-2) 30%,
+    var(--color-blog-sun-3) 65%,
+    var(--color-blog-sun-bottom) 100%
+  );
+}
+
+.blog-journal-grid {
+  background-image:
+    linear-gradient(rgb(28 26 23 / 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(28 26 23 / 0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+.blog-sun-gradient {
+  background-image: linear-gradient(90deg, var(--color-yellow-lemon), var(--color-orange-amber));
+}
+
+@keyframes blog-ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.blog-ticker-track {
+  animation: blog-ticker 38s linear infinite;
+}
+
+.blog-ticker:hover .blog-ticker-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blog-ticker-track { animation: none; }
+}
+
+.blog-range {
+  accent-color: var(--color-yellow-lemon);
 }

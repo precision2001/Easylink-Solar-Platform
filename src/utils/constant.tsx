@@ -2451,6 +2451,11 @@ export type BlogPost = {
   thumbnailImageSrc: string;
   thumbnailImageAlt: string;
   href: string;
+  /** Blog journal cards (Nov 2026): headline number shown on the card photo. */
+  cardStat?: string;
+  cardStatLabel?: string;
+  readTimeLabel?: string;
+  featured?: boolean;
 };
 
 /** Shared hero backdrop for blog cards (Figma 1:4222 top panel) */
