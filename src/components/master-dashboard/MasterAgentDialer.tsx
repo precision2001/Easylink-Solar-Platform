@@ -3,6 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAdminDialler, type RecordingState } from "@/hooks/useAdminDialler";
+import { useConnectDialler } from "@/hooks/useConnectDialler";
+
+/**
+ * Which carrier the Agent Dialer uses. Amazon Connect by default (recorded,
+ * transcribed, AI hand-overs ring in the embedded phone); "livekit" keeps the
+ * older LiveKit + Crazytel path available as a fallback.
+ */
+const CALL_PROVIDER = (process.env.NEXT_PUBLIC_CALL_PROVIDER || "connect").toLowerCase() === "livekit" ? "livekit" : "connect";
 import { useRecordingPlayback } from "@/hooks/useRecordingPlayback";
 import { useSmsStatus } from "@/hooks/useSmsStatus";
 import { SmsStatusNote } from "@/components/sms/SmsStatusNote";
@@ -246,6 +254,61 @@ function TranscriptBadge({ transcript }: { transcript: CallTranscript | null }) 
   );
 }
 
+/**
+ * The Amazon Connect phone, embedded. It carries the audio for every call
+ * placed from this page and rings for callers EasyLink AI hands over.
+ * One sign-in per browser (Connect opens its own sign-in window).
+ */
+function ConnectPhonePanel({
+  phone,
+  incoming,
+  mountPhone,
+  signIn,
+}: {
+  phone: "off" | "loading" | "signed-out" | "ready" | "error";
+  incoming: boolean;
+  mountPhone: (el: HTMLDivElement | null) => void;
+  signIn: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const show = open || phone === "signed-out" || incoming;
+  return (
+    <section className="flex flex-col gap-2.5 rounded-[14px] border border-[#E3E8EF] bg-white p-4" aria-label="Phone">
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`size-2.5 rounded-full ${phone === "ready" ? "bg-[#16A34A]" : phone === "loading" ? "bg-[#F59E0B]" : "bg-[#DC2626]"}`}
+          aria-hidden="true"
+        />
+        <span className="text-[13px] font-bold text-[#0F172A]">
+          {phone === "ready" ? "Phone ready" : phone === "loading" ? "Phone starting…" : phone === "signed-out" ? "Sign in to the phone" : "Phone unavailable"}
+        </span>
+        <span className="text-[12px] text-[#5B6B80]">Amazon Connect · caller ID 02 9163 8128</span>
+        <span className="flex-grow" />
+        {phone === "signed-out" ? (
+          <button type="button" onClick={signIn} className="h-8 rounded-[8px] bg-[#0B1A2E] px-3 text-[12.5px] font-semibold text-white">
+            Sign in
+          </button>
+        ) : (
+          <button type="button" onClick={() => setOpen((v) => !v)} className="h-8 rounded-[8px] border border-[#CBD5E1] px-3 text-[12.5px] font-semibold text-[#334155]">
+            {show ? "Hide phone" : "Show phone"}
+          </button>
+        )}
+      </div>
+      {phone === "signed-out" && (
+        <p className="m-0 text-[12.5px] text-[#475569]">
+          Sign in once on this computer with the Connect sales login (username <b>sales</b>). After that the phone stays ready whenever you open the Agent Dialer.
+        </p>
+      )}
+      {incoming && <p className="m-0 text-[12.5px] font-semibold text-[#B45309]">A caller from EasyLink AI is ringing. Accept it in the phone below.</p>}
+      <div
+        ref={mountPhone}
+        className={show ? "h-[520px] w-full overflow-hidden rounded-[10px] border border-[#E3E8EF]" : "h-0 w-full overflow-hidden"}
+        aria-hidden={!show}
+      />
+    </section>
+  );
+}
+
 export function MasterAgentDialer() {
   const [input, setInput] = useState("");
 
@@ -254,6 +317,9 @@ export function MasterAgentDialer() {
    * `?number=`. Prefilled rather than dialled: the agent still presses Call, so
    * a stray link cannot place a call on its own.
    */
+  const livekitDialler = useAdminDialler();
+  const connectDialler = useConnectDialler(CALL_PROVIDER === "connect");
+  const dialler = CALL_PROVIDER === "connect" ? connectDialler : livekitDialler;
   const searchParams = useSearchParams();
   const handedNumber = searchParams.get("number");
   /** `?campaign=` turns on campaign mode: its script, its calls tagged, power dialling. */
@@ -277,7 +343,7 @@ export function MasterAgentDialer() {
     toggleMute,
     sendDigit,
     callActive,
-  } = useAdminDialler();
+  } = dialler;
 
   const [queue, setQueue] = useState<QueueEntry[] | null>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
@@ -741,7 +807,7 @@ export function MasterAgentDialer() {
           Communication <span aria-hidden="true">/</span>{" "}
           <span className="font-semibold text-[#0F172A]">Agent Dialer</span>
         </nav>
-        <PresenceToggle onCall={callActive} />
+        {CALL_PROVIDER === "livekit" && <PresenceToggle onCall={callActive} />}
       </header>
 
       <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 items-start gap-4 px-8 py-6 pb-14 lg:grid-cols-[260px_1fr_320px]">
@@ -841,7 +907,11 @@ export function MasterAgentDialer() {
               {campaignNote && <span className="text-[12.5px] text-[#78350F]">{campaignNote}</span>}
             </section>
           )}
-          <IncomingTransfers enabled={!callActive && countdown === null} onAccepted={takeCall} />
+          {CALL_PROVIDER === "connect" ? (
+            <ConnectPhonePanel phone={connectDialler.phone} incoming={connectDialler.incoming} mountPhone={connectDialler.mountPhone} signIn={connectDialler.signIn} />
+          ) : (
+            <IncomingTransfers enabled={!callActive && countdown === null} onAccepted={takeCall} />
+          )}
           {callActive ? (
             // In-call: real number, real timer, real mute/hang-up. No "Recording ·
             // consent announced" line like the mock's — we don't record calls or
