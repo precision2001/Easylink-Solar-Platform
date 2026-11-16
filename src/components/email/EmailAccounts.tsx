@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { ImapConnect } from "./ImapConnect";
 import { PROVIDER_DOT, PROVIDER_LABEL, call, emailBase, emailPage, shortTime, signInHref, type Account, type EmailPortal, type EmailStatus, type Provider } from "./api";
 
@@ -53,6 +53,8 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
   const [signedOut, setSignedOut] = useState(false);
   /** Address of an IMAP mailbox being reconnected (password changed). */
   const [reconnectImap, setReconnectImap] = useState<string | null>(null);
+  /** Mailbox whose signature is being edited, and the text. */
+  const [sigEdit, setSigEdit] = useState<{ id: string; text: string } | null>(null);
 
   const load = useCallback(async () => {
     const [s, a] = await Promise.all([call<EmailStatus>(`${base}/status`), call<Account[]>(`${base}/accounts`)]);
@@ -299,7 +301,8 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
                   {accounts.map((a) => {
                     const can = a.mine || staff;
                     return (
-                      <tr key={a.id} style={{ borderBottom: "1px solid #EEF2F6" }}>
+                      <Fragment key={a.id}>
+                      <tr style={{ borderBottom: sigEdit?.id === a.id ? "none" : "1px solid #EEF2F6" }}>
                         <td className="px-3 py-3.5">
                           <span className="block font-semibold">{a.address}</span>
                           {a.label || a.server?.imapHost ? (
@@ -372,12 +375,54 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
                             </button>
                           )}
                           {can ? (
+                            <button type="button" onClick={() => setSigEdit(sigEdit?.id === a.id ? null : { id: a.id, text: a.signature ?? "" })} className="mr-4 font-semibold" style={{ color: BLUE }}>
+                              Signature
+                            </button>
+                          ) : null}
+                          {can ? (
                             <button type="button" disabled={busy === a.id} onClick={() => void disconnect(a)} className="font-semibold" style={{ color: "#B91C1C" }}>
                               Disconnect
                             </button>
                           ) : null}
                         </td>
                       </tr>
+                      {sigEdit?.id === a.id ? (
+                        <tr style={{ borderBottom: "1px solid #EEF2F6" }}>
+                          <td colSpan={7} className="px-3 pb-4">
+                            <label htmlFor={`sig-${a.id}`} className="mb-1.5 block text-[13px] font-semibold">
+                              Signature for {a.address} (added to new emails, replies and forwards)
+                            </label>
+                            <textarea
+                              id={`sig-${a.id}`}
+                              value={sigEdit.text}
+                              onChange={(e) => setSigEdit({ id: a.id, text: e.target.value })}
+                              rows={5}
+                              maxLength={2000}
+                              placeholder={"Kind regards,\nEasyLink Solar\n02 9070 1201 · easylinksolar.com.au"}
+                              className="w-full rounded-xl p-3 text-[14px]"
+                              style={{ border: "1px solid #2196F3" }}
+                            />
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void patch(a, { signature: sigEdit.text.trim() || null });
+                                  setSigEdit(null);
+                                  setBanner({ ok: true, text: `Signature saved for ${a.address}.` });
+                                }}
+                                className="h-10 cursor-pointer rounded-lg px-4 text-[14px] font-semibold"
+                                style={{ background: BLUE, color: "#FFFFFF" }}
+                              >
+                                Save signature
+                              </button>
+                              <button type="button" onClick={() => setSigEdit(null)} className="h-10 cursor-pointer rounded-lg px-4 text-[14px] font-semibold" style={{ border: "1px solid #CBD5E1" }}>
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                      </Fragment>
                     );
                   })}
                 </tbody>
