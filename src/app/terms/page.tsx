@@ -11,7 +11,7 @@ export default function TermsPage() {
   return (
     <LegalDocument
       title="Terms and conditions"
-      updated="9 November 2026"
+      updated="16 November 2026"
       intro={
         <>
           <P>
