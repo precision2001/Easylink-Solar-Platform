@@ -55,6 +55,25 @@ export type NextAction = {
   overdue: boolean;
 };
 
+export type IntentTrend = "warming" | "steady" | "cooling" | "won" | "lost";
+export type SignalSummary = { newCount: number; intent: number; trend: IntentTrend; latestAt: string | null };
+export type LeadSignal = {
+  id: string;
+  at: string;
+  kind: "lead" | "design" | "quote" | "call" | "email" | "sms" | "message" | "visit" | "task" | "note" | "stage";
+  by: "customer" | "staff" | "ai" | "system";
+  text: string;
+  isNew: boolean;
+};
+export type LeadSignals = {
+  leadId: string;
+  intent: { score: number; trend: IntentTrend; reasons: { text: string; points: number }[]; lastCustomerAt: string | null };
+  nextStep: { title: string; why: string } | null;
+  newCount: number;
+  total: number;
+  signals: LeadSignal[];
+};
+
 export type Person = { id: string; firstName: string; lastName: string; email?: string };
 
 import type { LeadDesignShare } from "@/lib/designs/send-to-customer";
@@ -83,6 +102,8 @@ export type PipelineLead = {
   openQuotes?: { count: number; fromCents: number | null } | null;
   /** The lead's design and when it last went to the customer. */
   design?: LeadDesignShare | null;
+  /** What is new on this lead for the person looking, and its Intent. Absent until the server sends it. */
+  signals?: SignalSummary | null;
 };
 
 /** Automatic roof design (platform designer) for the lead's address. */
@@ -167,6 +188,23 @@ export async function updateLeadPipeline(id: string, patch: PipelinePatch) {
     }),
     "Could not update the lead.",
   );
+}
+
+/** Everything that has happened on a lead, with its Intent and next best step. */
+export async function fetchLeadSignals(id: string): Promise<LeadSignals> {
+  return json(await fetch(`/api/admin/leads/${encodeURIComponent(id)}/signals`, { cache: "no-store" }), "Could not load this lead's signals.");
+}
+
+/** Tells the server this person has opened the lead's signals, so they stop showing as new. */
+export async function markLeadSignalsSeen(id: string) {
+  return json(await fetch(`/api/admin/leads/${encodeURIComponent(id)}/signals/seen`, { method: "POST" }), "Could not mark the signals as seen.");
+}
+
+/** "Intent 61, cooling": the chip's wording for a lead's Intent. */
+export function intentLabel(s: Pick<SignalSummary, "intent" | "trend">) {
+  if (s.trend === "won") return `Intent ${s.intent}, buying`;
+  if (s.trend === "lost") return "Lost";
+  return `Intent ${s.intent}, ${s.trend}`;
 }
 
 export type AiPlacement = { leadId: string; from: LeadStage; to: LeadStage; moved: boolean; reason: string };

@@ -5319,3 +5319,19 @@ html:has(.svc-page) {
 @media (prefers-reduced-motion: reduce) {
   .lead-overdue-glow { animation: none; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.3); }
 }
+
+/* Quotes & Leads: the Signals chip glows while a lead has signals this person has not opened. */
+@keyframes lead-signal-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0.6); }
+  50% { box-shadow: 0 0 0 6px rgba(25, 118, 210, 0), 0 0 16px 3px rgba(25, 118, 210, 0.6); }
+}
+@keyframes lead-signal-glow-warm {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0.6); }
+  50% { box-shadow: 0 0 0 6px rgba(180, 83, 9, 0), 0 0 16px 3px rgba(180, 83, 9, 0.6); }
+}
+.lead-signal-glow { animation: lead-signal-glow 1.6s ease-in-out infinite; }
+.lead-signal-glow-warm { animation: lead-signal-glow-warm 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .lead-signal-glow { animation: none; box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.5); }
+  .lead-signal-glow-warm { animation: none; box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.5); }
+}
