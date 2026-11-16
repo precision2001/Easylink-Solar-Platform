@@ -1,7 +1,7 @@
 import { backendAuthedFetch, forwardBackendJson, type BackendPortal } from "@/lib/server/backend-authed-fetch";
 
 /** Only the email API's own paths are forwarded to the backend. */
-const ALLOWED = new Set(["status", "oauth", "accounts", "messages", "send"]);
+const ALLOWED = new Set(["status", "oauth", "imap", "accounts", "messages", "send"]);
 
 /**
  * The Operations Portal's pages are gated by the portal sign-in, but its data

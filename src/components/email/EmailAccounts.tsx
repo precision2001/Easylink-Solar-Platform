@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { ImapConnect } from "./ImapConnect";
 import { PROVIDER_DOT, PROVIDER_LABEL, call, emailBase, emailPage, shortTime, signInHref, type Account, type EmailPortal, type EmailStatus, type Provider } from "./api";
 
 /**
@@ -50,6 +51,8 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
   const [signedOut, setSignedOut] = useState(false);
+  /** Address of an IMAP mailbox being reconnected (password changed). */
+  const [reconnectImap, setReconnectImap] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [s, a] = await Promise.all([call<EmailStatus>(`${base}/status`), call<Account[]>(`${base}/accounts`)]);
@@ -131,7 +134,7 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
             Connect email accounts
           </h1>
           <p className="max-w-[680px] text-[15px] leading-relaxed" style={{ color: "#475569" }}>
-            Bring your Outlook and Gmail mailboxes into the portal. Mail is matched to customers and leads automatically, and replies go out from your own address.
+            Bring your Outlook, Gmail and Hostinger mailboxes into the portal. Mail is matched to customers and leads automatically, and replies go out from your own address.
           </p>
         </div>
 
@@ -200,6 +203,21 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
             );
           })}
         </section>
+
+        <div id="imap-connect">
+          <ImapConnect
+            key={reconnectImap ?? "new"}
+            portal={portal}
+            initialAddress={reconnectImap ?? undefined}
+            settings={{ label: label.trim() || null, shared, visibility, historyDays, autoLink, createLeads, aiEnabled }}
+            onConnected={(a) => {
+              setReconnectImap(null);
+              setBanner({ ok: true, text: `Connected ${a.address}. Your mail is syncing now.` });
+              void load();
+            }}
+            onError={(text) => setBanner({ ok: false, text })}
+          />
+        </div>
 
         <section aria-labelledby="sync-h" className="flex flex-col gap-5 rounded-[20px] bg-white p-6" style={{ border: `1px solid ${BORDER}` }}>
           <h2 id="sync-h" className="text-[22px] font-bold" style={{ fontFamily: "'Source Sans 3', sans-serif" }}>
@@ -284,7 +302,11 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
                       <tr key={a.id} style={{ borderBottom: "1px solid #EEF2F6" }}>
                         <td className="px-3 py-3.5">
                           <span className="block font-semibold">{a.address}</span>
-                          {a.label ? <span className="text-[12px]" style={{ color: MUTED }}>{a.label}</span> : null}
+                          {a.label || a.server?.imapHost ? (
+                            <span className="text-[12px]" style={{ color: MUTED }}>
+                              {[a.label, a.server?.imapHost].filter(Boolean).join(" · ")}
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-3 py-3.5">
                           <span className="inline-flex items-center gap-1.5">
@@ -320,7 +342,7 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
                         <td className="px-3 py-3.5">
                           {a.status === "REAUTH" ? (
                             <span className="rounded-md px-2 py-1 text-[12px] font-semibold" style={{ background: "#FFEDD5", color: "#7C2D12" }}>
-                              Sign-in expired
+                              {a.provider === "IMAP" ? "Password needed" : "Sign-in expired"}
                             </span>
                           ) : a.lastError ? (
                             <span title={a.lastError} className="rounded-md px-2 py-1 text-[12px] font-semibold" style={{ background: "#FEF3C7", color: "#78350F" }}>
@@ -334,7 +356,14 @@ export function EmailAccounts({ portal }: { portal: EmailPortal }) {
                         </td>
                         <td className="whitespace-nowrap px-3 py-3.5 text-right">
                           {a.status === "REAUTH" && a.mine ? (
-                            <button type="button" onClick={() => void connect(a.provider === "MICROSOFT" ? "microsoft" : "google", a.address)} className="mr-4 font-semibold" style={{ color: BLUE }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (a.provider === "IMAP") {
+                                  setReconnectImap(a.address);
+                                  document.getElementById("imap-connect")?.scrollIntoView({ behavior: "smooth" });
+                                } else void connect(a.provider === "MICROSOFT" ? "microsoft" : "google", a.address);
+                              }} className="mr-4 font-semibold" style={{ color: BLUE }}>
                               Reconnect
                             </button>
                           ) : (
