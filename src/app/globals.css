@@ -5387,3 +5387,17 @@ html:has(.svc-page) {
 .blog-range {
   accent-color: var(--color-yellow-lemon);
 }
+
+/*
+  Side menu folded to icons (Operations and Installer portals). The menu sits
+  in a fixed-width column set by each page (Operations) or by InstallerChrome
+  (Installer); shrink that column while the menu is folded.
+*/
+@media (min-width: 1024px) {
+  div:has(> div > nav.el-nav[data-collapsed]),
+  aside:has(> nav.el-nav[data-collapsed]) {
+    flex: 0 0 64px !important;
+    width: 64px !important;
+    max-width: 64px;
+  }
+}

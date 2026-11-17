@@ -2,7 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { CollapseButton } from "@/components/navigation/CollapseButton";
+import { orderGroups, useMenuCollapsed, useMenuOrder, useMenuTracking } from "@/components/navigation/menuPrefs";
 import { usePortalLogout } from "@/hooks/usePortalLogout";
 import { useAppSelector } from "@/lib/store/hooks";
 
@@ -266,6 +269,9 @@ type Props = {
 export function MasterDistSidebar(props: Props) {
   const [open, setOpen] = useState(false);
   const activeLabel = GROUPS.flatMap((g) => g.items).find((i) => i.key === props.active)?.label;
+  // Count this visit towards the section's place in this person's menu.
+  const section = GROUPS.find((g) => g.items.some((i) => i.key === props.active))?.title || undefined;
+  useMenuTracking("admin", section, usePathname());
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
@@ -321,9 +327,9 @@ export function MasterDistSidebar(props: Props) {
           </div>
         </div>
       ) : null}
-      {/* Desktop: the menu as before. */}
+      {/* Desktop: the menu, which can fold to icons. */}
       <div className="hidden h-full lg:block">
-        <SidebarNav {...props} />
+        <SidebarNav {...props} desktop />
       </div>
     </>
   );
@@ -333,7 +339,11 @@ function SidebarNav({
   active,
   accountName = "Easylink Plus Pty Ltd",
   personName: personNameProp,
-}: Props) {
+  desktop = false,
+}: Props & { desktop?: boolean }) {
+  const [foldedPref, toggleFold] = useMenuCollapsed("admin");
+  const folded = desktop && foldedPref;
+  const groups = orderGroups(GROUPS, useMenuOrder("admin"));
   const { logout, pending } = usePortalLogout("admin");
   // The signed-in staff member, never a fixed sample person.
   const user = useAppSelector((st) => st.adminAuth.user);
@@ -343,31 +353,36 @@ function SidebarNav({
   return (
     <nav
       aria-label="Main menu"
-      className="el-nav flex w-full flex-col gap-[18px] px-3 py-5 font-inter"
+      data-collapsed={folded ? "" : undefined}
+      className={`el-nav flex w-full flex-col py-5 font-inter ${folded ? "items-center gap-3 px-2" : "gap-[18px] px-3"}`}
       style={{ background: "#0B1A2E", color: "#E6EDF7", minHeight: "100%" }}
     >
-      <Link
-        href="/master/dashboard"
-        className="flex items-center gap-2.5 px-2.5 pb-2 pt-1 text-white no-underline"
-      >
-        <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] bg-[#F68A0A]">
-          <Image
-            src="/images/solarDesignLogo.png"
-            alt=""
-            width={20}
-            height={20}
-            className="size-5 object-contain"
-          />
-        </span>
-        <span className="flex flex-col leading-[1.1]">
-          <span className="gt font-source-sans text-[18px] font-bold">EasyLink Solar</span>
-          <span className="text-[11px]" style={{ color: "#9FB0C8" }}>
-            EasyLink Operations
+      <div className={`flex items-center ${folded ? "flex-col gap-2" : "gap-1"}`}>
+        <Link
+          href="/master/dashboard"
+          className={`flex min-w-0 items-center gap-2.5 pb-2 pt-1 text-white no-underline ${folded ? "" : "flex-1 px-2.5"}`}
+          title={folded ? "EasyLink Solar" : undefined}
+        >
+          <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] bg-[#F68A0A]">
+            <Image
+              src="/images/solarDesignLogo.png"
+              alt=""
+              width={20}
+              height={20}
+              className="size-5 object-contain"
+            />
           </span>
-        </span>
-      </Link>
+          <span className={`flex-col leading-[1.1] ${folded ? "hidden" : "flex"}`}>
+            <span className="gt font-source-sans text-[18px] font-bold">EasyLink Solar</span>
+            <span className="text-[11px]" style={{ color: "#9FB0C8" }}>
+              EasyLink Operations
+            </span>
+          </span>
+        </Link>
+        {desktop ? <CollapseButton collapsed={folded} onClick={toggleFold} /> : null}
+      </div>
 
-      <div className="flex flex-col gap-1.5 rounded-xl p-2.5" style={{ background: "#13263F" }}>
+      <div className={`flex-col gap-1.5 rounded-xl p-2.5 ${folded ? "hidden" : "flex"}`} style={{ background: "#13263F" }}>
         <span
           className="text-[11px] font-semibold uppercase tracking-[0.08em]"
           style={{ color: "#8FA1BA" }}
@@ -400,12 +415,13 @@ function SidebarNav({
         </span>
       </div>
 
-      {GROUPS.map((group) => {
+      {groups.map((group) => {
         const tag = group.tag ? GROUP_TAG[group.tag] : null;
 
         return (
-          <div key={group.title || "ungrouped"} className="flex flex-col gap-0.5">
-            {group.title ? (
+          <div key={group.title || "ungrouped"} className={`flex flex-col gap-0.5 ${folded ? "w-full items-center" : ""}`}>
+            {group.title && folded ? <div className="mb-1 h-px w-8" style={{ background: "#22395A" }} title={group.title} aria-hidden="true" /> : null}
+            {group.title && !folded ? (
               <div className="flex items-center gap-2 px-2.5 py-1.5">
                 <span
                   className="text-[11px] font-semibold uppercase tracking-[0.08em]"
@@ -446,13 +462,13 @@ function SidebarNav({
                   <span
                     key={item.key}
                     aria-disabled="true"
-                    title="Not built yet"
-                    className="flex min-h-9 cursor-default items-center gap-2.5 rounded-[9px] px-2.5 text-[14px] font-medium"
+                    title={folded ? `${item.label} · not built yet` : "Not built yet"}
+                    className={`flex min-h-9 cursor-default items-center gap-2.5 rounded-[9px] text-[14px] font-medium ${folded ? "w-11 justify-center" : "px-2.5"}`}
                     style={{ color: "#C3CFDF" }}
                   >
                     <GlitterIcon d={d} />
-                    <span className="flex-grow">{item.label}</span>
-                    {badge}
+                    {folded ? null : <span className="flex-grow">{item.label}</span>}
+                    {folded ? null : badge}
                   </span>
                 );
               }
@@ -462,7 +478,9 @@ function SidebarNav({
                   key={item.key}
                   href={item.href}
                   aria-current={isActive ? "page" : undefined}
-                  className="flex min-h-9 items-center gap-2.5 rounded-[9px] px-2.5 text-[14px] no-underline"
+                  aria-label={folded ? item.label : undefined}
+                  title={folded ? item.label : undefined}
+                  className={`relative flex min-h-9 items-center gap-2.5 rounded-[9px] text-[14px] no-underline ${folded ? "w-11 justify-center" : "px-2.5"}`}
                   style={
                     isActive
                       ? { background: "#1B3557", color: "#FFFFFF", fontWeight: 600 }
@@ -470,7 +488,11 @@ function SidebarNav({
                   }
                 >
                   <GlitterIcon d={d} active={isActive} />
-                  <span className="flex-grow">{item.label}</span>
+                  {folded ? (
+                    item.badge ? <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-[#F68A0A]" aria-hidden="true" /> : null
+                  ) : (
+                    <span className="flex-grow">{item.label}</span>
+                  )}
                   {badge}
                 </Link>
               );
@@ -480,7 +502,7 @@ function SidebarNav({
       })}
 
       <div
-        className="mt-auto flex flex-col gap-1.5 rounded-xl p-3"
+        className={`mt-auto flex-col gap-1.5 rounded-xl p-3 ${folded ? "hidden" : "flex"}`}
         style={{ background: "#13263F" }}
       >
         <span className="text-[12px]" style={{ color: "#9FB0C8" }}>
@@ -501,7 +523,7 @@ function SidebarNav({
         </span>
       </div>
 
-      <div className="flex flex-wrap gap-x-3 gap-y-1 px-2.5 text-[12.5px]" style={{ color: "#9FB0C8" }}>
+      <div className={`flex-wrap gap-x-3 gap-y-1 px-2.5 text-[12.5px] ${folded ? "hidden" : "flex"}`} style={{ color: "#9FB0C8" }}>
         <Link href="/privacy-policy" target="_blank" className="underline-offset-2 hover:underline" style={{ color: "#9FB0C8" }}>
           Privacy policy
         </Link>
@@ -514,10 +536,18 @@ function SidebarNav({
         type="button"
         onClick={() => void logout()}
         disabled={pending}
-        className="flex min-h-9 items-center gap-2.5 rounded-[9px] px-2.5 text-left text-[14px] font-medium disabled:opacity-50"
+        aria-label="Sign out"
+        title={folded ? "Sign out" : undefined}
+        className={`flex min-h-9 items-center gap-2.5 rounded-[9px] text-left text-[14px] font-medium disabled:opacity-50 ${folded ? "mt-auto w-11 justify-center" : "px-2.5"}`}
         style={{ color: "#C3CFDF" }}
       >
-        Sign out
+        {folded ? (
+          <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+          </svg>
+        ) : (
+          "Sign out"
+        )}
       </button>
     </nav>
   );

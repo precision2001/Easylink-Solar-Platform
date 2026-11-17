@@ -158,3 +158,27 @@ export const initials = (s: string) =>
 
 export const accountName = (a: Pick<Account, "label" | "address" | "provider">) =>
   `${a.label ? `${a.label} · ` : ""}${PROVIDER_LABEL[a.provider]}`;
+
+const ENTITIES: Record<string, string> = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", zwnj: "", zwj: "", shy: "", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", ndash: "–", mdash: "—", hellip: "…", copy: "©", reg: "®", trade: "™" };
+
+/**
+ * Tidies text taken from an email: drops inline-image markers ("[cid:…]"),
+ * leftover HTML entities ("&zwnj;", "&nbsp;"), invisible spacer characters
+ * marketing emails use, and long runs of blank lines.
+ */
+export function cleanMailText(text: string): string {
+  return text
+    .replace(/\[cid:[^\]\s]*\]/gi, "")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (all, e: string) => {
+      const k = e.toLowerCase();
+      if (k.startsWith("#x")) return String.fromCodePoint(parseInt(k.slice(2), 16) || 32);
+      if (k.startsWith("#")) return String.fromCodePoint(parseInt(k.slice(1), 10) || 32);
+      return k in ENTITIES ? ENTITIES[k] : all;
+    })
+    .replace(/[​-‍⁠﻿͏­]/g, "")
+    .replace(/[ \t ]+$/gm, "")
+    .replace(/^[ \t ]+(?=\S)/gm, (s) => (s.length > 8 ? "" : s))
+    .replace(/(?:[ \t ]{2,})/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
