@@ -22,10 +22,6 @@ export const HOME_PAGE = {
       "Easylink Solar installations by Solar Accreditation Australia Accredited Professional Installers.",
     primaryCta: { label: "Solar Design", href: "/designs" },
     secondaryCta: { label: "Explore Products", href: "/products" },
-    stats: [
-      { value: "11,000+", label: "quotes created" },
-      { value: "500+", label: "certified installers" },
-    ],
     slides: [
       { type: "video" as const, src: "/videos/homeHero.mp4" },
       {

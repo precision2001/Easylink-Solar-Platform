@@ -5,48 +5,6 @@ import { aud, publicMarket, systemLine, type PublicDeal } from "@/lib/ai-platfor
 import RangeSlider from "react-range-slider-input";
 import "react-range-slider-input/dist/style.css";
 
-const batteryDeals = [
-  {
-    badge: "Fast Charging",
-    bestValue: true,
-    title: "Battery Deal - FOXESS 40kW Battery",
-    description:
-      "40kW Battery modules with 10kW FOXESS Hybrid inverter (if required), including installation and commissioning to the existing and compatible solar system.",
-    price: "6,991",
-  },
-  {
-    badge: "Fast Charging",
-    bestValue: false,
-    title: "Battery Deal - FoxESS 30kW Battery",
-    description:
-      "30kW Battery Modules with 10kW FoxESS Hybrid inverter (if required) including installation and commissioning to the existing and compatible solar system.",
-    price: "5,991",
-  },
-];
-
-const morePackages = [
-  {
-    kw: "10.1kW",
-    title: "10kW Solar System + 9.2kW Battery",
-    description:
-      "TRINA VerteX S+ N-Type Dual Glass 440 watt panels. FOXESS EQ4880 - 9.2kW Battery. FOXESS 9.9kW Hybrid…",
-    price: "6,401",
-  },
-  {
-    kw: "10.1kW",
-    title: "10kW Solar System + 14.64kW Battery",
-    description: "FOXESS EQ4880 - 9.2kW Battery. FOXESS 9.9kW Hybrid Inverter.",
-    price: "6,490",
-  },
-  {
-    kw: "20kW",
-    title: "SIGENERGY 20kW Solar System + 18kW Sigen Battery",
-    description:
-      "Single Phase Homes - Sigen Gateway Power Controller (12kW) - Sigen Battery Module - EV DC 12kW HV Fast…",
-    price: "11,110",
-  },
-];
-
 function GreenCheck() {
   return (
     <svg
@@ -196,19 +154,17 @@ const toCard = (d: PublicDeal): Card => ({
   price: aud(d.price).slice(1),
 });
 
-/** Live, EasyLink-approved Ready Deals when there are any; the sample packages otherwise. */
+/**
+ * Live, EasyLink-approved Ready Deals. Returns null while loading or when there
+ * are none, and the section is then left off the page: made-up packages and
+ * prices must never stand in for real deals.
+ */
 function useHomeDeals() {
   const [live, setLive] = useState<PublicDeal[] | null>(null);
   useEffect(() => {
     publicMarket.deals().then(setLive).catch(() => setLive([]));
   }, []);
-  if (!live?.length) {
-    return {
-      featured: { href: "/ready-deals", badge: "", kw: "10.1kW", title: "10kW Solar System + 20kW Battery", description: "TRINA VeRTEX S+ N-Type Dual Glass 440 watt panels. FOXESS EQ4880 - 14.64kW Battery. FOXESS 9.9kW Hybrid Inverter.", price: "6,565" } as Card,
-      battery: batteryDeals.map((d) => ({ ...d, href: "/ready-deals", kw: "" })) as Card[],
-      more: morePackages.map((d) => ({ ...d, href: "/ready-deals", badge: "" })) as Card[],
-    };
-  }
+  if (!live?.length) return null;
   const cards = live.map(toCard);
   const batteryIdx = live.map((d, i) => (d.type === "battery" ? i : -1)).filter((i) => i >= 0);
   const rest = cards.filter((_, i) => i !== 0 && !batteryIdx.includes(i));
@@ -216,7 +172,9 @@ function useHomeDeals() {
 }
 
 export function SpecialDealsSection() {
-  const { featured, battery, more } = useHomeDeals();
+  const deals = useHomeDeals();
+  if (!deals) return null;
+  const { featured, battery, more } = deals;
   return (
     <section className="px-4 py-16 sm:px-6">
       <div className="mx-auto max-w-[1216px]">

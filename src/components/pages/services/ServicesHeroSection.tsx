@@ -1,5 +1,4 @@
 import { ServicesBreadcrumb } from "@/components/pages/services/ServicesBreadcrumb";
-import { ServicesCounter } from "@/components/pages/services/ServicesCounter";
 import { ServicesHeroMockup } from "@/components/pages/services/ServicesHeroMockup";
 import { ServicesReveal } from "@/components/pages/services/ServicesReveal";
 import { ServicesRippleLink } from "@/components/pages/services/ServicesRippleLink";
@@ -7,12 +6,6 @@ import Icon from "@/components/ui/Icons";
 import { SERVICES_PAGE } from "@/utils/constant";
 
 const { hero } = SERVICES_PAGE;
-
-const FLOAT_POSITIONS = [
-  "left-[-4%] top-[16%] svc-float",
-  "right-[-2%] top-[6%] svc-float svc-float-delay-1",
-  "bottom-[8%] left-[6%] svc-float-slow svc-float-delay-2",
-] as const;
 
 export function ServicesHeroSection() {
   return (
@@ -75,47 +68,12 @@ export function ServicesHeroSection() {
               </p>
             </ServicesReveal>
 
-            <ServicesReveal delayMs={220}>
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-7 border-t border-svc-dark-border pt-8 sm:grid-cols-4">
-                {hero.stats.map((stat) => (
-                  <div key={stat.id} className="flex flex-col gap-1">
-                    <dt className="order-2 font-inter text-[13px] font-medium leading-5 text-svc-dark-muted">
-                      {stat.label}
-                    </dt>
-                    <dd className="order-1 font-outfit text-[30px] font-bold leading-9 text-yellow-lemon sm:text-[34px]">
-                      <ServicesCounter
-                        value={stat.value}
-                        suffix={stat.suffix}
-                        srLabel={stat.srLabel}
-                      />
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </ServicesReveal>
           </div>
 
           <ServicesReveal delayMs={160} className="relative">
             <div className="relative mx-auto w-full max-w-[620px]">
               <ServicesHeroMockup />
 
-              {hero.floatingCards.map((card, index) => (
-                <div
-                  key={card.id}
-                  aria-hidden="true"
-                  className={`svc-glass pointer-events-none absolute hidden rounded-2xl px-4 py-3 shadow-lg sm:block ${FLOAT_POSITIONS[index]}`}
-                >
-                  <p className="font-outfit text-lg font-bold leading-6 text-white">
-                    {card.title}
-                  </p>
-                  <p className="font-inter text-[11px] font-medium uppercase tracking-[0.1em] text-yellow-lemon">
-                    {card.unit}
-                  </p>
-                  <p className="font-inter text-[11px] leading-4 text-svc-dark-muted">
-                    {card.caption}
-                  </p>
-                </div>
-              ))}
             </div>
           </ServicesReveal>
         </div>

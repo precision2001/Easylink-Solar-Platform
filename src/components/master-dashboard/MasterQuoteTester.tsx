@@ -72,21 +72,6 @@ const BTN =
 
 export type QuoteRole = "operations" | "installer";
 
-/** Who a finished price is saved against, per role. */
-const SAVE_TARGETS: Record<QuoteRole, string[]> = {
-  operations: [
-    "Raj Malhotra · EasyLink lead · Seven Hills",
-    "Penrith web lead · deposit-ready",
-    "New Ready Site (draft)",
-    "New Ready Deal template",
-  ],
-  installer: [
-    "Daniel Moretti · Yagoona",
-    "Priya Raman · Kellyville",
-    "Grace Lim · Bankstown",
-    "New customer",
-  ],
-};
 
 /**
  * The installer's own labour rates and margin, which sit on top of EasyLink
@@ -233,7 +218,6 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
     [ops, live.book],
   );
   const s = pb.settings;
-  const saveTargets = SAVE_TARGETS[role];
 
   const [q, setQ] = useState<QuoteInputs>(QUOTE_DEFAULTS);
 
@@ -251,7 +235,6 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
       };
     });
   }, [pb]);
-  const [who, setWho] = useState(0);
   const [msg, setMsg] = useState("");
 
   const patch = (next: Partial<QuoteInputs>) => {
@@ -849,54 +832,9 @@ export function MasterQuoteTester({ role = "operations" }: { role?: QuoteRole } 
               <h2 className="m-0 text-[16px] font-bold">
                 {ops ? "Use this price" : "Save the quote"}
               </h2>
-              <div className="flex flex-wrap items-end gap-2.5">
-                <div className="min-w-0 flex-[1_1_260px]">
-                  <Field label={ops ? "Attach to" : "Customer"}>
-                    <select
-                      className={CONTROL}
-                      value={who}
-                      onChange={(e) => {
-                        setWho(Number(e.target.value));
-                        setMsg("");
-                      }}
-                    >
-                      {saveTargets.map((p, i) => (
-                        <option key={p} value={i}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </div>
-                <button
-                  type="button"
-                  className={BTN}
-                  onClick={() =>
-                    setMsg(`Saved as a draft for ${saveTargets[who]} · ${money(r.net)} net.`)
-                  }
-                >
-                  Save as draft
-                </button>
-                <button
-                  type="button"
-                  className={`${BTN} border-0 font-bold`}
-                  style={{ background: SUNRISE, color: SUN_INK }}
-                  onClick={() =>
-                    setMsg(
-                      r.blocks.length
-                        ? "Fix the blocked items before sending."
-                        : `${ops ? "Price attached to" : "Sent to"} ${saveTargets[who]} · ${money(r.net)} net inc GST.`,
-                    )
-                  }
-                >
-                  {ops ? "Attach price" : "Send to customer portal"}
-                </button>
-              </div>
               <span className={SUB}>
-                {ops
-                  ? "Attaching saves the inputs, the price book version and every line, so the price can be checked later."
-                  : "The customer sees the line items, STC working and net price in My design. Saved quotes keep the price book version they were priced on."}{" "}
-                Saving is not wired up yet — this screen prices quotes.
+                Saving isn&rsquo;t wired up yet — this screen prices quotes. To quote a real
+                customer, build the quote from their lead in Quotes &amp; Leads.
               </span>
             </Card>
           </div>
