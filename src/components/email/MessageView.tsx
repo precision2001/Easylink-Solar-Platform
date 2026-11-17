@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { customerRecordHref } from "@/components/contact-centre/api";
+import { LinkedText } from "./LinkedText";
 import { PROVIDER_LABEL, emailBase, fileSize, initials, longTime, type Attachment, type EmailPortal, type FullMessage, type ThreadItem } from "./api";
 
 /**
@@ -106,7 +107,7 @@ function Earlier({ portal, t }: { portal: EmailPortal; t: ThreadItem }) {
             {t.cc.length ? `, cc ${t.cc.join(", ")}` : ""}
           </p>
           <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed" style={{ color: "#1E293B" }}>
-            {t.bodyText || t.snippet}
+            <LinkedText text={t.bodyText || t.snippet} />
           </div>
           <Files portal={portal} messageId={t.id} files={t.attachments} />
         </div>
@@ -214,7 +215,7 @@ export function MessageView({
           </p>
         </div>
         <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed" style={{ color: "#1E293B" }}>
-          {msg.bodyText || msg.snippet}
+          <LinkedText text={msg.bodyText || msg.snippet} />
         </div>
         <Files portal={portal} messageId={msg.id} files={msg.attachments} />
       </div>
