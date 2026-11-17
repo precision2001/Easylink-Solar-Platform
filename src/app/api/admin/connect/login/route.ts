@@ -19,6 +19,9 @@ import { backendAuthedFetch } from "@/lib/server/backend-authed-fetch";
  *   CONNECT_FEDERATION_ROLE_ARN  (default arn:aws:iam::193801312483:role/ConnectAgentFederation)
  *   CONNECT_SSO_INSTANCE_ID      (default b2647c8a-ce1c-45d7-9c24-3f6e983c4fad)
  *   CONNECT_REGION               (default ap-southeast-2)
+ *   CONNECT_FEDERATION_DESTINATION (default /connect/home: a page with no
+ *                              softphone, so the popup never competes with the
+ *                              dialler's embedded phone for the call audio)
  */
 
 export const dynamic = "force-dynamic";
@@ -28,6 +31,7 @@ const ROLE_ARN =
   process.env.CONNECT_FEDERATION_ROLE_ARN || "arn:aws:iam::193801312483:role/ConnectAgentFederation";
 const INSTANCE_ID = process.env.CONNECT_SSO_INSTANCE_ID || "b2647c8a-ce1c-45d7-9c24-3f6e983c4fad";
 const SESSION_SECONDS = 12 * 60 * 60;
+const DESTINATION = process.env.CONNECT_FEDERATION_DESTINATION || "/connect/home";
 
 function connectUsernameFor(email: string): string | null {
   try {
@@ -88,7 +92,7 @@ export async function GET() {
     if (!tokenJson?.SigninToken) throw new Error("no sign-in token");
 
     const destination = encodeURIComponent(
-      `https://${REGION}.console.aws.amazon.com/connect/federate/${INSTANCE_ID}?destination=${encodeURIComponent("/ccp-v2")}`,
+      `https://${REGION}.console.aws.amazon.com/connect/federate/${INSTANCE_ID}?destination=${encodeURIComponent(DESTINATION)}`,
     );
     const url =
       `https://signin.aws.amazon.com/federation?Action=login&Issuer=${encodeURIComponent("easylink-portal")}` +
