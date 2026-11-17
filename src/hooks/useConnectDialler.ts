@@ -22,7 +22,9 @@ import { toAuE164 } from "@/lib/connect/phone";
 
 /** Instance softphone URL; the page's origin must be an approved origin on the instance. */
 const CCP_URL =
-  process.env.NEXT_PUBLIC_CONNECT_CCP_URL || "https://easylink.my.connect.aws/ccp-v2/";
+  process.env.NEXT_PUBLIC_CONNECT_CCP_URL || "https://easylink-sso.my.connect.aws/ccp-v2/";
+/** Portal route that signs the rep in to Connect (SAML federation); no Connect password. */
+const LOGIN_URL = "/api/admin/connect/login";
 /** Outbound queue ARN; blank uses the agent's routing profile default (Sales). */
 const OUTBOUND_QUEUE_ARN = process.env.NEXT_PUBLIC_CONNECT_OUTBOUND_QUEUE_ARN || "";
 
@@ -70,6 +72,7 @@ function startSoftphone(): Promise<void> {
       region: "ap-southeast-2",
       loginPopup: true,
       loginPopupAutoClose: true,
+      loginUrl: LOGIN_URL,
       loginOptions: { autoClose: true, height: 600, width: 420, top: 0, left: 0 },
       softphone: { allowFramedSoftphone: true, disableRingtone: false },
       pageOptions: { enableAudioDeviceSettings: true, enablePhoneTypeSettings: false },
@@ -376,7 +379,7 @@ export function useConnectDialler() {
 
   const signIn = useCallback(() => {
     // From a click, so the browser allows the window; Streams reconnects once signed in.
-    window.open(CCP_URL.replace(/ccp-v2\/?$/, "connect/login"), "easylink-connect-login", "width=420,height=600");
+    window.open(LOGIN_URL, "easylink-connect-login", "width=420,height=600");
   }, []);
 
   const toggleMute = useCallback(() => {
