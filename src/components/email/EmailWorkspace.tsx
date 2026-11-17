@@ -1,8 +1,10 @@
 "use client";
 
+import type React from "react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  cleanMailText,
   PROVIDER_DOT,
   PROVIDER_LABEL,
   accountName,
@@ -23,6 +25,7 @@ import {
   type ListItem,
 } from "./api";
 import { Composer, type ComposeInit } from "./Composer";
+import { PaneResizer, usePaneWidth } from "./PaneResizer";
 import { LinkedRecord, MessageView, type MessageAction } from "./MessageView";
 
 /**
@@ -461,6 +464,8 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
   const checkedIds = [...checked];
   const checkedItems = items.filter((x) => checked.has(x.id));
   const showReading = Boolean(compose || msg);
+  const navPane = usePaneWidth("easylink.email.navWidth", 230, 170, 340);
+  const listPane = usePaneWidth("easylink.email.listWidth", 420, 300, 760);
   const folderCount = (f: Folder) => (f === "inbox" ? counts.unread : f === "starred" ? counts.starred : f === "drafts" ? counts.drafts : f === "unlinked" ? counts.unlinked : 0);
 
   return (
@@ -530,7 +535,7 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
       ) : (
         <div className="flex min-h-0 flex-1 flex-wrap lg:flex-nowrap">
           {/* Folders and mailboxes */}
-          <nav aria-label="Mail folders" className={`box-border flex-col gap-5 px-4 py-5 lg:flex lg:w-[230px] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ borderRight: `1px solid ${BORDER}` }}>
+          <nav aria-label="Mail folders" className={`box-border flex-col gap-5 px-4 py-5 lg:flex lg:w-[var(--nav-w)] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ "--nav-w": `${navPane.width}px` } as React.CSSProperties}>
             <div className="flex flex-col gap-0.5">
               {FOLDERS.map((f) => {
                 const n = folderCount(f.key);
@@ -596,9 +601,10 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
               <span>Keys: c compose · r reply · a reply all · f forward · e archive · # delete · s star · u unread · j/k next/previous · / search</span>
             </div>
           </nav>
+          <PaneResizer label="Resize folders" {...navPane} />
 
           {/* List */}
-          <section aria-label="Emails" className={`min-w-0 flex-col bg-white lg:flex lg:w-[420px] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ borderRight: `1px solid ${BORDER}` }}>
+          <section aria-label="Emails" className={`min-w-0 flex-col bg-white lg:flex lg:w-[var(--list-w)] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ "--list-w": `${listPane.width}px` } as React.CSSProperties}>
             {folder !== "drafts" ? (
               <div className="flex min-h-[52px] flex-wrap items-center gap-2 px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
                 <input
@@ -747,7 +753,7 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
                             {t.subject}
                           </span>
                           <span className="truncate text-[13px]" style={{ color: MUTED }}>
-                            {t.snippet}
+                            {cleanMailText(t.snippet)}
                           </span>
                           <span className="mt-1 flex flex-wrap gap-1.5">
                             <span className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold" style={{ background: "#F1F5F9", color: "#334155" }}>
@@ -779,6 +785,7 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
               </ul>
             )}
           </section>
+          <PaneResizer label="Resize email list" {...listPane} />
 
           {/* Reading pane / composer */}
           <div className={`box-border min-w-0 flex-1 flex-col gap-4 px-4 py-5 sm:px-7 lg:flex ${showReading ? "flex w-full" : "hidden"}`}>
