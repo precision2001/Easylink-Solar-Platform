@@ -69,6 +69,8 @@ function msg(payload: unknown, fallback: string) {
 
 /** Shared between page visits: Streams can only be initialised once per page load. */
 let ccpStarted = false;
+/** The sign-in popup, closed as soon as the embedded phone is signed in. */
+let loginWin: Window | null = null;
 
 export function useConnectPhone(enabled: boolean) {
   const [state, setState] = useState<DiallerState>("idle");
@@ -133,6 +135,10 @@ export function useConnectPhone(enabled: boolean) {
         });
         cx.agent((agent) => {
           agentRef.current = agent;
+          // Signed in: close the sign-in popup so only the embedded phone handles calls.
+          try { cx.core.loginWindow?.close(); } catch { /* already closed */ }
+          try { loginWin?.close(); } catch { /* already closed */ }
+          loginWin = null;
           setPhone("ready");
           setError(null);
           // A rep who is Offline can't place or take calls; go Available.
@@ -184,7 +190,7 @@ export function useConnectPhone(enabled: boolean) {
     // Streams opens the sign-in popup itself when the session is missing;
     // this covers a blocked first popup. The portal route signs the rep in
     // to Connect with their portal session (no Connect password).
-    window.open(LOGIN_URL, "easylink-connect-login", "width=420,height=640,top=80,left=80");
+    loginWin = window.open(LOGIN_URL, "easylink-connect-login", "width=420,height=640,top=80,left=80");
   }, []);
 
   const dial = useCallback(
