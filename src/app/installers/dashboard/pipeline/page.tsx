@@ -40,7 +40,7 @@ export default function InstallerPipelinePage() {
 
   return (
     <div className="min-h-screen bg-surface-50">
-      <InstallerHeader userInitials="ES" />
+      <InstallerHeader />
 
       <div className="mx-auto max-w-[1440px] px-4 py-6 md:px-4 lg:py-8">
         {error ? (

@@ -7,7 +7,7 @@ import rightArrow from "@/components/ui/Icons/rightArrow.svg";
 import { HOME_PAGE } from "@/utils/constant";
 
 export function HomeHeroContent() {
-  const { title, subtitle, primaryCta, secondaryCta, stats } = HOME_PAGE.hero;
+  const { title, subtitle, primaryCta, secondaryCta } = HOME_PAGE.hero;
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between lg:gap-[143px]">
@@ -45,21 +45,6 @@ export function HomeHeroContent() {
           >
             {secondaryCta.label}
           </Link>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-center gap-5 font-source-sans text-base lg:justify-end">
-          <div className="flex items-center gap-[7.5px] text-slate-ink">
-            <span className="font-bold">{stats[0].value}</span>
-            <span className="font-medium">{stats[0].label}</span>
-          </div>
-          <span
-            className="hidden h-[17px] w-px bg-home-hero-stat-divider sm:block"
-            aria-hidden
-          />
-          <div className="flex items-center gap-[8.5px] text-slate-ink">
-            <span className="font-bold">{stats[1].value}</span>
-            <span className="font-medium">{stats[1].label}</span>
-          </div>
         </div>
       </div>
     </div>

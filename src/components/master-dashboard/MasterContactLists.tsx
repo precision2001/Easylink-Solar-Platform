@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useAppSelector } from "@/lib/store/hooks";
 
 import {
   ACCEPTED_FORMATS,
@@ -10,7 +11,6 @@ import {
   FILTERS,
   type FilterKey,
   INTERESTS,
-  STAGE_PROBABILITY,
   dealValue,
   fileStem,
   priceOptions,
@@ -199,11 +199,6 @@ function discoveryValue(d: ContactDiscovery | null, key: keyof ContactDiscovery)
   return String(v);
 }
 
-const TIMELINE: [string, string][] = [
-  ["14 Oct, 4:43 pm · Call · Interested", "Keen on a battery for evening use. Partner wants to see numbers."],
-  ["14 Oct, 3:43 pm · Note", "Quarterly bill about $1,150. Wants to cut evening use."],
-  ["13 Oct, 11:02 am · Call · No answer", "0491 570 006"],
-];
 
 const PORTAL_LINKS: [string, string][] = [
   ["Solar designer · see your savings", "https://www.easylinksolar.com.au/designs"],
@@ -264,6 +259,8 @@ export function MasterContactLists({
 }: { role?: ContactListsRole } = {}) {
   const ops = role === "operations";
   const api = useContactsApi();
+  const staff = useAppSelector((st) => st.adminAuth.user);
+  const ownerName = [staff?.firstName, staff?.lastName].filter(Boolean).join(" ").trim();
   const options = useMemo(() => priceOptions(), []);
 
   const [tab, setTab] = useState<"db" | "import" | "formats">("db");
@@ -1082,12 +1079,11 @@ export function MasterContactLists({
                       {contact.suburb} NSW {contact.postcode} · {contact.list}
                     </span>
                     <div className="flex flex-wrap gap-1.5">
-                      <span className={PILL} style={{ background: "#DBEAFE", color: BLUE_INK }}>
-                        Appointment
-                      </span>
-                      <span className={PILL} style={{ background: "#FEF3C7", color: AMBER }}>
-                        New lead
-                      </span>
+                      {contact.list ? (
+                        <span className={PILL} style={{ background: "#DBEAFE", color: BLUE_INK }}>
+                          {contact.list}
+                        </span>
+                      ) : null}
                       {interests.map((t) => (
                         <span key={t} className={PILL} style={{ background: "#F1F5F9", color: BODY }}>
                           {t}
@@ -1100,9 +1096,7 @@ export function MasterContactLists({
                     style={{ border: `1px solid ${BORDER}`, gridTemplateColumns: "repeat(auto-fit, minmax(max(min(140px, 100%), calc(100% / 4 - 16px)), 1fr))" }}
                   >
                     {[
-                      ["Sales probability", `${STAGE_PROBABILITY}%`],
                       ["Estimated revenue", money(deal.price)],
-                      ["Weighted", money(deal.weighted)],
                       ["System", `${deal.kw} kW + ${CRM_BATTERY_KWH} kWh`],
                     ].map(([l, v]) => (
                       <div
@@ -1212,13 +1206,22 @@ export function MasterContactLists({
                               ["Email", contact.email, false],
                               ["Street", "[street]", true],
                               ["Suburb", `${contact.suburb} NSW ${contact.postcode}`, false],
-                              ["Network", "Endeavour Energy · single phase", true],
-                              ["Property", "House · tile roof · 1 storey", true],
-                              ["Power bill", "$1,150 a quarter", false],
+                              ["Power supply", discovery?.powerSupply || "Single phase", !discovery?.powerSupply],
+                              [
+                                "Property",
+                                [discovery?.propertyType, discovery?.roof, discovery?.storeys].filter(Boolean).join(" · ") ||
+                                  "House · tile roof · 1 storey",
+                                !(discovery?.propertyType || discovery?.roof || discovery?.storeys),
+                              ],
+                              [
+                                "Power bill",
+                                discovery?.quarterlyBill ? `${money(discovery.quarterlyBill)} a quarter` : "Not asked yet",
+                                !discovery?.quarterlyBill,
+                              ],
                               ["Usage rate · feed-in", "37c · 5c per kWh", true],
                               ["Roof faces", "North and west", true],
                               ["Interested in", interests.join(", ") || "Solar", false],
-                              ["Timeframe", "1–3 months", false],
+                              ["Timeframe", discovery?.timeframe || "Not asked yet", !discovery?.timeframe],
                             ] as [string, string, boolean][]
                           ).map(([l, v, assumed]) => (
                             <label key={l} className={FIELD_LABEL} style={{ color: BODY }}>
@@ -1740,12 +1743,11 @@ export function MasterContactLists({
                           >
                             {(
                               [
-                                ["Lead stage", "Appointment"],
-                                ["Sales probability %", `${STAGE_PROBABILITY} (stage default)`],
+                                ["Lead stage", "Not a lead yet"],
                                 ["Estimated revenue $", `${money(deal.price)} from the system`],
-                                ["How they found us", "Purchased list"],
-                                ["Referred by", "—"],
-                                ["Owner", "Daniel Shaw"],
+                                ["How they found us", contact.list ? `Contact list · ${contact.list}` : EMPTY_CELL],
+                                ["Referred by", EMPTY_CELL],
+                                ["Owner", ownerName || EMPTY_CELL],
                               ] as [string, string][]
                             ).map(([l, v]) => (
                               <label key={l} className={FIELD_LABEL} style={{ color: BODY }}>
@@ -1897,43 +1899,9 @@ export function MasterContactLists({
 
                       {crm === "follow" && (
                         <>
-                          {(
-                            [
-                              [
-                                "Site visit · Fri 16 Oct, 5:30 pm",
-                                "Partner home after 5 pm · Daniel Shaw",
-                                "Due",
-                                "#FEF3C7",
-                                AMBER,
-                              ],
-                              [
-                                "Send designer link · Tue 13 Oct",
-                                "Sent the website designer link by SMS (consented)",
-                                "Done",
-                                "#DCFCE7",
-                                GREEN,
-                              ],
-                            ] as [string, string, string, string, string][]
-                          ).map(([t, n, s, bg, fg]) => (
-                            <div
-                              key={t}
-                              className="flex flex-wrap items-center gap-2 py-2"
-                              style={{ borderBottom: `1px solid #EEF2F6` }}
-                            >
-                              <span className="flex flex-[1_1_240px] flex-col">
-                                <strong className="text-[13px]">{t}</strong>
-                                <span className="text-[12px]" style={{ color: MUTED }}>
-                                  {n}
-                                </span>
-                              </span>
-                              <span className={PILL} style={{ background: bg, color: fg }}>
-                                {s}
-                              </span>
-                              <button type="button" title="Not built yet" className={`${SMALL_BTN} cursor-help`}>
-                                Mark done
-                              </button>
-                            </div>
-                          ))}
+                          <p className="m-0 text-[13px]" style={{ color: MUTED }}>
+                            No follow-ups booked for {contact.name || "this contact"} yet.
+                          </p>
                           <button
                             type="button"
                             title="Not built yet"
@@ -1953,16 +1921,9 @@ export function MasterContactLists({
                               className="rounded-[10px] border border-[#CBD5E1] px-2.5 py-2 text-[13px] font-normal"
                             />
                           </label>
-                          {TIMELINE.map(([t, b]) => (
-                            <div
-                              key={t}
-                              className="flex flex-col gap-0.5 pl-2.5"
-                              style={{ borderLeft: `3px solid #CBD5E1` }}
-                            >
-                              <strong className="text-[13px]">{t}</strong>
-                              <span className="text-[13px]">{b}</span>
-                            </div>
-                          ))}
+                          <p className="m-0 text-[13px]" style={{ color: MUTED }}>
+                            No notes yet.
+                          </p>
                         </>
                       )}
 

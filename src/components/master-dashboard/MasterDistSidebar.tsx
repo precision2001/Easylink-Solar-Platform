@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePortalLogout } from "@/hooks/usePortalLogout";
+import { useAppSelector } from "@/lib/store/hooks";
 
 /**
  * Admin/operations sidebar, matching the Easylink Designer DistNav artboard:
@@ -331,9 +332,13 @@ export function MasterDistSidebar(props: Props) {
 function SidebarNav({
   active,
   accountName = "Easylink Plus Pty Ltd",
-  personName = "Daniel Shaw · Owner",
+  personName: personNameProp,
 }: Props) {
   const { logout, pending } = usePortalLogout("admin");
+  // The signed-in staff member, never a fixed sample person.
+  const user = useAppSelector((st) => st.adminAuth.user);
+  const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+  const personName = personNameProp ?? (fullName || user?.email || "");
 
   return (
     <nav
@@ -377,12 +382,14 @@ function SidebarNav({
           >
             Operations
           </span>
-          <span
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-            style={{ background: "#1B3557", color: "#C3CFDF" }}
-          >
-            {personName}
-          </span>
+          {personName ? (
+            <span
+              className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+              style={{ background: "#1B3557", color: "#C3CFDF" }}
+            >
+              {personName}
+            </span>
+          ) : null}
         </span>
         <span
           title="Switching between accounts isn't built yet"

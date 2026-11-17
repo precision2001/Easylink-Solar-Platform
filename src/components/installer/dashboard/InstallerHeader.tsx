@@ -9,6 +9,7 @@ import { DashboardNotificationBell } from "@/components/dashboard/DashboardNotif
 import { CartButton } from "@/components/cart/CartButton";
 import Icon from "@/components/ui/Icons";
 import { usePortalLogout } from "@/hooks/usePortalLogout";
+import { useAppSelector } from "@/lib/store/hooks";
 
 const NAV = [
   {
@@ -90,9 +91,18 @@ function resolveActiveNav(
 
 export function InstallerHeader({
   activeNav: activeNavProp,
-  userInitials = "ES",
+  userInitials: userInitialsProp,
   onMenuClick,
 }: Props) {
+  // Initials of the signed-in installer, not a fixed sample "ES".
+  const user = useAppSelector((st) => st.installerAuth.user);
+  const userInitials =
+    userInitialsProp ??
+    ((
+      [user?.firstName, user?.lastName]
+        .map((n) => n?.trim()?.[0] ?? "")
+        .join("") || user?.email?.[0] || ""
+    ).toUpperCase() || "·");
   const pathname = usePathname();
   const activeNav = resolveActiveNav(pathname, activeNavProp);
   const { logout, pending } = usePortalLogout("installer");
