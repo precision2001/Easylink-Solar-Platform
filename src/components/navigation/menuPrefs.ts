@@ -10,11 +10,12 @@ import { useCallback, useEffect, useState } from "react";
  *   again every week for every person (see the nav-usage module).
  */
 
-export type MenuPortal = "admin" | "installer";
+export type MenuPortal = "admin" | "installer" | "customer";
 
 const API: Record<MenuPortal, string> = {
   admin: "/api/admin/nav-usage",
   installer: "/api/installers/nav-usage",
+  customer: "/api/customers/nav-usage",
 };
 
 const orderCache: Partial<Record<MenuPortal, string[]>> = {};
@@ -58,13 +59,14 @@ export function useMenuOrder(portal: MenuPortal): string[] {
  * the like) stays at the top; sections not used yet keep their usual order
  * after the used ones.
  */
-export function orderGroups<T extends { title: string }>(groups: T[], order: string[]): T[] {
+export function orderGroups<T>(groups: T[], order: string[], titleOf: (g: T) => string = (g) => (g as { title: string }).title, pinFirst = false): T[] {
   if (!order.length) return groups;
   const rank = new Map(order.map((t, i) => [t, i]));
-  const pinned = groups.filter((g) => !g.title);
+  const isPinned = (g: T, i: number) => !titleOf(g) || (pinFirst && i === 0);
+  const pinned = groups.filter(isPinned);
   const rest = groups
-    .filter((g) => g.title)
-    .map((g, i) => ({ g, i, r: rank.get(g.title) ?? Number.POSITIVE_INFINITY }))
+    .filter((g, i) => !isPinned(g, i))
+    .map((g, i) => ({ g, i, r: rank.get(titleOf(g)) ?? Number.POSITIVE_INFINITY }))
     .sort((a, b) => a.r - b.r || a.i - b.i)
     .map((x) => x.g);
   return [...pinned, ...rest];
