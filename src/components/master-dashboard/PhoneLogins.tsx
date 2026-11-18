@@ -6,8 +6,9 @@ import { extractMessage, unwrapApiData } from "@/lib/customers/backend";
 /**
  * Phone logins: the Amazon Connect logins sales staff use in the Agent Dialer.
  * One login can only be signed in in one browser, so each rep who calls at the
- * same time as others needs their own. The password is shown once, here, and
- * is not kept anywhere.
+ * same time as others needs their own. The rep's portal login email links the
+ * two: the rep signs in to the portal and the Agent Dialer signs them in to
+ * the phone, with no Connect password.
  */
 
 type Login = {
@@ -19,7 +20,7 @@ type Login = {
   removable: boolean;
 };
 
-type Created = Login & { password: string };
+type Created = Login & { password: string | null };
 
 const API = "/api/admin/cc/phone-logins";
 const INPUT =
@@ -118,7 +119,7 @@ export function PhoneLogins() {
     }
   }
 
-  const canCreate = first.trim() && last.trim() && /^[a-z0-9][a-z0-9._-]{2,63}$/.test(effectiveUsername) && !busy;
+  const canCreate = first.trim() && last.trim() && /^[a-z0-9][a-z0-9._-]{2,63}$/.test(effectiveUsername) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && !busy;
 
   return (
     <section id="phone-logins" className="scroll-mt-6 overflow-hidden rounded-[14px] border border-[#E3E8EF] bg-white" aria-labelledby="phone-logins-title">
@@ -205,28 +206,40 @@ export function PhoneLogins() {
               <p className="m-0 text-[13.5px] font-bold text-[#166534]">
                 Phone login ready for {[created.firstName, created.lastName].filter(Boolean).join(" ")}
               </p>
-              <p className="m-0 mt-1 text-[12.5px] text-[#166534]">Give these to the rep. The password is shown only now.</p>
+              <p className="m-0 mt-1 text-[12.5px] text-[#166534]">
+                {created.password
+                  ? "Give these to the rep. The password is shown only now."
+                  : `${created.email ?? "The rep"} can now call from Agent Dialer: they sign in to the portal as usual and the phone signs in by itself.`}
+              </p>
               <dl className="m-0 mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[13px]">
                 <dt className="text-[#3F6212]">Username</dt>
                 <dd className="m-0 font-mono font-semibold text-[#0F172A]">{created.username}</dd>
-                <dt className="text-[#3F6212]">Password</dt>
-                <dd className="m-0 font-mono font-semibold text-[#0F172A]">{created.password}</dd>
+                {created.password && (
+                  <>
+                    <dt className="text-[#3F6212]">Password</dt>
+                    <dd className="m-0 font-mono font-semibold text-[#0F172A]">{created.password}</dd>
+                  </>
+                )}
               </dl>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => copy(`Username: ${created.username}\nPassword: ${created.password}`)}
-                  className="h-8 rounded-[8px] bg-[#166534] px-3 text-[12.5px] font-semibold text-white"
-                >
-                  {copied ? "Copied" : "Copy both"}
-                </button>
+                {created.password && (
+                  <button
+                    type="button"
+                    onClick={() => copy(`Username: ${created.username}\nPassword: ${created.password}`)}
+                    className="h-8 rounded-[8px] bg-[#166534] px-3 text-[12.5px] font-semibold text-white"
+                  >
+                    {copied ? "Copied" : "Copy both"}
+                  </button>
+                )}
                 <button type="button" onClick={() => setCreated(null)} className="h-8 rounded-[8px] border border-[#86EFAC] px-3 text-[12.5px] font-semibold text-[#166534]">
                   Done
                 </button>
               </div>
-              <p className="m-0 mt-3 text-[12px] text-[#3F6212]">
-                The rep opens Agent Dialer, presses <b>Sign in</b> in the Phone card, and signs in with these.
-              </p>
+              {created.password && (
+                <p className="m-0 mt-3 text-[12px] text-[#3F6212]">
+                  The rep opens Agent Dialer, presses <b>Sign in</b> in the Phone card, and signs in with these.
+                </p>
+              )}
             </div>
           )}
 
@@ -258,8 +271,9 @@ export function PhoneLogins() {
               />
             </label>
             <label className="flex flex-col gap-1 text-[12px] font-semibold text-[#334155]">
-              Email <span className="font-normal text-[#64748B]">(optional)</span>
-              <input className={INPUT} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" maxLength={254} />
+              Portal login email
+              <input className={INPUT} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" required maxLength={254} />
+              <span className="font-normal text-[#64748B]">The email the rep signs in to the portal with. It signs them in to the phone.</span>
             </label>
             {formError && (
               <p role="alert" className="m-0 rounded-[8px] bg-[#FEF2F2] px-3 py-2 text-[12.5px] text-[#B91C1C]">
