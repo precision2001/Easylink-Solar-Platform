@@ -80,7 +80,26 @@ function listNameFrom(fileName: string): string {
  * phone number keep their leading zeros and do not arrive as numbers that have
  * already lost them.
  */
-export async function readContactFile(file: File): Promise<ImportFile> {
+/** Progress while a file is read: 0–100, with what is happening. */
+export type ReadProgress = { percent: number; stage: "loading" | "parsing" | "rows" };
+
+/** Reads the file's bytes, reporting how much has loaded. */
+function loadBytes(file: File, onProgress?: (p: ReadProgress) => void): Promise<ArrayBuffer> {
+  if (typeof FileReader === "undefined") return file.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress?.({ percent: Math.round((e.loaded / e.total) * 60), stage: "loading" });
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read that file."));
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+const yieldToScreen = () => new Promise<void>((r) => setTimeout(r, 0));
+
+export async function readContactFile(file: File, onProgress?: (p: ReadProgress) => void): Promise<ImportFile> {
   if (file.size > MAX_IMPORT_BYTES) {
     throw new Error(
       `That file is ${Math.round(file.size / 1024 / 1024)} MB; the limit is ${
@@ -89,8 +108,14 @@ export async function readContactFile(file: File): Promise<ImportFile> {
     );
   }
 
-  const buffer = await file.arrayBuffer();
+  onProgress?.({ percent: 0, stage: "loading" });
+  const buffer = await loadBytes(file, onProgress);
+  // Loading is 0–60%, parsing the workbook 60–85%, reading rows 85–100%.
+  onProgress?.({ percent: 60, stage: "parsing" });
+  await yieldToScreen();
   const book = XLSX.read(buffer, { type: "array", cellDates: false, raw: false });
+  onProgress?.({ percent: 85, stage: "rows" });
+  await yieldToScreen();
 
   const sheetName = book.SheetNames[0];
   if (!sheetName) throw new Error("That file has no sheets.");
@@ -108,6 +133,7 @@ export async function readContactFile(file: File): Promise<ImportFile> {
   // all; a column that is empty throughout still appears thanks to `defval`.
   const headings = Object.keys(rows[0]!).filter(h => h.trim());
   if (!headings.length) throw new Error("That file has no column headings.");
+  onProgress?.({ percent: 100, stage: "rows" });
 
   return {
     fileName: file.name,

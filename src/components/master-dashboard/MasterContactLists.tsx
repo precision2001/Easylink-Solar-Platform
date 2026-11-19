@@ -21,6 +21,7 @@ import {
   describeMapping,
   readContactFile,
   type ImportFile,
+  type ReadProgress,
 } from "@/lib/contact-lists/import-file";
 import {
   OUTCOME_LABELS,
@@ -286,6 +287,8 @@ export function MasterContactLists({
   const [matchedFormat, setMatchedFormat] = useState<string | null>(null);
   const [listName, setListName] = useState("");
   const [importing, setImporting] = useState(false);
+  /** Reading the chosen file in the browser: 0–100, or null when not reading. */
+  const [reading, setReading] = useState<ReadProgress | null>(null);
   const [progress, setProgress] = useState<ImportJob | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [formats, setFormats] = useState<SavedFormat[] | null>(null);
@@ -488,8 +491,9 @@ export function MasterContactLists({
   const chooseFile = async (picked: File) => {
     setImportError(null);
     setProgress(null);
+    setReading({ percent: 0, stage: "loading" });
     try {
-      const parsed = await readContactFile(picked);
+      const parsed = await readContactFile(picked, setReading);
       setFile(parsed);
       setListName(parsed.suggestedListName);
 
@@ -499,6 +503,8 @@ export function MasterContactLists({
       setStep("map");
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Could not read that file.");
+    } finally {
+      setReading(null);
     }
   };
 
@@ -2020,15 +2026,41 @@ export function MasterContactLists({
                     </span>
                   ))}
                 </div>
+                {reading ? (
+                  <div className="flex w-full max-w-[420px] flex-col gap-1.5" aria-live="polite">
+                    <div
+                      className="h-2.5 overflow-hidden rounded-full"
+                      style={{ background: "#E2E8F0" }}
+                      role="progressbar"
+                      aria-valuenow={reading.percent}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div
+                        className="h-full rounded-full transition-[width]"
+                        style={{ width: `${reading.percent}%`, background: SUN }}
+                      />
+                    </div>
+                    <span className="text-[13px] font-semibold">
+                      {reading.percent}% ·{" "}
+                      {reading.stage === "loading"
+                        ? "Reading the file"
+                        : reading.stage === "parsing"
+                          ? "Opening the spreadsheet"
+                          : "Reading the rows"}
+                    </span>
+                  </div>
+                ) : null}
                 <label
-                  className="min-h-11 cursor-pointer rounded-[10px] px-[18px] py-3 font-bold"
+                  className={`min-h-11 rounded-[10px] px-[18px] py-3 font-bold ${reading ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                   style={{ background: SUN, color: SUN_INK }}
                 >
-                  Choose a file
+                  {reading ? "Reading..." : "Choose a file"}
                   <input
                     type="file"
                     accept=".xlsx,.xls,.csv,.txt,.ods"
                     className="hidden"
+                    disabled={Boolean(reading)}
                     onChange={(e) => {
                       const picked = e.target.files?.[0];
                       e.target.value = "";
@@ -2127,18 +2159,31 @@ export function MasterContactLists({
                     className="min-h-11 cursor-pointer rounded-[10px] border-0 px-[18px] font-bold disabled:cursor-not-allowed disabled:opacity-60"
                     style={{ background: SUN, color: SUN_INK }}
                   >
-                    {importing ? "Importing..." : "Import contacts"}
+                    {importing ? `Importing ${progress ? `${Math.round(progress.percent)}%` : "..."}` : "Import contacts"}
                   </button>
                 </div>
                 {progress ? (
-                  <div className="flex flex-col gap-1">
-                    <div className="h-2 overflow-hidden rounded-full" style={{ background: "#E2E8F0" }}>
+                  <div className="flex flex-col gap-1" aria-live="polite">
+                    <div className="flex items-center gap-2.5">
                       <div
-                        className="h-full rounded-full transition-[width]"
-                        style={{ width: `${progress.percent}%`, background: SUN }}
-                      />
+                        className="h-2.5 flex-grow overflow-hidden rounded-full"
+                        style={{ background: "#E2E8F0" }}
+                        role="progressbar"
+                        aria-valuenow={progress.percent}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                      >
+                        <div
+                          className="h-full rounded-full transition-[width]"
+                          style={{ width: `${progress.percent}%`, background: SUN }}
+                        />
+                      </div>
+                      <span className="min-w-[44px] text-right text-[13px] font-bold tabular-nums">
+                        {Math.round(progress.percent)}%
+                      </span>
                     </div>
                     <span className="text-[12px]" style={{ color: MUTED }}>
+                      {importing ? "Importing · " : "Imported · "}
                       {progress.processedRows.toLocaleString("en-AU")} of{" "}
                       {progress.totalRows.toLocaleString("en-AU")} rows ·{" "}
                       {progress.addedRows.toLocaleString("en-AU")} added ·{" "}
