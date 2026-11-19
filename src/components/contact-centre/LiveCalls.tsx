@@ -799,7 +799,7 @@ export function AiDiallerCard() {
                   Jay · {a.states.join(", ")}
                 </label>
                 <label className="flex items-center gap-1.5 text-[#475569]">
-                  per day
+                  conversations per day
                   <select
                     value={a.dailyLimit}
                     disabled={saving}
@@ -812,7 +812,7 @@ export function AiDiallerCard() {
                   </select>
                 </label>
                 <span className="ml-auto tabular-nums text-[#334155]">
-                  {a.today} today · {a.answered} answered{a.active ? ` · ${a.active} on now` : ""}
+                  {a.today} of {a.dailyLimit} conversations today · {a.dials} dialled · {a.answered} answered{a.active ? ` · ${a.active} on now` : ""}
                 </span>
               </div>
             ))}
@@ -820,7 +820,8 @@ export function AiDiallerCard() {
           </div>
           <div className="grid grid-cols-3 gap-2">
             {[
-              ["Calls today", d.today.calls],
+              ["Dialled today", d.today.calls],
+              ["Conversations", d.today.conversations],
               ["Answered", d.today.answered],
               ["On now", d.today.active],
             ].map(([l, v]) => (
