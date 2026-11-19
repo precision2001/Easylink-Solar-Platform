@@ -134,6 +134,10 @@ export function TechnicalSection({ portal, leadId, compact }: { portal: Portal; 
       .catch(() => setError("Couldn't load the technical section."));
   }, [base, leadId]);
   useEffect(load, [load]);
+  // Opened from a lead card's Technical chip (#technical): scroll to it once it has loaded.
+  useEffect(() => {
+    if (data && !compact && typeof window !== "undefined" && window.location.hash === "#technical") document.getElementById("technical")?.scrollIntoView({ block: "start" });
+  }, [data, compact]);
 
   const save = async (patch: TechnicalPatch, ok = "Saved") => {
     setSaving(true);
@@ -198,7 +202,7 @@ export function TechnicalSection({ portal, leadId, compact }: { portal: Portal; 
   );
 
   return (
-    <section className="flex flex-col gap-4 rounded-[14px] border border-[#E3E8EF] bg-white p-5" aria-label="Technical section">
+    <section id="technical" className="flex scroll-mt-4 flex-col gap-4 rounded-[14px] border border-[#E3E8EF] bg-white p-5" aria-label="Technical section">
       {header}
       {saveMsg && (
         <p role="status" className="m-0 text-[13px] font-semibold text-[#166534]">
