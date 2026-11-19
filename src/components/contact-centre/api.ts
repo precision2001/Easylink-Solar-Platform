@@ -145,6 +145,30 @@ export type CcOverview = {
   team: { userId: string; name: string; status: Presence; lastSeenAt: string }[];
 };
 
+/** An Amazon Connect call on now (EasyLink AI or a rep). */
+export type ConnectLiveCall = {
+  contactId: string;
+  startedAt: string | null;
+  direction: "inbound" | "outbound";
+  handledBy: string;
+  withAi: boolean;
+  customerNumber: string | null;
+  customerName: string | null;
+  leadId: string | null;
+};
+export type ConnectTurn = { who: "ai" | "rep" | "customer"; text: string; atSec: number };
+export type ConnectTranscript =
+  | { contactId: string; found: false }
+  | { contactId: string; found: true; active: boolean; startedAt: string | null; endedAt: string | null; direction: "inbound" | "outbound"; handledBy: string; customerNumber: string | null; turns: ConnectTurn[] };
+
+export type AiOutboundSettings = { enabled: boolean; listIds: string[]; maxConcurrent: number; dailyLimit: number; retryAfterDays: number; maxAttempts: number };
+export type AiOutbound = {
+  settings: AiOutboundSettings;
+  configured: boolean;
+  lists: { id: string; name: string; contacts: number }[];
+  today: { calls: number; answered: number; active: number; recent: { id: string; contactId: string | null; counterpartyNumber: string; startedAt: string; endedAt: string | null; durationSec: number | null; leadId: string | null }[] };
+};
+
 export function cc(portal: Portal) {
   const base = `/api/${portal}/cc`;
   async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<{ data: T; meta?: Record<string, unknown> }> {
@@ -204,6 +228,10 @@ export function cc(portal: Portal) {
     declineTransfer: (id: string) => call(`/live-calls/transfers/${id}/decline`, { method: "POST", json: {} }),
     hangUpTransfer: (id: string) => call(`/live-calls/transfers/${id}/hang-up`, { method: "POST", json: {} }),
     liveTranscriptToken: () => call<{ token: string; expiresIn: number; language: string }>(`/live-calls/live-transcript/token`, { method: "POST", json: {} }).then((r) => r.data),
+    connectLive: () => call<ConnectLiveCall[]>(`/live-calls/connect/active`).then((r) => r.data),
+    connectTranscript: (contactId: string) => call<ConnectTranscript>(`/live-calls/connect/${contactId}/transcript`).then((r) => r.data),
+    aiOutbound: () => call<AiOutbound>(`/ai-sales/outbound`).then((r) => r.data),
+    saveAiOutbound: (body: Partial<AiOutboundSettings>) => call<AiOutboundSettings>(`/ai-sales/outbound`, { method: "PUT", json: body }).then((r) => r.data),
     setFollowUp: (id: string, body: Partial<Pick<FollowUp, "status" | "dueAt" | "title">>) => call(`/follow-ups/${id}`, { method: "PATCH", json: body }),
   };
 }

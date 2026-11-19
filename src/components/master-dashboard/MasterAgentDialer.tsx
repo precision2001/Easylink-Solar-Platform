@@ -33,7 +33,7 @@ import {
 } from "@/lib/calls/transcript";
 import { CallListPanel } from "@/components/call-lists/CallListPanel";
 import { AiCallAssist, ScreenPop } from "@/components/contact-centre/DiallerPanels";
-import { CustomerAiSummary, IncomingTransfers, LiveAssistPanel, LiveTranscriptPanel, PresenceToggle, useLiveTranscript } from "@/components/contact-centre/LiveCalls";
+import { CustomerAiSummary, IncomingTransfers, LiveAssistPanel, LiveTranscriptPanel, PresenceToggle, useConnectLiveTranscript, useLiveTranscript } from "@/components/contact-centre/LiveCalls";
 import { cc, type AcceptedTransfer, type Campaign } from "@/components/contact-centre/api";
 
 /**
@@ -365,7 +365,10 @@ export function MasterAgentDialer() {
   }
   // A call EasyLink AI handed over: who, and what the AI already found out.
   const [handover, setHandover] = useState<AcceptedTransfer | null>(null);
-  const live = useLiveTranscript(room, state === "connected");
+  const livekitLive = useLiveTranscript(room, state === "connected");
+  // On Amazon Connect the transcript comes from Contact Lens real-time (and EasyLink AI's log).
+  const connectLive = useConnectLiveTranscript(CALL_PROVIDER === "connect" ? connectDialler.contactId : null, callActive);
+  const live = CALL_PROVIDER === "connect" ? connectLive : livekitLive;
   const takeCall = (t: AcceptedTransfer) => {
     setHandover(t);
     void join(t);

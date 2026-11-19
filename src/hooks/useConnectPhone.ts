@@ -89,6 +89,8 @@ export function useConnectPhone(enabled: boolean) {
   const contactRef = useRef<StreamsContact | null>(null);
   const roomNameRef = useRef<string | null>(null);
   const answeredRef = useRef(false);
+  /** The Connect contact on now, for its live transcript. */
+  const [contactId, setContactId] = useState<string | null>(null);
 
   const post = (path: string, body: object) =>
     fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => undefined);
@@ -96,6 +98,7 @@ export function useConnectPhone(enabled: boolean) {
   const reset = useCallback(() => {
     contactRef.current = null;
     roomNameRef.current = null;
+    setContactId(null);
     answeredRef.current = false;
     setMuted(false);
     setDurationSec(null);
@@ -158,6 +161,7 @@ export function useConnectPhone(enabled: boolean) {
             setActiveNumber("Caller from EasyLink AI");
           }
           const contactId = contact.getContactId();
+          setContactId(contactId);
           const room = roomNameRef.current;
           if (room) void post("/api/admin/calls/dial/connect-contact", { roomName: room, contactId });
           contact.onConnected(() => {
@@ -287,6 +291,7 @@ export function useConnectPhone(enabled: boolean) {
     sendDigit,
     callActive: state === "dialling" || state === "connected",
     /* Connect-only */
+    contactId,
     phone,
     incoming,
     mountPhone,
