@@ -785,23 +785,38 @@ export function AiDiallerCard() {
               ))
             )}
           </div>
-          <div className="flex flex-wrap gap-4 text-[13px]">
-            <label className="flex items-center gap-2">
-              Calls at once
-              <select value={s!.maxConcurrent} disabled={saving} onChange={(e) => void save({ maxConcurrent: Number(e.target.value) })} className="rounded-[8px] border border-[#CBD5E1] px-2 py-1">
-                {[1, 2, 3, 5, 8, 10].map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-2">
-              Calls per day
-              <select value={s!.dailyLimit} disabled={saving} onChange={(e) => void save({ dailyLimit: Number(e.target.value) })} className="rounded-[8px] border border-[#CBD5E1] px-2 py-1">
-                {[25, 50, 100, 150, 250, 500].map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </label>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[12.5px] font-semibold text-[#334155]">AI agents</span>
+            {d.agents.map((a, i) => (
+              <div key={a.name} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border border-[#E3E8EF] px-3 py-2 text-[13px]">
+                <label className="flex items-center gap-2 font-semibold text-[#0F172A]">
+                  <input
+                    type="checkbox"
+                    checked={a.enabled}
+                    disabled={saving}
+                    onChange={() => void save({ agents: s!.agents.map((x, j) => (j === i ? { ...x, enabled: !x.enabled } : x)) })}
+                  />
+                  Jay · {a.states.join(", ")}
+                </label>
+                <label className="flex items-center gap-1.5 text-[#475569]">
+                  per day
+                  <select
+                    value={a.dailyLimit}
+                    disabled={saving}
+                    onChange={(e) => void save({ agents: s!.agents.map((x, j) => (j === i ? { ...x, dailyLimit: Number(e.target.value) } : x)) })}
+                    className="rounded-[8px] border border-[#CBD5E1] px-1.5 py-0.5"
+                  >
+                    {[25, 50, 100, 150, 200, 300].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
+                <span className="ml-auto tabular-nums text-[#334155]">
+                  {a.today} today · {a.answered} answered{a.active ? ` · ${a.active} on now` : ""}
+                </span>
+              </div>
+            ))}
+            <span className="text-[12px] text-[#5B6B80]">Each agent calls only contacts in its state (by state, else postcode).</span>
           </div>
           <div className="grid grid-cols-3 gap-2">
             {[
