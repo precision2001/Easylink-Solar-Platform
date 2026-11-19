@@ -20,7 +20,7 @@ import {
 } from "@/lib/calls/transcript";
 
 import { cc, day, dur, phoneFmt, when, type CcOverview } from "@/components/contact-centre/api";
-import { PresenceToggle, useListenIn } from "@/components/contact-centre/LiveCalls";
+import { AiDiallerCard, ConnectLiveBoard, PresenceToggle, useListenIn } from "@/components/contact-centre/LiveCalls";
 
 export type ContactRole = "operations" | "installer";
 
@@ -374,6 +374,13 @@ export function MasterContactCentre({
             </div>
           ))}
         </div>
+
+        {ops ? (
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+            <ConnectLiveBoard />
+            <AiDiallerCard />
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
           <section aria-label="Next call" className="flex flex-col gap-3 rounded-[14px] bg-[#0B1A2E] p-[18px] text-white">
