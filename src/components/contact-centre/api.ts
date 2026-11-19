@@ -167,8 +167,8 @@ export type AiOutbound = {
   settings: AiOutboundSettings;
   configured: boolean;
   lists: { id: string; name: string; contacts: number }[];
-  agents: (AiAgentLane & { today: number; answered: number; active: number })[];
-  today: { calls: number; answered: number; active: number; recent: { id: string; contactId: string | null; counterpartyNumber: string; startedAt: string; endedAt: string | null; durationSec: number | null; leadId: string | null }[] };
+  agents: (AiAgentLane & { today: number; dials: number; answered: number; active: number })[];
+  today: { calls: number; conversations: number; answered: number; active: number; recent: { id: string; contactId: string | null; counterpartyNumber: string; startedAt: string; endedAt: string | null; durationSec: number | null; leadId: string | null }[] };
 };
 
 export function cc(portal: Portal) {
