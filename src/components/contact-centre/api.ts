@@ -161,11 +161,13 @@ export type ConnectTranscript =
   | { contactId: string; found: false }
   | { contactId: string; found: true; active: boolean; startedAt: string | null; endedAt: string | null; direction: "inbound" | "outbound"; handledBy: string; customerNumber: string | null; turns: ConnectTurn[] };
 
-export type AiOutboundSettings = { enabled: boolean; listIds: string[]; maxConcurrent: number; dailyLimit: number; retryAfterDays: number; maxAttempts: number };
+export type AiAgentLane = { name: string; states: string[]; dailyLimit: number; maxConcurrent: number; enabled: boolean };
+export type AiOutboundSettings = { enabled: boolean; agents: AiAgentLane[]; listIds: string[]; maxConcurrent: number; dailyLimit: number; retryAfterDays: number; maxAttempts: number };
 export type AiOutbound = {
   settings: AiOutboundSettings;
   configured: boolean;
   lists: { id: string; name: string; contacts: number }[];
+  agents: (AiAgentLane & { today: number; answered: number; active: number })[];
   today: { calls: number; answered: number; active: number; recent: { id: string; contactId: string | null; counterpartyNumber: string; startedAt: string; endedAt: string | null; durationSec: number | null; leadId: string | null }[] };
 };
 
