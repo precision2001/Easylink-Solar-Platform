@@ -118,7 +118,7 @@ export function Header() {
           <span>EASYLINK SOLAR</span>
         </Link>
 
-        <nav className="hidden items-center gap-4 text-sm text-slate-800 font-semibold lg:flex xl:gap-5">
+        <nav className="hidden items-center gap-4 text-sm text-slate-800 lg:flex xl:gap-5">
           {LANDING_NAV_ITEMS.map((item, index) => (
             <Link
               key={index}
