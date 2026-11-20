@@ -2,6 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { CollapseButton } from "@/components/navigation/CollapseButton";
+import { orderGroups, useMenuCollapsed, useMenuOrder, useMenuTracking } from "@/components/navigation/menuPrefs";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { CartButton } from "@/components/cart/CartButton";
 import { CustomerAvatar } from "@/components/customer/CustomerAvatar";
@@ -64,22 +67,44 @@ const ASK_SUGGESTIONS = [
   "What happens at the site visit?",
 ];
 
-function SideMenu({ active, onNavigate }: { active: CustomerPortalNavKey; onNavigate?: () => void }) {
+function SideMenu({
+  active,
+  onNavigate,
+  folded = false,
+  onToggleFold,
+}: {
+  active: CustomerPortalNavKey;
+  onNavigate?: () => void;
+  /** Large screens only: icons without labels. */
+  folded?: boolean;
+  onToggleFold?: () => void;
+}) {
   const { logout, pending } = usePortalLogout("customer");
+  // "My home" stays first; the other sections follow this customer's use.
+  const groups = orderGroups(NAV_GROUPS, useMenuOrder("customer"), (g) => g.label, true);
   return (
-    <nav aria-label="Customer portal" className="flex h-full flex-col gap-6 overflow-y-auto px-4 pb-5 pt-6">
-      <Link href="/" className="flex items-center gap-2.5 px-2 no-underline" onClick={onNavigate}>
-        <span className="flex size-9 items-center justify-center rounded-[10px] bg-white/10">
-          <Image src="/images/solarDesignLogo.png" alt="" width={26} height={26} />
-        </span>
-        <span className="font-source-sans text-[20px] font-extrabold tracking-[-0.01em] text-white">
-          EasyLink<span className="text-[#FFE866]"> Solar</span>
-        </span>
-      </Link>
+    <nav aria-label="Customer portal" className={`flex h-full flex-col overflow-y-auto pb-5 pt-6 ${folded ? "items-center gap-4 px-2" : "gap-6 px-4"}`}>
+      <div className={`flex items-center ${folded ? "flex-col gap-2" : "gap-1"}`}>
+        <Link href="/" className={`flex items-center gap-2.5 no-underline ${folded ? "" : "flex-1 px-2"}`} onClick={onNavigate} title={folded ? "EasyLink Solar" : undefined}>
+          <span className="flex size-9 items-center justify-center rounded-[10px] bg-white/10">
+            <Image src="/images/solarDesignLogo.png" alt="" width={26} height={26} />
+          </span>
+          {folded ? null : (
+            <span className="whitespace-nowrap font-source-sans text-[19px] font-extrabold tracking-[-0.01em] text-white">
+              EasyLink<span className="text-[#FFE866]"> Solar</span>
+            </span>
+          )}
+        </Link>
+        {onToggleFold ? <CollapseButton collapsed={folded} onClick={onToggleFold} /> : null}
+      </div>
 
-      {NAV_GROUPS.map((group) => (
-        <div key={group.label} className="flex flex-col gap-1">
-          <p className="m-0 px-3 pb-1 text-[11.5px] font-semibold text-[#93A6C2]">{group.label}</p>
+      {groups.map((group) => (
+        <div key={group.label} className={`flex flex-col gap-1 ${folded ? "w-full items-center" : ""}`}>
+          {folded ? (
+            <div className="mb-1 h-px w-8 bg-white/10" title={group.label} aria-hidden="true" />
+          ) : (
+            <p className="m-0 px-3 pb-1 text-[11.5px] font-semibold text-[#93A6C2]">{group.label}</p>
+          )}
           {group.items.map((item) => {
             const on = item.key === active;
             return (
@@ -88,13 +113,15 @@ function SideMenu({ active, onNavigate }: { active: CustomerPortalNavKey; onNavi
                 href={item.href}
                 onClick={onNavigate}
                 aria-current={on ? "page" : undefined}
-                className={`group flex min-h-[44px] items-center gap-3 rounded-[12px] px-3 text-[14.5px] font-semibold no-underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFE866] ${
-                  on ? "bg-white text-[#0B1A2E]" : "text-[#E6EDF7] hover:bg-white/[0.07]"
-                }`}
+                aria-label={folded ? item.label : undefined}
+                title={folded ? item.label : undefined}
+                className={`group flex min-h-[44px] items-center gap-3 rounded-[12px] text-[14.5px] font-semibold no-underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFE866] ${
+                  folded ? "w-11 justify-center" : "px-3"
+                } ${on ? "bg-white text-[#0B1A2E]" : "text-[#E6EDF7] hover:bg-white/[0.07]"}`}
               >
                 <PortalIcon name={item.icon} size={19} className={on ? "text-[#F68A0A]" : "text-[#7F93B2] group-hover:text-[#C9D6EA]"} />
-                {item.label}
-                {item.soon ? (
+                {folded ? null : item.label}
+                {!folded && item.soon ? (
                   <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold ${on ? "bg-[#FFF4D6] text-[#7A3E00]" : "bg-white/10 text-[#C9D6EA]"}`}>Soon</span>
                 ) : null}
               </Link>
@@ -103,8 +130,8 @@ function SideMenu({ active, onNavigate }: { active: CustomerPortalNavKey; onNavi
         </div>
       ))}
 
-      <div className="mt-auto flex flex-col gap-3">
-        <div className="flex flex-col gap-2 rounded-[16px] bg-[#16304F] p-4">
+      <div className={`mt-auto flex flex-col gap-3 ${folded ? "items-center" : ""}`}>
+        <div className={`flex-col gap-2 rounded-[16px] bg-[#16304F] p-4 ${folded ? "hidden" : "flex"}`}>
           <p className="m-0 flex items-center gap-2 text-[13.5px] font-bold text-white">
             <PortalIcon name="spark" size={16} className="text-[#FFE866]" />
             EasyLink AI
@@ -127,10 +154,12 @@ function SideMenu({ active, onNavigate }: { active: CustomerPortalNavKey; onNavi
           type="button"
           onClick={() => void logout()}
           disabled={pending}
-          className="flex min-h-[44px] items-center gap-3 rounded-[12px] px-3 text-[14px] font-semibold text-[#C9D6EA] hover:bg-white/[0.07] disabled:opacity-50"
+          aria-label="Sign out"
+          title={folded ? "Sign out" : undefined}
+          className={`flex min-h-[44px] items-center gap-3 rounded-[12px] text-[14px] font-semibold text-[#C9D6EA] hover:bg-white/[0.07] disabled:opacity-50 ${folded ? "w-11 justify-center" : "px-3"}`}
         >
           <PortalIcon name="logout" size={18} className="text-[#7F93B2]" />
-          {pending ? "Signing out…" : "Sign out"}
+          {folded ? null : pending ? "Signing out…" : "Sign out"}
         </button>
       </div>
     </nav>
@@ -208,6 +237,9 @@ export function CustomerPortalShell({
 }) {
   const user = useAppSelector((s) => s.customerAuth.user);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [folded, toggleFold] = useMenuCollapsed("customer");
+  // Count this visit towards the section's place in this customer's menu.
+  useMenuTracking("customer", NAV_GROUPS.find((g) => g.items.some((i) => i.key === active))?.label, usePathname());
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -223,8 +255,8 @@ export function CustomerPortalShell({
   return (
     <div className="min-h-screen bg-[#F4F6FA] font-inter text-[#0F172A]">
       {/* Desktop menu */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[256px] bg-[#0B1A2E] lg:block">
-        <SideMenu active={active} />
+      <aside className={`fixed inset-y-0 left-0 z-30 hidden bg-[#0B1A2E] lg:block ${folded ? "w-[64px]" : "w-[256px]"}`}>
+        <SideMenu active={active} folded={folded} onToggleFold={toggleFold} />
       </aside>
 
       {/* Phone / tablet menu */}
@@ -245,7 +277,7 @@ export function CustomerPortalShell({
         </div>
       ) : null}
 
-      <div className="lg:pl-[256px]">
+      <div className={folded ? "lg:pl-[64px]" : "lg:pl-[256px]"}>
         <header className="sticky top-0 z-20 border-b border-[#E3E8EF] bg-[#F4F6FA]/90 backdrop-blur supports-[backdrop-filter]:bg-[#F4F6FA]/75">
           <div className="mx-auto flex max-w-[1240px] items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
             <button

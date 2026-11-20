@@ -14,8 +14,10 @@ import { backendAuthedFetch } from "@/lib/server/backend-authed-fetch";
  * and closes and the embedded phone is ready.
  *
  * Server env:
- *   CONNECT_FEDERATION_USERS   JSON map of portal email -> Connect username
- *                              e.g. {"sales@easylinksolar.com.au":"sales"}
+ *   CONNECT_FEDERATION_USERS   optional JSON map of portal email -> Connect
+ *                              username, used only when the backend has no
+ *                              phone login for the user (GET /phone-logins/me,
+ *                              which matches the Connect user's portalEmail tag)
  *   CONNECT_FEDERATION_ROLE_ARN  (default arn:aws:iam::193801312483:role/ConnectAgentFederation)
  *   CONNECT_SSO_INSTANCE_ID      (default b2647c8a-ce1c-45d7-9c24-3f6e983c4fad)
  *   CONNECT_REGION               (default ap-southeast-2)
@@ -62,7 +64,14 @@ export async function GET() {
   const email = body?.email ?? body?.data?.email ?? body?.data?.user?.email ?? body?.user?.email;
   if (!email) return page(401, "Your portal session has no email address.");
 
-  const username = connectUsernameFor(email);
+  // The rep's phone login, from the Connect user tagged with their portal email.
+  let username: string | null = null;
+  const login = await backendAuthedFetch("admin", "/phone-logins/me");
+  if (login.ok) {
+    const j = (await login.json().catch(() => null)) as { username?: string; data?: { username?: string } } | null;
+    username = j?.data?.username ?? j?.username ?? null;
+  }
+  username = username ?? connectUsernameFor(email);
   if (!username) {
     return page(403, `No phone login is set up for ${email}. Ask an admin to add one.`);
   }
