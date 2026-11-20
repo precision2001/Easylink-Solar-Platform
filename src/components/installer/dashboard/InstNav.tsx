@@ -225,6 +225,12 @@ function buildGroups(elite: boolean): NavGroup[] {
           icon: "tag",
           href: "/installers/dashboard/my-rates",
         },
+        {
+          key: "partnersite",
+          label: "Designer on my website",
+          icon: "layers",
+          href: "/installers/dashboard/partner-site",
+        },
       ],
     },
     {
@@ -314,6 +320,7 @@ const ROUTE_KEYS: [string, string][] = [
   ["/installers/dashboard/solar-designer", "projects"],
   ["/installers/dashboard/pricing-engine", "pricing"],
   ["/installers/dashboard/my-rates", "rates"],
+  ["/installers/dashboard/partner-site", "partnersite"],
   ["/installers/dashboard/contact-centre", "cc"],
   ["/installers/dashboard/contact-lists", "lists"],
   ["/installers/dashboard/pipeline-status", "pipeline"],

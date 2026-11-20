@@ -102,7 +102,7 @@ export function Header() {
   const session = useActivePortalSession();
   return (
     <header className="fixed top-0 z-30 w-full bg-white/75 backdrop-blur-md">
-      <div className="mx-auto flex h-20 w-full max-w-[1400px] items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 w-full max-w-[1400px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
           className="flex items-center gap-2 text-sm font-semibold text-slate-900 sm:text-base"
@@ -118,7 +118,7 @@ export function Header() {
           <span>EASYLINK SOLAR</span>
         </Link>
 
-        <nav className="hidden items-center gap-4 text-sm text-slate-800 lg:flex xl:gap-5">
+        <nav className="hidden items-center gap-4 text-sm text-slate-800 font-semibold lg:flex xl:gap-5">
           {LANDING_NAV_ITEMS.map((item, index) => (
             <Link
               key={index}

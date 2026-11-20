@@ -52,7 +52,7 @@ export function BlogJournalPage() {
   const featuredHref = featured ? getBlogPostDetailHref(featured.id) : null;
 
   return (
-    <div className="blog-journal-surface pt-20 font-inter text-warm-ink">
+    <div className="blog-journal-surface pt-16 font-inter text-warm-ink">
       <section className="relative overflow-hidden">
         <div aria-hidden="true" className="blog-journal-grid absolute inset-0 opacity-60" />
         <div aria-hidden="true" className="absolute -right-40 -top-40 size-[640px] rounded-full bg-white/35 blur-3xl" />

@@ -11,7 +11,7 @@ type Props = { post: BlogPost; article: BlogArticle; relatedPosts: readonly Blog
 
 export function BlogArticlePage({ post, article, relatedPosts }: Props) {
   return (
-    <div className="blog-journal-surface pt-20 font-inter text-warm-ink">
+    <div className="blog-journal-surface pt-16 font-inter text-warm-ink">
       <article>
         <div className="mx-auto max-w-[1288px] px-6 pt-6">
           <section className="relative flex min-h-[600px] items-end overflow-hidden rounded-[36px]">

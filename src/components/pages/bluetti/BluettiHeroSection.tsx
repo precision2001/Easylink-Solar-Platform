@@ -7,7 +7,7 @@ export function BluettiHeroSection() {
 
   return (
     <section
-      className="relative flex min-h-[min(100dvh,56rem)] w-full items-center justify-center overflow-hidden pt-20"
+      className="relative flex min-h-[min(100dvh,56rem)] w-full items-center justify-center overflow-hidden pt-16"
       aria-labelledby="bluetti-ep2000-hero-heading"
     >
       <Image
