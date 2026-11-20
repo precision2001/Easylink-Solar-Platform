@@ -68,13 +68,25 @@ function safeUrl(value: unknown): string | null {
 export async function fetchPartnerSite(
   key: string,
   origin: string | null,
+  /**
+   * `"embed"` is the iframe on the installer's site: the browser always sends
+   * an Origin for a framed document, so the backend enforces the allowlist
+   * and a third party cannot frame someone else's designer.
+   *
+   * `"page"` is the landing page the installer links to from their own menu.
+   * No Origin is sent when a link is followed, so the allowlist cannot apply
+   * — enforcing it would 404 the page for every visitor, which is the one
+   * thing the page exists to do.
+   */
+  context: "embed" | "page" = "embed",
 ): Promise<PartnerSiteConfig | null> {
   const base = backendBaseUrl();
   if (!base) return null;
 
   try {
+    const query = context === "page" ? "?context=page" : "";
     const res = await fetch(
-      `${base}/design-capture/partner/${encodeURIComponent(key)}`,
+      `${base}/design-capture/partner/${encodeURIComponent(key)}${query}`,
       {
         // The backend answers per origin, so the caller's origin is forwarded.
         headers: origin ? { Origin: origin } : {},

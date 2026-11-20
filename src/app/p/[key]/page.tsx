@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import { PartnerDesignerSection } from "@/components/partner/PartnerDesignerSection";
 import { fetchPartnerSite } from "@/lib/public/partnerSite";
 
@@ -22,10 +21,13 @@ export default async function PartnerLandingPage({
   params: Promise<{ key: string }>;
 }) {
   const { key } = await params;
-  const h = await headers();
-  const origin = h.get("origin") ?? h.get("referer") ?? null;
 
-  const site = await fetchPartnerSite(key, origin);
+  // No origin is read here. A browser sends none when a link is followed or a
+  // URL is typed, which is exactly how this page is reached, so there is
+  // nothing to match against — the allowlist belongs on the embed, which does
+  // send one. (The previous `referer` fallback passed a full page URL where an
+  // origin was expected, so it never matched and the page always 404'd.)
+  const site = await fetchPartnerSite(key, null, "page");
   if (!site) notFound();
 
   return (

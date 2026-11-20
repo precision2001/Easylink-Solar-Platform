@@ -24,10 +24,25 @@ export default async function PartnerEmbedPage({
 }) {
   const { key } = await params;
   const h = await headers();
-  const origin = h.get("origin") ?? h.get("referer") ?? null;
 
-  const site = await fetchPartnerSite(key, origin);
+  // `Referer` is a full page URL, and the allowlist holds bare origins, so
+  // the raw header never matched and only ever produced a 404. Reduced to its
+  // origin here, which is what a browser sends in `Origin` and what the
+  // backend compares against.
+  const origin = h.get("origin") ?? refererOrigin(h.get("referer"));
+
+  const site = await fetchPartnerSite(key, origin, "embed");
   if (!site) notFound();
 
   return <PartnerDesignerSection site={site} variant="section" />;
+}
+
+/** The bare origin of a Referer URL, or null when it is absent or unparseable. */
+function refererOrigin(referer: string | null): string | null {
+  if (!referer) return null;
+  try {
+    return new URL(referer).origin;
+  } catch {
+    return null;
+  }
 }
