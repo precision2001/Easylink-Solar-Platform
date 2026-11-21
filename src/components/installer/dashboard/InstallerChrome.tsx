@@ -55,7 +55,7 @@ export function InstallerChrome({ children }: { children: React.ReactNode }) {
     <InsideChrome.Provider value>
       <div className="flex min-h-screen flex-col text-warm-ink lg:flex-row">
         <aside className="sticky top-0 hidden h-screen w-62 shrink-0 overflow-y-auto lg:block">
-          <InstNav />
+          <InstNav desktop />
         </aside>
 
 

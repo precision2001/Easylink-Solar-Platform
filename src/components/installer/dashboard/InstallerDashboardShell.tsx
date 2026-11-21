@@ -233,7 +233,6 @@ export function InstallerDashboardShell({
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-surface-50">
       <InstallerHeader
-        userInitials="ES"
         onMenuClick={() => setMobileMenuOpen(true)}
       />
 

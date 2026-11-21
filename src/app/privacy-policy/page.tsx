@@ -11,7 +11,7 @@ export default function PrivacyPolicyPage() {
   return (
     <LegalDocument
       title="Privacy policy"
-      updated="13 November 2026"
+      updated="16 November 2026"
       intro={
         <P>
           {LEGAL_CONTACT.business} (&ldquo;EasyLink&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) designs and supplies solar, battery and related energy systems, and connects customers with licensed installers. This policy explains how we handle your personal information under the Privacy Act 1988 (Cth) and the Australian Privacy Principles.

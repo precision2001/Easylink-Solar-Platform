@@ -27,6 +27,7 @@ export type Account = {
   aiEnabled: boolean;
   lastSyncAt: string | null;
   lastError: string | null;
+  signature: string | null;
   server: { imapHost: string | null; imapPort: number | null; smtpHost: string | null; smtpPort: number | null; loginUser: string | null } | null;
   owner: string | null;
   mine: boolean;
@@ -45,26 +46,70 @@ export type ListItem = {
   fromAddress: string;
   fromName: string | null;
   to: string[];
+  cc: string[];
   subject: string;
   snippet: string;
   sentAt: string;
   isRead: boolean;
+  isStarred: boolean;
+  isArchived: boolean;
+  isTrashed: boolean;
   hasAttachments: boolean;
   threadId: string | null;
   lead: LeadRef | null;
 };
 
-export type FullMessage = ListItem & {
+export type Attachment = { index: number; name: string; size: number; contentType: string };
+
+export type ThreadItem = {
+  id: string;
+  direction: "INBOUND" | "OUTBOUND";
+  fromAddress: string;
+  fromName: string | null;
+  to: string[];
   cc: string[];
+  sentAt: string;
+  snippet: string;
   bodyText: string;
-  attachments: { name: string; size: number; contentType: string }[];
+  attachments: Attachment[];
+};
+
+export type FullMessage = ListItem & {
+  bodyText: string;
+  attachments: Attachment[];
   linkSource: string | null;
   aiSummary: string | null;
   aiDraft: string | null;
   aiEnabled: boolean;
   accountStatus: "ACTIVE" | "REAUTH";
-  thread: { id: string; direction: string; fromAddress: string; fromName: string | null; sentAt: string; snippet: string }[];
+  signature: string | null;
+  thread: ThreadItem[];
 };
+
+export type ComposeMode = "NEW" | "REPLY" | "REPLY_ALL" | "FORWARD";
+
+export type Draft = {
+  id: string;
+  accountId: string | null;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+  mode: ComposeMode;
+  sourceMessageId: string | null;
+  includeAttachments: boolean;
+  leadId: string | null;
+  updatedAt: string;
+};
+
+export type Folder = "inbox" | "starred" | "sent" | "drafts" | "archive" | "trash" | "linked" | "unlinked" | "all";
+
+export type Counts = { unread: number; unlinked: number; starred: number; drafts: number };
+
+export const fileSize = (n: number) =>
+  n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
+
 
 export async function call<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; status?: number; data?: T; message?: string }> {
   try {
@@ -113,3 +158,27 @@ export const initials = (s: string) =>
 
 export const accountName = (a: Pick<Account, "label" | "address" | "provider">) =>
   `${a.label ? `${a.label} · ` : ""}${PROVIDER_LABEL[a.provider]}`;
+
+const ENTITIES: Record<string, string> = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", zwnj: "", zwj: "", shy: "", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", ndash: "–", mdash: "—", hellip: "…", copy: "©", reg: "®", trade: "™" };
+
+/**
+ * Tidies text taken from an email: drops inline-image markers ("[cid:…]"),
+ * leftover HTML entities ("&zwnj;", "&nbsp;"), invisible spacer characters
+ * marketing emails use, and long runs of blank lines.
+ */
+export function cleanMailText(text: string): string {
+  return text
+    .replace(/\[cid:[^\]\s]*\]/gi, "")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (all, e: string) => {
+      const k = e.toLowerCase();
+      if (k.startsWith("#x")) return String.fromCodePoint(parseInt(k.slice(2), 16) || 32);
+      if (k.startsWith("#")) return String.fromCodePoint(parseInt(k.slice(1), 10) || 32);
+      return k in ENTITIES ? ENTITIES[k] : all;
+    })
+    .replace(/[​-‍⁠﻿͏­]/g, "")
+    .replace(/[ \t ]+$/gm, "")
+    .replace(/^[ \t ]+(?=\S)/gm, (s) => (s.length > 8 ? "" : s))
+    .replace(/(?:[ \t ]{2,})/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

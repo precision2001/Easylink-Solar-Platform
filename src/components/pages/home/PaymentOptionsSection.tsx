@@ -1,14 +1,12 @@
 import Image from "next/image";
 
+// Only methods checkout actually offers (Stripe card, Afterpay, Zip).
 const paymentOptions = [
   { name: "Zip", src: "/images/home/payment-zip.png", width: 115, height: 42 },
   { name: "Afterpay", src: "/images/home/payment-afterpay.png", width: 153, height: 53 },
   { name: "Visa", src: "/images/home/payment-visa.svg", width: 110, height: 36 },
   { name: "Mastercard", src: "/images/home/payment-mastercard.png", width: 71, height: 55 },
   { name: "American Express", src: "/images/home/payment-amex.png", width: 90, height: 54 },
-  { name: "PayPal", src: "/images/home/payment-paypal.png", width: 150, height: 51 },
-  { name: "Klarna", src: "/images/home/payment-klarna.png", width: 106, height: 61 },
-  { name: "Humm", src: "/images/home/payment-humm.png", width: 141, height: 51 },
 ];
 
 export function PaymentOptionsSection() {
@@ -19,7 +17,7 @@ export function PaymentOptionsSection() {
           Choose Your Payment Options
         </h2>
 
-        <div className="mt-10 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4 lg:gap-8">
+        <div className="mt-10 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-5 lg:gap-8">
           {paymentOptions.map((option) => (
             <div
               key={option.name}

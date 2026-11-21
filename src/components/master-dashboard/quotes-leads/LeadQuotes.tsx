@@ -274,7 +274,7 @@ export function LeadQuotesTrack({
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <p className={`m-0 text-[15px] ${dark ? "text-white" : "text-[#334155]"}`}>No quotes for {lead.customerName} yet.</p>
             <button type="button" onClick={() => onOpenQuote(null)} className={`text-[14px] font-semibold underline ${dark ? "text-[#9CC3FF]" : "text-[#1560B8]"}`}>
-              Make a quote
+              Create a Quote
             </button>
           </div>
         ) : null}

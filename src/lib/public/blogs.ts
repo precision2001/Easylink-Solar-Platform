@@ -1,3 +1,4 @@
+import { parseBlogArticle, parseCardExtras, type BlogArticle } from "@/lib/public/blog-article";
 import { buildBackendUrl } from "@/lib/customers/backend";
 import {
   BLOG_DETAIL_LABELS,
@@ -132,6 +133,8 @@ export function toBlogPost(post: BackendBlogPost): BlogPost {
     thumbnailImageSrc: post.thumbnailImageSrc ?? "/images/home/solar-panel-design.png",
     thumbnailImageAlt: post.thumbnailImageAlt ?? "Solar panels",
     href: "#",
+    readTimeLabel: post.readTimeLabel ?? "",
+    ...parseCardExtras(post.content),
   };
 }
 
@@ -175,14 +178,17 @@ export async function fetchPublicBlogs(): Promise<BlogPost[]> {
 export async function fetchPublicBlog(slug: string): Promise<{
   post: BlogPost;
   content: BlogDetailContent;
+  article: BlogArticle;
 }> {
   const res = await fetch(publicUrl(`/api/blogs/${slug}`, `/blogs/${slug}`), {
     cache: "no-store",
   });
   const json = (await res.json()) as ApiEnvelope<BackendBlogPost>;
   if (!res.ok || !json.data) throw new Error(json.message || "Failed to load blog post");
+  const content = toBlogDetailContent(json.data);
   return {
     post: toBlogPost(json.data),
-    content: toBlogDetailContent(json.data),
+    content,
+    article: parseBlogArticle(json.data.content, [content.leadParagraph, ...content.bodyParagraphs]),
   };
 }

@@ -15,7 +15,9 @@ import type { DiallerState, RecordingState } from "@/hooks/useAdminDialler";
  * `join` is unused: calls EasyLink AI hands over ring in the embedded phone.
  */
 
-const CCP_URL = process.env.NEXT_PUBLIC_CONNECT_CCP_URL || "https://easylink.my.connect.aws/ccp-v2/";
+const CCP_URL = process.env.NEXT_PUBLIC_CONNECT_CCP_URL || "https://easylink-sso.my.connect.aws/ccp-v2/";
+/** Portal route that signs the rep in to Connect (SAML federation); no Connect password. */
+const LOGIN_URL = "/api/admin/connect/login";
 const REGION = process.env.NEXT_PUBLIC_CONNECT_REGION || "ap-southeast-2";
 
 type PhoneStatus = "off" | "loading" | "signed-out" | "ready" | "error";
@@ -67,6 +69,8 @@ function msg(payload: unknown, fallback: string) {
 
 /** Shared between page visits: Streams can only be initialised once per page load. */
 let ccpStarted = false;
+/** The sign-in popup, closed as soon as the embedded phone is signed in. */
+let loginWin: Window | null = null;
 
 export function useConnectPhone(enabled: boolean) {
   const [state, setState] = useState<DiallerState>("idle");
@@ -85,6 +89,8 @@ export function useConnectPhone(enabled: boolean) {
   const contactRef = useRef<StreamsContact | null>(null);
   const roomNameRef = useRef<string | null>(null);
   const answeredRef = useRef(false);
+  /** The Connect contact on now, for its live transcript. */
+  const [contactId, setContactId] = useState<string | null>(null);
 
   const post = (path: string, body: object) =>
     fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => undefined);
@@ -92,6 +98,7 @@ export function useConnectPhone(enabled: boolean) {
   const reset = useCallback(() => {
     contactRef.current = null;
     roomNameRef.current = null;
+    setContactId(null);
     answeredRef.current = false;
     setMuted(false);
     setDurationSec(null);
@@ -116,6 +123,7 @@ export function useConnectPhone(enabled: boolean) {
           region: REGION,
           loginPopup: true,
           loginPopupAutoClose: true,
+          loginUrl: LOGIN_URL,
           loginOptions: { autoClose: true, height: 640, width: 420, top: 80, left: 80 },
           softphone: { allowFramedSoftphone: true, disableRingtone: false },
           pageOptions: { enableAudioDeviceSettings: true, enablePhoneTypeSettings: false },
@@ -126,10 +134,14 @@ export function useConnectPhone(enabled: boolean) {
         cx.core.onAuthFail(() => setPhone("signed-out"));
         cx.core.onAccessDenied?.(() => {
           setPhone("error");
-          setError("This browser is signed in to Connect without phone access. Sign in with the sales login.");
+          setError("Your phone login has no agent access. Ask an admin to check your phone login.");
         });
         cx.agent((agent) => {
           agentRef.current = agent;
+          // Signed in: close the sign-in popup so only the embedded phone handles calls.
+          try { cx.core.loginWindow?.close(); } catch { /* already closed */ }
+          try { loginWin?.close(); } catch { /* already closed */ }
+          loginWin = null;
           setPhone("ready");
           setError(null);
           // A rep who is Offline can't place or take calls; go Available.
@@ -149,6 +161,7 @@ export function useConnectPhone(enabled: boolean) {
             setActiveNumber("Caller from EasyLink AI");
           }
           const contactId = contact.getContactId();
+          setContactId(contactId);
           const room = roomNameRef.current;
           if (room) void post("/api/admin/calls/dial/connect-contact", { roomName: room, contactId });
           contact.onConnected(() => {
@@ -178,9 +191,10 @@ export function useConnectPhone(enabled: boolean) {
   );
 
   const signIn = useCallback(() => {
-    // Streams opens the Connect sign-in popup itself when the session is missing;
-    // re-opening the CCP URL in a popup covers a blocked first popup.
-    window.open(CCP_URL, "easylink-connect-login", "width=420,height=640,top=80,left=80");
+    // Streams opens the sign-in popup itself when the session is missing;
+    // this covers a blocked first popup. The portal route signs the rep in
+    // to Connect with their portal session (no Connect password).
+    loginWin = window.open(LOGIN_URL, "easylink-connect-login", "width=420,height=640,top=80,left=80");
   }, []);
 
   const dial = useCallback(
@@ -277,6 +291,7 @@ export function useConnectPhone(enabled: boolean) {
     sendDigit,
     callActive: state === "dialling" || state === "connected",
     /* Connect-only */
+    contactId,
     phone,
     incoming,
     mountPhone,

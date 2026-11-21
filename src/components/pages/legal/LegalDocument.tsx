@@ -6,7 +6,10 @@ import { Header } from "@/components/modules/LandingHero";
 export type LegalSection = { id: string; title: string; body: ReactNode };
 
 export const LEGAL_CONTACT = {
-  business: "EasyLink Solar (operated by Easylink Plus)",
+  /** The legal entity, from its ABN advice letter (owner, 16 Nov 2026). */
+  business: "Easylink Plus Pty Ltd (ACN 699 805 000, ABN 14 699 805 000), which operates EasyLink Solar,",
+  entity: "Easylink Plus Pty Ltd",
+  address: "Unit 1909, 8 Uhrig Rd, Lidcombe NSW 2141",
   email: "sales@easylinksolar.com.au",
   phone: "02 9070 1201",
   phoneHref: "tel:+61290701201",
@@ -52,6 +55,9 @@ export function ContactLines() {
           <a href={LEGAL_CONTACT.phoneHref} className="font-semibold text-sky-700 underline">
             {LEGAL_CONTACT.phone}
           </a>
+        </>,
+        <>
+          Post {LEGAL_CONTACT.entity}, {LEGAL_CONTACT.address}
         </>,
       ]}
     />

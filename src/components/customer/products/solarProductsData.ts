@@ -1,0 +1,91 @@
+import type { DesignSummaryItem, SolarProduct } from "./types";
+
+export const SOLAR_PRODUCTS: SolarProduct[] = [
+  {
+    id: "1",
+    category: "panel",
+    name: "Jinko Tiger Neo 415W",
+    rating: 4.8,
+    reviewCount: 342,
+    price: "$185",
+    bestSeller: true,
+  },
+  {
+    id: "2",
+    category: "panel",
+    name: "REC Alpha Pure-R 420W",
+    rating: 4.9,
+    reviewCount: 198,
+    price: "$245",
+    bestSeller: true,
+  },
+  {
+    id: "3",
+    category: "inverter",
+    name: "Fronius Primo 5.0",
+    rating: 4.7,
+    reviewCount: 256,
+    price: "$1,650",
+    bestSeller: true,
+  },
+  {
+    id: "4",
+    category: "inverter",
+    name: "SolarEdge SE10K",
+    rating: 4.8,
+    reviewCount: 189,
+    price: "$2,400",
+    bestSeller: true,
+  },
+  {
+    id: "5",
+    category: "battery",
+    name: "Tesla Powerwall 2",
+    rating: 4.9,
+    reviewCount: 512,
+    price: "$12,500",
+    bestSeller: true,
+  },
+  {
+    id: "6",
+    category: "battery",
+    name: "BYD HVS 10.2 kWh",
+    rating: 4.6,
+    reviewCount: 134,
+    price: "$9,800",
+    bestSeller: true,
+  },
+  {
+    id: "7",
+    category: "inverter",
+    name: "Enphase IQ8+ Micro",
+    rating: 4.7,
+    reviewCount: 267,
+    price: "$285/ea",
+    bestSeller: true,
+  },
+  {
+    id: "8",
+    category: "panel",
+    name: "Trina Vertex S+ 440W",
+    rating: 4.7,
+    reviewCount: 178,
+    price: "$195",
+    bestSeller: true,
+  },
+];
+
+export const SELECTED_DESIGN_PRODUCTS: DesignSummaryItem[] = [
+  {
+    id: "s1",
+    name: "Jinko Tiger Neo 415W",
+    detail: "Panel · 16x",
+    icon: "sun",
+  },
+  {
+    id: "s2",
+    name: "Fronius Primo 5.0",
+    detail: "Inverter · 1x",
+    icon: "cpu",
+  },
+];

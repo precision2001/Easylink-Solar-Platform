@@ -22,10 +22,6 @@ export const HOME_PAGE = {
       "Easylink Solar installations by Solar Accreditation Australia Accredited Professional Installers.",
     primaryCta: { label: "Solar Design", href: "/designs" },
     secondaryCta: { label: "Explore Products", href: "/products" },
-    stats: [
-      { value: "11,000+", label: "quotes created" },
-      { value: "500+", label: "certified installers" },
-    ],
     slides: [
       { type: "video" as const, src: "/videos/homeHero.mp4" },
       {
@@ -523,6 +519,7 @@ export const MASTER_DASHBOARD_NAV = [
   { id: "invoices", label: "Invoices", href: "/master/invoices" },
   { id: "payments", label: "Payments", href: "/master/payments" },
   { id: "calls", label: "Calls", href: "/master/calls" },
+  { id: "call-review", label: "Call Review", href: "/master/call-review" },
 ] as const;
 
 /** Master — Installers (Figma 3:13117) */
@@ -2352,6 +2349,7 @@ export const LANDING_FOOTER_COLUMNS: LandingFooterColumn[] = [
       { label: "Ready Sites (installers)", href: "/ready-sites" },
       { label: "FAQs", href: "/faqs" },
       { label: "Warranty", href: "/warranty" },
+      { label: "Book a site visit", href: "/book" },
       { label: "Contact Us", href: "/contact-us" },
       { label: "User Manual", href: "/user-manual" },
       { label: "Firmware", href: "/firmware" },
@@ -2451,6 +2449,11 @@ export type BlogPost = {
   thumbnailImageSrc: string;
   thumbnailImageAlt: string;
   href: string;
+  /** Blog journal cards (Nov 2026): headline number shown on the card photo. */
+  cardStat?: string;
+  cardStatLabel?: string;
+  readTimeLabel?: string;
+  featured?: boolean;
 };
 
 /** Shared hero backdrop for blog cards (Figma 1:4222 top panel) */
@@ -3375,6 +3378,7 @@ export type CustomerPortalNavKey =
   | "voice"
   | "coach"
   | "ar"
+  | "book"
   /**
    * In the top bar from the CustNav design, but with no page or data behind
    * them yet — see CustomerTopNav, which renders these as inert.
@@ -3394,6 +3398,7 @@ export const CUSTOMER_PORTAL = {
       key: "maintenance" as const,
     },
     { href: "/customers/messages", label: "Messages", key: "messages" as const },
+    { href: "/customers/book", label: "Book a time", key: "book" as const },
     { href: "/customers/products", label: "Products", key: "products" as const },
     { href: "/customers/payments", label: "Payments", key: "payments" as const },
     { href: "/customers/profile", label: "Profile", key: "profile" as const },

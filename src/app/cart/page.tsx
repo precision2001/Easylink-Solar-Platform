@@ -10,7 +10,7 @@ export default function CartPage() {
   return (
     <>
       <Header />
-      <main className="min-h-screen overflow-x-hidden bg-cream-50 pt-20">
+      <main className="min-h-screen overflow-x-hidden bg-cream-50 pt-16">
         <Suspense fallback={null}>
           <CartCheckoutPage />
         </Suspense>

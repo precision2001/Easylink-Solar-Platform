@@ -11,6 +11,7 @@ const PUBLIC_ROUTES = [
   "/bluetti",
   "/about-us",
   "/contact-us",
+  "/book",
   "/blog",
   "/faqs",
   "/warranty",

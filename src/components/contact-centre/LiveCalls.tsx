@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ParticipantKind, Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
 import { Btn } from "@/components/jobs/ui";
-import { cc, phoneFmt, when, type AcceptedTransfer, type Assist, type LeadSummary, type PendingTransfer, type Portal, type Presence } from "./api";
+import { cc, dur, phoneFmt, when, type AcceptedTransfer, type AiOutbound, type Assist, type ConnectLiveCall, type ConnectTranscript, type LeadSummary, type PendingTransfer, type Portal, type Presence } from "./api";
 
 const PRESENCE: { key: Presence; label: string; dot: string }[] = [
   { key: "AVAILABLE", label: "Available", dot: "#16A34A" },
@@ -180,7 +180,7 @@ export function IncomingTransfers({ enabled, onAccepted }: { enabled: boolean; o
 
 // ---------- live transcript ----------
 
-export type LiveLine = { id: number; who: "you" | "caller"; text: string; final: boolean };
+export type LiveLine = { id: number; who: "you" | "caller" | "ai"; text: string; final: boolean };
 
 /**
  * Streams the call's two sides (your microphone, the caller's line) to
@@ -363,8 +363,8 @@ export function LiveTranscriptPanel({ lines, status, note, callerName, handover 
         <div className="flex max-h-[260px] flex-col gap-1.5 overflow-y-auto">
           {lines.map((l) => (
             <div key={l.id} className={`flex gap-2 text-[13px] ${l.final ? "" : "opacity-60"}`}>
-              <span className="w-14 shrink-0 font-semibold" style={{ color: l.who === "you" ? "#1565C0" : "#B45309" }}>
-                {l.who === "you" ? "You" : (callerName?.split(" ")[0] ?? "Caller")}
+              <span className="w-[86px] shrink-0 font-semibold" style={{ color: l.who === "you" ? "#1565C0" : l.who === "ai" ? "#7C3AED" : "#B45309" }}>
+                {l.who === "you" ? "You" : l.who === "ai" ? "EasyLink AI" : (callerName?.split(" ")[0] ?? "Caller")}
               </span>
               <span className="text-[#334155]">{l.text}</span>
             </div>
@@ -489,7 +489,7 @@ export function LiveAssistPanel({ lines, active, leadId }: { lines: LiveLine[]; 
     const seq = callSeq.current;
     cc("admin")
       .assist(
-        finals.map((l) => ({ who: l.who, text: l.text })),
+        finals.map((l) => ({ who: l.who === "caller" ? ("caller" as const) : ("you" as const), text: l.text })),
         leadId ?? undefined,
       )
       .then((a) => seq === callSeq.current && setAssist(a))
@@ -590,4 +590,250 @@ export function useListenIn() {
 
   useEffect(() => stop, [stop]);
   return { listening, error, listen, stop };
+}
+
+// ---------- Amazon Connect: live transcripts and the Live calls board ----------
+
+const toLines = (t: ConnectTranscript | null): LiveLine[] =>
+  t && t.found ? t.turns.map((x, i) => ({ id: i, who: x.who === "rep" ? "you" : x.who === "ai" ? "ai" : "caller", text: x.text, final: true })) : [];
+
+/**
+ * The live transcript of a Connect call, polled every few seconds while it is
+ * on (EasyLink AI's turns from its conversation log, a rep's call from Contact
+ * Lens real-time). Keeps polling briefly after the call so the last words land.
+ */
+export function useConnectLiveTranscript(contactId: string | null, active: boolean) {
+  const [data, setData] = useState<ConnectTranscript | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [prevId, setPrevId] = useState(contactId);
+  if (prevId !== contactId) {
+    setPrevId(contactId);
+    if (contactId) {
+      setData(null);
+      setNote(null);
+    }
+  }
+  useEffect(() => {
+    if (!contactId) return;
+    let stop = false;
+    let after = active ? Infinity : 2;
+    const tick = async () => {
+      try {
+        const t = await cc("admin").connectTranscript(contactId);
+        if (stop) return;
+        setData(t);
+        setNote(null);
+        if (t.found && !t.active) after = Math.min(after, 2);
+      } catch (e) {
+        if (!stop) setNote(e instanceof Error ? e.message : "Live transcript unavailable");
+      }
+    };
+    void tick();
+    const timer = window.setInterval(() => {
+      if (after <= 0) return window.clearInterval(timer);
+      if (after !== Infinity) after -= 1;
+      void tick();
+    }, 3000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [contactId, active]);
+  const lines = toLines(data);
+  const on = Boolean(contactId) && active;
+  return { lines, status: on ? (lines.length ? "on" : "starting") : lines.length ? "on" : "off", note };
+}
+
+function secondsSince(iso: string | null, now: number) {
+  return iso ? Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000)) : null;
+}
+
+/** Every call on now, EasyLink AI's and the reps', with its live transcript one click away. */
+export function ConnectLiveBoard() {
+  const [calls, setCalls] = useState<ConnectLiveCall[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let stop = false;
+    const load = () =>
+      cc("admin")
+        .connectLive()
+        .then((c) => {
+          if (stop) return;
+          setCalls(c);
+          setError(null);
+        })
+        .catch((e) => !stop && setError(e instanceof Error ? e.message : "Couldn't load live calls"));
+    void load();
+    const t = window.setInterval(load, 5000);
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      stop = true;
+      window.clearInterval(t);
+      window.clearInterval(clock);
+    };
+  }, []);
+  const opened = calls?.find((c) => c.contactId === open) ?? null;
+  const live = useConnectLiveTranscript(open, Boolean(opened));
+  return (
+    <section aria-label="Live calls" className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="m-0 flex-grow text-[16px] font-bold text-[#0F172A]">Live calls</h2>
+        <span className="rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[11px] font-bold text-[#166534]">{calls ? `${calls.length} on now` : "Loading"}</span>
+      </div>
+      {error && <p className="m-0 text-[13px] text-[#991B1B]">{error}</p>}
+      {calls && calls.length === 0 ? (
+        <p className="m-0 text-[13px] text-[#5B6B80]">No calls on right now. EasyLink AI and rep calls appear here as they happen; open one to read it live.</p>
+      ) : (
+        <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+          {(calls ?? []).map((c) => (
+            <li key={c.contactId}>
+              <button
+                type="button"
+                onClick={() => setOpen((cur) => (cur === c.contactId ? null : c.contactId))}
+                aria-expanded={open === c.contactId}
+                className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border px-3 py-2 text-left text-[13px] ${open === c.contactId ? "border-[#1565C0] bg-[#EFF6FF]" : "border-[#E3E8EF] hover:bg-[#F8FAFC]"}`}
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full bg-[#16A34A]" aria-hidden="true" />
+                <span className="font-semibold text-[#0F172A]">{c.customerName ?? phoneFmt(c.customerNumber) ?? "Caller"}</span>
+                <span className="text-[#5B6B80]">{c.direction === "outbound" ? "Outbound" : "Inbound"} · {c.withAi ? "EasyLink AI" : c.handledBy}</span>
+                <span className="ml-auto tabular-nums text-[#334155]">{dur(secondsSince(c.startedAt, now))}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && (
+        <LiveTranscriptPanel lines={live.lines} status={opened ? live.status : "off"} note={live.note ?? (opened ? null : "This call has ended.")} callerName={opened?.customerName ?? null} />
+      )}
+    </section>
+  );
+}
+
+/** Operations: turn EasyLink AI's outbound calling on or off, pick the lists, and see today's calls. */
+export function AiDiallerCard() {
+  const [d, setD] = useState<AiOutbound | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(
+    () =>
+      cc("admin")
+        .aiOutbound()
+        .then((x) => {
+          setD(x);
+          setError(null);
+        })
+        .catch((e) => setError(e instanceof Error ? e.message : "Couldn't load the AI dialler")),
+    [],
+  );
+  useEffect(() => {
+    void load();
+    const t = window.setInterval(() => void load(), 15000);
+    return () => window.clearInterval(t);
+  }, [load]);
+  const save = async (patch: Partial<AiOutbound["settings"]>) => {
+    if (!d) return;
+    setSaving(true);
+    try {
+      const settings = await cc("admin").saveAiOutbound(patch);
+      setD({ ...d, settings });
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const s = d?.settings;
+  const toggleList = (id: string) => s && void save({ listIds: s.listIds.includes(id) ? s.listIds.filter((x) => x !== id) : [...s.listIds, id] });
+  return (
+    <section aria-label="EasyLink AI calling" className="flex flex-col gap-3 rounded-[14px] border border-[#E3E8EF] bg-white p-[18px]">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="m-0 flex-grow text-[16px] font-bold text-[#0F172A]">EasyLink AI calling</h2>
+        {s && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={s.enabled}
+            disabled={saving || (!s.enabled && (!d?.configured || s.listIds.length === 0))}
+            onClick={() => void save({ enabled: !s.enabled })}
+            className={`rounded-full px-3 py-1 text-[12.5px] font-semibold disabled:opacity-50 ${s.enabled ? "bg-[#DCFCE7] text-[#166534]" : "bg-[#F1F5F9] text-[#475569]"}`}
+          >
+            {s.enabled ? "On: AI is calling" : "Off"}
+          </button>
+        )}
+      </div>
+      {error && <p className="m-0 text-[13px] text-[#991B1B]">{error}</p>}
+      {!d ? (
+        <p className="m-0 text-[13px] text-[#5B6B80]">Loading…</p>
+      ) : (
+        <>
+          <p className="m-0 text-[12.5px] leading-[18px] text-[#475569]">
+            EasyLink AI rings the lists you tick, makes and emails proposals, and closes sales. Every number gets the same checks as the Agent Dialer: Do Not Call Register, consent, a wash in the last 30 days, and calling hours in the customer&rsquo;s state.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[12.5px] font-semibold text-[#334155]">Lists to call</span>
+            {d.lists.length === 0 ? (
+              <span className="text-[13px] text-[#5B6B80]">No contact lists yet. Import the washed list in Contact lists first.</span>
+            ) : (
+              d.lists.map((l) => (
+                <label key={l.id} className="flex items-center gap-2 text-[13px] text-[#0F172A]">
+                  <input type="checkbox" checked={s!.listIds.includes(l.id)} disabled={saving} onChange={() => toggleList(l.id)} />
+                  {l.name} <span className="text-[#5B6B80]">({l.contacts.toLocaleString("en-AU")})</span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[12.5px] font-semibold text-[#334155]">AI agents</span>
+            {d.agents.map((a, i) => (
+              <div key={a.name} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border border-[#E3E8EF] px-3 py-2 text-[13px]">
+                <label className="flex items-center gap-2 font-semibold text-[#0F172A]">
+                  <input
+                    type="checkbox"
+                    checked={a.enabled}
+                    disabled={saving}
+                    onChange={() => void save({ agents: s!.agents.map((x, j) => (j === i ? { ...x, enabled: !x.enabled } : x)) })}
+                  />
+                  Jay · {a.states.join(", ")}
+                </label>
+                <label className="flex items-center gap-1.5 text-[#475569]">
+                  conversations per day
+                  <select
+                    value={a.dailyLimit}
+                    disabled={saving}
+                    onChange={(e) => void save({ agents: s!.agents.map((x, j) => (j === i ? { ...x, dailyLimit: Number(e.target.value) } : x)) })}
+                    className="rounded-[8px] border border-[#CBD5E1] px-1.5 py-0.5"
+                  >
+                    {[25, 50, 100, 150, 200, 300].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
+                <span className="ml-auto tabular-nums text-[#334155]">
+                  {a.today} of {a.dailyLimit} conversations today · {a.dials} dialled · {a.answered} answered{a.active ? ` · ${a.active} on now` : ""}
+                </span>
+              </div>
+            ))}
+            <span className="text-[12px] text-[#5B6B80]">Each agent calls only contacts in its state (by state, else postcode).</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              ["Dialled today", d.today.calls],
+              ["Conversations", d.today.conversations],
+              ["Answered", d.today.answered],
+              ["On now", d.today.active],
+            ].map(([l, v]) => (
+              <div key={String(l)} className="rounded-[10px] bg-[#F8FAFC] p-2.5">
+                <div className="text-[11.5px] font-semibold text-[#5B6B80]">{l}</div>
+                <div className="font-source-sans text-[22px] font-bold tabular-nums text-[#0F172A]">{v}</div>
+              </div>
+            ))}
+          </div>
+          {!d.configured && <p className="m-0 text-[12.5px] text-[#92400E]">The AI calling flow isn&rsquo;t set up on this server.</p>}
+        </>
+      )}
+    </section>
+  );
 }

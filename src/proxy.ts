@@ -233,8 +233,40 @@ export function isPublicCustomersLanding(pathname: string): boolean {
   return pathname === "/customers" || pathname === "/customers/";
 }
 
+/**
+ * The partner embed is the one page meant to be framed by another site.
+ *
+ * `frame-ancestors` is set to the framing origin rather than a wildcard,
+ * and only for /p/<key>/embed. That origin is not taken on trust: the page
+ * itself 404s unless the backend recognises it as one the installer
+ * registered, so a site that frames an embed it is not entitled to gets an
+ * empty 404 inside its iframe.
+ *
+ * The header has to be set here because `frame-ancestors` is only honoured
+ * as a real response header; a page cannot declare one about itself.
+ */
+function handlePartnerEmbed(request: NextRequest): NextResponse {
+  const response = NextResponse.next();
+  const origin = request.headers.get('origin');
+
+  // A direct visit (no Origin) is not framed, so nothing may frame it.
+  response.headers.set(
+    'Content-Security-Policy',
+    `frame-ancestors ${origin ?? "'none'"}`,
+  );
+  // X-Frame-Options has no per-origin form, and setting DENY would block
+  // the allowed case too. frame-ancestors supersedes it where both apply.
+  response.headers.delete('X-Frame-Options');
+  return response;
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
+
+  // Only the embed view is framable; the /p/<key> landing page is not.
+  if (/^\/p\/[^/]+\/embed\/?$/.test(pathname)) {
+    return handlePartnerEmbed(request);
+  }
 
   if (pathname.startsWith("/customers/auth")) {
     return handleCustomerAuthPage(request);
@@ -267,6 +299,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
 export const config = {
   matcher: [
+    "/p/:path*",
     "/customers/:path*",
     "/installers/auth",
     "/installers/dashboard/:path*",

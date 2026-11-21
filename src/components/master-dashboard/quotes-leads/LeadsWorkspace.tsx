@@ -2,6 +2,7 @@
 
 import { QuoteOptionsChip } from "./QuoteOptionsChip";
 import { SignalsChip, SignalsPanel } from "./LeadSignals";
+import { TechnicalChip, useTechnicalStatus } from "@/components/technical/TechnicalChip";
 import Image from "next/image";
 import Link from "next/link";
 import { leadDesignHref } from "@/lib/designs/leadDesignLink";
@@ -507,6 +508,7 @@ export function LeadsWorkspace({
   /** The lead whose signals are open, and the leads whose signals this person has opened since the list loaded. */
   const [signalsFor, setSignalsFor] = useState<string | null>(null);
   const [signalsSeen, setSignalsSeen] = useState<Set<string>>(new Set());
+  const technical = useTechnicalStatus((rows ?? []).map((r) => r.id));
   const [viewing, setViewingState] = useState<{ id: string; view: "roof" | "proposal" } | null>(null);
   const setViewing = (id: string | null, view: "roof" | "proposal" = "roof") => setViewingState(id ? { id, view } : null);
   // The lead whose quote versions are open in the side drawer.
@@ -760,14 +762,17 @@ export function LeadsWorkspace({
                         {l.customerPhone || l.address ? null : (
                           <span className="text-[15px] font-medium text-[#1E293B] [overflow-wrap:anywhere]">{l.customerEmail || "No contact details"}</span>
                         )}
-                        {l.signals ? (
-                          <div className="mt-auto w-full pt-1.5 @max-[1160px]:mt-0 @max-[1160px]:w-auto @max-[1160px]:pt-0">
-                            <SignalsChip
-                              customerName={l.customerName}
-                              signals={signalsSeen.has(l.id) ? { ...l.signals, newCount: 0 } : l.signals}
-                              open={signalsFor === l.id}
-                              onToggle={() => setSignalsFor(signalsFor === l.id ? null : l.id)}
-                            />
+                        {l.signals || technical[l.id] ? (
+                          <div className="mt-auto flex w-full flex-wrap items-center gap-2 pt-1.5 @max-[1160px]:mt-0 @max-[1160px]:w-auto @max-[1160px]:pt-0">
+                            {l.signals ? (
+                              <SignalsChip
+                                customerName={l.customerName}
+                                signals={signalsSeen.has(l.id) ? { ...l.signals, newCount: 0 } : l.signals}
+                                open={signalsFor === l.id}
+                                onToggle={() => setSignalsFor(signalsFor === l.id ? null : l.id)}
+                              />
+                            ) : null}
+                            <TechnicalChip leadId={l.id} customerName={l.customerName} status={technical[l.id]} />
                           </div>
                         ) : null}
                       </div>

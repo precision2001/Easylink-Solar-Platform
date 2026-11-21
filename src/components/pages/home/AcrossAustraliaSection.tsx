@@ -1,11 +1,5 @@
 import Image from "next/image";
 
-const stats = [
-  { value: "500+", label: "Certified Installers" },
-  { value: "11,000+", label: "Quotes Created" },
-  { value: "25", label: "Days Avg. Install" },
-  { value: "All States", label: "Coverage" },
-];
 
 export function AcrossAustraliaSection() {
   return (
@@ -36,22 +30,6 @@ export function AcrossAustraliaSection() {
             </p>
           </div>
 
-          {/* Stats grid */}
-          <div className="grid grid-cols-2 gap-4">
-            {stats.map((s) => (
-              <div
-                key={s.label}
-                className="rounded-xl bg-white p-4 shadow-[0_4px_24px_-4px_rgba(17,28,39,0.08)]"
-              >
-                <p className="font-[family-name:var(--font-source-sans)] text-2xl font-bold text-primary">
-                  {s.value}
-                </p>
-                <p className="mt-1 font-[family-name:var(--font-source-sans)] text-sm text-muted">
-                  {s.label}
-                </p>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </section>

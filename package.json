@@ -13,6 +13,7 @@
     "clean": "powershell -NoProfile -Command \"if (Test-Path .next) { Remove-Item -Recurse -Force .next }\""
   },
   "dependencies": {
+    "@aws-sdk/client-sts": "^3.1164.0",
     "@canvasjs/charts": "^3.15.17",
     "@canvasjs/react-charts": "^1.0.2",
     "@hookform/resolvers": "^5.2.2",

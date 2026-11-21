@@ -7,7 +7,6 @@ import { ServicesPortfolioSection } from "@/components/pages/services/ServicesPo
 import { ServicesPricingSection } from "@/components/pages/services/ServicesPricingSection";
 import { ServicesProcessSection } from "@/components/pages/services/ServicesProcessSection";
 import { ServicesTechStackSection } from "@/components/pages/services/ServicesTechStackSection";
-import { ServicesTestimonialsSection } from "@/components/pages/services/ServicesTestimonialsSection";
 import { ServicesWhyChooseSection } from "@/components/pages/services/ServicesWhyChooseSection";
 
 export function ServicesPageSection() {
@@ -20,7 +19,6 @@ export function ServicesPageSection() {
       <ServicesPortfolioSection />
       <ServicesTechStackSection />
       <ServicesBenefitsSection />
-      <ServicesTestimonialsSection />
       <ServicesPricingSection />
       <ServicesFaqSection />
       <ServicesFinalCtaSection />

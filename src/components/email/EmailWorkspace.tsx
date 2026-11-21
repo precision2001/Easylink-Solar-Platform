@@ -1,9 +1,10 @@
 "use client";
 
+import type React from "react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { customerRecordHref } from "@/components/contact-centre/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  cleanMailText,
   PROVIDER_DOT,
   PROVIDER_LABEL,
   accountName,
@@ -16,16 +17,22 @@ import {
   shortTime,
   signInHref,
   type Account,
+  type Counts,
+  type Draft,
   type EmailPortal,
+  type Folder,
   type FullMessage,
   type ListItem,
 } from "./api";
+import { Composer, type ComposeInit } from "./Composer";
+import { PaneResizer, usePaneWidth } from "./PaneResizer";
+import { LinkedRecord, MessageView, type MessageAction } from "./MessageView";
 
 /**
- * Email: every connected Outlook and Gmail mailbox in one inbox. Each email
- * is linked to its customer or lead (by address, or by hand), and EasyLink AI
- * can summarise it and draft a reply. Replies go out from the mailbox the
- * email came to. Matches the "Email — Unified inbox" and "Compose" designs.
+ * Email: every connected mailbox (Hostinger, Outlook, Gmail) in one inbox.
+ * Folders (Inbox, Starred, Sent, Drafts, Archive, Trash and the customer
+ * folders), bulk actions, a full conversation view, compose with Attach,
+ * Cc/Bcc, signature and drafts, keyboard shortcuts, and linking to leads.
  */
 
 const INK = "#0F172A";
@@ -35,24 +42,34 @@ const BORDER_2 = "#CBD5E1";
 const BLUE = "#1976D2";
 const NAVY = "#0B1A2E";
 
-type Folder = "inbox" | "linked" | "unlinked" | "sent" | "all";
-const FOLDERS: { key: Folder; label: string }[] = [
-  { key: "inbox", label: "Inbox" },
-  { key: "linked", label: "Linked to customers" },
-  { key: "unlinked", label: "Needs linking" },
-  { key: "sent", label: "Sent" },
-  { key: "all", label: "All mail" },
+const FOLDERS: { key: Folder; label: string; icon: string }[] = [
+  { key: "inbox", label: "Inbox", icon: "M22 12h-6l-2 3h-4l-2-3H2M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z" },
+  { key: "starred", label: "Starred", icon: "m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" },
+  { key: "sent", label: "Sent", icon: "M22 2 11 13M22 2l-7 20-4-9-9-4z" },
+  { key: "drafts", label: "Drafts", icon: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" },
+  { key: "archive", label: "Archive", icon: "M3 4h18v5H3zM5 9v11h14V9M10 13h4" },
+  { key: "trash", label: "Trash", icon: "M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" },
+  { key: "linked", label: "Linked to customers", icon: "M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" },
+  { key: "unlinked", label: "Needs linking", icon: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" },
+  { key: "all", label: "All mail", icon: "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM22 7l-10 6L2 7" },
 ];
 
 type LeadHit = { id: string; customerName: string; customerEmail: string | null; address: string | null };
-
-const splitAddresses = (s: string) =>
-  s
-    .split(/[,;\s]+/)
-    .map((x) => x.trim())
-    .filter(Boolean);
+type Bulk = "read" | "unread" | "star" | "unstar" | "archive" | "unarchive" | "trash" | "restore";
 
 const btn = "inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-60";
+const small = "inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-[13px] font-semibold";
+const STAR = "m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z";
+const CLIP = "M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5";
+const BIN = "M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6";
+
+function Svg({ d, size = 18, color = "currentColor", fill = "none" }: { d: string; size?: number; color?: string; fill?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
 
 function LeadPicker({ portal, onPick, onCancel }: { portal: EmailPortal; onPick: (id: string) => void; onCancel: () => void }) {
   const [q, setQ] = useState("");
@@ -107,123 +124,39 @@ function LeadPicker({ portal, onPick, onCancel }: { portal: EmailPortal; onPick:
   );
 }
 
-function Compose({
-  portal,
-  accounts,
-  onClose,
-  onSent,
-}: {
-  portal: EmailPortal;
-  accounts: Account[];
-  onClose: () => void;
-  onSent: () => void;
-}) {
-  const usable = accounts.filter((a) => a.status === "ACTIVE");
-  const [from, setFrom] = useState(usable[0]?.id ?? "");
-  const [to, setTo] = useState("");
-  const [cc, setCc] = useState("");
-  const [showCc, setShowCc] = useState(false);
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+const quoteOf = (m: FullMessage) =>
+  `On ${longTime(m.sentAt)}, ${m.fromName ? `${m.fromName} <${m.fromAddress}>` : m.fromAddress} wrote:\n` +
+  (m.bodyText || m.snippet)
+    .split("\n")
+    .map((l) => `> ${l}`)
+    .join("\n");
 
-  const send = async () => {
-    setBusy(true);
-    setMsg(null);
-    const r = await call(`${emailBase(portal)}/send`, {
-      method: "POST",
-      body: JSON.stringify({ accountId: from, to: splitAddresses(to), cc: splitAddresses(cc), subject, body }),
-    });
-    setBusy(false);
-    if (r.ok) onSent();
-    else setMsg(r.message ?? "Couldn't send. Check the addresses and try again.");
-  };
+const forwardOf = (m: FullMessage) =>
+  [
+    "---------- Forwarded message ----------",
+    `From: ${m.fromName ? `${m.fromName} <${m.fromAddress}>` : m.fromAddress}`,
+    `Date: ${longTime(m.sentAt)}`,
+    `Subject: ${m.subject}`,
+    `To: ${m.to.join(", ")}`,
+    ...(m.cc.length ? [`Cc: ${m.cc.join(", ")}`] : []),
+    "",
+    m.bodyText || m.snippet,
+  ].join("\n");
 
-  return (
-    <section aria-labelledby="compose-h" className="flex flex-col gap-0 rounded-2xl bg-white" style={{ border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
-        <h2 id="compose-h" className="flex-grow text-[20px] font-bold" style={{ fontFamily: "'Source Sans 3', sans-serif" }}>
-          New email
-        </h2>
-        <button type="button" onClick={onClose} className={btn} style={{ border: `1px solid ${BORDER_2}`, color: "#334155" }}>
-          Discard
-        </button>
-      </div>
-      {usable.length === 0 ? (
-        <p className="p-5 text-[14px]" style={{ color: MUTED }}>
-          Connect a mailbox first.{" "}
-          <Link href={`${emailPage(portal)}/accounts`} className="font-semibold">
-            Connect account
-          </Link>
-        </p>
-      ) : (
-        <>
-          <div className="grid grid-cols-[90px_minmax(0,1fr)] items-center gap-x-3 px-5 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
-            <label htmlFor="c-from" className="text-[14px] font-semibold" style={{ color: "#475569" }}>
-              From
-            </label>
-            <select id="c-from" value={from} onChange={(e) => setFrom(e.target.value)} className="h-11 bg-transparent text-[14px]">
-              {usable.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.address} — {accountName(a)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-[90px_minmax(0,1fr)] items-center gap-x-3 px-5 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
-            <label htmlFor="c-to" className="text-[14px] font-semibold" style={{ color: "#475569" }}>
-              To
-            </label>
-            <div className="flex items-center gap-2">
-              <input id="c-to" value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@example.com, another@example.com" className="h-11 min-w-0 flex-1 text-[14px] outline-none" />
-              {!showCc ? (
-                <button type="button" onClick={() => setShowCc(true)} className="text-[13px] font-semibold" style={{ color: BLUE }}>
-                  Cc
-                </button>
-              ) : null}
-            </div>
-          </div>
-          {showCc ? (
-            <div className="grid grid-cols-[90px_minmax(0,1fr)] items-center gap-x-3 px-5 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
-              <label htmlFor="c-cc" className="text-[14px] font-semibold" style={{ color: "#475569" }}>
-                Cc
-              </label>
-              <input id="c-cc" value={cc} onChange={(e) => setCc(e.target.value)} className="h-11 text-[14px] outline-none" />
-            </div>
-          ) : null}
-          <div className="grid grid-cols-[90px_minmax(0,1fr)] items-center gap-x-3 px-5 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
-            <label htmlFor="c-subject" className="text-[14px] font-semibold" style={{ color: "#475569" }}>
-              Subject
-            </label>
-            <input id="c-subject" value={subject} onChange={(e) => setSubject(e.target.value)} className="h-11 text-[15px] font-semibold outline-none" />
-          </div>
-          <label htmlFor="c-body" className="sr-only">
-            Message
-          </label>
-          <textarea id="c-body" value={body} onChange={(e) => setBody(e.target.value)} className="min-h-[280px] resize-y p-5 text-[15px] leading-relaxed outline-none" />
-          <div className="flex flex-wrap items-center gap-2 px-5 py-3" style={{ borderTop: `1px solid ${BORDER}` }}>
-            {msg ? (
-              <p role="alert" className="text-[13px] font-semibold" style={{ color: "#B91C1C" }}>
-                {msg}
-              </p>
-            ) : null}
-            <span className="flex-1" />
-            <button
-              type="button"
-              onClick={send}
-              disabled={busy || !from || !to.trim() || !subject.trim() || !body.trim()}
-              className={btn}
-              style={{ background: BLUE, color: "#FFFFFF" }}
-            >
-              {busy ? "Sending…" : "Send"}
-            </button>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
+const prefixed = (prefix: "Re" | "Fwd", s: string) => (new RegExp(`^${prefix}:`, "i").test(s.trim()) ? s : `${prefix}: ${s}`);
+
+const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const DONE: Record<Bulk, string> = {
+  archive: "Archived",
+  unarchive: "Moved to Inbox",
+  trash: "Moved to Trash",
+  restore: "Restored",
+  read: "Marked read",
+  unread: "Marked unread",
+  star: "Starred",
+  unstar: "Star removed",
+};
 
 export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
   const base = emailBase(portal);
@@ -232,16 +165,19 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
   const [folder, setFolder] = useState<Folder>("inbox");
   const [search, setSearch] = useState("");
   const [items, setItems] = useState<ListItem[]>([]);
-  const [counts, setCounts] = useState({ unread: 0, unlinked: 0 });
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [counts, setCounts] = useState<Counts>({ unread: 0, unlinked: 0, starred: 0, drafts: 0 });
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [msg, setMsg] = useState<FullMessage | null>(null);
-  const [compose, setCompose] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [compose, setCompose] = useState<ComposeInit | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const loadAccounts = useCallback(async () => {
     const r = await call<Account[]>(`${base}/accounts`);
@@ -249,28 +185,44 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
     setAccounts(r.status === 401 ? null : r.data ?? []);
   }, [base]);
 
-  const loadList = useCallback(async () => {
-    setLoading(true);
-    const p = new URLSearchParams({ folder });
-    if (accountId) p.set("accountId", accountId);
-    if (search.trim()) p.set("search", search.trim());
-    const r = await call<{ items: ListItem[]; counts: { unread: number; unlinked: number } }>(`${base}/messages?${p}`);
-    setItems(r.data?.items ?? []);
-    if (r.data?.counts) setCounts(r.data.counts);
-    setLoading(false);
-  }, [base, folder, accountId, search]);
+  const loadList = useCallback(
+    async (more: boolean, cursor: string | null = null) => {
+      setLoading(true);
+      if (folder === "drafts") {
+        const r = await call<Draft[]>(`${base}/drafts`);
+        setDrafts(r.data ?? []);
+        setItems([]);
+        setNextBefore(null);
+        setLoading(false);
+        return;
+      }
+      const p = new URLSearchParams({ folder });
+      if (accountId) p.set("accountId", accountId);
+      if (search.trim()) p.set("search", search.trim());
+      if (more && cursor) p.set("before", cursor);
+      const r = await call<{ items: ListItem[]; nextBefore: string | null; counts: Counts }>(`${base}/messages?${p}`);
+      if (r.status === 401) setSignedOut(true);
+      setItems((xs) => (more ? [...xs, ...(r.data?.items ?? [])] : r.data?.items ?? []));
+      setNextBefore(r.data?.nextBefore ?? null);
+      if (r.data?.counts) setCounts(r.data.counts);
+      setLoading(false);
+    },
+    [base, folder, accountId, search],
+  );
 
   useEffect(() => {
     const t = window.setTimeout(() => void loadAccounts(), 0);
     return () => window.clearTimeout(t);
   }, [loadAccounts]);
+
   useEffect(() => {
-    const t = setTimeout(() => void loadList(), search ? 300 : 0);
-    return () => clearTimeout(t);
+    const t = window.setTimeout(() => void loadList(false), search ? 300 : 0);
+    return () => window.clearTimeout(t);
   }, [loadList, search]);
+
   useEffect(() => {
     const t = window.setTimeout(() => {
-      if (new URLSearchParams(window.location.search).get("compose")) setCompose(true);
+      if (new URLSearchParams(window.location.search).get("compose")) setCompose({ mode: "NEW" });
     }, 0);
     return () => window.clearTimeout(t);
   }, []);
@@ -278,32 +230,148 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
   const open = useCallback(
     async (id: string) => {
       setSelectedId(id);
-      setCompose(false);
+      setCompose(null);
       setPicking(false);
       setNote(null);
       const r = await call<FullMessage>(`${base}/messages/${id}`);
       if (r.data) {
         setMsg(r.data);
-        setDraft(r.data.aiDraft ?? "");
         setItems((xs) => xs.map((x) => (x.id === id ? { ...x, isRead: true } : x)));
-      }
+      } else setNote(r.message ?? "Couldn't open that email.");
     },
     [base],
   );
-
-  useEffect(() => {
-    if (selectedId || !items[0] || compose) return;
-    const first = items[0].id;
-    const t = window.setTimeout(() => void open(first), 0);
-    return () => window.clearTimeout(t);
-  }, [items, selectedId, compose, open]);
 
   const syncAll = async () => {
     setBusy("sync");
     const list = (accounts ?? []).filter((a) => a.status === "ACTIVE" && (!accountId || a.id === accountId));
     await Promise.all(list.map((a) => call(`${base}/accounts/${a.id}/sync`, { method: "POST" })));
     setBusy(null);
-    await Promise.all([loadAccounts(), loadList()]);
+    await Promise.all([loadAccounts(), loadList(false)]);
+  };
+
+  /** Actions that take an email out of the folder being shown. */
+  const leaves = (action: Bulk) =>
+    (action === "archive" && (folder === "inbox" || folder === "unlinked")) ||
+    (action === "trash" && folder !== "trash") ||
+    ((action === "restore" || action === "unarchive") && (folder === "trash" || folder === "archive")) ||
+    (action === "unstar" && folder === "starred");
+
+  const act = async (ids: string[], action: Bulk) => {
+    if (!ids.length) return;
+    const r = await call<{ updated: number }>(`${base}/messages/bulk`, { method: "POST", body: JSON.stringify({ ids, action }) });
+    if (!r.ok) {
+      setNote(r.message ?? "Couldn't update those emails.");
+      return;
+    }
+    const patch = <T extends ListItem>(x: T): T =>
+      action === "read" ? { ...x, isRead: true }
+      : action === "unread" ? { ...x, isRead: false }
+      : action === "star" ? { ...x, isStarred: true }
+      : action === "unstar" ? { ...x, isStarred: false }
+      : action === "archive" ? { ...x, isArchived: true, isTrashed: false }
+      : action === "trash" ? { ...x, isTrashed: true }
+      : { ...x, isArchived: false, isTrashed: false };
+    const gone = leaves(action);
+    const set = new Set(ids);
+    let nextId: string | null = null;
+    if (gone && selectedId && set.has(selectedId)) {
+      const idx = items.findIndex((x) => x.id === selectedId);
+      nextId = items.slice(idx + 1).find((x) => !set.has(x.id))?.id ?? null;
+    }
+    setItems((xs) => (gone ? xs.filter((x) => !set.has(x.id)) : xs.map((x) => (set.has(x.id) ? patch(x) : x))));
+    setChecked(new Set());
+    setNote(`${DONE[action]}${ids.length > 1 ? ` (${ids.length} emails)` : ""}.`);
+    if (msg && set.has(msg.id)) {
+      if ((gone || action === "unread") && selectedId && set.has(selectedId)) {
+        setMsg(null);
+        setSelectedId(null);
+        if (gone && nextId) void open(nextId);
+      } else setMsg(patch(msg));
+    }
+    const c = await call<{ counts: Counts }>(`${base}/messages?folder=inbox&take=1${accountId ? `&accountId=${accountId}` : ""}`);
+    if (c.data?.counts) setCounts(c.data.counts);
+  };
+
+  const accountById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
+  const sigFor = (id: string | null | undefined) => {
+    const s = id ? accountById.get(id)?.signature : null;
+    return s ? `\n\n${s}` : "";
+  };
+  const defaultAccount = () => accountId ?? (accounts ?? []).find((a) => a.status === "ACTIVE")?.id ?? null;
+  const newEmail = () => {
+    setMsg(null);
+    setSelectedId(null);
+    const id = defaultAccount();
+    setCompose({ mode: "NEW", accountId: id, body: sigFor(id) });
+  };
+
+  const startReply = (m: FullMessage, mode: "REPLY" | "REPLY_ALL", text = "") => {
+    const own = m.accountAddress.toLowerCase();
+    const from = m.direction === "INBOUND" ? [m.fromAddress] : m.to;
+    const to = mode === "REPLY" ? from : [...new Set([...from, ...m.to])].filter((x) => x && x !== own);
+    const cc = mode === "REPLY_ALL" ? m.cc.filter((x) => x !== own && !to.includes(x)) : [];
+    setCompose({
+      mode,
+      accountId: m.accountId,
+      to: to.length ? to : from,
+      cc,
+      subject: prefixed("Re", m.subject),
+      body: `${text}${sigFor(m.accountId)}\n\n${quoteOf(m)}`,
+      sourceMessageId: m.id,
+      leadId: m.lead?.id ?? null,
+    });
+  };
+
+  const onAction = async (a: MessageAction) => {
+    if (!msg) return;
+    switch (a) {
+      case "reply":
+        return startReply(msg, "REPLY");
+      case "replyAll":
+        return startReply(msg, "REPLY_ALL");
+      case "forward":
+        return setCompose({
+          mode: "FORWARD",
+          accountId: msg.accountId,
+          subject: prefixed("Fwd", msg.subject),
+          body: `${sigFor(msg.accountId)}\n\n${forwardOf(msg)}`,
+          sourceMessageId: msg.id,
+          sourceAttachments: msg.attachments,
+          includeAttachments: true,
+          leadId: msg.lead?.id ?? null,
+        });
+      case "aiReply": {
+        if (msg.aiDraft) return startReply(msg, "REPLY", msg.aiDraft);
+        setBusy("ai");
+        const r = await call<{ aiSummary: string | null; aiDraft: string | null }>(`${base}/messages/${msg.id}/ai`, { method: "POST" });
+        setBusy(null);
+        if (r.data) {
+          const next = { ...msg, aiSummary: r.data.aiSummary, aiDraft: r.data.aiDraft };
+          setMsg(next);
+          startReply(next, "REPLY", r.data.aiDraft ?? "");
+        } else setNote(r.message ?? "EasyLink AI couldn't draft a reply.");
+        return;
+      }
+      case "print": {
+        const w = window.open("", "_blank", "width=800,height=900");
+        if (!w) return;
+        w.opener = null;
+        w.document.write(
+          `<!doctype html><title>${escapeHtml(msg.subject)}</title><body style="font:14px/1.6 system-ui,sans-serif;padding:32px"><h2>${escapeHtml(msg.subject)}</h2><p style="color:#555">From: ${escapeHtml(msg.fromName ? `${msg.fromName} <${msg.fromAddress}>` : msg.fromAddress)}<br>To: ${escapeHtml(msg.to.join(", "))}<br>Date: ${escapeHtml(longTime(msg.sentAt))}</p><hr><div style="white-space:pre-wrap">${escapeHtml(msg.bodyText || msg.snippet)}</div></body>`,
+        );
+        w.document.close();
+        w.focus();
+        w.print();
+        return;
+      }
+      case "back":
+        setMsg(null);
+        setSelectedId(null);
+        return;
+      default:
+        return act([msg.id], a);
+    }
   };
 
   const link = async (leadId: string | null) => {
@@ -314,7 +382,7 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
     setPicking(false);
     if (r.data) {
       setMsg(r.data);
-      void loadList();
+      void loadList(false);
     } else setNote(r.message ?? "Couldn't link that email.");
   };
 
@@ -325,52 +393,98 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
     setBusy(null);
     if (r.data) {
       setMsg(r.data);
-      void loadList();
+      void loadList(false);
     } else setNote(r.message ?? "Couldn't create the lead.");
   };
 
-  const aiDraft = async () => {
-    if (!msg) return;
-    setBusy("ai");
-    setNote(null);
-    const r = await call<{ aiSummary: string | null; aiDraft: string | null }>(`${base}/messages/${msg.id}/ai`, { method: "POST" });
-    setBusy(null);
-    if (r.data) {
-      setMsg({ ...msg, aiSummary: r.data.aiSummary, aiDraft: r.data.aiDraft });
-      if (r.data.aiDraft) setDraft(r.data.aiDraft);
-    } else setNote(r.message ?? "EasyLink AI couldn't draft a reply.");
-  };
-
-  const sendReply = async () => {
-    if (!msg) return;
-    setBusy("send");
-    setNote(null);
-    const to = msg.direction === "INBOUND" ? [msg.fromAddress] : msg.to;
-    const subject = /^re:/i.test(msg.subject) ? msg.subject : `Re: ${msg.subject}`;
-    const r = await call(`${base}/send`, {
-      method: "POST",
-      body: JSON.stringify({ accountId: msg.accountId, to, subject, body: draft, replyToId: msg.id, leadId: msg.lead?.id ?? null }),
+  const openDraft = (d: Draft) => {
+    setSelectedId(d.id);
+    setMsg(null);
+    setCompose({
+      mode: d.mode,
+      accountId: d.accountId,
+      to: d.to,
+      cc: d.cc,
+      bcc: d.bcc,
+      subject: d.subject,
+      body: d.body,
+      sourceMessageId: d.sourceMessageId,
+      includeAttachments: d.includeAttachments,
+      leadId: d.leadId,
+      draftId: d.id,
     });
-    setBusy(null);
-    if (r.ok) {
-      setDraft("");
-      setNote("Reply sent.");
-      void loadList();
-    } else setNote(r.message ?? "Couldn't send the reply.");
   };
 
-  const acctById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
+  const onComposeClose = (res: { sent: boolean; message?: string }) => {
+    setCompose(null);
+    if (res.message) setNote(res.message);
+    void loadList(false);
+  };
+
+  // Keyboard shortcuts while not typing: c compose, r reply, a reply all, f forward,
+  // e archive, # delete, s star, u unread, j/k next/previous, / search.
+  const keys = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  const onKeyNow = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (e.metaKey || e.ctrlKey || e.altKey || compose || (t && t.closest("input, textarea, select, [contenteditable=true]"))) return;
+    const idx = items.findIndex((x) => x.id === selectedId);
+    const k = e.key;
+    if (k === "c") newEmail();
+    else if (k === "/") searchRef.current?.focus();
+    else if (k === "j" && items[idx + 1]) void open(items[idx + 1]!.id);
+    else if (k === "k" && idx > 0) void open(items[idx - 1]!.id);
+    else if (!msg) return;
+    else if (k === "r") void onAction("reply");
+    else if (k === "a") void onAction("replyAll");
+    else if (k === "f") void onAction("forward");
+    else if (k === "e") void onAction(msg.isArchived ? "unarchive" : "archive");
+    else if (k === "#") void onAction("trash");
+    else if (k === "s") void onAction(msg.isStarred ? "unstar" : "star");
+    else if (k === "u") void onAction("unread");
+    else return;
+    e.preventDefault();
+  };
+  useEffect(() => {
+    keys.current = onKeyNow;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keys.current(e);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const reauth = (accounts ?? []).filter((a) => a.status === "REAUTH");
   const lastSync = (accounts ?? [])
     .map((a) => a.lastSyncAt)
     .filter(Boolean)
     .sort()
     .pop();
-
   const noAccounts = accounts !== null && accounts.length === 0;
+  const allChecked = items.length > 0 && items.every((x) => checked.has(x.id));
+  const checkedIds = [...checked];
+  const checkedItems = items.filter((x) => checked.has(x.id));
+  const showReading = Boolean(compose || msg);
+  const navPane = usePaneWidth("easylink.email.navWidth", 230, 170, 340);
+  const listPane = usePaneWidth("easylink.email.listWidth", 420, 300, 760);
+  // Large screens: the inbox fills the window below whatever sits above it, and
+  // each pane (folders, list, reading) scrolls on its own.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const fit = () => el.style.setProperty("--email-top", `${Math.max(0, el.getBoundingClientRect().top + window.scrollY)}px`);
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
+  const folderCount = (f: Folder) => (f === "inbox" ? counts.unread : f === "starred" ? counts.starred : f === "drafts" ? counts.drafts : f === "unlinked" ? counts.unlinked : 0);
 
   return (
-    <div className="flex min-h-screen flex-col" style={{ color: INK, fontFamily: "Inter, system-ui, sans-serif" }}>
+    <div
+      ref={rootRef}
+      className="flex min-h-screen flex-col lg:h-[calc(100dvh-var(--email-top,0px))] lg:min-h-0 lg:overflow-hidden"
+      style={{ color: INK, fontFamily: "Inter, system-ui, sans-serif" }}
+    >
       <header className="flex flex-wrap items-center gap-4 bg-white px-7 py-5" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <div className="flex-grow">
           <p className="text-[13px]" style={{ color: MUTED }}>
@@ -380,35 +494,25 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
             Email
           </h1>
         </div>
-        <label className="flex h-11 min-w-[200px] flex-[0_1_360px] items-center gap-2 rounded-xl bg-white px-3" style={{ border: `1px solid ${BORDER_2}` }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
+        <label className="flex h-11 min-w-[200px] flex-[0_1_380px] items-center gap-2 rounded-xl bg-white px-3" style={{ border: `1px solid ${BORDER_2}` }}>
+          <Svg d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-3.5-3.5" color={MUTED} />
           <span className="sr-only">Search email</span>
           <input
+            ref={searchRef}
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search mail and customers"
+            placeholder="Search mail, people and customers"
             className="min-w-0 flex-1 bg-transparent text-[14px] outline-none"
           />
         </label>
-        <Link href={`${emailPage(portal)}/accounts`} className={btn} style={{ border: `1px solid #2196F3`, color: BLUE, background: "#FFFFFF" }}>
-          Connect account
-        </Link>
-        <button
-          type="button"
-          onClick={() => {
-            setCompose(true);
-            setSelectedId(null);
-            setMsg(null);
-          }}
-          className={btn}
-          style={{ background: BLUE, color: "#FFFFFF" }}
-        >
+        <button type="button" onClick={newEmail} className={btn} style={{ background: BLUE, color: "#FFFFFF" }} title="Compose (c)">
+          <Svg d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
           Compose
         </button>
+        <Link href={`${emailPage(portal)}/accounts`} className={btn} style={{ border: "1px solid #2196F3", color: BLUE, background: "#FFFFFF" }}>
+          Accounts
+        </Link>
       </header>
 
       {signedOut ? (
@@ -423,7 +527,7 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
       {reauth.length ? (
         <div role="status" className="flex flex-wrap items-center gap-3 px-7 py-3 text-[14px]" style={{ background: "#FFF7ED", color: "#7C2D12", borderBottom: "1px solid #FDBA74" }}>
           <span className="flex-1">
-            {reauth.map((a) => a.address).join(", ")} {reauth.length === 1 ? "needs" : "need"} signing in again before new mail can sync.
+            {reauth.map((a) => a.address).join(", ")} {reauth.length === 1 ? "needs" : "need"} reconnecting before new mail can sync.
           </span>
           <Link href={`${emailPage(portal)}/accounts`} className="font-semibold" style={{ color: "#9A3412" }}>
             Reconnect
@@ -437,23 +541,49 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
             Connect your first mailbox
           </h2>
           <p className="text-[15px] leading-relaxed" style={{ color: "#475569" }}>
-            Bring Outlook or Gmail into the portal. Emails are matched to customers and leads automatically, and replies go out from your own address.
+            Bring Hostinger, Outlook or Gmail into the portal. Emails are matched to customers and leads automatically, and replies go out from your own address.
           </p>
           <Link href={`${emailPage(portal)}/accounts`} className={`${btn} self-start`} style={{ background: BLUE, color: "#FFFFFF" }}>
-            Connect Outlook or Gmail
+            Connect a mailbox
           </Link>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-wrap">
-          <section aria-label="Mailboxes" className="box-border flex max-w-[260px] flex-[1_1_220px] flex-col gap-5 px-4 py-5" style={{ borderRight: `1px solid ${BORDER}` }}>
+        <div className="flex min-h-0 flex-1 flex-wrap lg:flex-nowrap">
+          {/* Folders and mailboxes */}
+          <nav aria-label="Mail folders" className={`el-scroll box-border flex-col gap-5 px-4 py-5 lg:flex lg:min-h-0 lg:overflow-y-auto lg:w-[var(--nav-w)] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ "--nav-w": `${navPane.width}px` } as React.CSSProperties}>
+            <div className="flex flex-col gap-0.5">
+              {FOLDERS.map((f) => {
+                const n = folderCount(f.key);
+                const on = folder === f.key;
+                return (
+                  <button
+                    key={f.key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => {
+                      setFolder(f.key);
+                      setSelectedId(null);
+                      setMsg(null);
+                      setCompose(null);
+                      setChecked(new Set());
+                      setNote(null);
+                    }}
+                    className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[14px]"
+                    style={{ background: on ? "#E3F2FD" : "transparent", fontWeight: on ? 600 : 400, color: INK }}
+                  >
+                    <Svg d={f.icon} size={16} color={on ? BLUE : "#475569"} />
+                    <span className="flex-1">{f.label}</span>
+                    {n ? <span className="text-[12px] font-semibold">{n}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
             <div className="flex flex-col gap-1">
               <p className="px-2 pb-1 text-[12px] font-semibold uppercase tracking-wider" style={{ color: MUTED }}>
-                Accounts
+                Mailboxes
               </p>
-              {[{ id: null as string | null, label: "All inboxes", sub: `${accounts?.length ?? 0} connected`, dot: NAVY, unread: counts.unread }]
-                .concat(
-                  (accounts ?? []).map((a) => ({ id: a.id, label: accountName(a), sub: a.address, dot: PROVIDER_DOT[a.provider], unread: a.unread })),
-                )
+              {[{ id: null as string | null, label: "All mailboxes", sub: `${accounts?.length ?? 0} connected`, dot: NAVY, unread: 0 }]
+                .concat((accounts ?? []).map((a) => ({ id: a.id, label: accountName(a), sub: a.address, dot: PROVIDER_DOT[a.provider], unread: a.unread })))
                 .map((a) => (
                   <button
                     key={a.id ?? "all"}
@@ -462,6 +592,7 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
                     onClick={() => {
                       setAccountId(a.id);
                       setSelectedId(null);
+                      setMsg(null);
                     }}
                     className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left"
                     style={{ background: accountId === a.id ? "#E3F2FD" : "transparent" }}
@@ -477,43 +608,122 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
                   </button>
                 ))}
             </div>
-            <div className="flex flex-col gap-0.5">
-              <p className="px-2 pb-1 text-[12px] font-semibold uppercase tracking-wider" style={{ color: MUTED }}>
-                Folders
-              </p>
-              {FOLDERS.map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  aria-pressed={folder === f.key}
-                  onClick={() => {
-                    setFolder(f.key);
-                    setSelectedId(null);
-                  }}
-                  className="flex cursor-pointer justify-between rounded-xl px-2.5 py-2.5 text-left text-[14px]"
-                  style={{ background: folder === f.key ? "#E3F2FD" : "transparent", fontWeight: folder === f.key ? 600 : 400 }}
-                >
-                  {f.label}
-                  {f.key === "unlinked" && counts.unlinked ? <span>{counts.unlinked}</span> : null}
-                </button>
-              ))}
-            </div>
             <div className="mt-auto flex flex-col gap-1.5 rounded-xl bg-white p-3 text-[12px]" style={{ border: `1px solid ${BORDER}`, color: "#475569" }}>
-              <span>{lastSync ? `Last sync ${shortTime(lastSync)}` : "Not synced yet"}</span>
+              <span>{lastSync ? `Last checked ${shortTime(lastSync)}` : "Not checked yet"} · new mail every 5 min</span>
               <button type="button" onClick={syncAll} disabled={busy === "sync"} className="self-start font-semibold" style={{ color: BLUE }}>
-                {busy === "sync" ? "Syncing…" : "Sync now"}
+                {busy === "sync" ? "Checking…" : "Check for new mail"}
               </button>
+              <span>Keys: c compose · r reply · a reply all · f forward · e archive · # delete · s star · u unread · j/k next/previous · / search</span>
             </div>
-          </section>
+          </nav>
+          <PaneResizer label="Resize folders" {...navPane} />
 
-          <section aria-label="Emails" className="flex min-w-0 max-w-[420px] flex-[1_1_320px] flex-col bg-white" style={{ borderRight: `1px solid ${BORDER}` }}>
-            {loading && items.length === 0 ? (
+          {/* List */}
+          <section aria-label="Emails" className={`el-scroll min-w-0 flex-col bg-white lg:flex lg:min-h-0 lg:overflow-y-auto lg:w-[var(--list-w)] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ "--list-w": `${listPane.width}px` } as React.CSSProperties}>
+            {folder !== "drafts" ? (
+              <div className="sticky top-0 z-10 flex min-h-[52px] flex-wrap items-center gap-2 bg-white px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <input
+                  type="checkbox"
+                  aria-label="Select all"
+                  checked={allChecked}
+                  onChange={(e) => setChecked(e.target.checked ? new Set(items.map((x) => x.id)) : new Set())}
+                  className="h-[18px] w-[18px]"
+                />
+                {checked.size ? (
+                  <>
+                    <span className="text-[13px] font-semibold">{checked.size} selected</span>
+                    {folder === "trash" ? (
+                      <button type="button" className={small} style={{ border: `1px solid ${BORDER_2}` }} onClick={() => void act(checkedIds, "restore")}>
+                        Restore
+                      </button>
+                    ) : (
+                      <>
+                        {folder === "archive" ? (
+                          <button type="button" className={small} style={{ border: `1px solid ${BORDER_2}` }} onClick={() => void act(checkedIds, "unarchive")}>
+                            Move to Inbox
+                          </button>
+                        ) : (
+                          <button type="button" className={small} style={{ border: `1px solid ${BORDER_2}` }} onClick={() => void act(checkedIds, "archive")}>
+                            Archive
+                          </button>
+                        )}
+                        <button type="button" className={small} style={{ border: `1px solid ${BORDER_2}`, color: "#B91C1C" }} onClick={() => void act(checkedIds, "trash")}>
+                          Delete
+                        </button>
+                      </>
+                    )}
+                    {checkedItems.some((x) => !x.isRead) ? (
+                      <button type="button" className={small} style={{ border: `1px solid ${BORDER_2}` }} onClick={() => void act(checkedIds, "read")}>
+                        Mark read
+                      </button>
+                    ) : (
+                      <button type="button" className={small} style={{ border: `1px solid ${BORDER_2}` }} onClick={() => void act(checkedIds, "unread")}>
+                        Mark unread
+                      </button>
+                    )}
+                    <button type="button" className={small} style={{ border: `1px solid ${BORDER_2}` }} onClick={() => void act(checkedIds, checkedItems.every((x) => x.isStarred) ? "unstar" : "star")}>
+                      {checkedItems.every((x) => x.isStarred) ? "Unstar" : "Star"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-[14px] font-semibold">{FOLDERS.find((f) => f.key === folder)?.label}</span>
+                    <button type="button" onClick={() => void loadList(false)} className={small} style={{ border: `1px solid ${BORDER_2}` }}>
+                      <Svg d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" size={14} />
+                      Refresh
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            {folder === "drafts" ? (
+              drafts.length === 0 ? (
+                <p className="p-5 text-[14px]" style={{ color: MUTED }}>
+                  No drafts. An email you start and close is kept here.
+                </p>
+              ) : (
+                <ul className="flex flex-col">
+                  {drafts.map((d) => (
+                    <li key={d.id} className="flex items-stretch" style={{ borderBottom: "1px solid #EEF2F6", background: selectedId === d.id ? "#E3F2FD" : "#FFFFFF" }}>
+                      <button type="button" onClick={() => openDraft(d)} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 px-4 py-3.5 text-left">
+                        <span className="flex items-center gap-2">
+                          <span className="text-[12px] font-semibold" style={{ color: "#B91C1C" }}>
+                            Draft
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">{d.to.length ? `To ${d.to.join(", ")}` : "(no recipients)"}</span>
+                          <span className="text-[12px]" style={{ color: MUTED }}>
+                            {shortTime(d.updatedAt)}
+                          </span>
+                        </span>
+                        <span className="truncate text-[14px]">{d.subject || "(no subject)"}</span>
+                        <span className="truncate text-[13px]" style={{ color: MUTED }}>
+                          {d.body.replace(/\s+/g, " ").slice(0, 120)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Delete draft"
+                        onClick={async () => {
+                          await call(`${base}/drafts/${d.id}`, { method: "DELETE" });
+                          if (compose?.draftId === d.id) setCompose(null);
+                          void loadList(false);
+                        }}
+                        className="flex w-12 cursor-pointer items-center justify-center"
+                      >
+                        <Svg d={BIN} size={16} color="#B91C1C" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )
+            ) : loading && items.length === 0 ? (
               <p className="p-5 text-[14px]" style={{ color: MUTED }}>
                 Loading…
               </p>
             ) : items.length === 0 ? (
               <p className="p-5 text-[14px]" style={{ color: MUTED }}>
-                {search ? "Nothing matches that search." : "No emails here yet. New mail arrives every few minutes."}
+                {search ? "Nothing matches that search." : folder === "inbox" ? "All caught up. New mail arrives every few minutes." : "Nothing here."}
               </p>
             ) : (
               <ul className="flex flex-col">
@@ -521,21 +731,35 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
                   const sel = t.id === selectedId;
                   const who = t.direction === "INBOUND" ? t.fromName || t.fromAddress : `To ${t.to.join(", ")}`;
                   return (
-                    <li key={t.id}>
-                      <button
-                        type="button"
-                        onClick={() => void open(t.id)}
-                        className="flex w-full cursor-pointer gap-3 px-4 py-3.5 text-left"
-                        style={{ background: sel ? "#E3F2FD" : "#FFFFFF", borderBottom: "1px solid #EEF2F6", boxShadow: sel ? `inset 3px 0 0 ${BLUE}` : "none" }}
-                      >
+                    <li key={t.id} className="flex items-stretch" style={{ background: sel ? "#E3F2FD" : checked.has(t.id) ? "#F1F5F9" : "#FFFFFF", borderBottom: "1px solid #EEF2F6", boxShadow: sel ? `inset 3px 0 0 ${BLUE}` : "none" }}>
+                      <div className="flex flex-col items-center gap-1 pl-3 pt-3.5">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${t.subject}`}
+                          checked={checked.has(t.id)}
+                          onChange={(e) => {
+                            const n = new Set(checked);
+                            if (e.target.checked) n.add(t.id);
+                            else n.delete(t.id);
+                            setChecked(n);
+                          }}
+                          className="h-[18px] w-[18px]"
+                        />
+                        <button type="button" aria-label={t.isStarred ? "Remove star" : "Star"} onClick={() => void act([t.id], t.isStarred ? "unstar" : "star")} className="flex h-8 w-8 cursor-pointer items-center justify-center">
+                          <Svg d={STAR} size={16} color={t.isStarred ? "#D97706" : "#94A3B8"} fill={t.isStarred ? "#FBBF24" : "none"} />
+                        </button>
+                      </div>
+                      <button type="button" onClick={() => void open(t.id)} className="flex min-w-0 flex-1 cursor-pointer gap-3 px-3 py-3.5 text-left">
                         <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full text-[14px] font-semibold" style={{ background: BORDER, color: "#1E3A5F" }}>
                           {initials(t.direction === "INBOUND" ? t.fromName || t.fromAddress : t.to[0] ?? "")}
                         </span>
                         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span className="flex items-center gap-2">
+                            {!t.isRead ? <span className="h-2 w-2 flex-none rounded-full" style={{ background: BLUE }} title="Unread" /> : null}
                             <span className="min-w-0 flex-1 truncate text-[14px]" style={{ fontWeight: t.isRead ? 500 : 700 }}>
                               {who}
                             </span>
+                            {t.hasAttachments ? <Svg d={CLIP} size={14} color={MUTED} /> : null}
                             <span className="text-[12px]" style={{ color: MUTED }}>
                               {shortTime(t.sentAt)}
                             </span>
@@ -544,12 +768,12 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
                             {t.subject}
                           </span>
                           <span className="truncate text-[13px]" style={{ color: MUTED }}>
-                            {t.snippet}
+                            {cleanMailText(t.snippet)}
                           </span>
                           <span className="mt-1 flex flex-wrap gap-1.5">
                             <span className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold" style={{ background: "#F1F5F9", color: "#334155" }}>
                               <span className="h-[7px] w-[7px] rounded-full" style={{ background: PROVIDER_DOT[t.provider] }} />
-                              {PROVIDER_LABEL[t.provider]}
+                              {t.accountLabel || PROVIDER_LABEL[t.provider]}
                             </span>
                             {t.lead ? (
                               <span className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold" style={{ background: "#DCFCE7", color: "#14532D" }}>
@@ -566,174 +790,48 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
                     </li>
                   );
                 })}
+                {nextBefore ? (
+                  <li className="p-3">
+                    <button type="button" onClick={() => void loadList(true, nextBefore)} disabled={loading} className={`${small} w-full justify-center`} style={{ border: `1px solid ${BORDER_2}` }}>
+                      {loading ? "Loading…" : "Load more"}
+                    </button>
+                  </li>
+                ) : null}
               </ul>
             )}
           </section>
+          <PaneResizer label="Resize email list" {...listPane} />
 
-          <div className="box-border flex min-w-0 flex-[999_1_420px] flex-col gap-4 px-7 py-6">
+          {/* Reading pane / composer */}
+          <div className={`el-scroll box-border min-w-0 flex-1 flex-col gap-4 px-4 py-5 sm:px-7 lg:flex lg:min-h-0 lg:overflow-y-auto ${showReading ? "flex w-full" : "hidden"}`}>
             {compose ? (
-              <Compose
-                portal={portal}
-                accounts={accounts ?? []}
-                onClose={() => setCompose(false)}
-                onSent={() => {
-                  setCompose(false);
-                  setFolder("sent");
-                  setNote("Email sent.");
-                }}
-              />
+              <Composer key={`${compose.draftId ?? ""}-${compose.mode}-${compose.sourceMessageId ?? ""}`} portal={portal} accounts={accounts ?? []} init={compose} onClose={onComposeClose} />
             ) : msg ? (
-              <article aria-label="Email" className="flex flex-col gap-4">
-                <div>
-                  <h2 className="mb-2 text-[24px] font-bold leading-tight" style={{ fontFamily: "'Source Sans 3', sans-serif" }}>
-                    {msg.subject}
-                  </h2>
-                  <p className="text-[14px]" style={{ color: "#334155" }}>
-                    <strong>{msg.fromName || msg.fromAddress}</strong> &lt;{msg.fromAddress}&gt;
-                  </p>
-                  <p className="mt-0.5 text-[13px]" style={{ color: MUTED }}>
-                    to {msg.to.join(", ")}
-                    {msg.cc.length ? `, cc ${msg.cc.join(", ")}` : ""} · via {PROVIDER_LABEL[msg.provider]} ({msg.accountAddress}) · {longTime(msg.sentAt)}
-                  </p>
-                </div>
-
-                {picking ? (
-                  <LeadPicker portal={portal} onPick={(id) => void link(id)} onCancel={() => setPicking(false)} />
-                ) : msg.lead ? (
-                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl bg-white px-4 py-3.5" style={{ border: `1px solid ${BORDER}` }}>
-                    <div className="flex min-w-[220px] flex-1 flex-col">
-                      <span className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "#166534" }}>
-                        Linked {msg.linkSource === "AUTO" ? "automatically" : "record"}
-                      </span>
-                      <span className="text-[15px] font-semibold">{msg.lead.name}</span>
-                      <span className="text-[13px]" style={{ color: MUTED }}>
-                        {[msg.lead.status.replace(/_/g, " ").toLowerCase(), msg.lead.address].filter(Boolean).join(" · ")}
-                      </span>
-                    </div>
-                    <Link href={customerRecordHref(portal === "admin" ? "admin" : "installers", msg.lead.id)} className="text-[14px] font-semibold">
-                      Open record
-                    </Link>
-                    <button type="button" onClick={() => setPicking(true)} className="text-[14px] font-semibold" style={{ color: BLUE }}>
-                      Change link
-                    </button>
-                    <button type="button" onClick={() => void link(null)} className="text-[14px] font-semibold" style={{ color: "#475569" }}>
-                      Unlink
-                    </button>
-                  </div>
-                ) : msg.direction === "INBOUND" ? (
-                  <div className="flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3.5" style={{ background: "#FFF7ED", border: "1px solid #FDBA74" }}>
-                    <span className="min-w-[240px] flex-1 text-[14px]" style={{ color: "#7C2D12" }}>
-                      No customer or lead matches this sender yet.
-                    </span>
-                    <button type="button" onClick={() => setPicking(true)} className="h-10 cursor-pointer rounded-lg bg-white px-3.5 text-[14px] font-semibold" style={{ border: "1px solid #C2410C", color: "#9A3412" }}>
-                      Link to customer…
-                    </button>
-                    {portal === "admin" ? (
-                      <button type="button" onClick={createLead} disabled={busy === "lead"} className="h-10 cursor-pointer rounded-lg px-3.5 text-[14px] font-semibold" style={{ background: "#C2410C", color: "#FFFFFF" }}>
-                        {busy === "lead" ? "Creating…" : "Create lead"}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {msg.aiSummary ? (
-                  <div className="flex flex-col gap-1.5 rounded-2xl px-4 py-3.5" style={{ background: NAVY, color: "#E2E8F0" }}>
-                    <span className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "#FFE866" }}>
-                      EasyLink AI summary
-                    </span>
-                    <span className="text-[14px] leading-relaxed">{msg.aiSummary}</span>
-                  </div>
-                ) : null}
-
-                {msg.thread.length ? (
-                  <details className="rounded-xl bg-white px-4 py-3 text-[13px]" style={{ border: `1px solid ${BORDER}` }}>
-                    <summary className="cursor-pointer font-semibold">
-                      {msg.thread.length} earlier {msg.thread.length === 1 ? "email" : "emails"} in this conversation
-                    </summary>
-                    <ul className="mt-2 flex flex-col gap-1.5">
-                      {msg.thread.map((t) => (
-                        <li key={t.id}>
-                          <button type="button" onClick={() => void open(t.id)} className="w-full text-left">
-                            <strong>{t.fromName || t.fromAddress}</strong> · {shortTime(t.sentAt)} — <span style={{ color: MUTED }}>{t.snippet}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                ) : null}
-
-                <div className="whitespace-pre-wrap break-words text-[15px] leading-relaxed" style={{ color: "#1E293B" }}>
-                  {msg.bodyText || msg.snippet}
-                </div>
-
-                {msg.attachments.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {msg.attachments.map((f, i) => (
-                      <span key={i} className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-[13px]" style={{ border: `1px solid ${BORDER}` }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={BLUE} strokeWidth="2" aria-hidden="true">
-                          <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
-                          <path d="M14 3v6h6" />
-                        </svg>
-                        {f.name}
-                      </span>
-                    ))}
-                    <span className="self-center text-[12px]" style={{ color: MUTED }}>
-                      Attachments open in {PROVIDER_LABEL[msg.provider]}.
-                    </span>
-                  </div>
-                ) : null}
-
-                <div className="mt-2 flex flex-col rounded-2xl bg-white" style={{ border: `1px solid ${BORDER_2}` }}>
-                  <div className="flex flex-wrap items-center gap-2.5 px-3.5 py-2.5 text-[13px]" style={{ borderBottom: `1px solid ${BORDER}`, color: "#475569" }}>
-                    <span>
-                      Reply from <strong style={{ color: INK }}>{acctById.get(msg.accountId)?.address ?? msg.accountAddress}</strong>
-                    </span>
-                    <span className="flex-1" />
-                    {msg.aiEnabled ? (
-                      <button
-                        type="button"
-                        onClick={aiDraft}
-                        disabled={busy === "ai"}
-                        className="h-9 cursor-pointer rounded-lg px-3 text-[13px] font-bold"
-                        style={{ background: "linear-gradient(90deg, #FFE866, #F68A0A)", color: "#3B1D00" }}
-                      >
-                        {busy === "ai" ? "Drafting…" : "Draft reply with EasyLink AI"}
-                      </button>
-                    ) : null}
-                  </div>
-                  <label htmlFor="reply-body" className="sr-only">
-                    Reply
-                  </label>
-                  <textarea
-                    id="reply-body"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    placeholder="Write a reply…"
-                    className="min-h-[120px] resize-y p-3.5 text-[14px] leading-relaxed outline-none"
-                  />
-                  <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5" style={{ borderTop: `1px solid ${BORDER}` }}>
-                    {note ? (
-                      <p role="status" className="text-[13px] font-semibold" style={{ color: note.endsWith("sent.") ? "#166534" : "#B91C1C" }}>
-                        {note}
-                      </p>
-                    ) : null}
-                    <span className="flex-1" />
-                    <button
-                      type="button"
-                      onClick={sendReply}
-                      disabled={busy === "send" || !draft.trim() || msg.accountStatus !== "ACTIVE"}
-                      className={btn}
-                      style={{ background: BLUE, color: "#FFFFFF" }}
-                    >
-                      {busy === "send" ? "Sending…" : "Send"}
-                    </button>
-                  </div>
-                </div>
-              </article>
+              <MessageView
+                portal={portal}
+                msg={msg}
+                busy={busy}
+                note={note}
+                onAction={(a) => void onAction(a)}
+                linkSlot={
+                  picking ? (
+                    <LeadPicker portal={portal} onPick={(id) => void link(id)} onCancel={() => setPicking(false)} />
+                  ) : (
+                    <LinkedRecord portal={portal} msg={msg} busy={busy} onChange={() => setPicking(true)} onUnlink={() => void link(null)} onCreateLead={() => void createLead()} />
+                  )
+                }
+              />
             ) : (
-              <p className="text-[14px]" style={{ color: MUTED }}>
-                {note ?? "Select an email to read it."}
-              </p>
+              <div className="flex flex-col items-start gap-3">
+                {note ? (
+                  <p role="status" className="rounded-xl px-4 py-2.5 text-[13px] font-semibold" style={{ background: "#DCFCE7", color: "#14532D" }}>
+                    {note}
+                  </p>
+                ) : null}
+                <p className="text-[14px]" style={{ color: MUTED }}>
+                  Select an email to read it, or press Compose.
+                </p>
+              </div>
             )}
           </div>
         </div>
