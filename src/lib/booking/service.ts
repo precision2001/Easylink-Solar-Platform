@@ -224,7 +224,8 @@ export type Appointment = { id: string; startAt: string; endAt: string; status: 
 
 export async function getAppointment(id: string): Promise<Appointment | null> {
   try {
-    const a = await api<Record<string, unknown>>("GET", `/appointments/${encodeURIComponent(id)}`);
+    // The backend has no GET /appointments/:id; the jobs schedule reads one appointment by id.
+    const a = await api<Record<string, unknown>>("GET", `/jobs-schedule/appointments/${encodeURIComponent(id)}`);
     const appt = ((a.appointment as Record<string, unknown>) ?? a) as Record<string, unknown>;
     if (!appt.id) return null;
     return {
