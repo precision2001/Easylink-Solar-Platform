@@ -142,9 +142,10 @@ export type ManagedBooking = {
 
 function kindOf(a: { aiKind?: string | null; title?: string }): BookingKind {
   if (a.aiKind === "CALLBACK" || a.aiKind === "SERVICE" || a.aiKind === "SITE_VISIT") return a.aiKind;
+  // Backend titles: "Site visit: …", "Call back: …", "Service call: …".
   const t = (a.title ?? "").toLowerCase();
-  if (t.includes("call")) return "CALLBACK";
-  if (t.includes("service")) return "SERVICE";
+  if (t.startsWith("service")) return "SERVICE";
+  if (t.startsWith("call")) return "CALLBACK";
   return "SITE_VISIT";
 }
 
