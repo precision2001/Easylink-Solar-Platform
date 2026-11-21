@@ -97,7 +97,7 @@ export function FooterSection({
                 <RainbowButton
                   href="/book"
                   shape="rounded"
-                  className="bg-[#6BDCF9] px-7 py-3 text-sm font-semibold text-slate-900 hover:bg-[#55D3F5]"
+                  className="bg-[#FFDE0B] px-7 py-3 text-sm font-semibold text-slate-900 hover:bg-[#F5D200]"
                 >
                   Book a Visit
                 </RainbowButton>
