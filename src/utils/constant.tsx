@@ -2349,7 +2349,6 @@ export const LANDING_FOOTER_COLUMNS: LandingFooterColumn[] = [
       { label: "Ready Sites (installers)", href: "/ready-sites" },
       { label: "FAQs", href: "/faqs" },
       { label: "Warranty", href: "/warranty" },
-      { label: "Book a site visit", href: "/book" },
       { label: "Contact Us", href: "/contact-us" },
       { label: "User Manual", href: "/user-manual" },
       { label: "Firmware", href: "/firmware" },

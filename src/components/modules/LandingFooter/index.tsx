@@ -24,11 +24,14 @@ export type FooterSectionProps = {
   /** BLUETTI product page design goes straight from app CTA into the link columns. */
   showReadyToControlCta?: boolean;
   customCta?: FooterCustomCta;
+  /** Show "Book a Visit" between the two buttons (customer page and contact page only). */
+  showBookVisit?: boolean;
 };
 
 export function FooterSection({
   showReadyToControlCta = true,
   customCta,
+  showBookVisit = false,
 }: FooterSectionProps) {
   const showCta = showReadyToControlCta || Boolean(customCta);
 
@@ -83,6 +86,16 @@ export function FooterSection({
               >
                 Get Your Quote
               </RainbowButton>
+              {showBookVisit ? (
+                <RainbowButton
+                  href="/book"
+                  shape="rounded"
+                  palette="blue"
+                  className="bg-linear-to-r from-blue-700 to-sky-700 px-7 py-3 text-sm font-semibold text-white"
+                >
+                  Book a Visit
+                </RainbowButton>
+              ) : null}
               <RainbowButton
                 href={LANDING_ENERGY_CTA.secondary.href}
                 shape="rounded"

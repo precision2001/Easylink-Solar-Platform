@@ -10,6 +10,11 @@ const RAINBOW_GRADIENT =
 const RAINBOW_GRADIENT_ANIMATED =
   "conic-gradient(from var(--rainbow-angle), #FFEF62, #6BD6FF, #6BFF78, #BF61FF, #E7D95D, #FFEF62)";
 
+// Blue-shade ring for the "Book a Visit" button: same sweep, sky-to-royal stops.
+const BLUE_STOPS = "#7DD3FC, #2563EB, #38BDF8, #1D4ED8, #A5F3FC, #7DD3FC";
+const BLUE_GRADIENT = `conic-gradient(from 0deg, ${BLUE_STOPS})`;
+const BLUE_GRADIENT_ANIMATED = `conic-gradient(from var(--rainbow-angle), ${BLUE_STOPS})`;
+
 const SHAPE_CLASS: Record<"pill" | "rounded", string> = {
   pill: "rounded-full",
   rounded: "rounded-xl",
@@ -30,6 +35,8 @@ type RainbowButtonProps = {
    * behind it — safe to combine with a translucent or backdrop-blur surface.
    */
   variant?: "solid" | "outline";
+  /** Ring colours: the rainbow (default) or shades of blue. */
+  palette?: "rainbow" | "blue";
   /** Ring thickness in px for `variant="outline"`. Ignored for "solid". */
   ringWidth?: number;
   /** Controls the inner surface: background, text color, padding, font size, etc. */
@@ -48,6 +55,7 @@ export function RainbowButton({
   shape = "pill",
   variant = "outline",
   ringWidth = 2,
+  palette = "rainbow",
   className,
   children,
 }: RainbowButtonProps) {
@@ -80,7 +88,7 @@ export function RainbowButton({
         style={{
           padding: ringWidth,
           borderRadius: "inherit",
-          backgroundImage: RAINBOW_GRADIENT_ANIMATED,
+          backgroundImage: palette === "blue" ? BLUE_GRADIENT_ANIMATED : RAINBOW_GRADIENT_ANIMATED,
           WebkitMask: maskLayers,
           mask: maskLayers,
           WebkitMaskComposite: "xor",
@@ -116,7 +124,7 @@ export function RainbowButton({
       <span
         aria-hidden
         className="absolute inset-[-80%] motion-reduce:animate-none [animation:rainbow-trace-spin_5s_linear_infinite]"
-        style={{ backgroundImage: RAINBOW_GRADIENT }}
+        style={{ backgroundImage: palette === "blue" ? BLUE_GRADIENT : RAINBOW_GRADIENT }}
       />
       <span
         className={classNames(
