@@ -78,7 +78,14 @@ export function FooterSection({
               Join thousands of homeowners already saving with Easylink Solar and
               BLUETTI products.
             </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <div
+              className={
+                showBookVisit
+                  ? // Three buttons: equal width and height (stacked on phones).
+                    "mx-auto mt-6 grid w-fit grid-cols-1 gap-3 sm:grid-flow-col sm:auto-cols-fr sm:grid-cols-none"
+                  : "mt-6 flex flex-wrap justify-center gap-3"
+              }
+            >
               <RainbowButton
                 href={LANDING_ENERGY_CTA.primary.href}
                 shape="rounded"
@@ -90,8 +97,7 @@ export function FooterSection({
                 <RainbowButton
                   href="/book"
                   shape="rounded"
-                  palette="blue"
-                  className="bg-linear-to-r from-blue-700 to-sky-700 px-7 py-3 text-sm font-semibold text-white"
+                  className="bg-[#6BDCF9] px-7 py-3 text-sm font-semibold text-slate-900 hover:bg-[#55D3F5]"
                 >
                   Book a Visit
                 </RainbowButton>
