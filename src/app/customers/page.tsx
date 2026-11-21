@@ -29,7 +29,7 @@ export default function Home() {
         <CustomerReviewsSection />
         <PaymentOptionsSection />
       </main>
-      <FooterSection />
+      <FooterSection showBookVisit />
     </>
   );
 }

@@ -18,7 +18,7 @@ export default function ContactUsPage() {
       <SendUsAndPartnerSection />
       <BusinessAssociatesSection />
       <DesignSystemSection />
-      <FooterSection />
+      <FooterSection showBookVisit />
     </main>
   );
 }

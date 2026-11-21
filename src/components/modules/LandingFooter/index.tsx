@@ -24,11 +24,14 @@ export type FooterSectionProps = {
   /** BLUETTI product page design goes straight from app CTA into the link columns. */
   showReadyToControlCta?: boolean;
   customCta?: FooterCustomCta;
+  /** Show "Book a Visit" between the two buttons (customer page and contact page only). */
+  showBookVisit?: boolean;
 };
 
 export function FooterSection({
   showReadyToControlCta = true,
   customCta,
+  showBookVisit = false,
 }: FooterSectionProps) {
   const showCta = showReadyToControlCta || Boolean(customCta);
 
@@ -75,7 +78,14 @@ export function FooterSection({
               Join thousands of homeowners already saving with Easylink Solar and
               BLUETTI products.
             </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <div
+              className={
+                showBookVisit
+                  ? // Three buttons: equal width and height (stacked on phones).
+                    "mx-auto mt-6 grid w-fit grid-cols-1 gap-3 sm:grid-flow-col sm:auto-cols-fr sm:grid-cols-none"
+                  : "mt-6 flex flex-wrap justify-center gap-3"
+              }
+            >
               <RainbowButton
                 href={LANDING_ENERGY_CTA.primary.href}
                 shape="rounded"
@@ -83,6 +93,15 @@ export function FooterSection({
               >
                 Get Your Quote
               </RainbowButton>
+              {showBookVisit ? (
+                <RainbowButton
+                  href="/book"
+                  shape="rounded"
+                  className="bg-[#FFDE0B] px-7 py-3 text-sm font-semibold text-slate-900 hover:bg-[#F5D200]"
+                >
+                  Book a Visit
+                </RainbowButton>
+              ) : null}
               <RainbowButton
                 href={LANDING_ENERGY_CTA.secondary.href}
                 shape="rounded"
