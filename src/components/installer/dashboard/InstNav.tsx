@@ -86,6 +86,12 @@ function buildGroups(elite: boolean): NavGroup[] {
           href: "/installers/dashboard/schedule",
         },
         {
+          key: "bookinglink",
+          label: "Booking link",
+          icon: "link",
+          href: "/installers/dashboard/booking-link",
+        },
+        {
           key: "aiAssist",
           label: "AI assistant",
           icon: "spark",
@@ -335,6 +341,7 @@ const ROUTE_KEYS: [string, string][] = [
   ["/installers/dashboard/home", "overview"],
   ["/installers/dashboard/overview", "overview"],
   ["/installers/dashboard/schedule", "schedule"],
+  ["/installers/dashboard/booking-link", "bookinglink"],
 ];
 
 function resolveActive(pathname: string | null): string {

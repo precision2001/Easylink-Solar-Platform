@@ -207,6 +207,41 @@ export function Composer({
     setBody((b) => `${b.replace(/\s+$/, "")}\n\n${account.signature}\n`);
   };
 
+  const [linking, setLinking] = useState(false);
+  /** Insert a booking link: the customer's own when the email is tied to a lead, else the general one. */
+  const insertBookingLink = async () => {
+    setLinking(true);
+    setError(null);
+    let link: string | null = null;
+    try {
+      const url = init.leadId
+        ? `${portal === "admin" ? "/api/admin/booking-link/leads" : "/api/installers/booking-link/leads"}?leadId=${encodeURIComponent(init.leadId)}`
+        : portal === "admin"
+          ? "/api/admin/booking-link"
+          : "/api/installers/booking-link";
+      const r = await fetch(url, { cache: "no-store" });
+      const j = (await r.json().catch(() => ({}))) as { data?: { link?: string; publicUrl?: string }; message?: string };
+      link = j.data?.link ?? j.data?.publicUrl ?? null;
+      if (!r.ok || !link) setError(j.message || "Couldn't get a booking link.");
+    } catch {
+      setError("Couldn't get a booking link.");
+    }
+    setLinking(false);
+    if (!link) return;
+    touch();
+    const line = `Book a time that suits you: ${link}`;
+    const el = bodyRef.current;
+    if (el && document.activeElement === el) {
+      const at = el.selectionStart ?? body.length;
+      setBody((b) => `${b.slice(0, at)}${line}${b.slice(at)}`);
+    } else {
+      setBody((b) => {
+        const sig = account?.signature ? b.lastIndexOf(account.signature) : -1;
+        return sig > 0 ? `${b.slice(0, sig).replace(/\s+$/, "")}\n\n${line}\n\n${b.slice(sig)}` : `${b.replace(/\s+$/, "")}\n\n${line}\n`;
+      });
+    }
+  };
+
   const send = async () => {
     setError(null);
     const all = [...to, ...cc, ...bcc];
@@ -391,6 +426,21 @@ export function Composer({
                 <path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
               </svg>
               Attach
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => void insertBookingLink()}
+              disabled={linking}
+              className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl px-4 text-[14px] font-semibold disabled:opacity-60"
+              style={{ border: "1px solid #CBD5E1", color: "#334155" }}
+              title={init.leadId ? "Insert this customer's booking link" : "Insert the booking link"}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="18" rx="2" />
+                <path d="M16 2v4M8 2v4M3 10h18" />
+              </svg>
+              {linking ? "Adding…" : "Booking link"}
             </button>
             {account?.signature ? (
               <button type="button" onClick={insertSignature} className="inline-flex h-11 cursor-pointer items-center rounded-xl px-4 text-[14px] font-semibold" style={{ border: "1px solid #CBD5E1", color: "#334155" }}>

@@ -28,6 +28,12 @@ export function HeroSection() {
             Discover our range of high-performance solar panels designed to
             maximize efficiency and reliability for your solar energy system.
           </p>
+          <a
+            href="/book"
+            className="mt-8 inline-flex min-h-12 items-center rounded-xl bg-cyan-400 px-6 text-base font-bold text-slate-950 transition hover:bg-cyan-300"
+          >
+            Book a free site visit
+          </a>
         </div>
       </div>
     </section>

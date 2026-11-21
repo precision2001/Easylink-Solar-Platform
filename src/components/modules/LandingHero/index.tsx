@@ -158,6 +158,12 @@ export function Header() {
             </details>
             <CartButton />
 
+            <Link
+              href="/book"
+              className="rounded-xl border border-slate-900/15 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-cyan-50 xl:px-5"
+            >
+              Book a visit
+            </Link>
             <RainbowButton
               href="/contact-us"
               shape="rounded"
@@ -217,6 +223,12 @@ export function Header() {
               ))}
             </div>
             <div className="grid gap-2">
+              <Link
+                href="/book"
+                className="rounded-md bg-white px-3 py-2 text-center text-xs font-semibold text-slate-950"
+              >
+                Book a free site visit
+              </Link>
               <Link
                 href="/contact-us"
                 className="rounded-md border border-cyan-300/80 px-3 py-2 text-center text-xs font-semibold text-cyan-200"

@@ -41,6 +41,7 @@ const TABS: Tab[] = [
   { key: "vpp", label: "VPP", href: "/customers/vpp" },
   { key: "maintenance", label: "Maintenance", href: "/customers/solar-maintenance" },
   { key: "messages", label: "Messages", href: "/customers/messages" },
+  { key: "book", label: "Book a time", href: "/customers/book" },
   { key: "products", label: "Shop", href: "/customers/products" },
   { key: "payments", label: "Payments", href: "/customers/payments" },
   { key: "profile", label: "Profile", href: "/customers/profile" },
