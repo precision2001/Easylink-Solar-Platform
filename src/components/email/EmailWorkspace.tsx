@@ -464,6 +464,8 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
   const checkedIds = [...checked];
   const checkedItems = items.filter((x) => checked.has(x.id));
   const showReading = Boolean(compose || msg);
+  // A reply or forward to the open email is written under it, so the email stays in view.
+  const replyingHere = Boolean(compose && msg && compose.mode !== "NEW" && compose.sourceMessageId === msg.id);
   const navPane = usePaneWidth("easylink.email.navWidth", 230, 170, 340);
   const listPane = usePaneWidth("easylink.email.listWidth", 420, 300, 760);
   // Large screens: the inbox fills the window below whatever sits above it, and
@@ -803,11 +805,16 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
           <PaneResizer label="Resize email list" {...listPane} />
 
           {/* Reading pane / composer */}
-          <div className={`el-scroll box-border min-w-0 flex-1 flex-col gap-4 px-4 py-5 sm:px-7 lg:flex lg:min-h-0 lg:overflow-y-auto ${showReading ? "flex w-full" : "hidden"}`}>
-            {compose ? (
+          <div className={`el-scroll box-border min-w-0 flex-1 flex-col gap-4 px-4 pb-28 pt-5 sm:px-7 lg:flex lg:min-h-0 lg:overflow-y-auto ${showReading ? "flex w-full" : "hidden"}`}>
+            {compose && !replyingHere ? (
               <Composer key={`${compose.draftId ?? ""}-${compose.mode}-${compose.sourceMessageId ?? ""}`} portal={portal} accounts={accounts ?? []} init={compose} onClose={onComposeClose} />
             ) : msg ? (
               <MessageView
+                replySlot={
+                  compose && replyingHere ? (
+                    <Composer key={`${compose.draftId ?? ""}-${compose.mode}-${compose.sourceMessageId ?? ""}`} portal={portal} accounts={accounts ?? []} init={compose} onClose={onComposeClose} />
+                  ) : undefined
+                }
                 portal={portal}
                 msg={msg}
                 busy={busy}
