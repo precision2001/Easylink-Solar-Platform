@@ -466,10 +466,25 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
   const showReading = Boolean(compose || msg);
   const navPane = usePaneWidth("easylink.email.navWidth", 230, 170, 340);
   const listPane = usePaneWidth("easylink.email.listWidth", 420, 300, 760);
+  // Large screens: the inbox fills the window below whatever sits above it, and
+  // each pane (folders, list, reading) scrolls on its own.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const fit = () => el.style.setProperty("--email-top", `${Math.max(0, el.getBoundingClientRect().top + window.scrollY)}px`);
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
   const folderCount = (f: Folder) => (f === "inbox" ? counts.unread : f === "starred" ? counts.starred : f === "drafts" ? counts.drafts : f === "unlinked" ? counts.unlinked : 0);
 
   return (
-    <div className="flex min-h-screen flex-col" style={{ color: INK, fontFamily: "Inter, system-ui, sans-serif" }}>
+    <div
+      ref={rootRef}
+      className="flex min-h-screen flex-col lg:h-[calc(100dvh-var(--email-top,0px))] lg:min-h-0 lg:overflow-hidden"
+      style={{ color: INK, fontFamily: "Inter, system-ui, sans-serif" }}
+    >
       <header className="flex flex-wrap items-center gap-4 bg-white px-7 py-5" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <div className="flex-grow">
           <p className="text-[13px]" style={{ color: MUTED }}>
@@ -535,7 +550,7 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
       ) : (
         <div className="flex min-h-0 flex-1 flex-wrap lg:flex-nowrap">
           {/* Folders and mailboxes */}
-          <nav aria-label="Mail folders" className={`box-border flex-col gap-5 px-4 py-5 lg:flex lg:w-[var(--nav-w)] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ "--nav-w": `${navPane.width}px` } as React.CSSProperties}>
+          <nav aria-label="Mail folders" className={`el-scroll box-border flex-col gap-5 px-4 py-5 lg:flex lg:min-h-0 lg:overflow-y-auto lg:w-[var(--nav-w)] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ "--nav-w": `${navPane.width}px` } as React.CSSProperties}>
             <div className="flex flex-col gap-0.5">
               {FOLDERS.map((f) => {
                 const n = folderCount(f.key);
@@ -604,9 +619,9 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
           <PaneResizer label="Resize folders" {...navPane} />
 
           {/* List */}
-          <section aria-label="Emails" className={`min-w-0 flex-col bg-white lg:flex lg:w-[var(--list-w)] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ "--list-w": `${listPane.width}px` } as React.CSSProperties}>
+          <section aria-label="Emails" className={`el-scroll min-w-0 flex-col bg-white lg:flex lg:min-h-0 lg:overflow-y-auto lg:w-[var(--list-w)] lg:flex-none ${showReading ? "hidden" : "flex w-full"}`} style={{ "--list-w": `${listPane.width}px` } as React.CSSProperties}>
             {folder !== "drafts" ? (
-              <div className="flex min-h-[52px] flex-wrap items-center gap-2 px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <div className="sticky top-0 z-10 flex min-h-[52px] flex-wrap items-center gap-2 bg-white px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
                 <input
                   type="checkbox"
                   aria-label="Select all"
@@ -788,7 +803,7 @@ export function EmailWorkspace({ portal }: { portal: EmailPortal }) {
           <PaneResizer label="Resize email list" {...listPane} />
 
           {/* Reading pane / composer */}
-          <div className={`box-border min-w-0 flex-1 flex-col gap-4 px-4 py-5 sm:px-7 lg:flex ${showReading ? "flex w-full" : "hidden"}`}>
+          <div className={`el-scroll box-border min-w-0 flex-1 flex-col gap-4 px-4 py-5 sm:px-7 lg:flex lg:min-h-0 lg:overflow-y-auto ${showReading ? "flex w-full" : "hidden"}`}>
             {compose ? (
               <Composer key={`${compose.draftId ?? ""}-${compose.mode}-${compose.sourceMessageId ?? ""}`} portal={portal} accounts={accounts ?? []} init={compose} onClose={onComposeClose} />
             ) : msg ? (

@@ -135,7 +135,8 @@ export function MessageView({
   const canReply = msg.accountStatus === "ACTIVE";
   return (
     <article aria-label="Email" className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Stays in view while a long email scrolls (large screens). */}
+      <div className="flex flex-wrap items-center gap-2 lg:sticky lg:-top-5 lg:z-10 lg:-my-3 lg:bg-[#F4F6FA] lg:py-3">
         <span className="lg:hidden">
           <ToolButton label="Back" icon={I.back} onClick={() => onAction("back")} />
         </span>
