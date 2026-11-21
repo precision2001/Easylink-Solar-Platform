@@ -123,6 +123,7 @@ export function MessageView({
   note,
   onAction,
   linkSlot,
+  replySlot,
 }: {
   portal: EmailPortal;
   msg: FullMessage;
@@ -131,6 +132,8 @@ export function MessageView({
   onAction: (a: MessageAction) => void;
   /** Linked-record card / link picker, rendered by the workspace. */
   linkSlot: React.ReactNode;
+  /** The open reply / forward, shown under the email instead of the reply box. */
+  replySlot?: React.ReactNode;
 }) {
   const canReply = msg.accountStatus === "ACTIVE";
   return (
@@ -221,22 +224,39 @@ export function MessageView({
         <Files portal={portal} messageId={msg.id} files={msg.attachments} />
       </div>
 
-      {canReply ? (
-        <div className="flex flex-wrap gap-2">
-          <ToolButton label="Reply" icon={I.reply} onClick={() => onAction("reply")} />
-          <ToolButton label="Reply all" icon={I.replyAll} onClick={() => onAction("replyAll")} />
-          <ToolButton label="Forward" icon={I.forward} onClick={() => onAction("forward")} />
-          {msg.aiEnabled ? (
-            <button
-              type="button"
-              onClick={() => onAction("aiReply")}
-              disabled={busy === "ai"}
-              className="inline-flex h-10 cursor-pointer items-center rounded-xl px-4 text-[13px] font-bold"
-              style={{ background: "linear-gradient(90deg, #FFE866, #F68A0A)", color: "#3B1D00" }}
-            >
-              {busy === "ai" ? "Drafting…" : "Draft reply with EasyLink AI"}
-            </button>
-          ) : null}
+      {replySlot ? (
+        <div id="email-reply">{replySlot}</div>
+      ) : canReply ? (
+        <div className="flex flex-col gap-2.5 rounded-2xl bg-white p-3 sm:p-4" style={{ border: `1px solid ${BORDER}` }}>
+          {/* Always-there reply box: click (or Tab + Enter) to start writing under the email. */}
+          <button
+            type="button"
+            onClick={() => onAction("reply")}
+            className="flex min-h-[64px] w-full cursor-text items-start gap-3 rounded-xl px-3.5 py-3 text-left text-[14.5px]"
+            style={{ border: "1px solid #CBD5E1", color: "#64748B", background: "#FFFFFF" }}
+          >
+            <span className="mt-0.5 flex-none" aria-hidden="true">
+              <Icon d={I.reply} />
+            </span>
+            <span className="min-w-0 flex-1">
+              Reply to <strong style={{ color: "#1E293B" }}>{msg.direction === "OUTBOUND" ? msg.to[0] ?? "recipient" : msg.fromName || msg.fromAddress}</strong>…
+            </span>
+          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ToolButton label="Reply all" icon={I.replyAll} onClick={() => onAction("replyAll")} />
+            <ToolButton label="Forward" icon={I.forward} onClick={() => onAction("forward")} />
+            {msg.aiEnabled ? (
+              <button
+                type="button"
+                onClick={() => onAction("aiReply")}
+                disabled={busy === "ai"}
+                className="inline-flex h-10 cursor-pointer items-center rounded-xl px-4 text-[13px] font-bold"
+                style={{ background: "linear-gradient(90deg, #FFE866, #F68A0A)", color: "#3B1D00" }}
+              >
+                {busy === "ai" ? "Drafting…" : "Draft reply with EasyLink AI"}
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </article>
