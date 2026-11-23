@@ -316,7 +316,7 @@ export function DesignsHeroSection({
       setLeadLocating(false);
       setActiveScreen("address");
       setFillPercent(40);
-      toast.info("Couldn't place this address on the map. Pick it from the suggestions.");
+      toast.info("Address not found – please check the street name and pick it from the suggestions.");
     };
     if (mapsError) {
       leadLocateRef.current = true;
@@ -328,10 +328,13 @@ export function DesignsHeroSection({
     new google.maps.Geocoder().geocode(
       { address: leadPrefill.address, componentRestrictions: { country: "AU" } },
       (results, status) => {
-        const hit =
-          status === google.maps.GeocoderStatus.OK
-            ? (results?.find((r) => r.geometry?.location_type === "ROOFTOP") ?? results?.[0])
-            : undefined;
+        // Only the property itself: a street Google can't find comes back as
+        // the suburb's centre (8 Calgary St → "Roseville Chase NSW 2069",
+        // 23 Nov 2026), which would design someone else's roof.
+        const property = (r: google.maps.GeocoderResult) =>
+          r.types.some((t) => t === "street_address" || t === "premise" || t === "subpremise");
+        const found = status === google.maps.GeocoderStatus.OK ? (results ?? []).filter(property) : [];
+        const hit = found.find((r) => r.geometry?.location_type === "ROOFTOP") ?? found[0];
         if (!hit) return giveUp();
         const pin = { lat: hit.geometry.location.lat(), lng: hit.geometry.location.lng() };
         const bounds = hit.geometry.location_type === "ROOFTOP" ? hit.geometry.bounds : undefined;
