@@ -1,15 +1,8 @@
 """EasyLink tools for the Amazon Connect AI agent.
 
 Amazon Connect -> Bedrock AgentCore Gateway (MCP) -> this Lambda -> EasyLink backend.
-
-The gateway passes the tool name in context.client_context.custom
-["bedrockAgentCoreToolName"] as "<target>___<tool>" and the tool's arguments as
-the event. Each tool returns a small, plain dict the AI can read aloud: no
-internal IDs beyond what the next tool needs, no costs or margins, no other
-customers' details.
-
-The backend is called as the AI service account (secret easylink/ai/service-token,
-{"email","password"}), the same account the AI platform already uses.
+Each tool returns a small, plain dict the AI can read aloud: no costs or margins,
+no other customers' details. Source: easylink-ai-platform/connect-tools/handler.py
 """
 import json
 import os
@@ -25,14 +18,12 @@ import boto3
 
 BASE = os.environ["BACKEND_API_BASE_URL"].rstrip("/")
 SECRET_ID = os.environ.get("SERVICE_SECRET_ID", "easylink/ai/service-token")
-STAFF_ID = os.environ.get("SITE_VISIT_STAFF_ID", "")  # who site visits and callbacks are booked for
+STAFF_ID = os.environ.get("SITE_VISIT_STAFF_ID", "")
 SYD = ZoneInfo("Australia/Sydney")
 SOURCE = "Phone - EasyLink AI"
 
 _token = {"value": None, "exp": 0.0, "user": None}
 
-
-# --------------------------------------------------------------------------- backend
 
 def _login():
     raw = boto3.client("secretsmanager").get_secret_value(SecretId=SECRET_ID)["SecretString"]
@@ -68,7 +59,7 @@ def _http(method, path, body=None, token="auto"):
 
 def api(method, path, body=None):
     status, out = _http(method, path, body)
-    if status == 401:  # token expired early: sign in once more
+    if status == 401:
         _token["value"] = None
         status, out = _http(method, path, body)
     if status >= 400:
@@ -81,11 +72,8 @@ class ToolError(Exception):
 
 
 def qs(**params):
-    """Query string with every value encoded ('+' in a time zone offset would otherwise read as a space)."""
     return urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
 
-
-# --------------------------------------------------------------------------- helpers
 
 def digits(phone):
     d = re.sub(r"\D", "", phone or "")
@@ -95,13 +83,11 @@ def digits(phone):
 
 
 def national(phone):
-    """'+61 400 111 222' -> '0400111222'; anything else is kept as given."""
     d = digits(phone)
     return d if len(d) == 10 and d.startswith("0") else phone
 
 
 def next_business_time(dt):
-    """The first whole hour from dt that falls Mon-Fri 9am-5pm Sydney time."""
     dt = dt.astimezone(SYD)
     if dt.minute or dt.second or dt.microsecond:
         dt = dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
@@ -154,7 +140,6 @@ def staff_id():
 
 
 def book(kind, lead_id, start, end, notes=None):
-    """Book through /ai-bookings so the person chosen in the Operations Portal gets it."""
     try:
         body = {"kind": kind, "leadId": lead_id, "startAt": start.isoformat(), "endAt": end.isoformat()}
         if notes:
@@ -175,8 +160,6 @@ def say_time(dt):
     return dt.strftime("%A %d %B at %I:%M %p").replace(" 0", " ")
 
 
-# --------------------------------------------------------------------------- tools
-
 def find_customer(a):
     lead = find_lead(a.get("phone"), a.get("email"))
     if not lead:
@@ -192,7 +175,49 @@ def find_customer(a):
     }
 
 
+# Addresses the map couldn't find, by caller: a second try with the same
+# address (the caller confirmed it) is saved with a note for staff.
+_unfound = {}
+
+
+def checked_address(a):
+    """The address to save, checked on the map first (owner, 24 Nov 2026:
+    "8 Calgary Street" was saved for 8 Calga Street and the suburb centre got
+    designed). Found: Google's spelling. Not found the first time: Jay spells
+    it back and offers the closest real street. Same address again: saved, with
+    a note that it wasn't found."""
+    address = (a.get("address") or "").strip()
+    if not address:
+        return None, None
+    try:
+        r = api("POST", "/ai-sales/address/check", {"address": address})
+    except ToolError:
+        return address, None  # the check is down: never block the enquiry
+    if r.get("found"):
+        return r.get("address") or address, None
+    key = (digits(a.get("phone")) or a.get("email") or "", address.lower())
+    if _unfound.get(key, 0) > time.time() - 900:
+        return address, "Address not found on the map – please check the street name before designing."
+    _unfound[key] = time.time()
+    raise ToolError(
+        (r.get("say") or "That address wasn't found on the map. Spell the street name back to the caller and check the postcode.")
+        + " Then call save_enquiry again with the address they confirm."
+    )
+
+
 def save_enquiry(a):
+    out = _save_enquiry(a)
+    if out.get("address"):
+        out["message"] += f" Read the address back to the caller once, street name spelt out: {out['address']}."
+    return out
+
+
+def _save_enquiry(a):
+    address, address_note = checked_address(a)
+    if address:
+        a = {**a, "address": address}
+    if address_note:
+        a = {**a, "notes": "; ".join(x for x in [a.get("notes"), address_note] if x)}
     name = " ".join(x for x in [a.get("firstName"), a.get("lastName")] if x).strip() or "Phone enquiry"
     details = [
         f"Interest: {', '.join(a['interests'])}" if a.get("interests") else None,
@@ -205,13 +230,12 @@ def save_enquiry(a):
     text = "; ".join(d for d in details if d)
     lead = find_lead(a.get("phone"), a.get("email"))
     if lead:
-        # Fill gaps only; never overwrite details staff already hold.
         patch = {k: v for k, v in {"customerEmail": a.get("email"), "address": a.get("address")}.items() if v and not lead.get(k)}
         if patch:
             api("PATCH", f"/leads/{lead['id']}", patch)
         if text:
             append_note(lead, "Phone enquiry: " + text)
-        return {"leadId": lead["id"], "created": False, "message": "Updated the existing record."}
+        return {"leadId": lead["id"], "created": False, "message": "Updated the existing record.", "address": address if address and not lead.get("address") else None}
     body = {
         "customerName": name,
         "customerPhone": national(a.get("phone")),
@@ -219,13 +243,12 @@ def save_enquiry(a):
         "address": a.get("address"),
         "source": SOURCE,
         "notes": f"[{datetime.now(SYD).strftime('%d %b %Y %H:%M')} EasyLink AI] Phone enquiry: {text}" if text else None,
-        # They called us and gave these details for this enquiry; no marketing consent is assumed.
         "consentCalls": True,
         "consentSms": bool(a.get("okToText", True)),
         "consentEmail": False,
     }
     created = api("POST", "/leads", {k: v for k, v in body.items() if v is not None})
-    return {"leadId": created["id"], "created": True, "message": "Saved as a new enquiry."}
+    return {"leadId": created["id"], "created": True, "message": "Saved as a new enquiry.", "address": address}
 
 
 def site_visit_times(a):
@@ -234,19 +257,18 @@ def site_visit_times(a):
         start = max(start, datetime.fromisoformat(a["fromDate"]).date())
     days = min(int(a.get("days") or 5), 10)
     end = start + timedelta(days=days + 4)
-    day0 = datetime(start.year, start.month, start.day, tzinfo=SYD)  # Sydney midnight, not UTC midnight
-    # Busy times of whoever would get the visit (chosen in the Operations Portal > AI bookings).
+    day0 = datetime(start.year, start.month, start.day, tzinfo=SYD)
     taken = rows(api("GET", "/ai-bookings/busy?" + qs(kind="SITE_VISIT", leadId=a.get("leadId"), **{"from": day0.isoformat()}, to=(day0 + timedelta(days=(end - start).days + 1)).isoformat())))
     busy = [(sydney(x["startAt"]), sydney(x["endAt"])) for x in taken]
     slots, d = [], start
     while len(slots) < 6 and d <= end:
-        if d.weekday() < 5:  # Mon-Fri
+        if d.weekday() < 5:
             for hour in (9, 11, 13, 15):
                 s = datetime(d.year, d.month, d.day, hour, tzinfo=SYD)
                 e = s + timedelta(hours=1)
                 if not any(s < be and e > bs for bs, be in busy):
                     slots.append({"start": s.isoformat(), "say": say_time(s)})
-                    break  # one per day keeps the choice short
+                    break
         d += timedelta(days=1)
     return {"times": slots, "message": "Offer two or three of these." if slots else "No free times found; offer a callback instead."}
 
@@ -256,7 +278,6 @@ def book_site_visit(a):
     s = sydney(a["start"])
     if s < datetime.now(SYD) + timedelta(hours=2):
         raise ToolError("That time has passed or is too soon; pick another time.")
-    # The backend picks the person, re-checks the slot, assigns the lead and notifies them.
     out = book("SITE_VISIT", lead["id"], s, s + timedelta(hours=1), a.get("notes"))
     append_note(lead, f"Site visit booked for {say_time(s)}.")
     return {"booked": True, "say": say_time(s), "with": out.get("assignedTo"), "message": "Confirm the time and that they'll get a text."}
@@ -293,20 +314,13 @@ def job_status(a):
     }.get(lead.get("projectPhase"))
     upcoming = rows(api("GET", "/appointments?" + qs(limit=5, leadId=lead["id"], status="SCHEDULED", startFrom=datetime.now(SYD).isoformat())))
     nxt = min((sydney(x["startAt"]) for x in upcoming), default=None)
-    return {
-        "found": True,
-        "leadId": lead["id"],
-        "stage": lead.get("status"),
-        "phase": phase,
-        "nextBooking": say_time(nxt) if nxt else None,
-    }
+    return {"found": True, "leadId": lead["id"], "stage": lead.get("status"), "phase": phase, "nextBooking": say_time(nxt) if nxt else None}
 
 
 def request_callback(a):
     lead = find_lead(a.get("phone"), a.get("email"), a.get("leadId"))
     if not lead:
-        lead = {"id": save_enquiry({"phone": a.get("phone"), "firstName": a.get("name"), "notes": a.get("reason")})["leadId"]}
-        lead = find_lead(lead_id=lead["id"])
+        lead = find_lead(lead_id=save_enquiry({"phone": a.get("phone"), "firstName": a.get("name"), "notes": a.get("reason")})["leadId"])
     asked = sydney(a["preferredTime"]) if a.get("preferredTime") else None
     when = next_business_time(max(asked or datetime.now(SYD), datetime.now(SYD) + timedelta(minutes=30)))
     book("CALLBACK", lead["id"], when, when + timedelta(minutes=15), f"Reason: {a.get('reason') or 'not given'}")
@@ -327,7 +341,6 @@ def report_service_issue(a):
         lead = find_lead(lead_id=save_enquiry({"phone": a.get("phone"), "firstName": a.get("name"), "notes": "Service: " + text})["leadId"])
     else:
         append_note(lead, "Service request: " + text)
-    # Safety issues are flagged for the next 15 minutes, whatever the hour; others go to the next business hour.
     when = datetime.now(SYD) + timedelta(minutes=15) if safety else next_business_time(datetime.now(SYD) + timedelta(hours=1))
     book("SERVICE", lead["id"], when, when + timedelta(minutes=15), ("URGENT SAFETY. " if safety else "") + text)
     return {"logged": True, "urgent": safety, "callBack": say_time(when), "message": "A team member will call back." + (" Tell them to isolate the system if safe and call 000 if there is fire." if safety else "")}
@@ -368,6 +381,6 @@ def handler(event, context):
         return fn(event or {})
     except ToolError as e:
         return {"error": str(e)}
-    except Exception as e:  # never leak a stack trace to the caller
+    except Exception as e:
         print(f"tool {name} failed: {e!r}")
         return {"error": "That didn't work just now. Offer to have a team member call back."}
