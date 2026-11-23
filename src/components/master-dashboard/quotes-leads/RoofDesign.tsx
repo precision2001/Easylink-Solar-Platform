@@ -238,8 +238,11 @@ export function RoofDesignCell({
   return (
     <div className={`${BOX} flex-col items-center justify-center gap-1 border border-[#E3E8EF] bg-[#F8FAFC] px-2 text-center`}>
       <span className="text-[11px] leading-tight text-[#5B6B80]" title={aiName(d?.message) ?? undefined}>
-        {d?.status === "NO_ADDRESS" ? "Address not found" : d?.status === "NO_ROOF" ? "No roof found" : "Design failed"}
+        {d?.status === "NO_ADDRESS" ? "Address not found – please check" : d?.status === "NO_ROOF" ? "No roof found" : "Design failed"}
       </span>
+      {d?.status === "NO_ADDRESS" && d.message && /Did you mean/.test(d.message) ? (
+        <span className="text-[10.5px] font-semibold leading-tight text-[#B45309]">{d.message.replace(/^.*Did you mean /, "Did you mean ")}</span>
+      ) : null}
       <button type="button" onClick={onRetry} className="text-[11.5px] font-bold text-[#1D4ED8] hover:underline">
         Try again
       </button>

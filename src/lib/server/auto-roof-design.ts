@@ -17,6 +17,8 @@ export type RoofDesignInputs = {
   address: string;
   formattedAddress?: string;
   located: boolean;
+  /** When the address wasn't found: the closest real address Google offers. */
+  suggestion?: string | null;
   pin?: LatLng;
   estimate?: SolarEstimateResult;
   maskBase64?: string | null;
@@ -60,7 +62,11 @@ export type AutoRoofDesign =
 export const AUTO_PANEL = DEFAULT_PANEL;
 
 export async function runAutoRoofDesign(inputs: RoofDesignInputs): Promise<AutoRoofDesign> {
-  if (!inputs.located || !inputs.pin) return { status: "NO_ADDRESS", message: "Couldn't find this address on the map." };
+  if (!inputs.located || !inputs.pin)
+    return {
+      status: "NO_ADDRESS",
+      message: `Address not found – please check.${inputs.suggestion ? ` Did you mean ${inputs.suggestion}?` : ""}`,
+    };
   const pin = inputs.pin;
   const [mask, dsm] = await Promise.all([parseRaster(inputs.maskBase64), parseRaster(inputs.dsmBase64)]);
   const parcel = inputs.parcel && inputs.parcel.length >= 3 ? { ring: inputs.parcel, areaM2: ringAreaM2(inputs.parcel) } : null;

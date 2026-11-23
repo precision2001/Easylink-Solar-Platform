@@ -92,8 +92,9 @@ async function geocode(address: string): Promise<{ pin: LatLng; formattedAddress
     headers: { Referer: "https://www.easylinksolar.com.au/" },
   });
   if (!res.ok) return null;
-  const j = (await res.json()) as { status: string; results?: { formatted_address: string; geometry: { location: LatLng } }[] };
-  const hit = j.status === "OK" ? j.results?.[0] : undefined;
+  const j = (await res.json()) as { status: string; results?: { formatted_address: string; types?: string[]; geometry: { location: LatLng } }[] };
+  // Only the property itself, never a suburb or street a misspelt address falls back to.
+  const hit = j.status === "OK" ? j.results?.find((r) => (r.types ?? []).some((t) => t === "street_address" || t === "premise" || t === "subpremise")) : undefined;
   return hit ? { pin: hit.geometry.location, formattedAddress: hit.formatted_address } : null;
 }
 
@@ -146,7 +147,7 @@ async function handle(request: Request, origin: string | null): Promise<NextResp
   else if (typeof body.address === "string" && body.address.trim().length > 4) {
     const addr = body.address.trim().slice(0, 300);
     const g = await cachedJson(`geocode|${addr.toLowerCase()}`, () => geocode(addr).catch(() => null));
-    if (!g) return fail(422, "Couldn't find this address on the map.");
+    if (!g) return fail(422, "Address not found – please check the street name and number.");
     ({ pin, formattedAddress } = g);
   } else return fail(400, "Give either lat and lng, or an address.");
   if (Math.abs(pin.lat) > 90 || Math.abs(pin.lng) > 180) return fail(400, "lat/lng out of range.");
