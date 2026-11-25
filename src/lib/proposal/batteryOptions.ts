@@ -128,6 +128,13 @@ export function sortOptions(ids: string[], kwhOf: (id: string) => number = optio
   return [...new Set(ids)].sort((a, b) => kwhOf(a) - kwhOf(b) || Number(isPickId(a)) - Number(isPickId(b)) || a.localeCompare(b));
 }
 
+/**
+ * Net price of each picked-battery option ("pick:<index>"), priced as that
+ * exact battery: a number, or null when the engine can't price it. A pick
+ * that isn't here yet falls back to the price for its size.
+ */
+export type PickPrices = Record<string, number | null>;
+
 export type BatteryOptionRow = {
   id: string;
   letter: string;
@@ -158,13 +165,16 @@ export function batteryOptionRows(
   arrayKw: number,
   /** Picked batteries (for "pick:<index>" options): their size and name. */
   picks: PickedItem[] = [],
+  /** Picked batteries priced as themselves (see `PickPrices`). */
+  pickPrices: PickPrices = {},
 ): BatteryOptionRow[] {
   const kwhOf = (id: string) => choiceKwh(id, picks);
   const rows = sortOptions(ids, kwhOf).map((id, i): BatteryOptionRow => {
     const kwh = kwhOf(id);
     const pick = isPickId(id) ? picks[pickIndex(id)] : undefined;
     const key = String(kwh);
-    const total = priced?.batteryTotals?.[key] ?? null;
+    const ownPrice = pick && Object.prototype.hasOwnProperty.call(pickPrices, id);
+    const total = ownPrice ? pickPrices[id] : priced?.batteryTotals?.[key] ?? null;
     const info = priced?.batteryInfo?.[key];
     const s = estimateSavings(monthlyBill, arrayKw, kwh);
     const payback = paybackYears(total, s.yearlySavings);
@@ -174,7 +184,7 @@ export function batteryOptionRows(
       kwh,
       quotedKwh: pick ? kwh : kwh > 0 && info?.kwh ? +info.kwh.toFixed(1) : kwh,
       model: pick ? [pick.quantity > 1 ? `${pick.quantity}×` : "", pick.brand, pick.name].filter(Boolean).join(" ") : kwh > 0 ? info?.model ?? null : null,
-      estimated: Boolean(kwh > 0 && info?.estimated),
+      estimated: Boolean(kwh > 0 && !ownPrice && info?.estimated),
       total,
       monthlySavings: s.monthlySavings,
       newBill: s.newBill,

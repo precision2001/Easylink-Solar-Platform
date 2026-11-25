@@ -3,8 +3,16 @@
 import QRCode from "qrcode";
 
 import type { ProposalImages } from "@/components/proposal/ProposalPages";
-import { chosenProductsOf, designBatteryKwh, buildProposalDocument, type ProposalDocument, type ProposalLinks } from "@/lib/proposal/proposalDocument";
-import { fetchProposalPricing, type ProposalPricingResponse } from "@/lib/proposal/proposalPricing";
+import {
+  chosenProductsOf,
+  designBatteryKwh,
+  buildProposalDocument,
+  pickOptionRequests,
+  type ProposalDocument,
+  type ProposalLinks,
+} from "@/lib/proposal/proposalDocument";
+import { itemKwh, type PickPrices } from "@/lib/proposal/batteryOptions";
+import { fetchProposalPricing, priceBatteryPicks, type ProposalPricingResponse } from "@/lib/proposal/proposalPricing";
 import { BATTERY_CAPACITY_OPTIONS, DEFAULT_PANEL_TIER_ID, PANEL_TIER_OPTIONS } from "@/lib/designs/proposalOptions";
 import type { DesignProposalState } from "@/lib/store/designProposalSlice";
 import { snapshotMetresPerPixel } from "@/lib/roof-design";
@@ -217,23 +225,36 @@ async function roofImage(proposal: DesignProposalState, roof: RoofDrawing | null
   return toDataUrl(`/api/solar/roof-snapshot?lat=${lat}&lng=${lng}&zoom=20`);
 }
 
-async function pricingFor(proposal: DesignProposalState): Promise<ProposalPricingResponse | null> {
+/** The design's price, and each picked-battery option priced as that exact battery. */
+async function pricingFor(
+  proposal: DesignProposalState,
+): Promise<{ pricing: ProposalPricingResponse | null; pickPrices: PickPrices }> {
   const panelCount =
     Number.parseInt((proposal.equipment.numberOfPanels || proposal.summary.totalPanels || "0").replace(/\D/g, ""), 10) || 0;
-  if (panelCount <= 0) return null;
-  try {
-    return await fetchProposalPricing({
-      panelCount,
-      panelTierId: proposal.equipment.panelTierId ?? DEFAULT_PANEL_TIER_ID,
+  if (panelCount <= 0) return { pricing: null, pickPrices: {} };
+  const base = {
+    panelCount,
+    panelTierId: proposal.equipment.panelTierId ?? DEFAULT_PANEL_TIER_ID,
+    ...(proposal.customer.supplyPhase ? { phase: proposal.customer.supplyPhase } : {}),
+  };
+  const picks = pickOptionRequests(proposal);
+  const sizes = [
+    ...new Set([
+      ...BATTERY_CAPACITY_OPTIONS.map((b) => Number.parseFloat(b.id) || 0),
+      ...(proposal.equipment.items?.battery ?? []).map(itemKwh).filter((k) => k > 0),
+    ]),
+  ];
+  const [pricing, pickPrices] = await Promise.all([
+    fetchProposalPricing({
+      ...base,
       batteryKwh: designBatteryKwh(proposal),
       products: chosenProductsOf(proposal),
-      ...(proposal.customer.supplyPhase ? { phase: proposal.customer.supplyPhase } : {}),
       tiers: PANEL_TIER_OPTIONS.map((t) => t.id),
-      batteryOptionsKwh: BATTERY_CAPACITY_OPTIONS.map((b) => Number.parseFloat(b.id) || 0),
-    });
-  } catch {
-    return null;
-  }
+      batteryOptionsKwh: sizes,
+    }).catch(() => null),
+    priceBatteryPicks(base, picks),
+  ]);
+  return { pricing, pickPrices };
 }
 
 /**
@@ -250,14 +271,14 @@ export async function loadProposalDocument(
   const [sat, street] = drawing
     ? await Promise.all([loadSatellite(drawing).catch(() => null), streetPoint(drawing.center.lat, drawing.center.lng)])
     : [null, null];
-  const [pricing, logo, roof, portalQr, referralQr] = await Promise.all([
+  const [priced, logo, roof, portalQr, referralQr] = await Promise.all([
     pricingFor(proposal),
     toDataUrl(LOGO_PATH),
     roofImage(proposal, drawing, sat),
     qr(resolved.portalUrl),
     qr(resolved.referralUrl),
   ]);
-  const doc = buildProposalDocument({ proposal, pricing, links: resolved });
+  const doc = buildProposalDocument({ proposal, pricing: priced.pricing, pickPrices: priced.pickPrices, links: resolved });
   if (doc.roof) {
     // The car in the driveway and the battery beside it, for the cover drawing.
     doc.roof = placeDriveway(doc.roof, street ? toXY(street, doc.roof.center) : null, sat ? pavedScorer(sat) : undefined);

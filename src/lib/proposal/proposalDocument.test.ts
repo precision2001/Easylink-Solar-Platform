@@ -1,7 +1,7 @@
 import { paybackYears } from "./savingsProjection";
 import { describe, expect, it } from "vitest";
 
-import { buildProposalDocument, cumulativeGain, designBatteryKwh, greetingName } from "./proposalDocument";
+import { buildProposalDocument, cumulativeGain, designBatteryKwh, greetingName, pickOptionRequests } from "./proposalDocument";
 import { estimateSavings, type ProposalPricingResponse } from "./proposalPricing";
 import { DESIGN_PROPOSAL_DEFAULTS, emptyEquipmentItems, type DesignProposalState } from "@/lib/store/designProposalSlice";
 
@@ -104,6 +104,58 @@ describe("buildProposalDocument", () => {
     ]);
     expect(doc.options.filter((o) => o.isDesign).map((o) => o.label.split(" · ")[0])).toEqual(["Option B"]);
     expect(doc.options.filter((o) => o.label.endsWith("Recommended"))).toHaveLength(1);
+  });
+
+  // RAMONITO's proposal (26 Nov 2026): three picked BLUETTI EP2000 sizes printed $0 for B and C.
+  const bluetti = (modules: number, kwh: number) => ({
+    productId: `size:bluetti-3p:3:1x${modules}`,
+    brand: "BLUETTI",
+    name: `EP2000 + B700 (three phase) · ${modules} modules`,
+    quantity: 1,
+    ratingLabel: `${kwh} kWh`,
+  });
+  const bluettiDesign = () =>
+    design({
+      batteryCapacityId: "pick:0",
+      batteryOptionIds: ["pick:0", "pick:1", "pick:2"],
+      items: { ...emptyEquipmentItems(), battery: [bluetti(3, 19.89), bluetti(4, 26.52), bluetti(6, 39.78)] },
+    });
+
+  it("prices each picked battery option as that battery, never $0", () => {
+    const doc = buildProposalDocument({
+      proposal: bluettiDesign(),
+      pricing: { ...pricing, selected: quote(9669, 19.89) },
+      pickPrices: { "pick:1": 11950, "pick:2": 15840 },
+      links,
+      today,
+    });
+    expect(doc.options.map((o) => [o.label.split(" · ")[0], o.price])).toEqual([
+      ["Option A", 9669],
+      ["Option B", 11950],
+      ["Option C", 15840],
+    ]);
+    expect(doc.options.every((o) => o.paybackYears != null)).toBe(true);
+  });
+
+  it("shows an option it can't price as no price, not $0", () => {
+    const doc = buildProposalDocument({
+      proposal: bluettiDesign(),
+      pricing: { ...pricing, selected: quote(9669, 19.89) },
+      pickPrices: { "pick:1": null, "pick:2": 15840 },
+      links,
+      today,
+    });
+    expect(doc.options[1].price).toBeNull();
+    expect(doc.options[1].paybackYears).toBeNull();
+    expect(doc.options.some((o) => o.price === 0)).toBe(false);
+  });
+
+  it("asks the engine for each picked option other than the shown one, with that battery only", () => {
+    const reqs = pickOptionRequests(bluettiDesign());
+    expect(reqs.map((r) => [r.id, r.kwh, r.products.batteries])).toEqual([
+      ["pick:1", 26.52, [{ id: "size:bluetti-3p:3:1x4", qty: 1 }]],
+      ["pick:2", 39.78, [{ id: "size:bluetti-3p:3:1x6", qty: 1 }]],
+    ]);
   });
 
   it("still builds without the pricing engine, from the stored price", () => {

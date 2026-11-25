@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { fetchProposalPricing, type ChosenProducts, type ProposalPricingResponse } from "@/lib/proposal/proposalPricing";
+import {
+  fetchProposalPricing,
+  priceBatteryPicks,
+  type ChosenProducts,
+  type ProposalPricingResponse,
+} from "@/lib/proposal/proposalPricing";
 
 /**
  * Customer prices for a design from the backend pricing engine v2
@@ -60,4 +65,39 @@ export function useProposalPricing(
     };
   }, [panelCount, panelTierId, batteryKwh, optionsKey, tiersKey, productsKey, phase]);
   return { data, loading, error };
+}
+
+/**
+ * Each picked-battery option priced as that exact battery (one engine call
+ * each), so option cards quote the battery the customer picked, not the
+ * cheapest battery near its size. Debounced like `useProposalPricing`.
+ */
+export function usePickPrices(
+  panelCount: number,
+  panelTierId: string,
+  picks: { id: string; kwh: number; products: ChosenProducts }[],
+  phase?: 1 | 3,
+) {
+  const [prices, setPrices] = useState<Record<string, number | null>>({});
+  const picksKey = JSON.stringify(picks);
+  useEffect(() => {
+    const list = JSON.parse(picksKey) as typeof picks;
+    if (panelCount <= 0 || list.length === 0) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      priceBatteryPicks({ panelCount, panelTierId, ...(phase ? { phase } : {}) }, list, ctrl.signal).then((p) => {
+        if (!ctrl.signal.aborted) setPrices(p);
+      });
+    }, 250);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [panelCount, panelTierId, picksKey, phase]);
+  // Only the picks still on the design (a removed pick's old price is dropped).
+  return useMemo(() => {
+    const ids = new Set(picks.map((p) => p.id));
+    return Object.fromEntries(Object.entries(prices).filter(([id]) => ids.has(id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- picksKey stands for picks
+  }, [prices, picksKey]);
 }
