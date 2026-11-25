@@ -119,6 +119,33 @@ export async function fetchProposalPricing(
   return payload.data;
 }
 
+/**
+ * Prices each picked-battery option as that exact battery (one engine call
+ * each, in parallel): option id → net price, or null when the engine blocks
+ * it or the call fails. `base` is the design's own request.
+ */
+export async function priceBatteryPicks(
+  base: ProposalPricingRequest,
+  picks: { id: string; kwh: number; products: ChosenProducts }[],
+  signal?: AbortSignal,
+): Promise<Record<string, number | null>> {
+  const entries = await Promise.all(
+    picks.map(async (p): Promise<[string, number | null]> => {
+      try {
+        const res = await fetchProposalPricing(
+          { ...base, products: p.products, batteryKwh: p.kwh, tiers: undefined, batteryOptionsKwh: [] },
+          signal,
+        );
+        const q = res.selected;
+        return [p.id, q && !q.blocks?.length && Number.isFinite(q.net) ? q.net : null];
+      } catch {
+        return [p.id, null];
+      }
+    }),
+  );
+  return Object.fromEntries(entries);
+}
+
 export type SavingsEstimate = {
   consumptionKwh: number;
   generationKwh: number;

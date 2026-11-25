@@ -2,7 +2,7 @@
 import { netSavings, paybackLabel } from "@/lib/proposal/savingsProjection";
 
 import { describeShare } from "@/lib/designs/send-to-customer";
-import { chosenProductsOf, inverterMatchedToBattery, MATCHED_INVERTER_NOTE } from "@/lib/proposal/proposalDocument";
+import { chosenProductsOf, inverterMatchedToBattery, MATCHED_INVERTER_NOTE, pickOptionRequests } from "@/lib/proposal/proposalDocument";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 
@@ -63,7 +63,7 @@ import {
   tapBatteryOption,
   type BatteryOptionRow,
 } from "@/lib/proposal/batteryOptions";
-import { useProposalPricing } from "@/lib/proposal/useProposalPricing";
+import { usePickPrices, useProposalPricing } from "@/lib/proposal/useProposalPricing";
 
 
 /**
@@ -897,6 +897,10 @@ export const DesignsProposalStepContent = forwardRef<
     chosenProducts,
     proposal.customer.supplyPhase,
   );
+  // Each picked battery option priced as that battery, so option B and C
+  // quote what the customer picked (owner, 26 Nov 2026).
+  const pickRequests = useMemo(() => pickOptionRequests(proposal), [proposal]);
+  const pickPrices = usePickPrices(panelCount, panelTierId, pickRequests, proposal.customer.supplyPhase);
   const selectedQuote = priced?.selected ?? null;
   const arrayKw = selectedQuote?.arrayKw ?? 0;
   // The system size follows the panel actually chosen (tier or the customer's
@@ -1000,8 +1004,8 @@ export const DesignsProposalStepContent = forwardRef<
   }, [priced, tiles, batteryCatalogue]);
   const [comparing, setComparing] = useState(false);
   const optionRows = useMemo(
-    () => batteryOptionRows(batteryOptionIds, priced ?? null, monthlyBill, arrayKw, batteryPicks),
-    [batteryOptionIds, priced, monthlyBill, arrayKw, batteryPicks],
+    () => batteryOptionRows(batteryOptionIds, priced ?? null, monthlyBill, arrayKw, batteryPicks, pickPrices),
+    [batteryOptionIds, priced, monthlyBill, arrayKw, batteryPicks, pickPrices],
   );
 
   function setBatteryOptions(ids: string[], shown: string) {

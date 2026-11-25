@@ -886,7 +886,11 @@ function Options({ doc, images }: PageProps) {
                     {o.label.startsWith("Option ") ? o.title : o.isDesign ? (o.batteryKwh > 0 ? "Power all evening" : "Start saving") : o.title}
                   </div>
                 </div>
-                <div style={big(36, dark ? C.sun : undefined)}>{formatAud(o.price)}</div>
+                {o.price != null ? (
+                  <div style={big(36, dark ? C.sun : undefined)}>{formatAud(o.price)}</div>
+                ) : (
+                  <div style={{ fontFamily: DISPLAY, fontWeight: 800, fontSize: 24, lineHeight: 1.2, color: dark ? C.sun : C.ink }}>Price on request</div>
+                )}
                 <div style={{ fontSize: 13, lineHeight: 1.55, color: mut }}>
                   {doc.systemKw} kW solar
                   <br />

@@ -11,7 +11,7 @@ import { cumulativeGain, PANEL_LOSS_A_YEAR, paybackYears, PROJECTION_YEARS } fro
  * from the pricing engine, and the battery size the step reads.
  */
 import { isSizeId } from "@/lib/batteries/sizeId";
-import { batteryOptionRows, itemKwh, shownBatteryItems } from "./batteryOptions";
+import { batteryOptionRows, isPickId, itemKwh, pickIndex, shownBatteryItems, type PickPrices } from "./batteryOptions";
 import type { ChosenProducts } from "@/lib/proposal/proposalPricing";
 import {
   CONSUMPTION_SEASONALITY,
@@ -79,7 +79,8 @@ export type ProposalOption = {
   label: string;
   title: string;
   batteryKwh: number;
-  price: number;
+  /** Total after rebates; null when this option couldn't be priced (shown as "Price on request", never $0). */
+  price: number | null;
   yearlySavings: number;
   paybackYears: number | null;
   selfPoweredPct: number;
@@ -157,6 +158,8 @@ export type ProposalDocumentInput = {
   links: ProposalLinks;
   today?: Date;
   quoteRef?: string;
+  /** Each picked battery option priced as that exact battery (see `pickOptionRequests`). */
+  pickPrices?: PickPrices;
 };
 
 function money(raw: string | undefined): number | null {
@@ -215,17 +218,48 @@ export function designBatteryKwh(proposal: DesignProposalState): number {
  * twice). Nothing picked in a category leaves it to the engine.
  */
 export function chosenProductsOf(proposal: DesignProposalState): ChosenProducts | undefined {
+  return productsWith(proposal, shownBatteryItems(proposal.equipment));
+}
+
+const isProductId = (id: string | undefined): id is string => Boolean(id && /^[0-9a-f-]{36}$/i.test(id));
+
+/** The design's panel and inverter with these batteries (same product added twice counts twice). */
+function productsWith(
+  proposal: DesignProposalState,
+  batteryItems: { productId: string; quantity: number }[],
+): ChosenProducts | undefined {
   const items = proposal.equipment.items;
   if (!items) return undefined;
-  const isId = (id: string | undefined): id is string => Boolean(id && /^[0-9a-f-]{36}$/i.test(id));
-  const panelId = items.solarPanel?.map((i) => i.productId).find(isId);
-  const inverterId = items.inverter?.map((i) => i.productId).find(isId);
+  const panelId = items.solarPanel?.map((i) => i.productId).find(isProductId);
+  const inverterId = items.inverter?.map((i) => i.productId).find(isProductId);
   const qty = new Map<string, number>();
   // A catalogue battery, or a battery size picked by range and modules ("size:…").
-  for (const b of shownBatteryItems(proposal.equipment)) if (isId(b.productId) || isSizeId(b.productId)) qty.set(b.productId, (qty.get(b.productId) ?? 0) + Math.max(1, b.quantity));
+  for (const b of batteryItems) if (isProductId(b.productId) || isSizeId(b.productId)) qty.set(b.productId, (qty.get(b.productId) ?? 0) + Math.max(1, b.quantity));
   const batteries = [...qty].map(([id, q]) => ({ id, qty: q }));
   if (!panelId && !inverterId && !batteries.length) return undefined;
   return { ...(panelId ? { panelId } : {}), ...(inverterId ? { inverterId } : {}), ...(batteries.length ? { batteries } : {}) };
+}
+
+/**
+ * The picked-battery options other than the shown one, each with the
+ * products to price it with: the design's panel and inverter and that one
+ * battery. Pricing by size alone let the engine swap in the cheapest battery
+ * near that size (another brand) or find nothing, which printed $0 for
+ * options B and C (26 Nov 2026).
+ */
+export function pickOptionRequests(proposal: DesignProposalState): { id: string; kwh: number; products: ChosenProducts }[] {
+  const eq = proposal.equipment;
+  const picks = eq.items?.battery ?? [];
+  const ids = [...new Set(eq.batteryOptionIds ?? [])].filter((id) => isPickId(id) && id !== eq.batteryCapacityId);
+  const out: { id: string; kwh: number; products: ChosenProducts }[] = [];
+  for (const id of ids) {
+    const it = picks[pickIndex(id)];
+    if (!it) continue;
+    const products = productsWith(proposal, [it]);
+    const kwh = itemKwh(it);
+    if (products?.batteries?.length && kwh > 0) out.push({ id, kwh, products });
+  }
+  return out;
 }
 
 function panelCountOf(proposal: DesignProposalState): number {
@@ -290,16 +324,17 @@ function buildOptions(
   chosenIds: string[] = [],
   shownId?: string,
   pickedBatteries: Parameters<typeof batteryOptionRows>[4] = [],
+  pickPrices: PickPrices = {},
 ): ProposalOption[] {
   const totals = pricing?.batteryTotals ?? {};
   // The battery options the customer compared (owner, 9 Nov 2026): exactly
   // those, as options A, B and C, the quickest payback recommended.
   if (chosenIds.length > 1 && pricing) {
-    const rows = batteryOptionRows(chosenIds, pricing, monthly, arrayKw, pickedBatteries);
+    const rows = batteryOptionRows(chosenIds, pricing, monthly, arrayKw, pickedBatteries, pickPrices);
     return rows.map((r) => {
       const isDesign = r.id === shownId;
       const s = estimateSavings(monthly, arrayKw, r.kwh);
-      const price = isDesign ? pricing.selected.net : (r.total ?? 0);
+      const price = isDesign ? pricing.selected.net : r.total;
       const quoted = pricing.batteryInfo?.[String(r.kwh)];
       const kwhLabel = r.id.startsWith("pick:") ? r.kwh : quoted && r.kwh > 0 ? +quoted.kwh.toFixed(1) : r.kwh;
       return {
@@ -338,7 +373,7 @@ function buildOptions(
     const isDesign = kwh === designSize;
     const upgradeTitle =
       !isDesign && kwh > 0 ? (extraBatteries++ === 0 && designSize === 0 ? "Power all evening" : "Power longer at night") : "";
-    const price = isDesign ? pricing.selected.net : (totals[String(kwh)] ?? 0);
+    const price = isDesign ? pricing.selected.net : (totals[String(kwh)] ?? null);
     const s = estimateSavings(monthly, arrayKw, kwh);
     return {
       key: `b${kwh}`,
@@ -477,7 +512,7 @@ export function buildProposalDocument(input: ProposalDocumentInput): ProposalDoc
     co2TonnesYear: Math.round(co2Year * 10) / 10,
     co2Tonnes25: Math.round(co225),
 
-    options: buildOptions(monthly, systemKw, batteryKwh, pricing, proposal.equipment.batteryOptionIds ?? [], proposal.equipment.batteryCapacityId, proposal.equipment.items?.battery ?? []),
+    options: buildOptions(monthly, systemKw, batteryKwh, pricing, proposal.equipment.batteryOptionIds ?? [], proposal.equipment.batteryCapacityId, proposal.equipment.items?.battery ?? [], input.pickPrices),
     roofAreaM2: proposal.solarDesign?.polygonTotalAreaM2
       ? Math.round(proposal.solarDesign.polygonTotalAreaM2)
       : null,
