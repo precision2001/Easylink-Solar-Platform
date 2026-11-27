@@ -91,6 +91,7 @@ const qtyOf = (r: Row) => {
 export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; onSubmit: (patch: UpdateQuoteInput) => Promise<void>; onCancel: () => void }) {
   const uid = useId();
   const [rows, setRows] = useState<Row[]>(() => rowsFrom(quote));
+  const [title, setTitle] = useState(quote.title ?? "");
   const [stc, setStc] = useState(centsToDollarsInput(quote.stcDiscountCents));
   const [rebate, setRebate] = useState(centsToDollarsInput(quote.rebateCents));
   const [busy, setBusy] = useState(false);
@@ -167,6 +168,7 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
       if (qtyOf(r) === null) return `Check the quantity for “${r.name.trim()}”.`;
       if (signedDollarsToCents(r.price) === null) return `Check the unit price for “${r.name.trim()}”. Use dollars, for example 1250 or -500 for a discount.`;
     }
+    if (!title.trim()) return "Give the quote a title.";
     if (stcCents === null || stcCents < 0) return "Enter the STC discount in dollars (0 if none).";
     if (rebateCents === null || rebateCents < 0) return "Enter the rebates in dollars (0 if none).";
     if (totalCents < 0) return "The STC discount and rebates are more than the lines add up to.";
@@ -198,6 +200,7 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
         },
         stcDiscountCents: stcCents ?? 0,
         rebateCents: rebateCents ?? 0,
+        ...(title.trim() && title.trim() !== quote.title ? { title: title.trim() } : {}),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the lines.");
@@ -337,6 +340,20 @@ export function QuoteLinesEditor({ quote, onSubmit, onCancel }: { quote: Quote; 
           Tick the items that go into the edited quote, and change names, quantities and prices as needed. Prices include GST. Use a negative unit price for a discount line. Reprice puts the pricing engine&rsquo;s prices back.
         </p>
       </div>
+
+      <label htmlFor={`${uid}-title`} className="flex flex-col gap-1 text-[13.5px] font-semibold text-[#334155]">
+        Quote title
+        <span className="text-[12px] font-normal text-[#5B6B80]">Shown to the customer on the quote.</span>
+        <input
+          id={`${uid}-title`}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={200}
+          required
+          aria-invalid={touched && !title.trim() ? true : undefined}
+          className={`${QUOTE_FIELD} mt-1`}
+        />
+      </label>
 
       {section("equipment", "Equipment", "Add equipment line")}
       <QuoteExtrasPicker
