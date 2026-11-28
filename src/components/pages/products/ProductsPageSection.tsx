@@ -158,18 +158,20 @@ export function ProductsPageSection() {
     setCompareModalOpen(false);
   };
 
+  // Top padding clears the fixed 64px site header (same pt-28 as the other header pages).
   return (
-    <section className="bg-linear-to-br from-yellow-lemon to-orange-amber py-10 sm:py-14">
+    <section className="bg-linear-to-br from-yellow-lemon to-orange-amber pb-10 pt-24 sm:pb-14 sm:pt-28">
       <Suspense fallback={null}>
         <CustomerPaymentReturnNotice />
       </Suspense>
-      <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3 px-4 sm:px-6">
-        <h1 className="font-inter text-[22px] font-extrabold uppercase leading-[28px] tracking-[0.02em] text-warm-ink sm:text-[26px]">
+      {/* Centred over the stepper so it lines up with both the 1120px stepper and the 1360px catalogue. */}
+      <div className="mx-auto w-full max-w-[1120px] px-4 text-center sm:px-6">
+        <h1 className="font-inter text-[24px] font-extrabold uppercase leading-[30px] tracking-[0.04em] text-warm-ink sm:text-[30px] sm:leading-[36px] lg:text-[34px] lg:leading-[40px]">
           Build Your System
         </h1>
       </div>
 
-      <div className="mt-8 px-4 sm:px-6">
+      <div className="mt-6 px-4 sm:mt-8 sm:px-6">
         <ProductsSystemStepper activeCategory={activeCategory} onSelectCategory={handleSelectCategory} />
       </div>
 
